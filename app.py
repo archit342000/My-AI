@@ -83,13 +83,17 @@ def chat_completions():
 
     # 2. Inject Context
     if context:
-        system_msg_idx = next((i for i, m in enumerate(messages) if m['role'] == 'system'), -1)
         injection = f"\n<memory_context>\n{context}\n</memory_context>"
 
-        if system_msg_idx != -1:
-            messages[system_msg_idx]['content'] += injection
-        else:
-            messages.insert(0, {"role": "system", "content": injection})
+        # Find index of the last system message to insert after it
+        # This ensures we don't overwrite the user's defined system prompt
+        last_system_idx = -1
+        for i, m in enumerate(messages):
+            if m['role'] == 'system':
+                last_system_idx = i
+
+        # Insert as a separate system message
+        messages.insert(last_system_idx + 1, {"role": "system", "content": injection})
 
     # 3. Stream Proxy to LM Studio
     def generate():

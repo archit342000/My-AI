@@ -25,6 +25,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const themeToggle = document.getElementById('theme-toggle');
     const themeIconPath = document.getElementById('theme-icon-path');
 
+    // System Settings Selectors
+    const systemSettingsTrigger = document.getElementById('system-settings-trigger');
+    const systemSettingsModal = document.getElementById('system-settings-modal');
+    const closeSystemSettingsBtn = document.getElementById('close-system-settings');
+    const sysServerLink = document.getElementById('sys-server-link');
+    const sysApiToken = document.getElementById('sys-api-token');
+    const sysSaveConnectionBtn = document.getElementById('sys-save-connection');
+    const sysResetAppBtn = document.getElementById('sys-reset-app');
+    const themeRadios = document.querySelectorAll('input[name="theme"]');
+
     // Unified Settings Selectors
     const settingsTrigger = document.getElementById('settings-trigger');
     const settingsModal = document.getElementById('settings-modal');
@@ -117,9 +127,37 @@ document.addEventListener('DOMContentLoaded', () => {
 
     loadChats();
 
-    // Initialize Theme (Default to light)
-    document.documentElement.classList.remove('dark');
-    themeIconPath.setAttribute('d', 'M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z');
+    // Initialize Theme
+    let themeMode = localStorage.getItem('lmstudiochat_theme_mode') || 'system';
+
+    function applyTheme() {
+        let isDark = false;
+        if (themeMode === 'system') {
+            isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        } else {
+            isDark = themeMode === 'dark';
+        }
+
+        if (isDark) {
+            document.documentElement.classList.add('dark');
+            if (themeIconPath) themeIconPath.setAttribute('d', 'M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707m0-11.314l.707.707m11.314 11.314l.707.707M12 8a4 4 0 100 8 4 4 0 000-8z');
+        } else {
+            document.documentElement.classList.remove('dark');
+            if (themeIconPath) themeIconPath.setAttribute('d', 'M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z');
+        }
+
+        // Update radio buttons
+        themeRadios.forEach(radio => {
+            if (radio.value === themeMode) radio.checked = true;
+        });
+    }
+
+    applyTheme();
+
+    // Listen for system changes
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+        if (themeMode === 'system') applyTheme();
+    });
 
     // Load persisted prompt
     if (systemPrompt) {
@@ -161,8 +199,9 @@ document.addEventListener('DOMContentLoaded', () => {
         messagesContainer.innerHTML = '';
         currentChatId = temporary ? null : generateId();
 
-        isMemoryMode = false;
-        if (memoryToggleSwitch) memoryToggleSwitch.classList.remove('active');
+        // Memory Mode defaults to true
+        isMemoryMode = true;
+        if (memoryToggleSwitch) memoryToggleSwitch.classList.add('active');
 
         if (welcomeHero) {
             welcomeHero.classList.remove('hidden');
@@ -624,16 +663,97 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    themeToggle.addEventListener('click', (e) => {
-        e.preventDefault();
-        const isDark = document.documentElement.classList.toggle('dark');
+    // System Settings Logic
+    const openSystemSettings = () => {
+        if (systemSettingsModal) {
+            systemSettingsModal.style.display = 'flex';
+            setTimeout(() => systemSettingsModal.classList.add('open'), 10);
 
-        if (isDark) {
-            themeIconPath.setAttribute('d', 'M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707m0-11.314l.707.707m11.314 11.314l.707.707M12 8a4 4 0 100 8 4 4 0 000-8z');
-        } else {
-            themeIconPath.setAttribute('d', 'M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z');
+            // Populate config fields
+            if (serverLink) sysServerLink.value = serverLink;
+            if (apiToken) sysApiToken.value = apiToken;
         }
+    };
+
+    const closeSystemSettings = () => {
+        if (systemSettingsModal) {
+            systemSettingsModal.classList.remove('open');
+            setTimeout(() => systemSettingsModal.style.display = 'none', 300);
+        }
+    };
+
+    if (systemSettingsTrigger) systemSettingsTrigger.addEventListener('click', (e) => {
+        e.preventDefault();
+        openSystemSettings();
     });
+
+    if (closeSystemSettingsBtn) closeSystemSettingsBtn.addEventListener('click', closeSystemSettings);
+
+    // Theme Radios
+    themeRadios.forEach(radio => {
+        radio.addEventListener('change', (e) => {
+            if (e.target.checked) {
+                themeMode = e.target.value;
+                localStorage.setItem('lmstudiochat_theme_mode', themeMode);
+                applyTheme();
+            }
+        });
+    });
+
+    // Save Connection (Moved from old modal)
+    if (sysSaveConnectionBtn) {
+        sysSaveConnectionBtn.addEventListener('click', async () => {
+            const link = sysServerLink.value.trim();
+            const token = sysApiToken.value.trim();
+
+            if (link) {
+                serverLink = link.endsWith('/') ? link.slice(0, -1) : link;
+                apiToken = token;
+
+                localStorage.setItem('lmstudiochat_server_link', serverLink);
+                if (apiToken) {
+                    localStorage.setItem('lmstudiochat_api_token_secure', e(apiToken));
+                } else {
+                    localStorage.removeItem('lmstudiochat_api_token_secure');
+                }
+
+                // Send config to backend
+                try {
+                    await fetch('/api/config', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ url: serverLink })
+                    });
+                } catch (e) {
+                    console.error("Failed to update backend config", e);
+                }
+
+                closeSystemSettings();
+                fetchModels();
+                alert('Connection updated!');
+            } else {
+                alert('Please provide a server link (e.g., http://localhost:1234)');
+            }
+        });
+    }
+
+    if (sysResetAppBtn) {
+        sysResetAppBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            if (confirm('Are you sure you want to clear your connection settings? This will require a re-authorization.')) {
+                localStorage.removeItem('lmstudiochat_server_link');
+                localStorage.removeItem('lmstudiochat_api_token_secure');
+                localStorage.removeItem('lmstudiochat_selected_model');
+                localStorage.removeItem('lmstudiochat_selected_model_name');
+                localStorage.removeItem('lmstudiochat_theme_mode');
+                serverLink = '';
+                apiToken = '';
+                location.reload();
+            }
+        });
+    }
+
+    // Deprecated theme toggle listener removed
 
     // Model Selection Logic (handled inside renderModelOptions)
 

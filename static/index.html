@@ -49,6 +49,18 @@
                     </button>
                 </nav>
 
+                <!-- System Settings Trigger -->
+                <nav style="display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1rem;">
+                    <button id="system-settings-trigger" class="nav-item" style="justify-content: flex-start; width: 100%;">
+                        <svg class="nav-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="3"></circle>
+                            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z"/>
+                        </svg>
+                        <span class="sidebar-text">System Settings</span>
+                        <span class="nav-tooltip">System Settings</span>
+                    </button>
+                </nav>
+
                 <!-- Chat Actions -->
                 <div style="display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1rem;">
                     <button id="new-chat-btn" class="btn-primary" style="width: 100%; justify-content: flex-start; gap: 12px; height: 40px; font-size: 0.875rem;">
@@ -70,36 +82,8 @@
                     <!-- Chat items will be injected here -->
                 </div>
 
-                <!-- Secondary Navigation -->
-                <nav style="display: flex; flex-direction: column; gap: 0.5rem;">
-                    <a href="#" id="theme-toggle" class="nav-item">
-                        <svg class="nav-icon" width="24" height="24" viewBox="0 0 24 24" fill="none"
-                            stroke="currentColor" stroke-width="2">
-                            <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" id="theme-icon-path" />
-                        </svg>
-                        <span class="sidebar-text">Appearance</span>
-                        <span class="nav-tooltip">Theme</span>
-                    </a>
-                </nav>
-
-
-
-
                 <!-- Empty spacer to maintain layout -->
                 <div style="margin-top: auto;"></div>
-
-                <a href="#" id="clear-api-trigger" class="nav-item danger" title="Clear Connection Settings">
-                    <div class="nav-icon">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                            stroke-width="2">
-                            <path
-                                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-4v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                                stroke-linecap="round" stroke-linejoin="round" />
-                        </svg>
-                    </div>
-                    <span class="sidebar-text">Reset Connection</span>
-                    <span class="nav-tooltip">Reset Connection</span>
-                </a>
             </div>
 
             <div class="user-profile">
@@ -291,6 +275,63 @@
             <button id="save-api-key" class="btn-primary"
                 style="width: 100%; height: 3.5rem; font-size: 1rem; border: none; border-radius: 12px; font-weight: 600; cursor: pointer;">Connect
                 & Initialize</button>
+        </div>
+    </div>
+
+    <!-- System Settings Modal -->
+    <div id="system-settings-modal" class="modal-backdrop">
+        <div class="modal-content" style="max-width: 512px;">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem;">
+                <h2 class="font-heading" style="font-size: 1.5rem; font-weight: 800; color: var(--content-primary); margin: 0;">
+                    System Settings
+                </h2>
+                <button id="close-system-settings" class="btn-ghost" style="width: 2.5rem; height: 2.5rem; padding: 0; border-radius: 0.75rem;">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <path d="M18 6L6 18M6 6l12 12" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Appearance -->
+            <div class="hardware-surface" style="padding: 1.5rem; margin-bottom: 1rem;">
+                <h3 class="text-h2" style="font-size: 1.1rem; margin-bottom: 1rem;">Appearance</h3>
+                <div style="display: flex; gap: 1rem;">
+                    <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                        <input type="radio" name="theme" value="light" class="radio-input">
+                        <span>Light</span>
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                        <input type="radio" name="theme" value="dark" class="radio-input">
+                        <span>Dark</span>
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                        <input type="radio" name="theme" value="system" class="radio-input" checked>
+                        <span>System</span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Connection Settings -->
+            <div class="hardware-surface" style="padding: 1.5rem; margin-bottom: 1rem;">
+                <h3 class="text-h2" style="font-size: 1.1rem; margin-bottom: 1rem;">Connection</h3>
+                <div style="margin-bottom: 1rem;">
+                    <label class="text-xs" style="color: var(--content-muted); font-weight: 700; display: block; margin-bottom: 0.5rem;">SERVER LINK</label>
+                    <input type="text" id="sys-server-link" class="input-luminous" placeholder="http://localhost:1234">
+                </div>
+                <div style="margin-bottom: 1rem;">
+                    <label class="text-xs" style="color: var(--content-muted); font-weight: 700; display: block; margin-bottom: 0.5rem;">API TOKEN</label>
+                    <input type="password" id="sys-api-token" class="input-luminous" placeholder="lm-studio">
+                </div>
+                <button id="sys-save-connection" class="btn-primary" style="width: 100%;">Update Connection</button>
+            </div>
+
+            <!-- Reset -->
+            <div class="hardware-surface" style="padding: 1.5rem; border-color: var(--color-rose-500);">
+                <h3 class="text-h2" style="font-size: 1.1rem; margin-bottom: 1rem; color: var(--color-rose-500);">Danger Zone</h3>
+                <button id="sys-reset-app" class="btn-secondary" style="width: 100%; border-color: var(--color-rose-500); color: var(--color-rose-500);">
+                    Reset Application Data
+                </button>
+            </div>
         </div>
     </div>
 
