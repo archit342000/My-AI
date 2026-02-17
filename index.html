@@ -37,8 +37,43 @@
             <!-- Sidebar Scrollable Content -->
             <div class="sidebar-content">
 
+                <!-- Chat Actions -->
+                <div style="display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1rem;">
+                    <button id="new-chat-btn" class="btn-primary" style="width: 100%; justify-content: flex-start; gap: 12px; height: 40px; font-size: 0.875rem;">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <path d="M12 5v14M5 12h14" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                        New Chat
+                    </button>
+                    <button id="temp-chat-btn" class="btn-secondary" style="width: 100%; justify-content: flex-start; gap: 12px; height: 40px; font-size: 0.875rem; border-style: dashed;">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                        Temporary Chat
+                    </button>
+                </div>
+
+                <!-- Chat History List -->
+                <div id="chat-history-list" style="flex: 1; overflow-y: auto; margin-bottom: 1rem; display: flex; flex-direction: column; gap: 0.25rem;">
+                    <!-- Chat items will be injected here -->
+                </div>
+
                 <!-- Primary Navigation -->
                 <nav style="display: flex; flex-direction: column; gap: 0.5rem;">
+                    <div class="nav-item" id="memory-toggle-container" style="cursor: pointer; justify-content: space-between;">
+                        <div style="display: flex; align-items: center; gap: 16px;">
+                            <svg class="nav-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" style="display:none;"/> <!-- Placeholder -->
+                                <path d="M12 2a10 10 0 1 0 10 10H12V2z"/> <!-- Pie chart ish for memory -->
+                            </svg>
+                            <span class="sidebar-text">Memory Mode</span>
+                        </div>
+                        <div class="toggle-switch" id="memory-toggle-switch" style="scale: 0.8; margin-right: -8px;">
+                            <div class="toggle-handle"></div>
+                        </div>
+                        <span class="nav-tooltip">Toggle Memory</span>
+                    </div>
+
                     <a href="#" id="model-trigger" class="nav-item active">
                         <svg class="nav-icon" width="24" height="24" viewBox="0 0 24 24" fill="none"
                             stroke="currentColor" stroke-width="2">

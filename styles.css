@@ -2388,3 +2388,78 @@ aside.resizing .resize-handle {
         opacity: 1;
     }
 }
+
+/* Chat List Styles */
+.chat-list-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1rem;
+    cursor: pointer;
+    border-radius: var(--radius-xl);
+    transition: all 0.2s var(--ease-spring);
+    color: var(--content-muted);
+}
+
+.chat-list-item:hover {
+    background: var(--color-primary-50);
+    color: var(--color-primary-600);
+}
+
+.chat-list-item.active {
+    background: var(--color-primary-50);
+    color: var(--color-primary-600);
+    font-weight: 600;
+}
+
+.dark .chat-list-item:hover {
+    background: rgba(37, 99, 235, 0.1);
+    color: var(--color-primary-300);
+}
+
+.dark .chat-list-item.active {
+    background: rgba(37, 99, 235, 0.15);
+    color: var(--color-primary-300);
+}
+
+.chat-list-item-title {
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 0.875rem;
+}
+
+.chat-delete-btn {
+    opacity: 0;
+    transition: opacity 0.2s;
+    background: transparent;
+    border: none;
+    color: var(--content-muted);
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+}
+
+.chat-list-item:hover .chat-delete-btn {
+    opacity: 1;
+}
+
+.chat-delete-btn:hover {
+    color: var(--color-rose-500);
+    background: var(--color-rose-50);
+}
+
+.dark .chat-delete-btn:hover {
+    background: rgba(244, 63, 94, 0.1);
+}
+
+/* Temporary Chat Indicator */
+.temp-chat-indicator {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    background: var(--color-neutral-400);
+    border-radius: 50%;
+    margin-right: 8px;
+}

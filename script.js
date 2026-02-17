@@ -76,6 +76,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const resetPromptBtn = document.getElementById('reset-prompt');
     const resetSamplingBtn = document.getElementById('reset-sampling');
 
+    // New Chat Selectors
+    const newChatBtn = document.getElementById('new-chat-btn');
+    const tempChatBtn = document.getElementById('temp-chat-btn');
+    const chatHistoryList = document.getElementById('chat-history-list');
+    const memoryToggleContainer = document.getElementById('memory-toggle-container');
+    const memoryToggleSwitch = document.getElementById('memory-toggle-switch');
+
     // 2. Application State - SELECTIVE PERSISTENCE
     let serverLink = localStorage.getItem('lmstudiochat_server_link') || '';
     let encryptedToken = localStorage.getItem('lmstudiochat_api_token_secure');
@@ -83,6 +90,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let chatHistory = [];
     let systemPrompt = '';
+
+    // New State for Chat Management
+    let savedChats = [];
+    let currentChatId = null;
+    let isTemporaryChat = false;
+    let isMemoryMode = false;
 
     let selectedModel = localStorage.getItem('lmstudiochat_selected_model') || '';
     let selectedModelName = localStorage.getItem('lmstudiochat_selected_model_name') || 'Select a Model';
@@ -111,6 +124,8 @@ document.addEventListener('DOMContentLoaded', () => {
         fetchModels();
     }
 
+    loadChats();
+
     // Initialize Theme (Default to light)
     document.documentElement.classList.remove('dark');
     themeIconPath.setAttribute('d', 'M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z');
@@ -122,6 +137,190 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Initialize Model UI
     currentModelDisplay.textContent = selectedModelName;
+
+    function loadChats() {
+        const stored = localStorage.getItem('lmstudiochat_chats');
+        if (stored) {
+            try {
+                savedChats = JSON.parse(stored);
+            } catch (e) {
+                console.error('Failed to parse chats', e);
+                savedChats = [];
+            }
+        }
+        renderChatList();
+    }
+
+    function saveChats() {
+        localStorage.setItem('lmstudiochat_chats', JSON.stringify(savedChats));
+        renderChatList();
+    }
+
+    function generateId() {
+        return Date.now().toString(36) + Math.random().toString(36).substr(2);
+    }
+
+    function startNewChat(temporary = false) {
+        isTemporaryChat = temporary;
+        chatHistory = [];
+        messagesContainer.innerHTML = '';
+        currentChatId = temporary ? null : generateId();
+
+        isMemoryMode = false;
+        if (memoryToggleSwitch) memoryToggleSwitch.classList.remove('active');
+
+        if (welcomeHero) {
+            welcomeHero.classList.remove('hidden');
+            if (carouselTrack) {
+                const width = carouselTrack.clientWidth;
+                if (width > 0) carouselTrack.scrollTo({ left: width, behavior: 'auto' });
+            }
+        }
+        if (clearChatBtn) clearChatBtn.classList.remove('visible');
+
+        document.querySelectorAll('.chat-list-item').forEach(el => el.classList.remove('active'));
+    }
+
+    function loadChat(id) {
+        const chat = savedChats.find(c => c.id === id);
+        if (!chat) return;
+
+        currentChatId = id;
+        isTemporaryChat = false;
+        chatHistory = chat.messages ? [...chat.messages] : [];
+        isMemoryMode = chat.memoryMode || false;
+
+        messagesContainer.innerHTML = '';
+        if (welcomeHero) welcomeHero.classList.add('hidden');
+        if (clearChatBtn) clearChatBtn.classList.add('visible');
+
+        chatHistory.forEach(msg => {
+            if (msg.role === 'user') {
+                if (Array.isArray(msg.content)) {
+                    let text = "";
+                    let img = null;
+                    msg.content.forEach(part => {
+                        if(part.type === 'text') text = part.text;
+                        if(part.type === 'image_url') img = part.image_url.url;
+                    });
+                    appendMessage('User', text, 'user', img);
+                } else {
+                    appendMessage('User', msg.content, 'user');
+                }
+            } else if (msg.role === 'assistant') {
+                const row = appendMessage('Assistant', '', 'bot');
+                const contentDiv = row.querySelector('.message-content');
+                contentDiv.innerHTML = formatMarkdown(msg.content);
+            }
+        });
+
+        if (memoryToggleSwitch) {
+            if (isMemoryMode) {
+                memoryToggleSwitch.classList.add('active');
+            } else {
+                memoryToggleSwitch.classList.remove('active');
+            }
+        }
+
+        renderChatList();
+
+        // Mobile sidebar auto-close
+        if (window.innerWidth <= 768) {
+            sidebar.classList.remove('sidebar-expanded');
+            sidebar.classList.add('sidebar-collapsed');
+            toggleIconPath.setAttribute('d', 'M9 6l6 6-6 6');
+        }
+    }
+
+    function deleteChat(id, event) {
+        if (event) event.stopPropagation();
+        if (confirm('Delete this chat permanently?')) {
+            savedChats = savedChats.filter(c => c.id !== id);
+            saveChats();
+            if (currentChatId === id) {
+                startNewChat();
+            }
+        }
+    }
+
+    function renderChatList() {
+        if (!chatHistoryList) return;
+        chatHistoryList.innerHTML = '';
+        const sorted = [...savedChats].sort((a, b) => b.timestamp - a.timestamp);
+
+        if (sorted.length === 0) {
+            chatHistoryList.innerHTML = `<div style="padding: 1rem; color: var(--content-muted); font-size: 0.8rem; text-align: center;">No saved chats</div>`;
+            return;
+        }
+
+        sorted.forEach(chat => {
+            const item = document.createElement('div');
+            item.className = `chat-list-item ${chat.id === currentChatId ? 'active' : ''}`;
+            item.onclick = () => loadChat(chat.id);
+
+            let title = chat.title || 'Untitled Chat';
+            if (title.length > 24) title = title.substring(0, 24) + '...';
+
+            item.innerHTML = `
+                <div class="chat-list-item-title">${title}</div>
+            `;
+
+            const delBtn = document.createElement('button');
+            delBtn.className = 'chat-delete-btn';
+            delBtn.title = 'Delete';
+            delBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+            delBtn.onclick = (e) => deleteChat(chat.id, e);
+
+            item.appendChild(delBtn);
+            chatHistoryList.appendChild(item);
+        });
+    }
+
+    if (memoryToggleContainer) {
+        memoryToggleContainer.addEventListener('click', () => {
+            isMemoryMode = !isMemoryMode;
+            if (memoryToggleSwitch) memoryToggleSwitch.classList.toggle('active', isMemoryMode);
+
+            if (currentChatId && !isTemporaryChat) {
+                const chatIndex = savedChats.findIndex(c => c.id === currentChatId);
+                if (chatIndex !== -1) {
+                    savedChats[chatIndex].memoryMode = isMemoryMode;
+                    saveChats();
+                }
+            }
+        });
+    }
+
+    if (newChatBtn) newChatBtn.addEventListener('click', () => startNewChat(false));
+    if (tempChatBtn) tempChatBtn.addEventListener('click', () => startNewChat(true));
+
+    // Memory Management
+    function updateMemory(userContent, assistantContent) {
+        if (!userContent && !assistantContent) return;
+
+        let memory = localStorage.getItem('lmstudiochat_global_memory') || '';
+        const timestamp = new Date().toISOString();
+        // Simple sanitization to avoid breaking the text format too much
+        const cleanUser = userContent ? userContent.replace(/\n/g, ' ') : '';
+        const cleanAsst = assistantContent ? assistantContent.replace(/\n/g, ' ') : '';
+
+        const entry = `[${timestamp}] User: ${cleanUser} | Assistant: ${cleanAsst}\n`;
+
+        // Limit size (simple FIFO)
+        if (memory.length > 50000) {
+            const cutIndex = memory.indexOf('\n', memory.length - 40000);
+            if (cutIndex !== -1) memory = memory.slice(cutIndex + 1);
+        }
+
+        memory += entry;
+        localStorage.setItem('lmstudiochat_global_memory', memory);
+    }
+
+    function getMemoryContext() {
+        const memory = localStorage.getItem('lmstudiochat_global_memory');
+        if (!memory) return '';
+        return `\n<memory_context>\nThe following is a log of past relevant interactions/memories:\n${memory}\n</memory_context>\n`;
+    }
 
     async function fetchModels() {
         if (!serverLink) return;
@@ -755,11 +954,36 @@ document.addEventListener('DOMContentLoaded', () => {
         // User Message Row
         appendMessage('User', content, 'user', currentImageBase64);
 
-        // Push to history
+        const userMsgObj = { role: 'user', content: content };
         if (currentImageBase64) {
-            chatHistory.push({ role: 'user', content: content || '[Image Sent]' });
-        } else {
-            chatHistory.push({ role: 'user', content: content });
+             userMsgObj.content = [
+                { type: "text", text: content || "[Image]" },
+                { type: "image_url", image_url: { url: currentImageBase64 } }
+            ];
+        }
+
+        chatHistory.push(userMsgObj);
+
+        // PERSISTENCE: Save User Message
+        if (!isTemporaryChat && currentChatId) {
+            let chat = savedChats.find(c => c.id === currentChatId);
+            if (!chat) {
+                chat = {
+                    id: currentChatId,
+                    title: content.substring(0, 50) || "New Conversation",
+                    timestamp: Date.now(),
+                    messages: [],
+                    memoryMode: isMemoryMode
+                };
+                savedChats.push(chat);
+            } else {
+                chat.timestamp = Date.now();
+                if (chat.messages.length === 0) {
+                    chat.title = content.substring(0, 50) || "New Conversation";
+                }
+            }
+            chat.messages.push(userMsgObj);
+            saveChats();
         }
 
         // Bot Message Row
@@ -781,30 +1005,26 @@ document.addEventListener('DOMContentLoaded', () => {
         const messages = [];
 
         if (systemPrompt) {
-            messages.push({ role: 'system', content: systemPrompt });
+            let sysContent = systemPrompt;
+            // MEMORY INJECTION
+            if (isMemoryMode) {
+                sysContent += getMemoryContext();
+            }
+            messages.push({ role: 'system', content: sysContent });
+        } else if (isMemoryMode) {
+             // Inject memory even if no system prompt defined
+             messages.push({ role: 'system', content: getMemoryContext() });
         }
 
         // Add history (last 20 turns)
         messages.push(...chatHistory.slice(-20));
 
-        // If multimodal (image upload)
-        if (currentImageBase64) {
-            // Replace the last message with the multimodal one
-            messages.pop();
-            messages.push({
-                role: "user",
-                content: [
-                    { type: "text", text: content || "Describe this image." },
-                    { type: "image_url", image_url: { url: currentImageBase64 } }
-                ]
-            });
-
-            // Clean up image state
-            currentImageBase64 = null;
-            if (imageInput) imageInput.value = '';
-            imagePreview.src = '';
-            imagePreviewContainer.classList.add('hidden');
-        }
+        // Clean up image state
+        const sentImageBase64 = currentImageBase64;
+        currentImageBase64 = null;
+        if (imageInput) imageInput.value = '';
+        imagePreview.src = '';
+        imagePreviewContainer.classList.add('hidden');
 
         try {
             const requestBody = {
@@ -961,7 +1181,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 mainWrapper.innerHTML = `<span style="color: var(--color-neutral-400); font-style: italic;">[No content received]</span>`;
             }
 
-            chatHistory.push({ role: 'assistant', content: accumulatedContent });
+            const assistantMsgObj = { role: 'assistant', content: accumulatedContent };
+            chatHistory.push(assistantMsgObj);
+
+            // PERSISTENCE: Save Assistant Message
+            if (!isTemporaryChat && currentChatId) {
+                const chat = savedChats.find(c => c.id === currentChatId);
+                if (chat) {
+                    chat.messages.push(assistantMsgObj);
+                    saveChats();
+                }
+            }
+
+            // MEMORY UPDATE
+            if (isMemoryMode) {
+                updateMemory(content || (sentImageBase64 ? "[Image]" : ""), accumulatedContent);
+            }
+
         } catch (error) {
             botMsgDiv.classList.remove('thinking');
             // Clean up reasoning state on error
