@@ -9,7 +9,7 @@ from backend.storage import init_db, get_all_chats, get_chat, save_chat, add_mes
 app = Flask(__name__, static_folder='static')
 
 LM_STUDIO_URL = "http://localhost:1234"
-EMBEDDING_MODEL = "gemma-embedding-300m"
+EMBEDDING_MODEL = "text-embedding-embeddinggemma-300m"
 
 # Initialize components with config
 # Note: We re-initialize rag if config changes, or we modify rag in place
