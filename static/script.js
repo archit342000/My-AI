@@ -138,21 +138,25 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initialize Model UI
     currentModelDisplay.textContent = selectedModelName;
 
-    function loadChats() {
-        const stored = localStorage.getItem('lmstudiochat_chats');
-        if (stored) {
-            try {
-                savedChats = JSON.parse(stored);
-            } catch (e) {
-                console.error('Failed to parse chats', e);
+    async function loadChats() {
+        try {
+            const response = await fetch('/api/chats');
+            if (response.ok) {
+                savedChats = await response.json();
+            } else {
+                console.error('Failed to load chats from backend');
                 savedChats = [];
             }
+        } catch (e) {
+            console.error('Error loading chats:', e);
+            savedChats = [];
         }
         renderChatList();
     }
 
+    // saveChats is no longer needed as backend handles persistence
     function saveChats() {
-        localStorage.setItem('lmstudiochat_chats', JSON.stringify(savedChats));
+        // No-op for compatibility if called elsewhere, or trigger reload
         renderChatList();
     }
 
@@ -181,64 +185,78 @@ document.addEventListener('DOMContentLoaded', () => {
         document.querySelectorAll('.chat-list-item').forEach(el => el.classList.remove('active'));
     }
 
-    function loadChat(id) {
-        const chat = savedChats.find(c => c.id === id);
-        if (!chat) return;
+    async function loadChat(id) {
+        try {
+            const response = await fetch(`/api/chats/${id}`);
+            if (!response.ok) {
+                console.error('Failed to load chat details');
+                return;
+            }
+            const chat = await response.json();
 
-        currentChatId = id;
-        isTemporaryChat = false;
-        chatHistory = chat.messages ? [...chat.messages] : [];
-        isMemoryMode = chat.memoryMode || false;
+            currentChatId = id;
+            isTemporaryChat = false;
+            chatHistory = chat.messages || [];
+            isMemoryMode = !!chat.memory_mode;
 
-        messagesContainer.innerHTML = '';
-        if (welcomeHero) welcomeHero.classList.add('hidden');
-        if (clearChatBtn) clearChatBtn.classList.add('visible');
+            messagesContainer.innerHTML = '';
+            if (welcomeHero) welcomeHero.classList.add('hidden');
+            if (clearChatBtn) clearChatBtn.classList.add('visible');
 
-        chatHistory.forEach(msg => {
-            if (msg.role === 'user') {
-                if (Array.isArray(msg.content)) {
-                    let text = "";
-                    let img = null;
-                    msg.content.forEach(part => {
-                        if(part.type === 'text') text = part.text;
-                        if(part.type === 'image_url') img = part.image_url.url;
-                    });
-                    appendMessage('User', text, 'user', img);
-                } else {
-                    appendMessage('User', msg.content, 'user');
+            chatHistory.forEach(msg => {
+                if (msg.role === 'user') {
+                    if (Array.isArray(msg.content)) {
+                        let text = "";
+                        let img = null;
+                        msg.content.forEach(part => {
+                            if(part.type === 'text') text = part.text;
+                            if(part.type === 'image_url') img = part.image_url.url;
+                        });
+                        appendMessage('User', text, 'user', img);
+                    } else {
+                        appendMessage('User', msg.content, 'user');
+                    }
+                } else if (msg.role === 'assistant') {
+                    const row = appendMessage('Assistant', '', 'bot');
+                    const contentDiv = row.querySelector('.message-content');
+                    contentDiv.innerHTML = formatMarkdown(msg.content);
                 }
-            } else if (msg.role === 'assistant') {
-                const row = appendMessage('Assistant', '', 'bot');
-                const contentDiv = row.querySelector('.message-content');
-                contentDiv.innerHTML = formatMarkdown(msg.content);
+            });
+
+            if (memoryToggleSwitch) {
+                if (isMemoryMode) {
+                    memoryToggleSwitch.classList.add('active');
+                } else {
+                    memoryToggleSwitch.classList.remove('active');
+                }
             }
-        });
 
-        if (memoryToggleSwitch) {
-            if (isMemoryMode) {
-                memoryToggleSwitch.classList.add('active');
-            } else {
-                memoryToggleSwitch.classList.remove('active');
+            renderChatList();
+
+            // Mobile sidebar auto-close
+            if (window.innerWidth <= 768) {
+                sidebar.classList.remove('sidebar-expanded');
+                sidebar.classList.add('sidebar-collapsed');
+                toggleIconPath.setAttribute('d', 'M9 6l6 6-6 6');
             }
-        }
-
-        renderChatList();
-
-        // Mobile sidebar auto-close
-        if (window.innerWidth <= 768) {
-            sidebar.classList.remove('sidebar-expanded');
-            sidebar.classList.add('sidebar-collapsed');
-            toggleIconPath.setAttribute('d', 'M9 6l6 6-6 6');
+        } catch (e) {
+            console.error("Error loading chat:", e);
         }
     }
 
-    function deleteChat(id, event) {
+    async function deleteChat(id, event) {
         if (event) event.stopPropagation();
         if (confirm('Delete this chat permanently?')) {
-            savedChats = savedChats.filter(c => c.id !== id);
-            saveChats();
-            if (currentChatId === id) {
-                startNewChat();
+            try {
+                await fetch(`/api/chats/${id}`, { method: 'DELETE' });
+                savedChats = savedChats.filter(c => c.id !== id);
+                renderChatList(); // Update UI immediately
+
+                if (currentChatId === id) {
+                    startNewChat();
+                }
+            } catch (e) {
+                console.error("Error deleting chat:", e);
             }
         }
     }
@@ -604,7 +622,7 @@ document.addEventListener('DOMContentLoaded', () => {
         reasoningLevelVal.textContent = reasoningLevels[idx].charAt(0).toUpperCase() + reasoningLevels[idx].slice(1);
     });
 
-    saveApiKeyBtn.addEventListener('click', () => {
+    saveApiKeyBtn.addEventListener('click', async () => {
         const link = serverLinkInput.value.trim();
         const token = apiTokenInput.value.trim();
 
@@ -617,6 +635,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 localStorage.setItem('lmstudiochat_api_token_secure', e(apiToken));
             } else {
                 localStorage.removeItem('lmstudiochat_api_token_secure');
+            }
+
+            // Send config to backend
+            try {
+                await fetch('/api/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: serverLink })
+                });
+            } catch (e) {
+                console.error("Failed to update backend config", e);
             }
 
             apiModal.classList.remove('open');
@@ -931,7 +960,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // 5. Chat Interaction Core (LM Studio OpenAI-Compatible Stream)
+    // 5. Chat Interaction Core (Backend API with RAG)
     async function sendMessage() {
         if (isGenerating || !serverLink || !selectedModel) return;
         const content = textArea.value.trim();
@@ -964,7 +993,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         chatHistory.push(userMsgObj);
 
-        // PERSISTENCE: Save User Message
+        // Optimistic UI Update: Create empty chat object if needed
         if (!isTemporaryChat && currentChatId) {
             let chat = savedChats.find(c => c.id === currentChatId);
             if (!chat) {
@@ -973,17 +1002,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     title: content.substring(0, 50) || "New Conversation",
                     timestamp: Date.now(),
                     messages: [],
-                    memoryMode: isMemoryMode
+                    memory_mode: isMemoryMode
                 };
                 savedChats.push(chat);
-            } else {
-                chat.timestamp = Date.now();
-                if (chat.messages.length === 0) {
-                    chat.title = content.substring(0, 50) || "New Conversation";
-                }
+                renderChatList();
             }
-            chat.messages.push(userMsgObj);
-            saveChats();
         }
 
         // Bot Message Row
@@ -1001,19 +1024,11 @@ document.addEventListener('DOMContentLoaded', () => {
         // Initial Thinking State
         botMsgDiv.classList.add('thinking');
 
-        // Construct Messages for OpenAI Compatible API
+        // Construct Messages for Backend
         const messages = [];
 
         if (systemPrompt) {
-            let sysContent = systemPrompt;
-            // MEMORY INJECTION
-            if (isMemoryMode) {
-                sysContent += getMemoryContext();
-            }
-            messages.push({ role: 'system', content: sysContent });
-        } else if (isMemoryMode) {
-             // Inject memory even if no system prompt defined
-             messages.push({ role: 'system', content: getMemoryContext() });
+            messages.push({ role: 'system', content: systemPrompt });
         }
 
         // Add history (last 20 turns)
@@ -1030,6 +1045,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const requestBody = {
                 model: selectedModel,
                 messages: messages,
+                chatId: isTemporaryChat ? null : currentChatId,
+                memoryMode: isMemoryMode,
                 reasoning: samplingParams.reasoning_level === 'none' ? 'off' : samplingParams.reasoning_level,
                 temperature: samplingParams.temperature,
                 top_p: samplingParams.top_p,
@@ -1042,18 +1059,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 stream_options: { include_usage: true }
             };
 
-            const headers = { "Content-Type": "application/json" };
-            if (apiToken) headers["Authorization"] = `Bearer ${apiToken}`;
-
-            const response = await fetch(`${serverLink}/v1/chat/completions`, {
+            const response = await fetch('/api/chat', {
                 method: "POST",
-                headers: headers,
+                headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(requestBody)
             });
 
             if (!response.ok) {
                 const errData = await response.json().catch(() => ({}));
-                throw new Error(errData.error?.message || `API Error: ${response.statusText}`);
+                throw new Error(errData.error || `API Error: ${response.statusText}`);
             }
 
             const reader = response.body.getReader();
@@ -1085,6 +1099,11 @@ document.addEventListener('DOMContentLoaded', () => {
                         if (json.usage && !usageCounted) {
 
                             continue;
+                        }
+
+                        // Handle Errors sent as data
+                        if (json.error) {
+                            throw new Error(json.error);
                         }
 
                         const delta = json.choices?.[0]?.delta;
@@ -1184,18 +1203,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const assistantMsgObj = { role: 'assistant', content: accumulatedContent };
             chatHistory.push(assistantMsgObj);
 
-            // PERSISTENCE: Save Assistant Message
+            // Backend handles persistence, so we just reload list to get updated timestamp
             if (!isTemporaryChat && currentChatId) {
-                const chat = savedChats.find(c => c.id === currentChatId);
-                if (chat) {
-                    chat.messages.push(assistantMsgObj);
-                    saveChats();
-                }
-            }
-
-            // MEMORY UPDATE
-            if (isMemoryMode) {
-                updateMemory(content || (sentImageBase64 ? "[Image]" : ""), accumulatedContent);
+                // Delay slightly to ensure backend commit
+                setTimeout(loadChats, 1000);
             }
 
         } catch (error) {

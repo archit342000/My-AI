@@ -1,7 +1,9 @@
 # CHANGELOG
 
 ## v1.0.0
-* Implemented persistent chats using LocalStorage.
+* Replaced frontend-only logic with a Python Flask backend.
+* Implemented RAG (Retrieval-Augmented Generation) for Memory Mode using ChromaDB.
+* Implemented persistent chats using SQLite backend.
 * Added a chat list to the sidebar for easy navigation.
 * Implemented Memory Mode: Stores chat context locally and injects it into new conversations when enabled.
 * Added Temporary Chat mode for non-persistent sessions.
