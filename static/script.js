@@ -25,18 +25,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const themeToggle = document.getElementById('theme-toggle');
     const themeIconPath = document.getElementById('theme-icon-path');
 
-    // System Prompt Selectors
-    const personaTrigger = document.getElementById('persona-trigger');
-    const promptModal = document.getElementById('prompt-modal');
-    const promptInput = document.getElementById('system-prompt-input');
-    const savePromptBtn = document.getElementById('save-prompt');
-    const closePromptBtn = document.getElementById('close-prompt');
+    // Unified Settings Selectors
+    const settingsTrigger = document.getElementById('settings-trigger');
+    const settingsModal = document.getElementById('settings-modal');
+    const closeSettingsBtn = document.getElementById('close-settings');
+    const closeSettingsActionBtn = document.getElementById('close-settings-btn');
+    const tabItems = document.querySelectorAll('.tab-item');
+    const tabContents = document.querySelectorAll('.tab-content');
 
-    // Sampling Modal Selectors
-    const tuningTrigger = document.getElementById('tuning-trigger');
-    const samplingModal = document.getElementById('sampling-modal');
-    const closeSamplingBtn = document.getElementById('close-sampling');
-    const saveSamplingBtn = document.getElementById('save-sampling');
+    // System Prompt Input (inside settings)
+    const promptInput = document.getElementById('system-prompt-input');
 
     // Sampling Parameter Selectors
     const tempSlider = document.getElementById('temp-slider');
@@ -55,10 +53,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const minPVal = document.getElementById('min-p-val');
 
     // Model Selection Selectors
-    const modelTrigger = document.getElementById('model-trigger');
-    const modelModal = document.getElementById('model-modal');
-    const closeModelBtn = document.getElementById('close-model');
-    const modelOptions = document.querySelectorAll('.model-option');
     const currentModelDisplay = document.getElementById('current-model-display');
     const reasoningLevelSlider = document.getElementById('reasoning-level-slider');
     const reasoningLevelVal = document.getElementById('reasoning-level-val');
@@ -73,14 +67,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const clearChatBtn = document.getElementById('clear-chat-btn');
     const mobileToggle = document.getElementById('mobile-toggle');
 
-    const resetPromptBtn = document.getElementById('reset-prompt');
-    const resetSamplingBtn = document.getElementById('reset-sampling');
-
     // New Chat Selectors
     const newChatBtn = document.getElementById('new-chat-btn');
     const tempChatBtn = document.getElementById('temp-chat-btn');
     const chatHistoryList = document.getElementById('chat-history-list');
-    const memoryToggleContainer = document.getElementById('memory-toggle-container');
+    // Memory toggle is now inside settings modal
     const memoryToggleSwitch = document.getElementById('memory-toggle-switch');
 
     // 2. Application State - SELECTIVE PERSISTENCE
@@ -294,16 +285,20 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    if (memoryToggleContainer) {
-        memoryToggleContainer.addEventListener('click', () => {
+    // Memory Toggle Logic
+    const memorySwitchContainer = document.getElementById('memory-toggle-switch')?.parentElement?.parentElement;
+    // We bind to the switch or its container in the settings modal
+    if (memoryToggleSwitch) {
+        // Toggle on click of the handle or the container
+        memoryToggleSwitch.addEventListener('click', () => {
             isMemoryMode = !isMemoryMode;
-            if (memoryToggleSwitch) memoryToggleSwitch.classList.toggle('active', isMemoryMode);
+            memoryToggleSwitch.classList.toggle('active', isMemoryMode);
 
             if (currentChatId && !isTemporaryChat) {
                 const chatIndex = savedChats.findIndex(c => c.id === currentChatId);
                 if (chatIndex !== -1) {
-                    savedChats[chatIndex].memoryMode = isMemoryMode;
-                    saveChats();
+                    savedChats[chatIndex].memory_mode = isMemoryMode;
+                    saveChats(); // Note: backend sync happens on message send currently, ideally separate endpoint
                 }
             }
         });
@@ -640,42 +635,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Model Selection Logic
-    modelTrigger.addEventListener('click', (e) => {
-        e.preventDefault();
-        modelModal.style.display = 'flex';
-        setTimeout(() => modelModal.classList.add('open'), 10);
-    });
-
-    closeModelBtn.addEventListener('click', () => {
-        modelModal.classList.remove('open');
-        setTimeout(() => modelModal.style.display = 'none', 300);
-    });
-
-    modelOptions.forEach(option => {
-        option.addEventListener('click', () => {
-            selectedModel = option.dataset.model;
-            selectedModelName = option.dataset.name;
-
-            // Update UI
-            currentModelDisplay.textContent = selectedModelName;
-            modelOptions.forEach(opt => opt.classList.remove('active'));
-            option.classList.add('active');
-
-            // Close modal
-            modelModal.classList.remove('open');
-            setTimeout(() => modelModal.style.display = 'none', 300);
-
-            // Auto-reset chat on model change
-            if (chatHistory.length > 0) {
-                chatHistory = [];
-                messagesContainer.innerHTML = '';
-
-                if (welcomeHero) welcomeHero.classList.remove('hidden');
-                if (clearChatBtn) clearChatBtn.classList.remove('visible');
-            }
-        });
-    });
+    // Model Selection Logic (handled inside renderModelOptions)
 
     // 4.1 Carousel Logic (Directive M - Seamless Infinite)
     if (carouselTrack) {
@@ -797,96 +757,60 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    resetPromptBtn?.addEventListener('click', () => {
-        promptInput.value = '';
-        systemPrompt = '';
-        alert('Persona reset to default.');
-    });
+    // Unified Settings Logic
+    const openSettings = () => {
+        if (settingsModal) {
+            settingsModal.style.display = 'flex';
+            setTimeout(() => settingsModal.classList.add('open'), 10);
+        }
+    };
 
-    resetSamplingBtn?.addEventListener('click', () => {
-        samplingParams = {
-            temperature: 1.0,
-            top_p: 1.0,
-            max_tokens: 2048,
-            top_k: 40,
-            min_p: 0.05,
-            presence_penalty: 0.0,
-            frequency_penalty: 0.0,
-            reasoning_level: 'medium'
-        };
+    const closeSettings = () => {
+        if (settingsModal) {
+            settingsModal.classList.remove('open');
+            setTimeout(() => settingsModal.style.display = 'none', 300);
 
-        // Update UI
-        tempSlider.value = 1.0;
-        tempVal.textContent = '1.0';
-        topPSlider.value = 1.0;
-        topPVal.textContent = '1.00';
-        maxTokensSlider.value = 2048;
-        maxTokensVal.textContent = '2048';
-        topKSlider.value = 40;
-        topKVal.textContent = '40';
-        minPSlider.value = 0.05;
-        minPVal.textContent = '0.05';
-        presencePenaltySlider.value = 0.0;
-        presencePenaltyVal.textContent = '0.0';
-        frequencyPenaltySlider.value = 0.0;
-        frequencyPenaltyVal.textContent = '0.0';
-        reasoningLevelSlider.value = 2;
-        reasoningLevelVal.textContent = 'Medium';
+            // Save prompt on close if changed
+            const newPrompt = promptInput.value.trim();
+            if (newPrompt !== systemPrompt) {
+                systemPrompt = newPrompt;
+            }
+        }
+    };
 
-        alert('Sampling parameters reset to default.');
-    });
-
-    // Persona / System Prompt Management
-    personaTrigger.addEventListener('click', (e) => {
+    if (settingsTrigger) settingsTrigger.addEventListener('click', (e) => {
         e.preventDefault();
-        promptModal.style.display = 'flex';
-        setTimeout(() => promptModal.classList.add('open'), 10);
+        openSettings();
     });
 
-    closePromptBtn.addEventListener('click', () => {
-        promptModal.classList.remove('open');
-        setTimeout(() => promptModal.style.display = 'none', 300);
-    });
+    if (closeSettingsBtn) closeSettingsBtn.addEventListener('click', closeSettings);
+    if (closeSettingsActionBtn) closeSettingsActionBtn.addEventListener('click', closeSettings);
 
-    savePromptBtn.addEventListener('click', () => {
-        const newPrompt = promptInput.value.trim();
-        // Reset only if content changed or forced reset requested (simpler to just reset always per user request)
-        systemPrompt = newPrompt;
+    // Tab Switching
+    tabItems.forEach(tab => {
+        tab.addEventListener('click', () => {
+            // Remove active from all
+            tabItems.forEach(t => t.classList.remove('active'));
+            tabContents.forEach(c => {
+                c.classList.remove('active');
+                c.classList.add('hidden');
+            });
 
-        // Reset Chat History
-        chatHistory = [];
-        messagesContainer.innerHTML = '';
-
-        promptModal.classList.remove('open');
-        setTimeout(() => promptModal.style.display = 'none', 300);
-    });
-
-    // Sampling Modal Management
-    tuningTrigger.addEventListener('click', (e) => {
-        e.preventDefault();
-        samplingModal.style.display = 'flex';
-        setTimeout(() => samplingModal.classList.add('open'), 10);
-    });
-
-    closeSamplingBtn.addEventListener('click', () => {
-        samplingModal.classList.remove('open');
-        setTimeout(() => samplingModal.style.display = 'none', 300);
-    });
-
-    saveSamplingBtn.addEventListener('click', () => {
-        samplingModal.classList.remove('open');
-        setTimeout(() => samplingModal.style.display = 'none', 300);
+            // Activate current
+            tab.classList.add('active');
+            const targetId = `tab-${tab.dataset.tab}`;
+            const targetContent = document.getElementById(targetId);
+            if (targetContent) {
+                targetContent.classList.remove('hidden');
+                targetContent.classList.add('active');
+            }
+        });
     });
 
     // Close modal on backdrop click
     window.addEventListener('click', (e) => {
-        if (e.target === promptModal) {
-            promptModal.classList.remove('open');
-            setTimeout(() => promptModal.style.display = 'none', 300);
-        }
-        if (e.target === samplingModal) {
-            samplingModal.classList.remove('open');
-            setTimeout(() => samplingModal.style.display = 'none', 300);
+        if (e.target === settingsModal) {
+            closeSettings();
         }
         if (e.target === apiModal && serverLink) {
             apiModal.classList.remove('open');

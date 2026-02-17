@@ -3,6 +3,7 @@ from chromadb.utils import embedding_functions
 import uuid
 import os
 import requests
+import hashlib
 
 class LMStudioEmbeddingFunction(embedding_functions.EmbeddingFunction):
     def __init__(self, api_url="http://localhost:1234", model_name="text-embedding-embeddinggemma-300m"):
@@ -57,10 +58,14 @@ class MemoryRAG:
         if not text:
             return
 
-        self.collection.add(
+        # Deduplication: Use hash of text as ID
+        doc_id = hashlib.sha256(text.encode('utf-8')).hexdigest()
+
+        # Use upsert to handle potential duplicates (idempotent)
+        self.collection.upsert(
             documents=[text],
             metadatas=[metadata] if metadata else [{"timestamp": "unknown"}],
-            ids=[str(uuid.uuid4())]
+            ids=[doc_id]
         )
 
     def retrieve_context(self, query, n_results=5):

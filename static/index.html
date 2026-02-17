@@ -37,6 +37,18 @@
             <!-- Sidebar Scrollable Content -->
             <div class="sidebar-content">
 
+                <!-- Unified Chat Settings -->
+                <nav style="display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1rem;">
+                    <button id="settings-trigger" class="nav-item active" style="justify-content: flex-start; width: 100%;">
+                        <svg class="nav-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/>
+                            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z"/>
+                        </svg>
+                        <span class="sidebar-text">Chat Settings</span>
+                        <span class="nav-tooltip">Chat Settings</span>
+                    </button>
+                </nav>
+
                 <!-- Chat Actions -->
                 <div style="display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1rem;">
                     <button id="new-chat-btn" class="btn-primary" style="width: 100%; justify-content: flex-start; gap: 12px; height: 40px; font-size: 0.875rem;">
@@ -58,51 +70,8 @@
                     <!-- Chat items will be injected here -->
                 </div>
 
-                <!-- Primary Navigation -->
+                <!-- Secondary Navigation -->
                 <nav style="display: flex; flex-direction: column; gap: 0.5rem;">
-                    <div class="nav-item" id="memory-toggle-container" style="cursor: pointer; justify-content: space-between;">
-                        <div style="display: flex; align-items: center; gap: 16px;">
-                            <svg class="nav-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" style="display:none;"/> <!-- Placeholder -->
-                                <path d="M12 2a10 10 0 1 0 10 10H12V2z"/> <!-- Pie chart ish for memory -->
-                            </svg>
-                            <span class="sidebar-text">Memory Mode</span>
-                        </div>
-                        <div class="toggle-switch" id="memory-toggle-switch" style="scale: 0.8; margin-right: -8px;">
-                            <div class="toggle-handle"></div>
-                        </div>
-                        <span class="nav-tooltip">Toggle Memory</span>
-                    </div>
-
-                    <a href="#" id="model-trigger" class="nav-item active">
-                        <svg class="nav-icon" width="24" height="24" viewBox="0 0 24 24" fill="none"
-                            stroke="currentColor" stroke-width="2">
-                            <path
-                                d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z" />
-                            <polyline points="3.29 7 12 12 20.71 7" />
-                            <line x1="12" y1="22" x2="12" y2="12" />
-                        </svg>
-                        <span id="current-model-display" class="sidebar-text" style="font-weight: 700;">Llama 4
-                            Maverick</span>
-                        <span class="nav-tooltip">Switch Model</span>
-                    </a>
-                    <a href="#" id="persona-trigger" class="nav-item">
-                        <svg class="nav-icon" width="24" height="24" viewBox="0 0 24 24" fill="none"
-                            stroke="currentColor" stroke-width="2">
-                            <path d="M12 2a5 5 0 100 10 5 5 0 000-10zM2 20a10 10 0 0120 0" />
-                            <path d="M16 11l-2 2 4 4" />
-                        </svg>
-                        <span class="sidebar-text">Persona</span>
-                        <span class="nav-tooltip">Persona</span>
-                    </a>
-                    <a href="#" id="tuning-trigger" class="nav-item">
-                        <svg class="nav-icon" width="24" height="24" viewBox="0 0 24 24" fill="none"
-                            stroke="currentColor" stroke-width="2">
-                            <path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 14V3M1 14h6M9 8h6M17 14h6" />
-                        </svg>
-                        <span class="sidebar-text">Tuning</span>
-                        <span class="nav-tooltip">Tuning</span>
-                    </a>
                     <a href="#" id="theme-toggle" class="nav-item">
                         <svg class="nav-icon" width="24" height="24" viewBox="0 0 24 24" fill="none"
                             stroke="currentColor" stroke-width="2">
@@ -287,7 +256,7 @@
     </main>
     </div>
 
-    <!-- Authorization Overlay -->
+    <!-- Authorization Overlay (Renamed to Backend Settings) -->
     <div id="api-modal" class="modal-backdrop open">
         <div class="modal-content" style="text-align: center;">
             <div class="hardware-surface"
@@ -325,167 +294,134 @@
         </div>
     </div>
 
-    <!-- Precision Tuning Overlay -->
-    <div id="sampling-modal" class="modal-backdrop">
-        <div class="modal-content">
-            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 2rem;">
-                <h2 class="font-heading"
-                    style="font-size: 1.5rem; font-weight: 800; color: var(--content-primary); margin: 0; letter-spacing: -0.02em;">
-                    Precision Tuning</h2>
-                <button id="close-sampling" class="btn-ghost"
-                    style="width: 2.5rem; height: 2.5rem; padding: 0; border-radius: 0.75rem;">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                        stroke-width="2.5">
+    <!-- Unified Settings Modal -->
+    <div id="settings-modal" class="modal-backdrop">
+        <div class="modal-content" style="max-width: 640px;">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem;">
+                <h2 class="font-heading" style="font-size: 1.5rem; font-weight: 800; color: var(--content-primary); margin: 0;">
+                    Chat Settings
+                </h2>
+                <button id="close-settings" class="btn-ghost" style="width: 2.5rem; height: 2.5rem; padding: 0; border-radius: 0.75rem;">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                         <path d="M18 6L6 18M6 6l12 12" stroke-linecap="round" stroke-linejoin="round" />
                     </svg>
                 </button>
             </div>
 
-            <div style="display: flex; flex-direction: column; gap: 1.25rem;">
-                <!-- Temperature -->
-                <div class="hardware-surface" style="padding: 1.25rem;">
-                    <div
-                        style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
-                        <span class="text-xs" style="color: var(--content-muted); font-weight: 700;">TEMPERATURE</span>
-                        <span id="temp-val" class="badge">1.0</span>
+            <!-- Tabs -->
+            <div class="tab-container" style="margin-bottom: 2rem;">
+                <div class="tab-item active" data-tab="general">General</div>
+                <div class="tab-item" data-tab="persona">Persona</div>
+                <div class="tab-item" data-tab="tuning">Parameters</div>
+            </div>
+
+            <!-- Tab Content: General -->
+            <div id="tab-general" class="tab-content active">
+                <div class="hardware-surface" style="padding: 1.5rem; margin-bottom: 1rem;">
+                    <h3 class="text-h2" style="font-size: 1.1rem; margin-bottom: 1rem;">Memory Mode</h3>
+                    <div style="display: flex; align-items: center; justify-content: space-between;">
+                        <p style="font-size: 0.9rem; color: var(--content-muted); margin: 0; max-width: 80%;">
+                            Enables RAG-based long-term memory. Context from previous conversations will be injected into the prompt.
+                        </p>
+                        <div class="toggle-switch" id="memory-toggle-switch">
+                            <div class="toggle-handle"></div>
+                        </div>
                     </div>
-                    <input type="range" id="temp-slider" min="0" max="2" step="0.1" value="1">
                 </div>
-                <!-- Top P -->
-                <div class="hardware-surface" style="padding: 1.25rem;">
-                    <div
-                        style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
-                        <span class="text-xs" style="color: var(--content-muted); font-weight: 700;">TOP P</span>
-                        <span id="top-p-val" class="badge">1.0</span>
+
+                <div class="hardware-surface" style="padding: 1.5rem;">
+                    <h3 class="text-h2" style="font-size: 1.1rem; margin-bottom: 1rem;">Model Selection</h3>
+                    <div id="current-model-display" class="badge" style="font-size: 0.9rem; margin-bottom: 1rem; display: inline-block;">Select a Model</div>
+                    <div id="model-list-container" style="display: flex; flex-direction: column; gap: 0.5rem; max-height: 300px; overflow-y: auto;">
+                        <div style="text-align: center; padding: 1rem; color: var(--content-muted);">Loading models...</div>
                     </div>
-                    <input type="range" id="top-p-slider" min="0" max="1" step="0.05" value="1">
                 </div>
-                <!-- Max Tokens -->
-                <div class="hardware-surface" style="padding: 1.25rem;">
-                    <div
-                        style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
-                        <span class="text-xs" style="color: var(--content-muted); font-weight: 700;">MAX TOKENS</span>
-                        <span id="max-tokens-val" class="badge">2048</span>
+            </div>
+
+            <!-- Tab Content: Persona -->
+            <div id="tab-persona" class="tab-content hidden">
+                <p style="color: var(--content-muted); font-size: 0.875rem; line-height: 1.6; margin-bottom: 1.5rem;">
+                    Define the personality, constraints, and expertise level for the AI cluster.
+                </p>
+                <textarea id="system-prompt-input" class="input-luminous"
+                    placeholder="You are a helpful assistant specialized in..."
+                    style="width: 100%; height: 300px; padding: 1.25rem; font-family: var(--font-serif); resize: vertical; line-height: 1.6;"></textarea>
+            </div>
+
+            <!-- Tab Content: Tuning -->
+            <div id="tab-tuning" class="tab-content hidden">
+                <div style="display: flex; flex-direction: column; gap: 1.25rem;">
+                    <!-- Temperature -->
+                    <div class="hardware-surface" style="padding: 1.25rem;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+                            <span class="text-xs" style="color: var(--content-muted); font-weight: 700;">TEMPERATURE</span>
+                            <span id="temp-val" class="badge">1.0</span>
+                        </div>
+                        <input type="range" id="temp-slider" min="0" max="2" step="0.1" value="1">
                     </div>
-                    <input type="range" id="max-tokens-slider" min="0" max="32768" step="128" value="2048">
-                </div>
-                <!-- Top K -->
-                <div class="hardware-surface" style="padding: 1.25rem;">
-                    <div
-                        style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
-                        <span class="text-xs" style="color: var(--content-muted); font-weight: 700;">TOP K</span>
-                        <span id="top-k-val" class="badge">40</span>
+                    <!-- Top P -->
+                    <div class="hardware-surface" style="padding: 1.25rem;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+                            <span class="text-xs" style="color: var(--content-muted); font-weight: 700;">TOP P</span>
+                            <span id="top-p-val" class="badge">1.0</span>
+                        </div>
+                        <input type="range" id="top-p-slider" min="0" max="1" step="0.05" value="1">
                     </div>
-                    <input type="range" id="top-k-slider" min="0" max="100" step="1" value="40">
-                </div>
-                <!-- Min P -->
-                <div class="hardware-surface" style="padding: 1.25rem;">
-                    <div
-                        style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
-                        <span class="text-xs" style="color: var(--content-muted); font-weight: 700;">MIN P</span>
-                        <span id="min-p-val" class="badge">0.05</span>
+                    <!-- Max Tokens -->
+                    <div class="hardware-surface" style="padding: 1.25rem;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+                            <span class="text-xs" style="color: var(--content-muted); font-weight: 700;">MAX TOKENS</span>
+                            <span id="max-tokens-val" class="badge">2048</span>
+                        </div>
+                        <input type="range" id="max-tokens-slider" min="0" max="32768" step="128" value="2048">
                     </div>
-                    <input type="range" id="min-p-slider" min="0" max="1" step="0.01" value="0.05">
-                </div>
-                <!-- Presence Penalty -->
-                <div class="hardware-surface" style="padding: 1.25rem;">
-                    <div
-                        style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
-                        <span class="text-xs" style="color: var(--content-muted); font-weight: 700;">PRESENCE
-                            PENALTY</span>
-                        <span id="presence-penalty-val" class="badge">0.0</span>
+                    <!-- Other Params (Grouped for brevity in snippet, usually you'd keep them all) -->
+                    <div class="hardware-surface" style="padding: 1.25rem;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+                            <span class="text-xs" style="color: var(--content-muted); font-weight: 700;">REASONING LEVEL</span>
+                            <span id="reasoning-level-val" class="badge">Medium</span>
+                        </div>
+                        <input type="range" id="reasoning-level-slider" min="0" max="3" step="1" value="2">
+                        <div style="display: flex; justify-content: space-between; margin-top: 0.5rem; font-size: 0.625rem; color: var(--content-muted); font-weight: 600;">
+                            <span>NONE</span><span>LOW</span><span>MEDIUM</span><span>HIGH</span>
+                        </div>
                     </div>
-                    <input type="range" id="presence-penalty-slider" min="-2" max="2" step="0.1" value="0">
-                </div>
-                <!-- Frequency Penalty -->
-                <div class="hardware-surface" style="padding: 1.25rem;">
-                    <div
-                        style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
-                        <span class="text-xs" style="color: var(--content-muted); font-weight: 700;">FREQUENCY
-                            PENALTY</span>
-                        <span id="frequency-penalty-val" class="badge">0.0</span>
+                    <!-- Add hidden sliders for completeness if needed by JS, or refactor JS to look for them here -->
+                    <!-- We'll assume the JS looks for IDs like #top-k-slider, so we should include them or update JS -->
+                    <!-- Including standard set for robustness -->
+                    <div class="hardware-surface" style="padding: 1.25rem;">
+                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+                            <span class="text-xs" style="color: var(--content-muted); font-weight: 700;">TOP K</span>
+                            <span id="top-k-val" class="badge">40</span>
+                        </div>
+                        <input type="range" id="top-k-slider" min="0" max="100" step="1" value="40">
                     </div>
-                    <input type="range" id="frequency-penalty-slider" min="-2" max="2" step="0.1" value="0">
-                </div>
-                <!-- Reasoning Level -->
-                <div class="hardware-surface" style="padding: 1.25rem;">
-                    <div
-                        style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
-                        <span class="text-xs" style="color: var(--content-muted); font-weight: 700;">REASONING
-                            LEVEL</span>
-                        <span id="reasoning-level-val" class="badge">Medium</span>
+                     <div class="hardware-surface" style="padding: 1.25rem;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+                            <span class="text-xs" style="color: var(--content-muted); font-weight: 700;">MIN P</span>
+                            <span id="min-p-val" class="badge">0.05</span>
+                        </div>
+                        <input type="range" id="min-p-slider" min="0" max="1" step="0.01" value="0.05">
                     </div>
-                    <input type="range" id="reasoning-level-slider" min="0" max="3" step="1" value="2">
-                    <div
-                        style="display: flex; justify-content: space-between; margin-top: 0.5rem; font-size: 0.625rem; color: var(--content-muted); font-weight: 600;">
-                        <span>NONE</span>
-                        <span>LOW</span>
-                        <span>MEDIUM</span>
-                        <span>HIGH</span>
+                     <div class="hardware-surface" style="padding: 1.25rem;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+                            <span class="text-xs" style="color: var(--content-muted); font-weight: 700;">PRESENCE PENALTY</span>
+                            <span id="presence-penalty-val" class="badge">0.0</span>
+                        </div>
+                        <input type="range" id="presence-penalty-slider" min="-2" max="2" step="0.1" value="0">
+                    </div>
+                     <div class="hardware-surface" style="padding: 1.25rem;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+                            <span class="text-xs" style="color: var(--content-muted); font-weight: 700;">FREQUENCY PENALTY</span>
+                            <span id="frequency-penalty-val" class="badge">0.0</span>
+                        </div>
+                        <input type="range" id="frequency-penalty-slider" min="-2" max="2" step="0.1" value="0">
                     </div>
                 </div>
             </div>
 
             <div style="margin-top: 2rem; display: flex; justify-content: flex-end; gap: 1rem;">
-                <button id="reset-sampling" class="btn-ghost" style="height: 3.5rem; padding: 0 1.5rem;">Reset
-                    defaults</button>
-                <button id="save-sampling" class="btn-primary" style="height: 3.5rem; padding: 0 2.5rem;">Save
-                    configuration</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- System Prompt Overlay -->
-    <div id="prompt-modal" class="modal-backdrop">
-        <div class="modal-content">
-            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 2rem;">
-                <h2 class="font-heading"
-                    style="font-size: 1.5rem; font-weight: 800; color: var(--content-primary); margin: 0; letter-spacing: -0.02em;">
-                    System Persona</h2>
-                <button id="close-prompt" class="btn-ghost"
-                    style="width: 2.5rem; height: 2.5rem; padding: 0; border-radius: 0.75rem;">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                        stroke-width="2.5">
-                        <path d="M18 6L6 18M6 6l12 12" stroke-linecap="round" stroke-linejoin="round" />
-                    </svg>
-                </button>
-            </div>
-            <p style="color: var(--content-muted); font-size: 0.875rem; line-height: 1.6; margin-bottom: 1.5rem;">
-                Define the personality, constraints, and expertise level for the AI cluster.</p>
-
-            <textarea id="system-prompt-input" class="input-luminous"
-                placeholder="You are a helpful assistant specialized in..."
-                style="width: 100%; height: 200px; padding: 1.25rem; font-family: var(--font-serif); resize: vertical; line-height: 1.6;"></textarea>
-
-            <div style="margin-top: 2rem; display: flex; justify-content: flex-end; gap: 1rem;">
-                <button id="reset-prompt" class="btn-ghost" style="height: 3.5rem; padding: 0 1.5rem;">Reset
-                    defaults</button>
-                <button id="save-prompt" class="btn-primary" style="height: 3.5rem; padding: 0 2.5rem;">Apply
-                    configuration</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Model Selection Overlay -->
-    <div id="model-modal" class="modal-backdrop">
-        <div class="modal-content">
-            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 2rem;">
-                <h2 class="font-heading"
-                    style="font-size: 1.5rem; font-weight: 800; color: var(--content-primary); margin: 0; letter-spacing: -0.02em;">
-                    Select Intelligence</h2>
-                <button id="close-model" class="btn-ghost"
-                    style="width: 2.5rem; height: 2.5rem; padding: 0; border-radius: 0.75rem;">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                        stroke-width="2.5">
-                        <path d="M18 6L6 18M6 6l12 12" stroke-linecap="round" stroke-linejoin="round" />
-                    </svg>
-                </button>
-            </div>
-
-            <div id="model-list-container" style="display: flex; flex-direction: column; gap: 1rem;">
-                <div style="text-align: center; padding: 2rem; color: var(--content-muted);">
-                    Loading models from server...
-                </div>
+                <button id="close-settings-btn" class="btn-primary" style="height: 3.5rem; padding: 0 2.5rem;">Done</button>
             </div>
         </div>
     </div>
