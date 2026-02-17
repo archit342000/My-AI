@@ -312,34 +312,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if (newChatBtn) newChatBtn.addEventListener('click', () => startNewChat(false));
     if (tempChatBtn) tempChatBtn.addEventListener('click', () => startNewChat(true));
 
-    // Memory Management
-    function updateMemory(userContent, assistantContent) {
-        if (!userContent && !assistantContent) return;
-
-        let memory = localStorage.getItem('lmstudiochat_global_memory') || '';
-        const timestamp = new Date().toISOString();
-        // Simple sanitization to avoid breaking the text format too much
-        const cleanUser = userContent ? userContent.replace(/\n/g, ' ') : '';
-        const cleanAsst = assistantContent ? assistantContent.replace(/\n/g, ' ') : '';
-
-        const entry = `[${timestamp}] User: ${cleanUser} | Assistant: ${cleanAsst}\n`;
-
-        // Limit size (simple FIFO)
-        if (memory.length > 50000) {
-            const cutIndex = memory.indexOf('\n', memory.length - 40000);
-            if (cutIndex !== -1) memory = memory.slice(cutIndex + 1);
-        }
-
-        memory += entry;
-        localStorage.setItem('lmstudiochat_global_memory', memory);
-    }
-
-    function getMemoryContext() {
-        const memory = localStorage.getItem('lmstudiochat_global_memory');
-        if (!memory) return '';
-        return `\n<memory_context>\nThe following is a log of past relevant interactions/memories:\n${memory}\n</memory_context>\n`;
-    }
-
     async function fetchModels() {
         if (!serverLink) return;
 

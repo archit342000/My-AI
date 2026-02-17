@@ -8,12 +8,13 @@ from backend.storage import init_db, get_all_chats, get_chat, save_chat, add_mes
 
 app = Flask(__name__, static_folder='static')
 
-# Initialize components
-init_db()
-rag = MemoryRAG()
-
-# Global config
 LM_STUDIO_URL = "http://localhost:1234"
+EMBEDDING_MODEL = "gemma-embedding-300m"
+
+# Initialize components with config
+# Note: We re-initialize rag if config changes, or we modify rag in place
+init_db()
+rag = MemoryRAG(api_url=LM_STUDIO_URL, embedding_model=EMBEDDING_MODEL)
 
 @app.route('/')
 def index():
@@ -42,10 +43,21 @@ def remove_chat(chat_id):
 
 @app.route('/api/config', methods=['POST'])
 def update_config():
-    global LM_STUDIO_URL
+    global LM_STUDIO_URL, rag
     data = request.json
+
+    updated = False
     if 'url' in data:
         LM_STUDIO_URL = data['url']
+        updated = True
+
+    # Potential future update: Allow changing embedding model via config
+    # if 'embedding_model' in data: ...
+
+    if updated:
+        # Re-initialize RAG with new URL
+        rag = MemoryRAG(api_url=LM_STUDIO_URL, embedding_model=EMBEDDING_MODEL)
+
     return jsonify({"success": True, "url": LM_STUDIO_URL})
 
 @app.route('/api/chat', methods=['POST'])
