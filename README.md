@@ -1,23 +1,30 @@
-# LMStudioChat
+# 🌌 LMStudioChat v1.0.0
 
-A modern, full-stack AI chat interface built for local inference with [LM Studio](https://lmstudio.ai/). This application provides a sleek web interface for interacting with local LLMs, featuring persistent chat history, long-term memory via RAG (Retrieval-Augmented Generation), and customizable personas.
+A premium, full-stack AI chat interface designed for local inference with [LM Studio](https://lmstudio.ai/). This application provides a high-fidelity Luminous Material interface for interacting with local LLMs, featuring persistent state, long-term memory, and an advanced deep research agent.
 
-## Features
+## ✨ Features
 
-*   **Local Inference**: Connects directly to your local LM Studio server.
-*   **Persistent Chats**: Chat history is saved locally using a SQLite backend.
-*   **Long-Term Memory (RAG)**: Automatically stores and retrieves relevant past conversation context to provide the AI with memory.
-*   **Custom Personas**: Define system prompts to tailor the AI's behavior.
-*   **Modern UI**: Glassmorphism design with dark mode, animations, and real-time parameter tuning.
+*   **Deep Research Agent**: A multi-pass ($n+1$) autonomous research engine that browses the live web using [Tavily](https://tavily.com/), discovers links, and compiles structured reports.
+*   **Intelligent Memory (RAG)**: Long-term semantic memory powered by **ChromaDB**. The AI automatically remembers facts from previous conversations to maintain context.
+*   **Multimodal Vision**: Seamlessly attach and analyze images. Compatible with vision-enabled models (e.g., Llama 3.2 Vision, Qwen 2 VL).
+*   **Persistent SQLite Backend**: All conversations and metadata are stored in a local SQLite database for instant retrieval and management.
+*   **Luminous Design System**:
+    *   **Glassmorphism Branding**: Modern, airy, and high-performance UI.
+    *   **True Dark Mode**: Smooth theme transitions with system preference detection.
+    *   **Responsive Motion**: Motion-first interactions and fluid layouts (Mobile, Tablet, Desktop).
+*   **Real-time Logic**: Streaming Markdown rendering with Highlight.js syntax highlighting and interactive "Thought Process" (Reasoning) blocks.
 
-## Prerequisites
+## 🛠️ Prerequisites
 
-*   **Python 3.10+** (Recommended)
-*   **LM Studio**: Running locally with the server started.
-*   **Chat Model**: Load any tool-calling capable model (e.g., Llama 3.1, Mistral, Qwen 2.5).
-*   **Embedding Model**: Load an embedding model for RAG. Default: `text-embedding-embeddinggemma-300m`.
+*   **Python 3.10+**
+*   **LM Studio**: Running with the local server active (default port `1234`).
+*   **Models**: 
+    *   A tool-calling capable chat model (e.g., Llama 3.1+, Mistral, Qwen).
+    *   An embedding model for RAG (e.g., `text-embedding-nomic-embed-text-v1.5`).
+    *   (Optional) A vision model for image analysis.
+*   **Search API**: A [Tavily API Key](https://tavily.com/) is required for Deep Research mode.
 
-## Installation
+## 🚀 Installation
 
 1.  **Clone the repository**:
     ```bash
@@ -36,36 +43,31 @@ A modern, full-stack AI chat interface built for local inference with [LM Studio
     pip install -r requirements.txt
     ```
 
-## Usage
+4.  **Configure Environment**:
+    Create a `.env` file in the root directory:
+    ```env
+    TAVILY_API_KEY=your_tavily_api_key_here
+    LM_STUDIO_URL=http://localhost:1234
+    EMBEDDING_MODEL=text-embedding-nomic-embed-text-v1.5
+    ```
 
-1.  **Start LM Studio Server**:
-    *   Start the server (default port `1234`).
-    *   Ensure your chat and embedding models are loaded.
+## 🎮 Usage
 
-2.  **Start the Application**:
+1.  **Start LM Studio**: Ensure your models are loaded and the server is running.
+2.  **Launch the App**:
     ```bash
     python3 app.py
     ```
-    - The Flask web server starts at `http://localhost:5000`.
+3.  **Explore**: Access the dashboard at `http://localhost:5000`.
 
-3.  **Access the Application**:
-    *   Navigate to `http://localhost:5000` in your browser.
+## 🏗️ Architecture
 
-## Architecture
+*   **Frontend**: Vanilla HTML5, CSS3 (Custom Properties), and Modern JS (ES6+). No heavy frameworks.
+*   **Backend**: **Flask** (Python) service orchestrating chat loops, research phases, and file storage.
+*   **Database**: **SQLite** for metadata; **ChromaDB** for vector-based semantic memory.
+*   **Research Engine**: Custom asynchronous planner/reporter architecture utilizing Tavily's Search and Extract APIs.
 
-*   **Frontend**: Vanilla HTML/CSS/JS (located in `static/`).
-*   **Backend**: Flask handles UI, session management, and chat orchestration.
-*   **Memory Engine**: Direct RAG implementation (`backend/rag.py`) for semantic retrieval.
-*   **Database**: SQLite (`backend/chats.db`) for chat metadata.
-*   **Vector Store**: ChromaDB (`backend/chroma_db`) for semantic memory retrieval.
+## 📄 License & Versioning
 
-## Configuration
-
-The app is configured via a `.env` file in the root directory. You can customize the following variables:
-
-### LM Studio Configuration
-- `LM_STUDIO_URL`: The URL where your LM Studio server is running (default: `http://localhost:1234`).
-- `EMBEDDING_MODEL`: The key/name of the embedding model loaded in LM Studio (default: `text-embedding-embeddinggemma-300m`).
-
-### Database and Storage
-- `CHROMA_PATH`: The directory where ChromaDB stores its vector embeddings (default: `./backend/chroma_db`).
+This project follows [SemVer v2.0.0](https://semver.org/). Current version: `v1.0.0`.
+See [CHANGELOG.md](./changelog.md) for a detailed history of updates.
