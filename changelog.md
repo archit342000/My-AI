@@ -1,15 +1,18 @@
 # CHANGELOG
 
-## v1.0.0
-* Replaced frontend-only logic with a Python Flask backend.
-* Implemented RAG (Retrieval-Augmented Generation) for Memory Mode using ChromaDB.
-* Implemented persistent chats using SQLite backend.
-* Added a chat list to the sidebar for easy navigation.
-* Implemented Memory Mode: Stores chat context locally and injects it into new conversations when enabled.
-* Added Temporary Chat mode for non-persistent sessions.
-* Updated sidebar UI with New Chat, Temporary Chat, and Memory toggle.
+## v1.0.0 (Official Release)
+* **Unified Architectural Overhaul**: Successfully migrated from a frontend-only mock to a robust **Python Flask Backend**.
+* **Persistent Storage**: Integrated **SQLite** for reliable, long-term chat history and metadata storage.
+* **Intelligent Memory (RAG)**: Developed an ephemeral and persistent memory system using **ChromaDB** to provide context-aware responses via semantic retrieval.
+* **Deep Research Architecture**: Implemented a multi-pass ($n+1$) research agent with real-time web browsing, link discovery, and structured reporting capabilities.
+* **Vision Integration**: Added support for multimodal inference, allowing the AI to "see" and describe attached images.
+* **Premium UI/UX (Luminous Material)**:
+    * Fully responsive Glassmorphism design system built with Vanilla CSS.
+    * Integrated real-time Markdown and Syntax Highlighting (Highlight.js).
+    * Added specialized UI for Research Agents with live activity feeds and interactive cards.
+* **Modular Settings**: Comprehensive control over AI sampling parameters, system personas, and backend connection configurations.
+* **Security & Performance**: Implemented security obfuscation for local API tokens and optimized the DOM for high-frequency streaming updates.
 
-## v0.0.1
-* Initial release of the LMStudioChat repository.
-* Added design directives and versioning directives.
-* Created basic HTML structure and Tailwind CSS configuration.
+## v0.1.0 (Alpha Stage)
+* Initial MVP with basic chat functionality.
+* Design system established (Design Directives v1.0).

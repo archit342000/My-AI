@@ -1,3 +1,10 @@
 flask
 chromadb
 requests
+python-dotenv
+tavily-python
+pypdf
+beautifulsoup4
+httpx
+selectolax
+markdownify

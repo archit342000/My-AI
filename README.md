@@ -1,22 +1,21 @@
 # LMStudioChat
 
-A modern, full-stack AI chat interface built for local inference with [LM Studio](https://lmstudio.ai/). This application provides a sleek web interface for interacting with local LLMs, featuring persistent chat history, RAG-based memory, and customizable personas.
+A modern, full-stack AI chat interface built for local inference with [LM Studio](https://lmstudio.ai/). This application provides a sleek web interface for interacting with local LLMs, featuring persistent chat history, long-term memory via RAG (Retrieval-Augmented Generation), and customizable personas.
 
 ## Features
 
 *   **Local Inference**: Connects directly to your local LM Studio server.
 *   **Persistent Chats**: Chat history is saved locally using a SQLite backend.
-*   **Memory Mode (RAG)**: Enables long-term context retention using ChromaDB and embedding models (e.g., Gemma).
-*   **Temporary Chats**: Option for ephemeral conversations that aren't saved.
+*   **Long-Term Memory (RAG)**: Automatically stores and retrieves relevant past conversation context to provide the AI with memory.
 *   **Custom Personas**: Define system prompts to tailor the AI's behavior.
-*   **Parameter Tuning**: Adjust temperature, top_p, and other sampling parameters in real-time.
+*   **Modern UI**: Glassmorphism design with dark mode, animations, and real-time parameter tuning.
 
 ## Prerequisites
 
-*   **Python 3.8+**
+*   **Python 3.10+** (Recommended)
 *   **LM Studio**: Running locally with the server started.
-    *   **Chat Model**: Load any chat model (e.g., Llama 3, Mistral).
-    *   **Embedding Model**: Load an embedding model. By default, the app is configured for `text-embedding-embeddinggemma-300m`.
+*   **Chat Model**: Load any tool-calling capable model (e.g., Llama 3.1, Mistral, Qwen 2.5).
+*   **Embedding Model**: Load an embedding model for RAG. Default: `text-embedding-embeddinggemma-300m`.
 
 ## Installation
 
@@ -26,7 +25,13 @@ A modern, full-stack AI chat interface built for local inference with [LM Studio
     cd LMStudioChat
     ```
 
-2.  **Install dependencies**:
+2.  **Set up Virtual Environment**:
+    ```bash
+    python3 -m venv venv
+    source venv/bin/activate  # On Windows: venv\Scripts\activate
+    ```
+
+3.  **Install dependencies**:
     ```bash
     pip install -r requirements.txt
     ```
@@ -34,26 +39,33 @@ A modern, full-stack AI chat interface built for local inference with [LM Studio
 ## Usage
 
 1.  **Start LM Studio Server**:
-    *   Open LM Studio.
-    *   Go to the "Local Server" tab.
     *   Start the server (default port `1234`).
-    *   **Important**: Ensure both a chat model and the embedding model (`text-embedding-embeddinggemma-300m`) are loaded or available.
+    *   Ensure your chat and embedding models are loaded.
 
-2.  **Start the Backend**:
+2.  **Start the Application**:
     ```bash
     python3 app.py
     ```
-    The server will start at `http://localhost:5000`.
+    - The Flask web server starts at `http://localhost:5000`.
 
 3.  **Access the Application**:
-    *   Open your browser and navigate to `http://localhost:5000`.
-
-4.  **Configuration**:
-    *   Click the "Backend Settings" (plug icon) in the sidebar to configure the LM Studio URL if it's not running on the default `http://localhost:1234`.
+    *   Navigate to `http://localhost:5000` in your browser.
 
 ## Architecture
 
 *   **Frontend**: Vanilla HTML/CSS/JS (located in `static/`).
-*   **Backend**: Flask (Python).
-*   **Database**: SQLite (`backend/chats.db`) for chat history.
-*   **Vector Store**: ChromaDB (`backend/chroma_db`) for RAG memory.
+*   **Backend**: Flask handles UI, session management, and chat orchestration.
+*   **Memory Engine**: Direct RAG implementation (`backend/rag.py`) for semantic retrieval.
+*   **Database**: SQLite (`backend/chats.db`) for chat metadata.
+*   **Vector Store**: ChromaDB (`backend/chroma_db`) for semantic memory retrieval.
+
+## Configuration
+
+The app is configured via a `.env` file in the root directory. You can customize the following variables:
+
+### LM Studio Configuration
+- `LM_STUDIO_URL`: The URL where your LM Studio server is running (default: `http://localhost:1234`).
+- `EMBEDDING_MODEL`: The key/name of the embedding model loaded in LM Studio (default: `text-embedding-embeddinggemma-300m`).
+
+### Database and Storage
+- `CHROMA_PATH`: The directory where ChromaDB stores its vector embeddings (default: `./backend/chroma_db`).

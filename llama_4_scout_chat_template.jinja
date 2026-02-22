@@ -1,0 +1,34 @@
+{{- bos_token }}
+
+{# --- 1. HARDCODED CoT INSTRUCTION --- #}
+{%- set cot_rules = "# Chain-of-Thought (CoT) Reasoning \n\n## Formatting \n- Every response MUST start with a CoT reasoning block. \n- The CoT reasoning block MUST be enclosed within `<think> ... </think>` tags. \n\n## Rules \n- CoT reasoning is mandatory. You MUST ALWAYS include a reasoning block with every response. \n- The reasoning block is like your internal monologue which the user cannot see. The `</think>' tag must be followed by the actual user-facing response. \n- BOTH the opening `<think>` and closing `</think>` tags are MANDATORY." -%}
+
+{%- for message in messages %}
+    {%- if message['role'] == 'system' %}
+        {# We inject the CoT rules directly into the system prompt invisibly #}
+        {{- '<|header_start|>system<|header_end|>\n\n' + message['content'] + '\n\n' + cot_rules + '<|eot|>' }}
+    {%- elif message['role'] == 'user' %}
+        {{- '<|header_start|>user<|header_end|>\n\n' + message['content'] + '<|eot|>' }}
+    {%- elif message['role'] == 'assistant' %}
+        {{- '<|header_start|>assistant<|header_end|>\n\n' }}
+        {%- if message['tool_calls'] %}
+            {{- message['tool_calls'] | tojson + '<|eot|>' }}
+        {%- else %}
+            {{- message['content'] + '<|eot|>' }}
+        {%- endif %}
+    {%- elif message['role'] in ['tool', 'ipython'] %}
+        {{- '<|header_start|>ipython<|header_end|>\n\n' }}
+        {%- if message['content'] is string %}
+            {{- message['content'] }}
+        {%- else %}
+            {{- message['content'] | tojson }}
+        {%- endif %}
+        {{- '<|eot|>' }}
+    {%- endif %}
+{%- endfor %}
+
+{# --- 2. STRUCTURED PREFILL --- #}
+{%- if add_generation_prompt %}
+    {# We don't just open the think tag; we force the model to define the objective first #}
+    {{- '<|header_start|>assistant<|header_end|>\n\n<think>\n' }}
+{%- endif %}

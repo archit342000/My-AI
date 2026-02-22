@@ -21,7 +21,7 @@ def test_injection():
             mock_post.return_value.iter_lines.return_value = [b"data: [DONE]"]
 
             with app.test_request_context(
-                '/api/chat',
+                '/v1/chat/completions',
                 method='POST',
                 json={
                     "messages": mock_messages,
