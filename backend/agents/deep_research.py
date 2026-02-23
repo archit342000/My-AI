@@ -214,11 +214,7 @@ async def generate_deep_research_response(api_url, model, messages, approved_pla
 
         for attempt in range(1, MAX_PLAN_RETRIES + 1):
             payload["messages"] = list(messages_to_send)
-            # Prefix <think>\n to match the .jinja template's prefilled generation prompt.
-            # Since reasoning is template-enforced (not native), LM Studio sends ALL tokens
-            # (reasoning + </think> + content) through delta.content.
-            # This prefix reconstructs the complete <think>...</think> block for parsing.
-            full_content = "<think>\n"
+            full_content = ""
             full_reasoning = ""
             reasoning_token_count = 0
 
@@ -236,12 +232,6 @@ async def generate_deep_research_response(api_url, model, messages, approved_pla
 
                     if content:
                         full_content += content
-                        # While inside the <think> block (not yet closed), show thinking snippets
-                        if "<think>" in full_content and "</think>" not in full_content:
-                            reasoning_token_count += 1
-                            if reasoning_token_count % 40 == 0:
-                                snippet = full_content.replace('<think>', '').replace('\n', ' ').strip()[-150:]
-                                yield f"data: {_create_activity_chunk(model, 'planning', {'message': f'...{snippet}', 'state': 'thinking'})}\n\n"
                                 
                     if reasoning:
                         full_reasoning += reasoning
@@ -251,14 +241,10 @@ async def generate_deep_research_response(api_url, model, messages, approved_pla
                             yield f"data: {_create_activity_chunk(model, 'planning', {'message': f'...{snippet}', 'state': 'thinking'})}\n\n"
                 except Exception as e:
                     pass
-
-            # If the model never closed the think tag (skipped reasoning entirely),
-            # strip the artificially prepended <think> to avoid polluting plan extraction
-            if "<think>" in full_content and "</think>" not in full_content:
-                full_content = full_content.replace("<think>\n", "", 1).replace("<think>", "", 1)
             
             plan_source = full_content
             if not plan_source or '<research_plan>' not in plan_source:
+                # If plan is not in content, check reasoning (unlikely but robust)
                 if full_reasoning and '<research_plan>' in full_reasoning:
                     plan_source = full_reasoning
 
@@ -621,27 +607,12 @@ async def generate_deep_research_response(api_url, model, messages, approved_pla
 
     # Core generation loop
     full_content = ""
+    full_reasoning = ""
     for sse_chunk, final_state in _stream_and_accumulate(api_url, model, reporter_payload):
         if final_state is not None:
-            full_content, _ = final_state
+            full_content, full_reasoning, _ = final_state
         elif sse_chunk is not None:
             yield sse_chunk
-
-    # Cleanup Artificial Think Prefix
-    if "<think>" in full_content and "</think>" not in full_content:
-        full_content = full_content.rstrip() + "\n</think>"
-
-    for empty_block in ("<think>\n\n</think>", "<think>\n</think>"):
-        full_content = full_content.replace(empty_block, "")
-
-    # Validation & Healing
-    full_reasoning = ""
-    if "<think>" in full_content:
-        import re
-        try:
-            full_reasoning = re.search(r'<think>(.*?)</think>', full_content, re.DOTALL).group(1)
-        except:
-            pass
 
     validation_errors = validate_output_format(full_content, full_reasoning)
     if validation_errors:
@@ -678,7 +649,7 @@ async def generate_deep_research_response(api_url, model, messages, approved_pla
             full_content = ""
             for sse_chunk, final_state in _stream_and_accumulate(api_url, model, regen_payload):
                 if final_state is not None:
-                    full_content, _ = final_state
+                    full_content, full_reasoning, _ = final_state
                 elif sse_chunk is not None:
                     yield sse_chunk
                     
