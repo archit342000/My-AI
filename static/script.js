@@ -2060,11 +2060,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
             let accumulatedContent = '';
+            let accumulatedReasoning = '';
             let buffer = '';
             let usageCounted = false;
             let isReasoningPhase = true; // Track if we're still in reasoning-only mode
             let contentStarted = false;  // Track if actual content has started
-            let checkedForThink = false; // Track if we've verified the start of the response
 
             while (true) {
                 const { done, value } = await reader.read();
@@ -2096,6 +2096,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         if (json.__redact__) {
                             // Clear current content and show fixing indicator
                             accumulatedContent = '';
+                            accumulatedReasoning = '';
                             
                             if (mainWrapper) {
                                 mainWrapper.innerHTML = `<div class="validation-fixing" style="display: flex; align-items: center; gap: 0.75rem; padding: 1rem; color: var(--content-secondary); font-style: italic;">
@@ -2119,83 +2120,79 @@ document.addEventListener('DOMContentLoaded', () => {
                                     const parsed = JSON.parse(delta.reasoning_content);
                                     if (parsed.__deep_research_activity__) {
                                         renderResearchActivity(activityFeed, parsed.type, parsed.data);
-                                        // Save the activity chunk so it persists in chat history when reloading
-                                        accumulatedContent += `<think>\n${delta.reasoning_content}\n</think>\n`;
+                                        // Save the activity chunk as thought so it persists
+                                        accumulatedReasoning += delta.reasoning_content;
                                         botMsgDiv.classList.remove('thinking');
                                         scrollToBottom('auto', false);
                                         continue;
                                     }
                                 } catch (ignored) { /* Not JSON activity, treat as normal reasoning */ }
                             }
+
                             // Extract content/reasoning from standard OpenAI delta fields
+                            if (delta.reasoning_content) {
+                                accumulatedReasoning += delta.reasoning_content;
+                            }
                             if (delta.content) {
                                 accumulatedContent += delta.content;
                             }
 
-                            if (accumulatedContent) {
-                                const { thoughts: internalThoughts } = parseContent(accumulatedContent);
-                                const combinedThought = internalThoughts;
-
-                                if (combinedThought && thoughtWrapper) {
-                                    // Create thought container if it doesn't exist
-                                    if (!botMsgDiv.querySelector('.thought-container')) {
-                                        thoughtWrapper.innerHTML = `
-                                            <div class="thought-container reasoning-active">
-                                                <div class="thought-header">
-                                                    <div class="thought-header-title">
-                                                        <svg class="thought-main-icon" width="27" height="27" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="12" r="2"/><circle cx="18" cy="6" r="2"/><circle cx="18" cy="18" r="2"/><line x1="7.9" y1="11.1" x2="16.1" y2="6.9"/><line x1="7.9" y1="12.9" x2="16.1" y2="17.1"/><circle cx="12" cy="9" r="1" fill="currentColor" stroke="none" opacity="0.4"/><circle cx="12" cy="15" r="1" fill="currentColor" stroke="none" opacity="0.4"/></svg>
-                                                        <span class="thought-title-text">Thinking</span>
-                                                        <span class="thought-progress-dots"><span></span><span></span><span></span></span>
-                                                    </div>
-                                                    <svg class="thought-chevron" width="27" height="27" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            if (accumulatedReasoning && thoughtWrapper) {
+                                // Create thought container if it doesn't exist
+                                if (!botMsgDiv.querySelector('.thought-container')) {
+                                    thoughtWrapper.innerHTML = `
+                                        <div class="thought-container reasoning-active">
+                                            <div class="thought-header">
+                                                <div class="thought-header-title">
+                                                    <svg class="thought-main-icon" width="27" height="27" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="12" r="2"/><circle cx="18" cy="6" r="2"/><circle cx="18" cy="18" r="2"/><line x1="7.9" y1="11.1" x2="16.1" y2="6.9"/><line x1="7.9" y1="12.9" x2="16.1" y2="17.1"/><circle cx="12" cy="9" r="1" fill="currentColor" stroke="none" opacity="0.4"/><circle cx="12" cy="15" r="1" fill="currentColor" stroke="none" opacity="0.4"/></svg>
+                                                    <span class="thought-title-text">Thinking</span>
+                                                    <span class="thought-progress-dots"><span></span><span></span><span></span></span>
                                                 </div>
-                                                <div class="thought-body"><div class="thought-body-inner"><div class="thought-body-content"></div></div></div>
-                                            </div>`;
-                                    }
-                                    const thoughtBodyContent = thoughtWrapper.querySelector('.thought-body-content');
-                                    if (thoughtBodyContent) {
-                                        const formatted = formatMarkdown(combinedThought);
-                                        if (thoughtBodyContent.innerHTML !== formatted) {
-                                            thoughtBodyContent.innerHTML = formatted;
-                                        }
-                                    }
+                                                <svg class="thought-chevron" width="27" height="27" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                                            </div>
+                                            <div class="thought-body"><div class="thought-body-inner"><div class="thought-body-content"></div></div></div>
+                                        </div>`;
                                 }
-
-                                // Determine phase: reasoning-only vs content started
-                                const { cleaned: mainContent } = parseContent(accumulatedContent);
-                                const hasRealContent = mainContent.trim().length > 0;
-
-                                if (hasRealContent && !contentStarted) {
-                                    contentStarted = true;
-                                    isReasoningPhase = false;
-                                    botMsgDiv.classList.remove('thinking');
-
-                                    // Finalize thought container label
-                                    if (thoughtWrapper) {
-                                        const tc = thoughtWrapper.querySelector('.thought-container');
-                                        if (tc) {
-                                            tc.classList.remove('reasoning-active');
-                                            const titleText = tc.querySelector('.thought-title-text');
-                                            if (titleText) titleText.textContent = 'Thought Process';
-                                            const dots = tc.querySelector('.thought-progress-dots');
-                                            if (dots) dots.remove();
-                                        }
+                                const thoughtBodyContent = thoughtWrapper.querySelector('.thought-body-content');
+                                if (thoughtBodyContent) {
+                                    const formatted = formatMarkdown(accumulatedReasoning);
+                                    if (thoughtBodyContent.innerHTML !== formatted) {
+                                        thoughtBodyContent.innerHTML = formatted;
                                     }
                                 }
-
-                                if (hasRealContent) {
-                                    mainWrapper.innerHTML = formatMarkdown(mainContent);
-                                }
-
-                                scrollToBottom('auto', false);
                             }
+
+                            // Determine phase: content started
+                            const hasRealContent = accumulatedContent.trim().length > 0;
+
+                            if (hasRealContent && !contentStarted) {
+                                contentStarted = true;
+                                isReasoningPhase = false;
+                                botMsgDiv.classList.remove('thinking');
+
+                                // Finalize thought container label
+                                if (thoughtWrapper) {
+                                    const tc = thoughtWrapper.querySelector('.thought-container');
+                                    if (tc) {
+                                        tc.classList.remove('reasoning-active');
+                                        const titleText = tc.querySelector('.thought-title-text');
+                                        if (titleText) titleText.textContent = 'Thought Process';
+                                        const dots = tc.querySelector('.thought-progress-dots');
+                                        if (dots) dots.remove();
+                                    }
+                                }
+                            }
+
+                            if (hasRealContent) {
+                                mainWrapper.innerHTML = formatMarkdown(accumulatedContent);
+                            }
+
+                            scrollToBottom('auto', false);
                         }
                     } catch (e) { }
                 }
             }
 
-            // Removed unclosed thought block cleanup as per request: 
-            // if the model skips reasoning or doesn't close </think>, we keep it in the thought wrapper to prevent it from bleeding.
             botMsgDiv.classList.remove('thinking');
 
             // Finalize thought container state if it still exists
@@ -2210,32 +2207,27 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
 
-            if (!accumulatedContent) {
+            if (!accumulatedContent && !accumulatedReasoning) {
                 botMsgDiv.classList.remove('thinking');
                 mainWrapper.innerHTML = `<span style="color: var(--color-neutral-400); font-style: italic;">[No content received]</span>`;
             } else {
-                let finalContentStr = accumulatedContent;
-                // Check if the model bypassed reasoning entirely (i.e. we injected <think> but it never closed it)
-                if (finalContentStr.includes('<think>') && !finalContentStr.includes('</think>')) {
-                    // Remove the artificially injected <think> token
-                    finalContentStr = finalContentStr.replace(/<think>\s*/i, '');
-                    // Clear the thought container so it doesn't display the user-facing text
-                    if (thoughtWrapper) thoughtWrapper.innerHTML = '';
-                }
-
-                const { cleaned, plan } = parseContent(finalContentStr);
+                // Parse for plans in the content
+                const { cleaned, plan } = parseContent(accumulatedContent);
                 mainWrapper.innerHTML = formatMarkdown(cleaned);
 
                 // If a plan was found, render the interactive plan card
                 if (plan) {
                     renderResearchPlan(plan, mainWrapper);
                 }
-
-                // Update history with the final corrected string so the model doesn't get confused
-                accumulatedContent = finalContentStr;
             }
 
-            const assistantMsgObj = { role: 'assistant', content: accumulatedContent, model: selectedModelName };
+            // Combine for history persistence (matches DB format)
+            let finalCombinedContent = accumulatedContent;
+            if (accumulatedReasoning) {
+                finalCombinedContent = `<think>\n${accumulatedReasoning}\n</think>\n${accumulatedContent}`;
+            }
+
+            const assistantMsgObj = { role: 'assistant', content: finalCombinedContent, model: selectedModelName };
             chatHistory.push(assistantMsgObj);
 
             // Update the bot message row to show which model generated this response
