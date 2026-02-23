@@ -59,6 +59,15 @@ def validate_output_format(full_content, full_reasoning=""):
                     "content after the </think> tag. Please provide substantive content."
                 ),
             })
+    elif full_reasoning and len(combined.strip()) < 5:
+        # Also check if we have separate reasoning but empty content
+        errors.append({
+            "code": "EMPTY_RESPONSE",
+            "message": (
+                "Your response contains a reasoning block but no actual user-facing "
+                "content. Please provide substantive content."
+            ),
+        })
     
     # --- Check 3: Completely empty response ---
     if not combined.strip() and not (full_reasoning or "").strip():
