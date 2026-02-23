@@ -237,15 +237,23 @@ def chat_completions():
                             choices = data_json.get('choices', [])
                             if choices:
                                 delta = choices[0].get('delta', {})
-                                if 'content' in delta: full_content += delta.get('content', '') or ''
+                                if 'content' in delta:
+                                    full_content += delta.get('content', '') or ''
+                                if 'reasoning_content' in delta:
+                                    full_reasoning += delta.get('reasoning_content', '') or ''
                     except Exception:
                         pass
             except GeneratorExit:
                 return # Client disconnected, do not persist assistant partial response
 
             # Save assistant message to chat history DB
-            if chat_id and full_content:
-                add_message(chat_id, 'assistant', full_content, model=last_model_name)
+            if chat_id and (full_content or full_reasoning):
+                # Combine reasoning and content for storage, wrapped in tags if reasoning exists
+                final_content_for_db = full_content
+                if full_reasoning:
+                    final_content_for_db = f"<think>{full_reasoning}</think>\n{full_content}"
+
+                add_message(chat_id, 'assistant', final_content_for_db, model=last_model_name)
                 
                 # RAG Memory Update — ONLY for standard chat, NEVER for deep research
                 if memory_mode:

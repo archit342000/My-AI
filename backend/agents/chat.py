@@ -20,15 +20,8 @@ def _stream_and_accumulate(api_url, model, payload):
     """
     tool_calls = []
     current_tool_call = None
-    full_content = "<think>\n"
-    
-    # We maintain a flag so we can close the reasoning block if actual content starts
-    # when the model uses `reasoning_content` API (like DeepSeek R1).
-    reasoning_closed = False
-    used_reasoning_api = False
-
-    # Inject the <think> prefix to match the .jinja template's prefilled generation prompt
-    yield (f"data: {create_chunk(model, content='<think>\n')}\n\n", None)
+    full_content = ""
+    full_reasoning = ""
     
     for chunk_str in stream_chat_completion(api_url, payload):
         try:
@@ -45,9 +38,6 @@ def _stream_and_accumulate(api_url, model, payload):
                         "type": "function",
                         "function": {"name": tc_chunk['function']['name'], "arguments": ""}
                     }
-                    tool_name = current_tool_call['function']['name']
-                    # Don't inject anything into the content stream for tool calls.
-                    # Tool info is sent via reasoning_content by generate_chat_response.
                     
                 if 'function' in tc_chunk and 'arguments' in tc_chunk['function']:
                     current_tool_call['function']['arguments'] += tc_chunk['function']['arguments']
@@ -56,22 +46,13 @@ def _stream_and_accumulate(api_url, model, payload):
                 content = delta.get('content', '')
                 reasoning = delta.get('reasoning_content', '') or delta.get('reasoning', '')
                 
-                # If the model explicitly sends reasoning_content, map it directly into the stream as content
                 if reasoning:
-                    used_reasoning_api = True
-                    full_content += reasoning
-                    yield (f"data: {create_chunk(model, content=reasoning)}\n\n", None)
+                    full_reasoning += reasoning
+                    yield (f"data: {create_chunk(model, reasoning=reasoning)}\n\n", None)
                 
                 if content:
-                    # If this is the very first time we see standard `content` after using `reasoning_content`, 
-                    # we must close the `<think>` block first.
-                    if used_reasoning_api and not reasoning_closed and "<think>" in full_content and "</think>" not in full_content:
-                        full_content += "\n</think>\n"
-                        yield (f"data: {create_chunk(model, content='\n</think>\n')}\n\n", None)
-                        reasoning_closed = True
-                    
                     full_content += content
-                    yield (f"data: {json.dumps(chunk)}\n\n", None)
+                    yield (f"data: {create_chunk(model, content=content)}\n\n", None)
             
             if finish_reason == 'tool_calls':
                 if current_tool_call:
@@ -81,7 +62,7 @@ def _stream_and_accumulate(api_url, model, payload):
             pass
 
     # Yield the final accumulated state
-    yield (None, (full_content, tool_calls))
+    yield (None, (full_content, full_reasoning, tool_calls))
 
 
 def _stream_corrected_content(model, fixed_content):
@@ -151,12 +132,13 @@ def generate_chat_response(api_url, model, messages, extra_body, rag=None, memor
     }
 
     full_content = ""
+    full_reasoning = ""
     tool_calls = []
     tool_flow_prefix = ""  # Preserved for redact reconstruction
 
     for sse_chunk, final_state in _stream_and_accumulate(api_url, model, payload):
         if final_state is not None:
-            full_content, tool_calls = final_state
+            full_content, full_reasoning, tool_calls = final_state
         elif sse_chunk is not None:
             yield sse_chunk
 
@@ -165,26 +147,18 @@ def generate_chat_response(api_url, model, messages, extra_body, rag=None, memor
 
     # 4. Tool Execution Loop
     if tool_calls:
-        # --- 4a. Close first <think> block if unclosed ---
-        # The model may stop for tool_calls before outputting </think>.
-        # Close it so the frontend has a complete first <think> block.
-        if "<think>" in full_content and "</think>" not in full_content:
-            close_tag = "\n</think>\n"
-            full_content += close_tag
-            yield f"data: {create_chunk(model, content=close_tag)}\n\n"
+        # Reconstruct full assistant message for history (with tags if reasoning exists)
+        assistant_content_for_history = full_content
+        if full_reasoning:
+            assistant_content_for_history = f"<think>{full_reasoning}</think>\n{full_content}"
 
         # Build LLM history with the closed content
         messages_to_send.append({
             "role": "assistant",
-            "content": full_content if full_content else None,
+            "content": assistant_content_for_history if assistant_content_for_history else None,
             "tool_calls": tool_calls
         })
         
-        # --- 4b. Open a <think> block for tool execution logs ---
-        tool_think_open = "<think>\n"
-        full_content += tool_think_open
-        yield f"data: {create_chunk(model, content=tool_think_open)}\n\n"
-
         has_real_tools = False
         for tc in tool_calls:
             fn_name = tc['function']['name']
@@ -208,8 +182,8 @@ def generate_chat_response(api_url, model, messages, extra_body, rag=None, memor
             if fn_name == "search_memory" and rag:
                 query = args.get("query", "...")
                 log = f"Calling: search_memory(\"{query}\")\n"
-                full_content += log
-                yield f"data: {create_chunk(model, content=log)}\n\n"
+                full_reasoning += log
+                yield f"data: {create_chunk(model, reasoning=log)}\n\n"
                 
                 context_result = rag.retrieve_context(query)
                 if not context_result: context_result = "No relevant results found."
@@ -219,8 +193,8 @@ def generate_chat_response(api_url, model, messages, extra_body, rag=None, memor
                 })
                 
                 res_log = f"Result: {context_result}\n"
-                full_content += res_log
-                yield f"data: {create_chunk(model, content=res_log)}\n\n"
+                full_reasoning += res_log
+                yield f"data: {create_chunk(model, reasoning=res_log)}\n\n"
                 has_real_tools = True
             elif fn_name == "search_web":
                 query = args.get("query", "...")
@@ -231,8 +205,8 @@ def generate_chat_response(api_url, model, messages, extra_body, rag=None, memor
                 include_images = args.get("include_images", False) and has_vision
                 
                 log = f"Calling: search_web(\"{query}\")\n"
-                full_content += log
-                yield f"data: {create_chunk(model, content=log)}\n\n"
+                full_reasoning += log
+                yield f"data: {create_chunk(model, reasoning=log)}\n\n"
                 
                 search_result, _ = execute_tavily_search(
                     query=query, topic=topic, time_range=time_range, 
@@ -244,13 +218,13 @@ def generate_chat_response(api_url, model, messages, extra_body, rag=None, memor
                 })
                 
                 res_log = "Result: Search completed.\n"
-                full_content += res_log
-                yield f"data: {create_chunk(model, content=res_log)}\n\n"
+                full_reasoning += res_log
+                yield f"data: {create_chunk(model, reasoning=res_log)}\n\n"
                 has_real_tools = True
             elif fn_name == "audit_search":
                 log = "Calling: audit_search()\n"
-                full_content += log
-                yield f"data: {create_chunk(model, content=log)}\n\n"
+                full_reasoning += log
+                yield f"data: {create_chunk(model, reasoning=log)}\n\n"
                 
                 raw_result = audit_tavily_search(chat_id)
                 messages_to_send.append({
@@ -259,13 +233,13 @@ def generate_chat_response(api_url, model, messages, extra_body, rag=None, memor
                 })
                 
                 res_log = "Result: Audit available.\n"
-                full_content += res_log
-                yield f"data: {create_chunk(model, content=res_log)}\n\n"
+                full_reasoning += res_log
+                yield f"data: {create_chunk(model, reasoning=res_log)}\n\n"
                 has_real_tools = True
             elif fn_name == "get_time":
                 log = "Calling: get_time()\n"
-                full_content += log
-                yield f"data: {create_chunk(model, content=log)}\n\n"
+                full_reasoning += log
+                yield f"data: {create_chunk(model, reasoning=log)}\n\n"
                 
                 current_time = get_current_time()
                 messages_to_send.append({
@@ -274,14 +248,9 @@ def generate_chat_response(api_url, model, messages, extra_body, rag=None, memor
                 })
                 
                 res_log = f"Result: {current_time}\n"
-                full_content += res_log
-                yield f"data: {create_chunk(model, content=res_log)}\n\n"
+                full_reasoning += res_log
+                yield f"data: {create_chunk(model, reasoning=res_log)}\n\n"
                 has_real_tools = True
-
-        # --- 4c. Close the tool log <think> block ---
-        tool_think_close = "</think>\n"
-        full_content += tool_think_close
-        yield f"data: {create_chunk(model, content=tool_think_close)}\n\n"
 
         # --- 4d. Snapshot prefix for redact reconstruction ---
         tool_flow_prefix = full_content
@@ -297,37 +266,16 @@ def generate_chat_response(api_url, model, messages, extra_body, rag=None, memor
 
             for sse_chunk, final_state in _stream_and_accumulate(api_url, model, final_payload):
                 if final_state is not None:
-                    next_content, _ = final_state
+                    next_content, next_reasoning, _ = final_state
                     full_content += next_content
+                    full_reasoning += next_reasoning
                     # Only the final LLM call's content is subject to validation
                     validatable_content = next_content
                 elif sse_chunk is not None:
                     yield sse_chunk
 
-    # ==================== 5. CLEAN UP ARTIFICIAL <think> PREFIX ====================
-    # _stream_and_accumulate always prepends <think>\n to match the jinja template prefill.
-    # But the model may never close it (e.g., skips reasoning entirely).
-    # Fix it on validatable_content; mirror to full_content.
-    if "<think>" in validatable_content and "</think>" not in validatable_content:
-        close_tag = "\n</think>"
-        validatable_content = validatable_content.rstrip() + close_tag
-        full_content = full_content.rstrip() + close_tag
-
-    # 5.b) If the model entirely skips reasoning, remove the empty think block.
-    for empty_block in ("<think>\n\n</think>", "<think>\n</think>"):
-        validatable_content = validatable_content.replace(empty_block, "")
-        full_content = full_content.replace(empty_block, "")
-
     # ==================== 6. OUTPUT FORMAT VALIDATION & HEALING ====================
     # Validate ONLY the last LLM response, not the accumulated multi-turn blob.
-    full_reasoning = ""
-    if "<think>" in validatable_content:
-        import re
-        try:
-            full_reasoning = re.search(r'<think>(.*?)</think>', validatable_content, re.DOTALL).group(1)
-        except:
-            pass
-            
     validation_errors = validate_output_format(validatable_content, full_reasoning)
     
     if validation_errors:
@@ -394,20 +342,12 @@ def generate_chat_response(api_url, model, messages, extra_body, rag=None, memor
             
             for sse_chunk, final_state in _stream_and_accumulate(api_url, model, regen_payload):
                 if final_state is not None:
-                    validatable_content, _ = final_state
+                    validatable_content, regen_reasoning, _ = final_state
                     full_content = tool_flow_prefix + validatable_content
+                    full_reasoning = regen_reasoning
                 elif sse_chunk is not None:
                     yield sse_chunk
             
-            # Final validation check
-            full_reasoning = ""
-            if "<think>" in validatable_content:
-                import re
-                try:
-                    full_reasoning = re.search(r'<think>(.*?)</think>', validatable_content, re.DOTALL).group(1)
-                except:
-                    pass
-                    
             final_errors = validate_output_format(validatable_content, full_reasoning)
             if final_errors:
                 log_event("validation_final_failure", {"chat_id": chat_id, "errors": [e['code'] for e in final_errors]})
