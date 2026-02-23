@@ -2237,21 +2237,32 @@ document.addEventListener('DOMContentLoaded', () => {
                 modelLabel.closest('.bot-message-footer').style.display = 'flex';
             }
 
+            // Update the global "Last Model Used" display immediately
+            const lastModelDisplay = document.getElementById('last-model-display');
+            if (lastModelDisplay) {
+                if (!isDeepResearchMode) {
+                    lastModelDisplay.textContent = `Last model used: ${selectedModelName}`;
+                    lastModelDisplay.style.display = 'block';
+                } else {
+                    lastModelDisplay.style.display = 'none';
+                }
+            }
+
             // Backend handles persistence, so we just reload list to get updated timestamp
             if (!isTemporaryChat && currentChatId) {
                 // Update local model tracker
                 if (currentChatData) {
                     currentChatData.last_model = selectedModelName;
-                    const lastModelDisplay = document.getElementById('last-model-display');
-                    if (lastModelDisplay) {
-                        if (!isDeepResearchMode) {
-                            lastModelDisplay.textContent = `Last model used: ${selectedModelName}`;
-                            lastModelDisplay.style.display = 'block';
-                        } else {
-                            lastModelDisplay.style.display = 'none';
-                        }
-                    }
                 }
+
+                // Explicitly sync the last model to the backend immediately
+                // This ensures it's saved even if the chat save endpoint doesn't catch it
+                fetch(`/api/chats/${currentChatId}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ last_model: selectedModelName })
+                }).catch(e => console.error("Error updating last model:", e));
+
                 // Delay slightly to ensure backend commit
                 setTimeout(loadChats, 1000);
             }
