@@ -5,6 +5,7 @@ import os
 import requests
 import hashlib
 import time
+from backend.logger import log_event, log_llm_call
 
 class LMStudioEmbeddingFunction(embedding_functions.EmbeddingFunction):
     def __init__(self, api_url="http://localhost:1234", model_name="text-embedding-jina-embeddings-v5-text-small-retrieval", default_task="document"):
@@ -12,7 +13,11 @@ class LMStudioEmbeddingFunction(embedding_functions.EmbeddingFunction):
         self.model_name = model_name
         self.default_task = default_task
 
-    def __call__(self, input, task=None):
+    def __call__(self, input):
+        # Standard fallback for ChromaDB internal loops
+        return self._embed_with_task(input, task=self.default_task)
+
+    def _embed_with_task(self, input, task=None):
         # Ensure base URL is clean and handle /v1 suffix robustly
         base_url = self.api_url.rstrip("/")
         if not base_url.endswith("/v1"):
@@ -45,20 +50,33 @@ class LMStudioEmbeddingFunction(embedding_functions.EmbeddingFunction):
         }
 
         try:
-            print(f"\n--- [DEBUG] POST {url} ---")
-            # Don't print full input to avoid spamming console with huge docs
-            print(f"Embedding {len(processed_input)} items using model: {self.model_name}")
-            response = requests.post(url, json=payload, headers={"Content-Type": "application/json"})
-            print(f"--- [DEBUG] Status: {response.status_code} ---")
+            start_time = time.time()
+            response = requests.post(
+                url, 
+                json=payload, 
+                headers={"Content-Type": "application/json"},
+                timeout=10
+            )
+            
+            if response.status_code != 200:
+                log_event("rag_embedding_error", {
+                    "url": url,
+                    "status_code": response.status_code,
+                    "response": response.text[:500]
+                })
+            
             response.raise_for_status()
             data = response.json()
 
-            # OpenAI format: data: [{embedding: [...], ...}, ...]
             embeddings = [item['embedding'] for item in data['data']]
-            print(f"--- [DEBUG] Received {len(embeddings)} embeddings ---")
+            duration = time.time() - start_time
+            log_llm_call(payload, f"Successfully embedded {len(embeddings)} items.", self.model_name, duration_s=duration, call_type="embedding")
             return embeddings
         except Exception as e:
-            print(f"Embedding error: {e}")
+            log_event("rag_embedding_exception", {
+                "url": url,
+                "error": str(e)
+            })
             raise e
 
 class MemoryRAG:
@@ -91,9 +109,13 @@ class MemoryRAG:
 
         # Explicitly embed so we can correctly assign the "document" prefix
         try:
-            embeddings = self.embedding_fn([text], task="document")
+            # Use our custom method to bypass Chroma's strict __call__ signature enforcement
+            if hasattr(self.embedding_fn, '_embed_with_task'):
+                embeddings = self.embedding_fn._embed_with_task([text], task="document")
+            else:
+                embeddings = self.embedding_fn([text])
         except Exception as e:
-            print(f"Embedding error in add_memory: {e}")
+            log_event("rag_add_memory_error", {"error": str(e)})
             return
 
         # Use upsert to handle potential duplicates (idempotent)
@@ -230,8 +252,11 @@ class MemoryRAG:
 
         # 3. Explicitly Embed Query for Re-Ranking
         try:
-             # self.embedding_fn returns list of lists
-             query_embedding = self.embedding_fn([query], task="query")[0]
+             # Use custom explicit entry to bypass Chroma constraints
+             if hasattr(self.embedding_fn, '_embed_with_task'):
+                 query_embedding = self.embedding_fn._embed_with_task([query], task="query")[0]
+             else:
+                 query_embedding = self.embedding_fn([query])[0]
         except Exception as e:
              # If embedding fails, return nothing
              print(f"Embedding error: {e}")
@@ -367,7 +392,10 @@ class DeepResearchRAG:
         
         # Deduplication check against this chat's existing store
         try:
-            query_embedding = self.embedding_fn([clean_text], task="document")[0]
+            if hasattr(self.embedding_fn, '_embed_with_task'):
+                query_embedding = self.embedding_fn._embed_with_task([clean_text], task="document")[0]
+            else:
+                query_embedding = self.embedding_fn([clean_text])[0]
             results = self.collection.query(
                 query_embeddings=[query_embedding],
                 n_results=1,

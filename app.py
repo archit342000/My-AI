@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 # Load environment variables FIRST
 load_dotenv()
 
-from backend.config import LM_STUDIO_URL, EMBEDDING_MODEL, CHROMA_PATH
+from backend import config
 from backend.rag import MemoryRAG, DeepResearchRAG
 from backend.storage import init_db, get_all_chats, get_chat, save_chat, add_message, clear_messages, delete_chat, delete_all_chats, rename_chat
 from backend.agents.deep_research import generate_deep_research_response
@@ -20,8 +20,8 @@ app = Flask(__name__, static_folder='static')
 
 # Initialize components with config
 init_db()
-rag = MemoryRAG(persist_path=CHROMA_PATH, api_url=LM_STUDIO_URL, embedding_model=EMBEDDING_MODEL)
-deep_research_rag = DeepResearchRAG(persist_path=CHROMA_PATH, api_url=LM_STUDIO_URL, embedding_model=EMBEDDING_MODEL)
+rag = MemoryRAG(persist_path=config.CHROMA_PATH, api_url=config.LM_STUDIO_URL, embedding_model=config.EMBEDDING_MODEL)
+deep_research_rag = DeepResearchRAG(persist_path=config.CHROMA_PATH, api_url=config.LM_STUDIO_URL, embedding_model=config.EMBEDDING_MODEL)
 task_manager.recover_tasks(generate_deep_research_response)
 
 @app.route('/')
@@ -116,19 +116,21 @@ def stop_chat_endpoint(chat_id):
 
 @app.route('/api/config', methods=['POST'])
 def update_config():
-    global LM_STUDIO_URL, rag
+    global rag, deep_research_rag
     data = request.json
     
     updated = False
     if 'url' in data:
-        LM_STUDIO_URL = data['url']
+        config.LM_STUDIO_URL = data['url']
         updated = True
 
     if updated:
-        from backend.config import EMBEDDING_MODEL
-        rag = MemoryRAG(api_url=LM_STUDIO_URL, embedding_model=EMBEDDING_MODEL)
+        # Re-initialize BOTH RAG engines with the new URL
+        rag = MemoryRAG(persist_path=config.CHROMA_PATH, api_url=config.LM_STUDIO_URL, embedding_model=config.EMBEDDING_MODEL)
+        deep_research_rag = DeepResearchRAG(persist_path=config.CHROMA_PATH, api_url=config.LM_STUDIO_URL, embedding_model=config.EMBEDDING_MODEL)
+        log_event("config_updated", {"url": config.LM_STUDIO_URL})
 
-    return jsonify({"success": True, "url": LM_STUDIO_URL})
+    return jsonify({"success": True, "url": config.LM_STUDIO_URL})
 
 @app.route('/api/memory/reset', methods=['POST'])
 def reset_memory():
@@ -216,7 +218,7 @@ def chat_completions():
             full_reasoning = ""
             
             has_vision = data.get('hasVision', False)
-            generator = generate_chat_response(LM_STUDIO_URL, model, messages, extra_body, rag, memory_mode, chat_id=chat_id, has_vision=has_vision)
+            generator = generate_chat_response(config.LM_STUDIO_URL, model, messages, extra_body, rag, memory_mode, chat_id=chat_id, has_vision=has_vision)
             try:
                 for chunk in generator:
                     yield chunk

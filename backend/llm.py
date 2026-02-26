@@ -2,7 +2,7 @@ import requests
 import json
 import time
 from backend.logger import log_llm_call, log_event
-from backend.config import TIMEOUT_LLM_BLOCKING
+from backend import config
 
 def stream_chat_completion(url, payload):
     """
@@ -24,7 +24,8 @@ def stream_chat_completion(url, payload):
         response = requests.post(
             endpoint,
             json=payload,
-            stream=True
+            stream=True,
+            timeout=(5, None) # Connect timeout 5s, read timeout None
         )
         
         for line in response.iter_lines():
@@ -79,7 +80,7 @@ def chat_completion(url, payload):
         response = requests.post(
             endpoint,
             json=payload,
-            timeout=TIMEOUT_LLM_BLOCKING
+            timeout=config.TIMEOUT_LLM_BLOCKING or (5, 60)
         )
         response.raise_for_status()
         

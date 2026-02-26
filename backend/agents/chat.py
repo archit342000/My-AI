@@ -1,6 +1,7 @@
 
 import json
-from backend.logger import log_event
+from backend.logger import log_event, log_tool_call
+import time
 from backend.prompts import BASE_SYSTEM_PROMPT, MEMORY_SYSTEM_PROMPT
 from backend.tools import MEMORY_SEARCH_TOOL, TAVILY_SEARCH_TOOL, AUDIT_TAVILY_SEARCH_TOOL, GET_TIME_TOOL, VALIDATE_OUTPUT_FORMAT_TOOL
 from backend.utils import create_chunk, execute_tavily_search, audit_tavily_search, get_current_time
@@ -65,12 +66,20 @@ def _stream_and_accumulate(api_url, model, payload):
     yield (None, (full_content, full_reasoning, tool_calls))
 
 
-def _stream_corrected_content(model, fixed_content):
+def _stream_corrected_content(model, fixed_content, fixed_reasoning=""):
     """
-    Re-stream fixed content to the frontend as SSE chunks.
+    Re-stream fixed content and reasoning to the frontend as SSE chunks.
     Splits the content into reasonable chunk sizes for smooth rendering.
     """
     CHUNK_SIZE = 50  # characters per chunk
+    
+    # First stream reasoning if provided
+    if fixed_reasoning:
+        for i in range(0, len(fixed_reasoning), CHUNK_SIZE):
+            chunk_text = fixed_reasoning[i:i + CHUNK_SIZE]
+            yield f"data: {create_chunk(model, reasoning=chunk_text)}\n\n"
+            
+    # Then stream content
     for i in range(0, len(fixed_content), CHUNK_SIZE):
         chunk_text = fixed_content[i:i + CHUNK_SIZE]
         yield f"data: {create_chunk(model, content=chunk_text)}\n\n"
@@ -133,24 +142,29 @@ def generate_chat_response(api_url, model, messages, extra_body, rag=None, memor
 
     full_content = ""
     full_reasoning = ""
+    current_content = ""
+    current_reasoning = ""
     tool_calls = []
     tool_flow_prefix = ""  # Preserved for redact reconstruction
 
     for sse_chunk, final_state in _stream_and_accumulate(api_url, model, payload):
         if final_state is not None:
-            full_content, full_reasoning, tool_calls = final_state
+            current_content, current_reasoning, tool_calls = final_state
         elif sse_chunk is not None:
             yield sse_chunk
+            
+    full_content += current_content
+    full_reasoning += current_reasoning
 
-    # In the no-tool-call path, validatable_content is the same as full_content.
-    validatable_content = full_content
+    # In the no-tool-call path, validatable_content is the same as current_content.
+    validatable_content = current_content
 
     # 4. Tool Execution Loop
-    if tool_calls:
+    while tool_calls:
         # Reconstruct full assistant message for history (with tags if reasoning exists)
-        assistant_content_for_history = full_content
-        if full_reasoning:
-            assistant_content_for_history = f"<think>{full_reasoning}</think>\n{full_content}"
+        assistant_content_for_history = current_content
+        if current_reasoning:
+            assistant_content_for_history = f"<think>{current_reasoning}</think>\n{current_content}"
 
         # Build LLM history with the closed content
         messages_to_send.append({
@@ -180,9 +194,10 @@ def generate_chat_response(api_url, model, messages, extra_body, rag=None, memor
                 continue
 
             if fn_name == "search_memory" and rag:
+                t0 = time.time()
                 query = args.get("query", "...")
                 log = f"Calling: search_memory(\"{query}\")\n"
-                full_reasoning += log
+                current_reasoning += log
                 yield f"data: {create_chunk(model, reasoning=log)}\n\n"
                 
                 context_result = rag.retrieve_context(query)
@@ -192,8 +207,10 @@ def generate_chat_response(api_url, model, messages, extra_body, rag=None, memor
                     "content": f"<context>{context_result}</context>"
                 })
                 
+                duration = time.time() - t0
+                log_tool_call(fn_name, args, context_result, duration_s=duration, chat_id=chat_id)
                 res_log = f"Result: {context_result}\n"
-                full_reasoning += res_log
+                current_reasoning += res_log
                 yield f"data: {create_chunk(model, reasoning=res_log)}\n\n"
                 has_real_tools = True
             elif fn_name == "search_web":
@@ -205,7 +222,7 @@ def generate_chat_response(api_url, model, messages, extra_body, rag=None, memor
                 include_images = args.get("include_images", False) and has_vision
                 
                 log = f"Calling: search_web(\"{query}\")\n"
-                full_reasoning += log
+                current_reasoning += log
                 yield f"data: {create_chunk(model, reasoning=log)}\n\n"
                 
                 search_result, _ = execute_tavily_search(
@@ -217,13 +234,16 @@ def generate_chat_response(api_url, model, messages, extra_body, rag=None, memor
                     "content": search_result
                 })
                 
+                # Note: Tavily search already logs internally, but we can log the abstraction wrapper too
+                # or just rely on tavily's internal `log_tool_call` which is already invoked.
                 res_log = "Result: Search completed.\n"
-                full_reasoning += res_log
+                current_reasoning += res_log
                 yield f"data: {create_chunk(model, reasoning=res_log)}\n\n"
                 has_real_tools = True
             elif fn_name == "audit_search":
+                t0 = time.time()
                 log = "Calling: audit_search()\n"
-                full_reasoning += log
+                current_reasoning += log
                 yield f"data: {create_chunk(model, reasoning=log)}\n\n"
                 
                 raw_result = audit_tavily_search(chat_id)
@@ -232,13 +252,16 @@ def generate_chat_response(api_url, model, messages, extra_body, rag=None, memor
                     "content": raw_result
                 })
                 
+                duration = time.time() - t0
+                log_tool_call(fn_name, args, raw_result[:500] + ("..." if len(raw_result) > 500 else ""), duration_s=duration, chat_id=chat_id)
                 res_log = "Result: Audit available.\n"
-                full_reasoning += res_log
+                current_reasoning += res_log
                 yield f"data: {create_chunk(model, reasoning=res_log)}\n\n"
                 has_real_tools = True
             elif fn_name == "get_time":
+                t0 = time.time()
                 log = "Calling: get_time()\n"
-                full_reasoning += log
+                current_reasoning += log
                 yield f"data: {create_chunk(model, reasoning=log)}\n\n"
                 
                 current_time = get_current_time()
@@ -247,13 +270,16 @@ def generate_chat_response(api_url, model, messages, extra_body, rag=None, memor
                     "content": current_time
                 })
                 
+                duration = time.time() - t0
+                log_tool_call(fn_name, args, current_time, duration_s=duration, chat_id=chat_id)
                 res_log = f"Result: {current_time}\n"
-                full_reasoning += res_log
+                current_reasoning += res_log
                 yield f"data: {create_chunk(model, reasoning=res_log)}\n\n"
                 has_real_tools = True
 
         # --- 4d. Snapshot prefix for redact reconstruction ---
         tool_flow_prefix = full_content
+        reasoning_flow_prefix = full_reasoning
 
         # --- 4e. Second LLM call ---
         if has_real_tools:
@@ -266,17 +292,19 @@ def generate_chat_response(api_url, model, messages, extra_body, rag=None, memor
 
             for sse_chunk, final_state in _stream_and_accumulate(api_url, model, final_payload):
                 if final_state is not None:
-                    next_content, next_reasoning, _ = final_state
-                    full_content += next_content
-                    full_reasoning += next_reasoning
+                    current_content, current_reasoning, tool_calls = final_state
+                    full_content += current_content
+                    full_reasoning += current_reasoning
                     # Only the final LLM call's content is subject to validation
-                    validatable_content = next_content
+                    validatable_content = current_content
                 elif sse_chunk is not None:
                     yield sse_chunk
+        else:
+            break
 
     # ==================== 6. OUTPUT FORMAT VALIDATION & HEALING ====================
     # Validate ONLY the last LLM response, not the accumulated multi-turn blob.
-    validation_errors = validate_output_format(validatable_content, full_reasoning)
+    validation_errors = validate_output_format(validatable_content, current_reasoning)
     
     if validation_errors:
         error_codes = [e['code'] for e in validation_errors]
@@ -286,8 +314,8 @@ def generate_chat_response(api_url, model, messages, extra_body, rag=None, memor
         yield f"data: {json.dumps({'__redact__': True, 'message': 'Formatting issue detected. Correcting...','__reset_accumulator__': True})}\n\n"
         
         # Re-stream the tool flow prefix so the frontend preserves first reasoning + tool logs
-        if tool_flow_prefix:
-            for chunk in _stream_corrected_content(model, tool_flow_prefix):
+        if tool_flow_prefix or reasoning_flow_prefix:
+            for chunk in _stream_corrected_content(model, tool_flow_prefix, fixed_reasoning=reasoning_flow_prefix):
                 yield chunk
         
         # --- Phase 2: Ask AI for contextual splice fixes (non-streaming) ---
@@ -310,7 +338,7 @@ def generate_chat_response(api_url, model, messages, extra_body, rag=None, memor
                     fixed_content = apply_fixes(validatable_content, locations)
                     
                     # Re-validate the fixed content
-                    recheck_errors = validate_output_format(fixed_content, full_reasoning)
+                    recheck_errors = validate_output_format(fixed_content, current_reasoning)
                     if not recheck_errors:
                         log_event("validation_fix_success", {"chat_id": chat_id})
                         validatable_content = fixed_content
@@ -318,7 +346,7 @@ def generate_chat_response(api_url, model, messages, extra_body, rag=None, memor
                         fix_applied = True
                         
                         # Stream the corrected second response
-                        for chunk in _stream_corrected_content(model, fixed_content):
+                        for chunk in _stream_corrected_content(model, fixed_content, fixed_reasoning=current_reasoning):
                             yield chunk
                     else:
                         log_event("validation_fix_failure", {"chat_id": chat_id, "reason": "recheck_failed", "errors": [e['code'] for e in recheck_errors]})
@@ -344,7 +372,7 @@ def generate_chat_response(api_url, model, messages, extra_body, rag=None, memor
                 if final_state is not None:
                     validatable_content, regen_reasoning, _ = final_state
                     full_content = tool_flow_prefix + validatable_content
-                    full_reasoning = regen_reasoning
+                    full_reasoning = reasoning_flow_prefix + regen_reasoning
                 elif sse_chunk is not None:
                     yield sse_chunk
             
