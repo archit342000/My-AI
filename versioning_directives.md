@@ -17,4 +17,4 @@ Versions are defined as `MAJOR.MINOR.PATCH`:
 
 ## Current Status
 
-Current version - v1.1.0
+Current version - v1.1.1
