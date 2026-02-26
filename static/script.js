@@ -261,7 +261,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Force synchronization of a modified chat state back to the SQLite layer (e.g. after message edits/deletions)
     function persistChat() {
         if (!currentChatId || isTemporaryChat) return;
-        
+
         let titleObj = chatHistory.find(m => m.role === 'user')?.content;
         if (Array.isArray(titleObj)) titleObj = titleObj.find(p => p.type === 'text')?.text;
         const titleText = (typeof titleObj === 'string' ? titleObj.substring(0, 50) : 'New Chat') || 'New Chat';
@@ -294,9 +294,11 @@ document.addEventListener('DOMContentLoaded', () => {
         currentChatData = null; // New chat has no vision restriction yet
         checkSendButtonCompatibility();
 
-        // Memory Mode defaults to true
-        isMemoryMode = true;
-        if (memoryToggleSwitch) memoryToggleSwitch.classList.add('active');
+        // Memory Mode defaults to true, but must be off for temporary chats
+        isMemoryMode = temporary ? false : true;
+        if (memoryToggleSwitch) {
+            memoryToggleSwitch.classList.toggle('active', isMemoryMode);
+        }
 
         isDeepResearchMode = false;
         searchDepthMode = 'regular';
@@ -367,7 +369,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     lastModelDisplay.style.display = 'none';
                 }
             }
-            
+
             checkSendButtonCompatibility();
 
             messagesContainer.innerHTML = '';
@@ -402,7 +404,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 } else if (msg.role === 'assistant') {
                     const { thoughts, cleaned, plan } = parseContent(msg.content);
-                    
+
                     // Persistence Fix: Check if this plan was already approved in the following turn
                     let isApproved = false;
                     const nextMsg = chatHistory[index + 1];
@@ -458,7 +460,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (isJsonActivities) {
                         contentHtml += `<div class="deep-research-activity-feed"></div>`;
                     }
-                    
+
                     let plainThoughts = thoughts || '';
                     if (isJsonActivities) {
                         activityStrs.forEach(s => {
@@ -496,7 +498,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         const feed = contentDiv.querySelector('.deep-research-activity-feed');
                         activityObjs.forEach(obj => renderResearchActivity(feed, obj.type, obj.data));
                     }
-                    
+
                     // Render any plain-text LLM thoughts (even if JSON activities exist)
                     if (plainThoughts) {
                         const contentBody = contentDiv.querySelector('.thought-body-content');
@@ -680,7 +682,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const chatIndex = savedChats.findIndex(c => c.id === currentChatId);
                 if (chatIndex !== -1) {
                     savedChats[chatIndex].memory_mode = isMemoryMode;
-                    saveChats(); 
+                    saveChats();
                 }
             }
             // Ensure wasMemoryMode stays in sync while in regular mode
@@ -789,7 +791,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Toggle localized wrapper state
         if (deepResearchToggle) {
             deepResearchToggle.classList.toggle('active', isDeepResearchMode);
-            
+
             if (chatHistory.length > 0) {
                 deepResearchToggle.disabled = true;
                 deepResearchToggle.style.pointerEvents = 'auto'; // allow hover
@@ -805,9 +807,9 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        // Disable Memory Toggle in Deep Research Mode
+        // Disable Memory Toggle in Deep Research or Temporary Chat Mode
         if (memoryToggleSwitch) {
-            if (isDeepResearchMode) {
+            if (isDeepResearchMode || isTemporaryChat) {
                 // Save current state before disabling
                 wasMemoryMode = isMemoryMode;
                 isMemoryMode = false;
@@ -815,8 +817,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 memoryToggleSwitch.classList.remove('active');
                 memoryToggleSwitch.style.pointerEvents = 'none';
                 memoryToggleSwitch.style.opacity = '0.5';
+                memoryToggleSwitch.title = isDeepResearchMode ? "Memory mode is disabled in Deep Research." : "Memory mode is disabled for Temporary Chats.";
             } else {
-                // Restore previous memory state if we were in deep research formerly
+                // Restore previous memory state if we were in a restricted mode formerly
                 // This prevents overwriting isMemoryMode with a stale wasMemoryMode on every call
                 if (wasMemoryMode !== isMemoryMode) {
                     isMemoryMode = wasMemoryMode;
@@ -826,6 +829,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 memoryToggleSwitch.style.pointerEvents = 'auto';
                 memoryToggleSwitch.style.opacity = '1';
+                memoryToggleSwitch.title = "Toggle memory mode";
             }
         }
 
@@ -888,6 +892,31 @@ document.addEventListener('DOMContentLoaded', () => {
         if (researchDepthSelector) {
             researchDepthSelector.style.display = isDeepResearchMode ? 'flex' : 'none';
         }
+
+        // Update Temporary Chat Button State
+        updateTempChatBtnState();
+    }
+
+    function updateTempChatBtnState() {
+        if (!tempChatBtn) return;
+
+        const hasOngoingChat = chatHistory.length > 0;
+        const isDisabled = isDeepResearchMode || hasOngoingChat;
+
+        tempChatBtn.disabled = isDisabled;
+        if (isDisabled) {
+            tempChatBtn.style.opacity = '0.4';
+            tempChatBtn.style.cursor = 'not-allowed';
+            if (isDeepResearchMode) {
+                tempChatBtn.title = "Temporary chat is not available in Deep Research mode.";
+            } else {
+                tempChatBtn.title = "Temporary chat cannot be started during an ongoing conversation.";
+            }
+        } else {
+            tempChatBtn.style.opacity = '1';
+            tempChatBtn.style.cursor = 'pointer';
+            tempChatBtn.title = "Temporary Chat";
+        }
     }
 
     function updateSearchDepthUI() {
@@ -935,7 +964,7 @@ document.addEventListener('DOMContentLoaded', () => {
         deepResearchToggle.addEventListener('click', () => {
             isDeepResearchMode = !isDeepResearchMode;
             updateDeepResearchUI();
-            
+
             // Sync vision compatibility when toggling mode
             checkSendButtonCompatibility();
 
@@ -984,7 +1013,6 @@ document.addEventListener('DOMContentLoaded', () => {
             currentChatId = generateId();
             if (tempChatBanner) tempChatBanner.classList.add('hidden');
             if (tempChatBtn) tempChatBtn.classList.remove('active');
-            // Save the current conversation as a new persistent chat
             if (chatHistory.length > 0) {
                 const title = chatHistory.find(m => m.role === 'user')?.content || 'New Chat';
                 const titleText = typeof title === 'string' ? title.substring(0, 50) : 'New Chat';
@@ -994,6 +1022,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     body: JSON.stringify({ chat_id: currentChatId, title: titleText, messages: chatHistory, memory_mode: isMemoryMode, deep_research_mode: isDeepResearchMode })
                 }).then(() => { loadChats(); renderChatList(); });
             }
+            updateDeepResearchUI();
         }
     });
 
@@ -1102,7 +1131,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderModelOptions() {
         if (!modelSelectDropdown) return;
-        
+
         // Preserve current selection
         const currentSelected = selectedModel;
 
@@ -1156,7 +1185,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (visionModelSelectDropdown) {
             visionModelSelectDropdown.innerHTML = '<option value="">None (Skip Images)</option>';
             const visionModels = Array.isArray(availableModels) ? availableModels.filter(m => m.capabilities?.vision === true) : [];
-            
+
             if (visionModels.length > 0) {
                 visionModels.forEach(model => {
                     const opt = document.createElement('option');
@@ -1189,12 +1218,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const currentModelData = availableModels.find(m => m.key === selectedModel);
         const modelHasVision = currentModelData?.capabilities?.vision === true;
-        
+
         // If chat is vision-restricted but current model is not
         if (currentChatData?.is_vision && !modelHasVision) {
             sendBtn.classList.add('incompatible-model');
             sendBtn.title = "This conversation contains images. Please switch to a Vision Model to continue.";
-            sendBtnWrapper.title = sendBtn.title; 
+            sendBtnWrapper.title = sendBtn.title;
         } else {
             sendBtn.classList.remove('incompatible-model');
             sendBtn.title = "";
@@ -1435,7 +1464,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     overlay.style.display = 'none';
                 }, 300);
             }
-            
+
             if (!success) {
                 if (modelSelectDropdown) modelSelectDropdown.value = selectedModel || "";
                 renderModelOptions();
@@ -1483,7 +1512,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function selectVisionModel(id, name) {
         selectedVisionModel = id;
         selectedVisionModelName = name;
-        
+
         if (id) {
             localStorage.setItem('my_ai_selected_vision_model', id);
             localStorage.setItem('my_ai_selected_vision_model_name', name);
@@ -1491,7 +1520,7 @@ document.addEventListener('DOMContentLoaded', () => {
             localStorage.removeItem('my_ai_selected_vision_model');
             localStorage.removeItem('my_ai_selected_vision_model_name');
         }
-        
+
         if (visionModelSelectDropdown) {
             visionModelSelectDropdown.value = id || '';
         }
@@ -2097,18 +2126,18 @@ document.addEventListener('DOMContentLoaded', () => {
                             // Clear current content and show fixing indicator
                             accumulatedContent = '';
                             accumulatedReasoning = '';
-                            
+
                             if (mainWrapper) {
                                 mainWrapper.innerHTML = `<div class="validation-fixing" style="display: flex; align-items: center; gap: 0.75rem; padding: 1rem; color: var(--content-secondary); font-style: italic;">
                                     <span class="processing-spinner"></span>
                                     <span>${json.message || 'Correcting formatting...'}</span>
                                 </div>`;
                             }
-                            
+
                             // Clear thought container if it exists
                             const existingThought = botMsgDiv.querySelector('.thought-container');
                             if (existingThought) existingThought.remove();
-                            
+
                             continue;
                         }
 
@@ -2315,7 +2344,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const allRows = Array.from(messagesContainer.querySelectorAll('.message-row'));
             const index = allRows.indexOf(row);
             let textToCopy = '';
-            
+
             if (index !== -1 && chatHistory[index]) {
                 const content = chatHistory[index].content;
                 if (Array.isArray(content)) {
@@ -2358,18 +2387,18 @@ document.addEventListener('DOMContentLoaded', () => {
     async function deleteMessageAction(btn) {
         const confirmed = await showConfirm('Delete Message', 'Are you sure you want to delete this message? All subsequent messages will also be permanently deleted.');
         if (!confirmed) return;
-        
+
         const row = btn.closest('.message-row');
         const allRows = Array.from(messagesContainer.querySelectorAll('.message-row'));
         const index = allRows.indexOf(row);
-        
+
         if (index !== -1 && index < chatHistory.length) {
             chatHistory.splice(index);
             while (row.nextSibling) {
                 row.nextSibling.remove();
             }
             row.remove();
-            
+
             if (currentChatId) persistChat();
             updateActionVisibility();
             if (chatHistory.length === 0) {
@@ -2383,7 +2412,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const row = btn.closest('.message-row');
         const allRows = Array.from(messagesContainer.querySelectorAll('.message-row'));
         const index = allRows.indexOf(row);
-        
+
         if (index !== -1 && chatHistory[index]) {
             const content = chatHistory[index].content;
             let textToEdit = '';
@@ -2404,18 +2433,18 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 textToEdit = content;
             }
-            
+
             textArea.value = textToEdit;
             textArea.style.height = 'auto';
             textArea.style.height = textArea.scrollHeight + 'px';
             textArea.focus();
-            
+
             chatHistory.splice(index);
             while (row.nextSibling) {
                 row.nextSibling.remove();
             }
             row.remove();
-            
+
             if (currentChatId) persistChat();
             updateActionVisibility();
             if (chatHistory.length === 0) {
@@ -2428,7 +2457,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function retryMessageAction(btn) {
         const retryConfirmed = await showRetryModelDialog();
         if (!retryConfirmed) return;
-        
+
         let lastUserIdx = -1;
         for (let i = chatHistory.length - 1; i >= 0; i--) {
             if (chatHistory[i].role === 'user') {
@@ -2436,18 +2465,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 break;
             }
         }
-        
+
         if (lastUserIdx !== -1) {
             const allRows = Array.from(messagesContainer.querySelectorAll('.message-row'));
             const userRow = allRows[lastUserIdx];
-            
+
             chatHistory.splice(lastUserIdx + 1);
             if (userRow) {
                 while (userRow.nextSibling) {
                     userRow.nextSibling.remove();
                 }
             }
-            
+
             if (currentChatId) persistChat();
             sendMessage(null, null, true);
         }
@@ -2458,7 +2487,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const overlay = document.createElement('div');
             overlay.className = 'modal-backdrop open';
             overlay.style.zIndex = '9999';
-            
+
             let compatibleModels = availableModels;
             if (currentChatData?.is_vision) {
                 compatibleModels = availableModels.filter(m => m.capabilities?.vision === true);
@@ -2507,7 +2536,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     const newModelName = opt.getAttribute('data-name');
                     const isVision = opt.getAttribute('data-vision') === 'true';
                     overlay.remove();
-                    
+
                     if (newModelId !== selectedModel) {
                         await selectModel(newModelId, newModelName, isVision);
                         // Delay briefly to allow settings load overlays to finish transitioning
@@ -2634,16 +2663,18 @@ document.addEventListener('DOMContentLoaded', () => {
     function updateActionVisibility() {
         const userRows = messagesContainer.querySelectorAll('.user-message');
         const botRows = messagesContainer.querySelectorAll('.bot-message');
-        
+
         userRows.forEach((r, i) => {
             const editBtn = r.querySelector('.edit-msg-btn');
             if (editBtn) editBtn.style.display = (i === userRows.length - 1) ? 'flex' : 'none';
         });
-        
+
         botRows.forEach((r, i) => {
             const retryBtn = r.querySelector('.retry-msg-btn');
             if (retryBtn) retryBtn.style.display = (i === botRows.length - 1) ? 'flex' : 'none';
         });
+
+        updateTempChatBtnState();
     }
 
 
@@ -2864,7 +2895,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         approveBtn.addEventListener('click', () => {
             const planToSend = planXml;
-            
+
             // UI state change: Disable immediately
             approveBtn.disabled = true;
             approveBtn.style.background = 'var(--color-neutral-400)';
@@ -2875,7 +2906,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 Plan Approved & Executing
             `;
-            
+
             editToggle.style.opacity = '0.5';
             editToggle.style.pointerEvents = 'none';
             editToggle.textContent = 'Plan Finalized';
@@ -2946,7 +2977,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="phase-content"></div>
                 `;
                 item.addEventListener('click', () => {
-                   item.classList.toggle('expanded');
+                    item.classList.toggle('expanded');
                 });
             } else {
                 item.innerHTML = `
@@ -2962,7 +2993,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (type === 'search') {
             const targetContainer = feed.querySelector('.research-phase-indicator.collapsible:last-of-type .phase-content') || feed;
             let existingItem = targetContainer.querySelector(`[data-step-id="${data.step_id}"]`);
-            
+
             if (!existingItem) {
                 existingItem = document.createElement('div');
                 existingItem.className = 'research-activity-item compact';
@@ -3044,14 +3075,14 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             if (type === 'visit_complete') {
-                 const visitItem = targetContainer.querySelector(`[data-url="${data.url}"]`);
-                 if (visitItem) {
-                     visitItem.classList.remove('processing');
-                     const body = visitItem.querySelector('.activity-body');
-                     if (body && (data.preview || data.full_content)) {
-                         const detail = document.createElement('div');
-                         detail.className = 'activity-visit-card';
-                         detail.innerHTML = data.full_content ? `
+                const visitItem = targetContainer.querySelector(`[data-url="${data.url}"]`);
+                if (visitItem) {
+                    visitItem.classList.remove('processing');
+                    const body = visitItem.querySelector('.activity-body');
+                    if (body && (data.preview || data.full_content)) {
+                        const detail = document.createElement('div');
+                        detail.className = 'activity-visit-card';
+                        detail.innerHTML = data.full_content ? `
                              <div class="activity-visit-preview">${escapeHtml(data.preview)}</div>
                              <details class="activity-visit-full-content">
                                  <summary>${(data.chars || 0).toLocaleString()} chars</summary>
@@ -3060,10 +3091,10 @@ document.addEventListener('DOMContentLoaded', () => {
                          ` : `
                              <div class="activity-visit-preview">${escapeHtml(data.preview || '')}</div>
                          `;
-                         body.appendChild(detail);
-                     }
-                 }
-                 return;
+                        body.appendChild(detail);
+                    }
+                }
+                return;
             }
         }
     }
