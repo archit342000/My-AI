@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## v1.0.3
+* **Pure Screen Centering**: The empty state (welcome hero) is now perfectly centered vertically and horizontally relative to the entire screen, ignoring sidebar offsets.
+* **Mobile Responsiveness Overhaul**: 
+    * The navigation panel now disappears entirely when collapsed on mobile, leaving only a floating hamburger menu.
+    * Fixed Z-index hierarchy so that settings and dialogs appear on top of the mobile side panel.
+* **UI Streamlining**:
+    * Corrected the central alignment of the chat header title.
+    * Removed the redundant "Last Model used" global indicator in favor of per-message attribution.
+* **Version Bump**: Incremented version to 1.0.3.
+
 ## v1.0.2
 * **Temporary Chat Guardrails**: 
     * The "Temporary Chat" button is now automatically greyed out and disabled during active Deep Research sessions or when a conversation has already started.

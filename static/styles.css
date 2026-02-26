@@ -70,12 +70,13 @@
     --ease-spring: cubic-bezier(0.2, 0.8, 0.2, 1);
     --ease-liquid: cubic-bezier(0.22, 1, 0.36, 1);
 
-    /* Z-Index */
+    /* Z-Index Hierarchy */
     --z-base: 0;
     --z-content: 10;
-    --z-sidebar: 40;
-    --z-overlay: 100;
-    --z-tooltip: 110;
+    --z-header: 40;
+    --z-sidebar: 1000;
+    --z-overlay: 10000;
+    --z-tooltip: 11000;
     /* Add primary RGB for translucent effects */
     --color-primary-500-rgb: 59, 130, 246;
     --surface-secondary: var(--color-neutral-100);
@@ -397,12 +398,14 @@ body {
 }
 
 .dark .input-luminous option {
-    background: #1F2937; /* Darker surface for options */
+    background: #1F2937;
+    /* Darker surface for options */
     color: #F9FAFB;
 }
 
 .dark .input-luminous optgroup {
-    background: #111827; /* Darker background for optgroup headers */
+    background: #111827;
+    /* Darker background for optgroup headers */
     color: var(--color-neutral-400);
 }
 
@@ -659,18 +662,28 @@ body {
     transition: opacity 0.2s;
     margin-top: 8px;
 }
+
 .message-row:hover .message-actions-container,
 .message-actions-container:focus-within {
     opacity: 1;
 }
+
 .message-actions-container.user-actions {
     margin-top: 0;
     flex-direction: row;
 }
+
 @media (max-width: 768px) {
-    .message-actions-container { opacity: 1; }
-    .message-actions-container.user-actions { flex-direction: row; margin-top: 8px; }
+    .message-actions-container {
+        opacity: 1;
+    }
+
+    .message-actions-container.user-actions {
+        flex-direction: row;
+        margin-top: 8px;
+    }
 }
+
 .action-btn {
     background: transparent;
     border: none;
@@ -683,13 +696,16 @@ body {
     justify-content: center;
     transition: all 0.2s;
 }
+
 .action-btn:hover {
     background: var(--color-neutral-200);
     color: var(--color-primary-600);
 }
+
 .dark .action-btn:hover {
     background: var(--color-neutral-800);
 }
+
 .action-btn svg {
     width: 14px;
     height: 14px;
@@ -1244,7 +1260,7 @@ html.dark .bot-message .avatar {
 }
 
 .phase-header:hover {
-    background: rgba(0,0,0,0.02);
+    background: rgba(0, 0, 0, 0.02);
 }
 
 .collapsible .phase-chevron {
@@ -1648,14 +1664,17 @@ html.dark .bot-message .avatar {
     transform: scale(0.95);
 }
 
-.send-btn:disabled, .send-btn.incompatible-model {
+.send-btn:disabled,
+.send-btn.incompatible-model {
     opacity: 0.5;
-    pointer-events: auto; /* Allow hover for tooltip/clicks for modal */
+    pointer-events: auto;
+    /* Allow hover for tooltip/clicks for modal */
     cursor: pointer;
     background: var(--color-neutral-300) !important;
 }
 
-.dark .send-btn:disabled, .dark .send-btn.incompatible-model {
+.dark .send-btn:disabled,
+.dark .send-btn.incompatible-model {
     background: var(--color-neutral-800) !important;
 }
 
@@ -2330,19 +2349,9 @@ aside {
     border-color: var(--border-subtle);
 }
 
+/* Hide mobile toggle by default, show in mobile media query */
 #mobile-toggle {
-    display: flex;
-    position: fixed;
-    top: 1.25rem;
-    inset-inline-start: 1.25rem;
-    z-index: 50;
-    transition: transform 400ms var(--ease-spring), opacity 400ms var(--ease-spring);
-}
-
-#sidebar.sidebar-expanded~main #mobile-toggle,
-#sidebar.sidebar-collapsed~main #mobile-toggle {
-    opacity: 0;
-    pointer-events: none;
+    display: none;
 }
 
 .sidebar-collapsed .sidebar-header {
@@ -2360,13 +2369,18 @@ aside {
 
 /* 9.B Welcome Hero (Carousel - Directive M) */
 #welcome-hero {
-    max-width: 1200px;
-    margin: 0 auto;
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 100%;
+    max-width: 1000px;
+    margin: 0;
     text-align: center;
     transition: opacity 0.5s var(--ease-spring), transform 0.5s var(--ease-spring);
     opacity: 1;
-    width: 100%;
-    flex: 1;
+    z-index: 5;
+    pointer-events: none;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -2375,7 +2389,7 @@ aside {
 
 #welcome-hero.hidden {
     opacity: 0;
-    transform: scale(0.95);
+    transform: translate(-50%, -52%) scale(0.95);
     pointer-events: none;
 }
 
@@ -2393,93 +2407,9 @@ aside {
 }
 
 /* Tablet Responsiveness */
-@media (max-width: 1024px) {
-    .carousel-viewport {
-        aspect-ratio: 16 / 9;
-    }
+/* Mobile carousel overrides moved to bottom */
 
-    .carousel-slide {
-        padding: 2rem 3rem;
-    }
-}
-
-/* Mobile Responsiveness */
-@media (max-width: 768px) {
-    .sidebar-collapsed {
-        width: 300px !important;
-        /* Keep width for transform calculation */
-        transform: translateX(-100%);
-        visibility: hidden;
-        border-inline-end: none !important;
-        box-shadow: none !important;
-    }
-
-    main {
-        padding-inline-start: 0 !important;
-    }
-
-    #chat-input-area {
-        position: absolute !important;
-        inset-inline-start: 0 !important;
-        bottom: 0 !important;
-        padding: 12px 16px 24px 16px;
-        background: linear-gradient(to top, white 80%, transparent);
-        z-index: 40;
-    }
-
-    .dark #chat-input-area {
-        background: linear-gradient(to top, #0A0A0A 80%, transparent);
-    }
-
-    #mobile-toggle {
-        display: flex;
-        position: fixed;
-        top: 1.25rem;
-        inset-inline-start: 1.25rem;
-        z-index: 50;
-        width: 3.5rem;
-        height: 3.5rem;
-        padding: 0;
-        border-radius: 1rem;
-        align-items: center;
-        justify-content: center;
-        box-shadow: var(--surface-shadow-intense);
-        background: rgba(255, 255, 255, 0.9);
-        backdrop-filter: blur(16px);
-        border: 1px solid var(--color-primary-100);
-        cursor: pointer;
-        transition: transform 0.2s var(--ease-spring);
-    }
-
-    #mobile-toggle:hover {
-        transform: scale(1.05);
-    }
-
-    .dark #mobile-toggle {
-        background: rgba(30, 30, 30, 0.9);
-        border-color: rgba(255, 255, 255, 0.1);
-        color: var(--content-primary);
-    }
-
-    .sidebar-expanded {
-        width: 80% !important;
-        max-width: 300px;
-        z-index: 100;
-        box-shadow: 20px 0 50px rgba(0, 0, 0, 0.2);
-    }
-
-    .carousel-viewport {
-        aspect-ratio: 4 / 3;
-    }
-
-    .carousel-slide {
-        padding: 1.5rem;
-    }
-
-    .slide-content h2 {
-        font-size: 1.75rem;
-    }
-}
+/* Mobile responsiveness block moved to bottom */
 
 .dark .carousel-viewport {
     background: #121212;
@@ -2835,52 +2765,66 @@ aside.resizing {
     display: none !important;
 }
 
-/* Main Layout Stability */
-#app-root {
-    display: flex;
-    /* Changed from block to flex */
-    width: 100%;
-    height: 100vh;
-    height: 100svh;
-    overflow: hidden;
-}
-
-main {
-    flex: 1;
-    /* Occupy remaining space */
-    width: 0;
-    /* Ensures flex child doesn't overflow its parent */
-    padding-inline-start: 4.5rem;
-    /* Permanently offset to accommodate the collapsed sidebar footprint underneath */
-    display: flex;
-    flex-direction: column;
-    height: 100vh;
-    height: 100svh;
-    position: relative;
-    overflow: hidden;
-    transition: all 400ms var(--ease-spring);
-}
-
-@media (max-width: 768px) {
-    main {
-        width: 100%;
-        padding-inline-start: 0;
+@media (min-width: 769px) {
+    .sidebar-expanded {
+        width: 16rem;
+        /* Default 256px */
+        box-shadow: 20px 0 50px rgba(0, 0, 0, 0.2);
     }
-}
 
-#messages {
-    flex: 1;
-    overflow-y: auto;
-    overflow-x: hidden;
-    position: relative;
-    width: 100%;
-    padding: clamp(2rem, 8vh, 4rem) 1.5rem clamp(8rem, 15vh, 12rem) 1.5rem;
-    scrollbar-width: thin;
-    scrollbar-color: var(--color-neutral-200) transparent;
-    scroll-behavior: smooth;
-    -webkit-overflow-scrolling: touch;
-    display: flex;
-    flex-direction: column;
+    .dark .sidebar-expanded {
+        box-shadow: 0 0 60px rgba(0, 0, 0, 0.4);
+    }
+
+    .sidebar-collapsed {
+        width: 4.5rem;
+        transform: none;
+        visibility: visible;
+        pointer-events: auto;
+    }
+
+    .sidebar-collapsed .sidebar-section,
+    .sidebar-collapsed #temp-chat-btn,
+    .sidebar-collapsed .sidebar-brand {
+        display: none !important;
+    }
+
+    /* Main Layout Stability on Desktop */
+    #app-root {
+        display: flex;
+        width: 100%;
+        height: 100vh;
+        height: 100svh;
+        overflow: hidden;
+    }
+
+    main {
+        flex: 1;
+        width: 0;
+        padding-inline-start: 4.5rem;
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+        height: 100svh;
+        position: relative;
+        overflow: hidden;
+        transition: all 400ms var(--ease-spring);
+    }
+
+    #messages {
+        flex: 1;
+        overflow-y: auto;
+        overflow-x: hidden;
+        position: relative;
+        width: 100%;
+        padding: clamp(2rem, 8vh, 4rem) 1.5rem clamp(8rem, 15vh, 12rem) 1.5rem;
+        scrollbar-width: thin;
+        scrollbar-color: var(--color-neutral-200) transparent;
+        scroll-behavior: smooth;
+        -webkit-overflow-scrolling: touch;
+        display: flex;
+        flex-direction: column;
+    }
 }
 
 /* #messages::after removed to fix empty state centering */
@@ -2917,13 +2861,30 @@ main {
     backdrop-filter: saturate(180%) blur(20px);
     -webkit-backdrop-filter: saturate(180%) blur(20px);
     border-bottom: 1px solid var(--border-header);
-    z-index: 35;
+    z-index: var(--z-header);
     transition: all 400ms var(--ease-spring);
 }
 
 .dark .chat-title-header {
     background: var(--bg-header);
     border-color: var(--border-header);
+}
+
+.chat-header-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    max-width: 80%;
+}
+
+.bot-model-label {
+    font-size: 0.65rem;
+    font-weight: 700;
+    color: var(--content-muted);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    margin-top: 0.2rem;
 }
 
 .chat-title-header.hidden {
@@ -3123,7 +3084,8 @@ aside.resizing .resize-handle {
 }
 
 html.dark .thought-header-title {
-    color: #93C5FD; /* Brighter blue for dark mode readability */
+    color: #93C5FD;
+    /* Brighter blue for dark mode readability */
 }
 
 /* Thought Process - Main Icon (Interconnected Nodes) */
@@ -3199,14 +3161,15 @@ html.dark .thought-chevron {
     margin-bottom: 0;
 }
 
-.thought-body-content ul, .thought-body-content ol {
+.thought-body-content ul,
+.thought-body-content ol {
     margin: 0.5em 0;
     padding-left: 1.5em;
 }
 
 .thought-body-content code {
     font-family: var(--font-mono);
-    background: rgba(0,0,0,0.05);
+    background: rgba(0, 0, 0, 0.05);
     padding: 2px 4px;
     border-radius: 4px;
 }
@@ -3247,7 +3210,7 @@ html.dark .thought-chevron {
 }
 
 .dark .thought-body-content code {
-    background: rgba(255,255,255,0.1);
+    background: rgba(255, 255, 255, 0.1);
 }
 
 /* Reasoning Active State — visual feedback while AI thinks */
@@ -3751,6 +3714,7 @@ a.chat-list-item:active {
     width: 100%;
     padding: 2rem 1rem;
     opacity: 1 !important;
+    pointer-events: auto;
 }
 
 .empty-state-greeting {
@@ -3949,4 +3913,130 @@ a.chat-list-item:active {
     opacity: 1;
     max-width: 100px;
     margin-left: 0.2rem;
+}
+
+/* --- Unified Mobile Responsiveness Override --- */
+@media (max-width: 768px) {
+
+    /* Side panel on mobile should slide off-screen entirely when collapsed */
+    aside {
+        position: fixed;
+        width: 280px !important;
+        max-width: 85vw;
+        z-index: 1000;
+        transform: translateX(-100%);
+        visibility: hidden;
+        transition: transform 400ms var(--ease-spring), visibility 400ms;
+        box-shadow: none;
+    }
+
+    .sidebar-expanded {
+        transform: translateX(0) !important;
+        visibility: visible !important;
+        box-shadow: 20px 0 50px rgba(0, 0, 0, 0.2) !important;
+    }
+
+    .sidebar-collapsed {
+        transform: translateX(-100%) !important;
+        visibility: hidden !important;
+        width: 280px !important;
+        /* Fixed width for transform stability */
+    }
+
+    /* Floating Hamburguer Menu */
+    #mobile-toggle {
+        display: flex;
+        position: fixed;
+        top: 1.25rem;
+        left: 1.25rem;
+        z-index: 50;
+        width: 3.5rem;
+        height: 3.5rem;
+        padding: 0;
+        border-radius: 1rem;
+        align-items: center;
+        justify-content: center;
+        box-shadow: var(--surface-shadow-intense);
+        background: rgba(255, 255, 255, 0.92);
+        backdrop-filter: blur(16px);
+        border: 1px solid var(--color-primary-100);
+        cursor: pointer;
+        transition: transform 0.2s, opacity 0.3s;
+        color: var(--color-primary-600);
+    }
+
+    .dark #mobile-toggle {
+        background: rgba(24, 24, 27, 0.92);
+        border-color: rgba(255, 255, 255, 0.1);
+        color: var(--color-primary-400);
+    }
+
+    /* Hide hamburger menu when sidebar is expanded to avoid overlap */
+    .sidebar-expanded~main #mobile-toggle {
+        opacity: 0;
+        pointer-events: none;
+    }
+
+    main {
+        padding-inline-start: 0 !important;
+        width: 100vw !important;
+    }
+
+    #messages {
+        padding: 5rem 1rem 8rem 1rem !important;
+    }
+
+    #chat-input-area {
+        position: fixed !important;
+        padding: 12px 12px 24px 12px !important;
+        background: linear-gradient(to top, white 85%, transparent);
+    }
+
+    .dark #chat-input-area {
+        background: linear-gradient(to top, #09090B 85%, transparent);
+    }
+
+    .input-container {
+        border-radius: var(--radius-xl);
+        padding: 6px 12px;
+    }
+
+    /* Welcome Hero on Mobile */
+    #welcome-hero {
+        width: 100%;
+        max-width: 90vw;
+    }
+
+    .greeting-text {
+        font-size: 2.75rem !important;
+    }
+
+    .greeting-sub {
+        font-size: 1.2rem !important;
+    }
+
+    /* Carousel Adjustment */
+    .carousel-viewport {
+        aspect-ratio: 1 / 1.1;
+    }
+
+    .carousel-slide {
+        padding: 1rem;
+    }
+
+    .message-row {
+        padding: 16px 8px;
+        gap: 12px;
+    }
+
+    .avatar-wrapper {
+        width: 28px;
+        height: 28px;
+    }
+}
+
+@media (max-width: 1024px) {
+    .carousel-viewport {
+        aspect-ratio: 16 / 9;
+    }
 }
