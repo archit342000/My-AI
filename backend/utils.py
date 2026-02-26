@@ -4,14 +4,7 @@ import json
 import time
 import datetime
 from urllib.parse import urlparse
-from backend.config import (
-    TAVILY_API_KEY, TAVILY_BASE_URL, SEARCH_DEPTH, MAX_SEARCH_RESULTS, 
-    MIN_SEARCH_RESULTS, INCLUDE_ANSWER, INCLUDE_RAW_CONTENT, 
-    RELEVANCE_THRESHOLD, SEARCH_CACHE_TTL,
-    TIMEOUT_TAVILY_SEARCH, TIMEOUT_TAVILY_SEARCH_ASYNC,
-    TIMEOUT_TAVILY_MAP, TIMEOUT_TAVILY_EXTRACT,
-    TIMEOUT_LLM_ASYNC, TIMEOUT_WEB_SCRAPE
-)
+from backend import config
 from backend.logger import log_tool_call, log_llm_call
 
 _tavily_search_cache = {}
@@ -22,19 +15,19 @@ def get_current_time():
     return now.strftime("%A, %B %d, %Y %I:%M:%S %p")
 
 def execute_tavily_search(query, topic="general", time_range=None, start_date=None, end_date=None, include_images=False, chat_id=None):
-    if not TAVILY_API_KEY:
-        return "Error: TAVILY_API_KEY is not configured.", "Tavily API key missing"
+    if not config.TAVILY_API_KEY:
+        return "Error: config.TAVILY_API_KEY is not configured.", "Tavily API key missing"
 
-    url = f"{TAVILY_BASE_URL}/search"
+    url = f"{config.TAVILY_BASE_URL}/search"
     
     payload = {
-        "api_key": TAVILY_API_KEY,
+        "api_key": config.TAVILY_API_KEY,
         "query": query,
-        "search_depth": SEARCH_DEPTH,
+        "search_depth": config.SEARCH_DEPTH,
         "topic": topic if topic in ["general", "news", "finance"] else "general",
-        "max_results": MAX_SEARCH_RESULTS,
-        "include_answer": INCLUDE_ANSWER,
-        "include_raw_content": INCLUDE_RAW_CONTENT,
+        "max_results": config.MAX_SEARCH_RESULTS,
+        "include_answer": config.INCLUDE_ANSWER,
+        "include_raw_content": config.INCLUDE_RAW_CONTENT,
         "include_images": include_images,
         "include_image_descriptions": include_images
     }
@@ -47,7 +40,7 @@ def execute_tavily_search(query, topic="general", time_range=None, start_date=No
     start_time = time.time()
     try:
         import httpx
-        with httpx.Client(timeout=TIMEOUT_TAVILY_SEARCH) as client:
+        with httpx.Client(timeout=config.TIMEOUT_TAVILY_SEARCH) as client:
             response = client.post(url, json=payload)
             response.raise_for_status()
             data = response.json()
@@ -62,7 +55,7 @@ def execute_tavily_search(query, topic="general", time_range=None, start_date=No
             filtered_results = []
             for res in results:
                 score = res.get("score", 0)
-                if score >= RELEVANCE_THRESHOLD or len(filtered_results) < MIN_SEARCH_RESULTS:
+                if score >= config.RELEVANCE_THRESHOLD or len(filtered_results) < config.MIN_SEARCH_RESULTS:
                     filtered_results.append(res)
             
             output_parts = []
@@ -120,7 +113,7 @@ def audit_tavily_search(chat_id):
         return "Error: No recent search found for this context to audit."
     
     cache_entry = _tavily_search_cache[chat_id]
-    if time.time() - cache_entry["timestamp"] > SEARCH_CACHE_TTL:
+    if time.time() - cache_entry["timestamp"] > config.SEARCH_CACHE_TTL:
         del _tavily_search_cache[chat_id]
         return "Error: The previous search data has expired from cache."
         
@@ -129,9 +122,9 @@ def audit_tavily_search(chat_id):
 import httpx
 
 async def async_tavily_search(query, topic="general", time_range=None, start_date=None, end_date=None):
-    url = f"{TAVILY_BASE_URL}/search"
+    url = f"{config.TAVILY_BASE_URL}/search"
     payload = {
-        "api_key": TAVILY_API_KEY,
+        "api_key": config.TAVILY_API_KEY,
         "query": query,
         "search_depth": "basic",
         "topic": topic if topic in ["general", "news", "finance"] else "general",
@@ -145,7 +138,7 @@ async def async_tavily_search(query, topic="general", time_range=None, start_dat
     if end_date: payload["end_date"] = end_date
 
     start_time = time.time()
-    async with httpx.AsyncClient(timeout=TIMEOUT_TAVILY_SEARCH_ASYNC) as client:
+    async with httpx.AsyncClient(timeout=config.TIMEOUT_TAVILY_SEARCH_ASYNC) as client:
         try:
              resp = await client.post(url, json=payload)
              resp.raise_for_status()
@@ -157,9 +150,9 @@ async def async_tavily_search(query, topic="general", time_range=None, start_dat
              return [], []
 
 async def async_tavily_map(url_to_map, instruction):
-    url = f"{TAVILY_BASE_URL}/map"
+    url = f"{config.TAVILY_BASE_URL}/map"
     payload = {
-        "api_key": TAVILY_API_KEY,
+        "api_key": config.TAVILY_API_KEY,
         "url": url_to_map,
         "instructions": instruction,
         "max_depth": 3,
@@ -170,7 +163,7 @@ async def async_tavily_map(url_to_map, instruction):
         "exclude_domains": ["facebook.com", "twitter.com", "instagram.com"]
     }
     start_time = time.time()
-    async with httpx.AsyncClient(timeout=TIMEOUT_TAVILY_MAP) as client:
+    async with httpx.AsyncClient(timeout=config.TIMEOUT_TAVILY_MAP) as client:
         try:
             resp = await client.post(url, json=payload)
             resp.raise_for_status()
@@ -183,16 +176,16 @@ async def async_tavily_map(url_to_map, instruction):
 
 async def async_tavily_extract(urls):
     if not urls: return []
-    url = f"{TAVILY_BASE_URL}/extract"
+    url = f"{config.TAVILY_BASE_URL}/extract"
     payload = {
-        "api_key": TAVILY_API_KEY,
+        "api_key": config.TAVILY_API_KEY,
         "urls": urls,
         "extract_depth": "basic",
         "include_images": True,
         "format": "markdown"
     }
     start_time = time.time()
-    async with httpx.AsyncClient(timeout=TIMEOUT_TAVILY_EXTRACT) as client:
+    async with httpx.AsyncClient(timeout=config.TIMEOUT_TAVILY_EXTRACT) as client:
         try:
             resp = await client.post(url, json=payload)
             resp.raise_for_status()
@@ -258,7 +251,7 @@ async def async_chat_completion(url, payload):
     else:
         endpoint = f"{base_url}/chat/completions"
         
-    async with httpx.AsyncClient(timeout=TIMEOUT_LLM_ASYNC) as client:
+    async with httpx.AsyncClient(timeout=config.TIMEOUT_LLM_ASYNC) as client:
         try:
             resp = await client.post(endpoint, json=payload)
             resp.raise_for_status()
@@ -278,7 +271,7 @@ async def _async_visit_page(url, max_chars):
     try:
         headers = {'User-Agent': random.choice(USER_AGENTS)}
         
-        async with httpx.AsyncClient(headers=headers, timeout=TIMEOUT_WEB_SCRAPE, follow_redirects=True) as client:
+        async with httpx.AsyncClient(headers=headers, timeout=config.TIMEOUT_WEB_SCRAPE, follow_redirects=True) as client:
             response = await client.get(url)
             response.raise_for_status()
             
