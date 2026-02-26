@@ -160,7 +160,10 @@ def generate_chat_response(api_url, model, messages, extra_body, rag=None, memor
     validatable_content = current_content
 
     # 4. Tool Execution Loop
-    while tool_calls:
+    MAX_TOOL_ROUNDS = 5
+    tool_round = 0
+    while tool_calls and tool_round < MAX_TOOL_ROUNDS:
+        tool_round += 1
         # Reconstruct full assistant message for history (with tags if reasoning exists)
         assistant_content_for_history = current_content
         if current_reasoning:
@@ -276,6 +279,20 @@ def generate_chat_response(api_url, model, messages, extra_body, rag=None, memor
                 current_reasoning += res_log
                 yield f"data: {create_chunk(model, reasoning=res_log)}\n\n"
                 has_real_tools = True
+            else:
+                # Unrecognized or garbled tool call — return error so the
+                # message history stays valid (every tool_call needs a result).
+                log_event("tool_call_unrecognized", {"fn_name": fn_name, "chat_id": chat_id})
+                err_log = f"Unrecognized tool: {fn_name}\n"
+                current_reasoning += err_log
+                yield f"data: {create_chunk(model, reasoning=err_log)}\n\n"
+                messages_to_send.append({
+                    "role": "tool",
+                    "tool_call_id": tc['id'],
+                    "name": fn_name,
+                    "content": f"ERROR: Unrecognized tool '{fn_name}'. This tool does not exist. Check your available tools and try again with a valid tool name."
+                })
+                has_real_tools = True
 
         # --- 4d. Snapshot prefix for redact reconstruction ---
         tool_flow_prefix = full_content
@@ -286,6 +303,8 @@ def generate_chat_response(api_url, model, messages, extra_body, rag=None, memor
             final_payload = {
                 "model": model,
                 "messages": list(messages_to_send),
+                "tools": tools if tools else None,
+                "tool_choice": "auto" if tools else None,
                 "stream": True, 
                 **extra_body
             }

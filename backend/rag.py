@@ -37,7 +37,7 @@ class LMStudioEmbeddingFunction(embedding_functions.EmbeddingFunction):
                 current_task = task or self.default_task
                 prefix = "Query: " if current_task == "query" else "Document: "
                 # Avoid double prefixing
-                if item.startswith("Query: ") or item.startswith("Document: ") or item.startswith("retrieval."):
+                if item.startswith("Query: ") or item.startswith("Document: "):
                     processed_input.append(item)
                 else:
                     processed_input.append(f"{prefix}{item}")
@@ -80,6 +80,33 @@ class LMStudioEmbeddingFunction(embedding_functions.EmbeddingFunction):
             raise e
 
 class MemoryRAG:
+    COSINE_METADATA = {"hnsw:space": "cosine"}
+
+    @staticmethod
+    def _ensure_cosine_collection(client, name, embedding_fn):
+        """Ensure the collection exists with cosine distance.
+        If an old collection exists with a different metric (e.g. L2 from the
+        Gemma era), delete and recreate it. This also clears stale embeddings
+        that are incompatible with the current embedding model."""
+        try:
+            existing = client.get_collection(name=name)
+            coll_meta = existing.metadata or {}
+            if coll_meta.get("hnsw:space") != "cosine":
+                log_event("rag_collection_migration", {
+                    "collection": name,
+                    "old_space": coll_meta.get("hnsw:space", "l2 (default)"),
+                    "action": "delete_and_recreate_with_cosine"
+                })
+                client.delete_collection(name=name)
+        except Exception:
+            pass  # Collection doesn't exist yet — will be created below
+
+        return client.get_or_create_collection(
+            name=name,
+            embedding_function=embedding_fn,
+            metadata=MemoryRAG.COSINE_METADATA
+        )
+
     def __init__(self, persist_path="./backend/chroma_db", api_url="http://localhost:1234", embedding_model="text-embedding-jina-embeddings-v5-text-small-retrieval"):
         self.client = chromadb.PersistentClient(path=persist_path)
 
@@ -89,9 +116,8 @@ class MemoryRAG:
             model_name=embedding_model
         )
 
-        self.collection = self.client.get_or_create_collection(
-            name="memory_store",
-            embedding_function=self.embedding_fn
+        self.collection = self._ensure_cosine_collection(
+            self.client, "memory_store", self.embedding_fn
         )
 
     def add_memory(self, text, metadata=None):
@@ -293,12 +319,13 @@ class MemoryRAG:
         # 6. Scoring & Re-Ranking
         scored_results = []
         current_time = time.time()
-        DECAY_RATE = 0.05
+        DECAY_RATE = 0.10
         
         # Heuristic Threshold for Cosine Similarity (Range -1 to 1)
         # 1.0 = identical, 0.0 = orthogonal
-        # For Jina v5, embeddings tend to express un-relatedness very close to 0
-        MIN_SEMANTIC_SCORE = 0.35 # Increased for Jina v5 to filter better
+        # With cosine distance metric properly set, Jina v5 scores are well-
+        # calibrated: >0.7 strong match, 0.5-0.7 moderate, <0.5 weak.
+        MIN_SEMANTIC_SCORE = 0.50
 
         for doc, meta, emb in zip(documents, metadatas, embeddings):
             # A. Semantic Score (High is Good)
@@ -320,9 +347,10 @@ class MemoryRAG:
             age_hours = age_seconds / 3600
             if age_hours < 0: age_hours = 0
             
-            # Decay factor increases with age
-            # 1 hour -> 1.03
-            # 24 hour -> 1.16
+            # Decay factor increases with age (DECAY_RATE=0.10)
+            # 1 hour  -> 1.07
+            # 24 hour -> 1.32
+            # 720 hour (1 month) -> 1.66
             time_decay = 1 + (math.log(age_hours + 1) * DECAY_RATE)
             
             # Final Score: Similarity / Decay
@@ -351,7 +379,8 @@ class MemoryRAG:
             self.client.delete_collection(name="memory_store")
             self.collection = self.client.get_or_create_collection(
                 name="memory_store",
-                embedding_function=self.embedding_fn
+                embedding_function=self.embedding_fn,
+                metadata=self.COSINE_METADATA
             )
             return True
         except Exception as e:
@@ -366,9 +395,8 @@ class DeepResearchRAG:
             api_url=api_url,
             model_name=embedding_model
         )
-        self.collection = self.client.get_or_create_collection(
-            name="deep_research_store",
-            embedding_function=self.embedding_fn
+        self.collection = MemoryRAG._ensure_cosine_collection(
+            self.client, "deep_research_store", self.embedding_fn
         )
 
     def store_chunk(self, chat_id, step_index, url, chunk_text):

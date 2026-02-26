@@ -1,5 +1,17 @@
 # CHANGELOG
-    
+
+## v1.1.3
+* **RAG Engine Overhaul**:
+    - **Proper Similarity Metric**: Switched ChromaDB to use `cosine` distance instead of default `L2`, resolving search relevance issues with Jina v5.
+    - **Auto-Migration**: Implemented automatic detection and migration for stale L2 collections on startup, ensuring old Gemma-era embeddings don't pollute current results.
+    - **Tuned Thresholds**: Recalibrated semantic similarity (`0.50`) and time-decay (`0.10`) for Jina v5's specific embedding distribution.
+    - **Cleanup**: Stripped vestigial prefix logic causing potential retrieval interference.
+* **AI Agent & Validation Stability**:
+    - **Tool-Call Resilience**: Added a fallback handler for unrecognized/garbled tool names produced by the model, preventing orphaned history states.
+    - **Multi-Round Tool Support**: Fixed follow-up LLM calls to include tool definitions, enabling sequential tool-calling (e.g., search memory then search web).
+    - **Loop Safety**: Implemented a 5-round maximum for tool calling to prevent infinite recurring calls.
+* **Version Bump**: Incremented version to 1.1.3.
+
 ## v1.1.2
 * **RAG & Infrastructure Fixes**:
     * **Server Link Mapping**: Fixed a critical bug where Deep Research agents were ignoring the `LM_STUDIO_URL` setting and defaulting to localhost.
