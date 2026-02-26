@@ -1,5 +1,11 @@
 # CHANGELOG
     
+## v1.1.1
+* **Deep Research Optimization**: Scaled down context parameters for better performance with local 512k context windows (originally built for 1M).
+    * **Context Gathering**: Max tokens from web scraping reduced from 700k to 400k.
+    * **Report Length**: Report limits halved from ~64k down to 32k (`max_tokens: 32768`).
+* **Version Bump**: Incremented version to 1.1.1.
+
 ## v1.1.0
 * **Intelligence (Logs) Overhaul**:
     * **High-Fidelity UI**: Completely redesigned the network and event logs interface with glassmorphism, refined typography, and info-dense layouts.

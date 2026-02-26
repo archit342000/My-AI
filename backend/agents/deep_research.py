@@ -356,7 +356,7 @@ async def generate_deep_research_response(api_url, model, messages, approved_pla
     # Instantiate Ephemeral Vector Store
     rag_engine = DeepResearchRAG()
     total_tokens_stored = 0
-    TOKEN_LIMIT = 700000
+    TOKEN_LIMIT = 400000
 
     # ===== EXTRACTION PHASE =====
     if search_depth_mode == 'regular':
@@ -497,7 +497,7 @@ async def generate_deep_research_response(api_url, model, messages, approved_pla
                     yield f"data: {_create_activity_chunk(model, 'visit_complete', {'url': url, 'chars': len(content)})}\n\n"
                 
                 if total_tokens_stored >= TOKEN_LIMIT:
-                    yield f"data: {_create_activity_chunk(model, 'status', {'message': 'Global 700k token limit reached. Stopping extraction.', 'icon': '🛑'})}\n\n"
+                    yield f"data: {_create_activity_chunk(model, 'status', {'message': 'Global 400k token limit reached. Stopping extraction.', 'icon': '🛑'})}\n\n"
                     break
 
     # ===== SEARCH VISION PHASE =====
@@ -609,7 +609,7 @@ async def generate_deep_research_response(api_url, model, messages, approved_pla
         "stream": True,
         "temperature": 0.4,
         "top_p": 0.9,
-        "max_tokens": 65536
+        "max_tokens": 32768
     }
 
     # Helper for streaming correction
