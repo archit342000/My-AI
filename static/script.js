@@ -360,16 +360,6 @@ document.addEventListener('DOMContentLoaded', () => {
             updateDeepResearchUI();
 
             // Update Header Display
-            const lastModelDisplay = document.getElementById('last-model-display');
-            if (lastModelDisplay) {
-                if (chat.last_model && !isDeepResearchMode) {
-                    lastModelDisplay.textContent = `Last model used: ${chat.last_model}`;
-                    lastModelDisplay.style.display = 'block';
-                } else {
-                    lastModelDisplay.style.display = 'none';
-                }
-            }
-
             checkSendButtonCompatibility();
 
             messagesContainer.innerHTML = '';
@@ -967,16 +957,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Sync vision compatibility when toggling mode
             checkSendButtonCompatibility();
-
-            // Sync Header Display
-            const lastModelDisplay = document.getElementById('last-model-display');
-            if (lastModelDisplay) {
-                if (currentChatData?.last_model && !isDeepResearchMode) {
-                    lastModelDisplay.style.display = 'block';
-                } else {
-                    lastModelDisplay.style.display = 'none';
-                }
-            }
         });
     }
 
