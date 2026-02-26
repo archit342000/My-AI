@@ -27,7 +27,7 @@ from backend.validation import (
     validate_output_format, parse_fixes, find_fix_locations, apply_fixes,
     build_fix_messages, build_regeneration_messages
 )
-from backend.config import TIMEOUT_IMAGE_FETCH, TIMEOUT_WEB_SCRAPE
+from backend.config import TIMEOUT_IMAGE_FETCH, TIMEOUT_WEB_SCRAPE, LM_STUDIO_URL, EMBEDDING_MODEL
 
 # --- Configuration ---
 MAX_PLAN_RETRIES = 2
@@ -354,7 +354,7 @@ async def generate_deep_research_response(api_url, model, messages, approved_pla
                 tavily_images_to_process.append({"url": img_url, "step_index": step_idx})
 
     # Instantiate Ephemeral Vector Store
-    rag_engine = DeepResearchRAG()
+    rag_engine = DeepResearchRAG(api_url=api_url, embedding_model=EMBEDDING_MODEL)
     total_tokens_stored = 0
     TOKEN_LIMIT = 400000
 

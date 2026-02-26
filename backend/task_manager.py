@@ -4,6 +4,7 @@ import asyncio
 import threading
 from backend.storage import add_message
 from backend.logger import log_event
+from backend.config import LM_STUDIO_URL
 
 TASKS_DIR = "./backend/tasks"
 LOGS_DIR = "./backend/task_logs"
@@ -80,9 +81,7 @@ class TaskManager:
         activity_reasoning = ""
         llm_reasoning = ""
         
-        from dotenv import load_dotenv
-        load_dotenv()
-        lm_studio_url = os.getenv("LM_STUDIO_URL", "http://localhost:1234")
+        lm_studio_url = LM_STUDIO_URL
 
         generator = execute_fn(
             lm_studio_url, 

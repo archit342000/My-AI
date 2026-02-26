@@ -14,9 +14,15 @@ def stream_chat_completion(url, payload):
     stream_completed = False
     model = payload.get("model", "unknown")
     
+    base_url = url.rstrip("/")
+    if not base_url.endswith("/v1"):
+        endpoint = f"{base_url}/v1/chat/completions"
+    else:
+        endpoint = f"{base_url}/chat/completions"
+
     try:
         response = requests.post(
-            f"{url}/v1/chat/completions",
+            endpoint,
             json=payload,
             stream=True
         )
@@ -64,8 +70,14 @@ def chat_completion(url, payload):
         payload["stream"] = False
         model = payload.get("model", "unknown")
         
+        base_url = url.rstrip("/")
+        if not base_url.endswith("/v1"):
+            endpoint = f"{base_url}/v1/chat/completions"
+        else:
+            endpoint = f"{base_url}/chat/completions"
+            
         response = requests.post(
-            f"{url}/v1/chat/completions",
+            endpoint,
             json=payload,
             timeout=TIMEOUT_LLM_BLOCKING
         )
