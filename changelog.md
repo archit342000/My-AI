@@ -1,4 +1,20 @@
 # CHANGELOG
+    
+## v1.1.0
+* **Intelligence (Logs) Overhaul**:
+    * **High-Fidelity UI**: Completely redesigned the network and event logs interface with glassmorphism, refined typography, and info-dense layouts.
+    * **Live Stream Search**: Integrated real-time filtering for both network requests and system events.
+    * **Syntax Highlighting**: Added `highlight.js` integration for deep inspection of JSON payloads and Markdown returns.
+    * **Telemetry Metrics**: Added latency tracking and transfer mode indicators.
+    * **Resizable Workspace**: Integrated a custom resizable sidebar with state persistence.
+    * **Deep Inspection**: Full payload visibility for all system events, resolving previous truncation issues.
+* **Brain Architecture (Jina v5 Migration)**:
+    * **State-of-the-Art Retrieval**: Migrated the default embedding model to `text-embedding-jina-embeddings-v5-text-small-retrieval`.
+    * **Task-Specific Prefixing**: Implemented automated `Query:` and `Document:` prefixing logic to optimize retrieval accuracy according to Jina v5's architecture.
+    * **Expanded Context**: Increased chunking limits to **2500 characters** to better utilize modern embedding context windows.
+    * **Refined Filtering**: Calibrated the semantic similarity threshold to **0.35** for more precise memory recall.
+* **Version Bump**: Incremented version to 1.1.0.
+
 
 ## v1.0.3
 * **Pure Screen Centering**: The empty state (welcome hero) is now perfectly centered vertically and horizontally relative to the entire screen, ignoring sidebar offsets.

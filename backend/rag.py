@@ -7,11 +7,12 @@ import hashlib
 import time
 
 class LMStudioEmbeddingFunction(embedding_functions.EmbeddingFunction):
-    def __init__(self, api_url="http://localhost:1234", model_name="text-embedding-embeddinggemma-300m"):
+    def __init__(self, api_url="http://localhost:1234", model_name="text-embedding-jina-embeddings-v5-text-small-retrieval", default_task="document"):
         self.api_url = api_url
         self.model_name = model_name
+        self.default_task = default_task
 
-    def __call__(self, input):
+    def __call__(self, input, task=None):
         # Determine endpoint. Some versions use /v1/embeddings, others might vary.
         # We assume OpenAI compatible /v1/embeddings
         url = f"{self.api_url}/v1/embeddings"
@@ -20,15 +21,31 @@ class LMStudioEmbeddingFunction(embedding_functions.EmbeddingFunction):
         if isinstance(input, str):
             input = [input]
 
+        processed_input = []
+        is_jina = "jina" in self.model_name.lower()
+        
+        for item in input:
+            if is_jina:
+                current_task = task or self.default_task
+                prefix = "Query: " if current_task == "query" else "Document: "
+                # Avoid double prefixing
+                if item.startswith("Query: ") or item.startswith("Document: ") or item.startswith("retrieval."):
+                    processed_input.append(item)
+                else:
+                    processed_input.append(f"{prefix}{item}")
+            else:
+                processed_input.append(item)
+
         payload = {
             "model": self.model_name,
-            "input": input
+            "input": processed_input
         }
 
         try:
             print(f"\n--- [DEBUG] POST {url} ---")
-            print(f"Embedding Input: {input}")
-            response = requests.post(url, json=payload)
+            # Don't print full input to avoid spamming console with huge docs
+            print(f"Embedding {len(processed_input)} items using model: {self.model_name}")
+            response = requests.post(url, json=payload, headers={"Content-Type": "application/json"})
             print(f"--- [DEBUG] Status: {response.status_code} ---")
             response.raise_for_status()
             data = response.json()
@@ -39,13 +56,10 @@ class LMStudioEmbeddingFunction(embedding_functions.EmbeddingFunction):
             return embeddings
         except Exception as e:
             print(f"Embedding error: {e}")
-            # Fallback or re-raise? For RAG, failure to embed is critical.
-            # Returning None or empty might crash Chroma.
-            # We'll return dummy embeddings of correct size if possible? No, size unknown.
             raise e
 
 class MemoryRAG:
-    def __init__(self, persist_path="./backend/chroma_db", api_url="http://localhost:1234", embedding_model="text-embedding-embeddinggemma-300m"):
+    def __init__(self, persist_path="./backend/chroma_db", api_url="http://localhost:1234", embedding_model="text-embedding-jina-embeddings-v5-text-small-retrieval"):
         self.client = chromadb.PersistentClient(path=persist_path)
 
         # Initialize custom embedding function
@@ -72,11 +86,19 @@ class MemoryRAG:
         if metadata:
             meta.update(metadata)
 
+        # Explicitly embed so we can correctly assign the "document" prefix
+        try:
+            embeddings = self.embedding_fn([text], task="document")
+        except Exception as e:
+            print(f"Embedding error in add_memory: {e}")
+            return
+
         # Use upsert to handle potential duplicates (idempotent)
         self.collection.upsert(
             documents=[text],
             metadatas=[meta],
-            ids=[doc_id]
+            ids=[doc_id],
+            embeddings=embeddings
         )
 
     # --- Noise Filtering ---
@@ -92,8 +114,8 @@ class MemoryRAG:
         clean = "".join(c for c in text.strip().lower() if c.isalnum() or c.isspace())
         return clean in self.TRIVIAL_MESSAGES or len(clean) < 5
 
-    def _chunk_text(self, text, max_chars=1200):
-        """Split long text into chunks of ~300 tokens (~1200 chars).
+    def _chunk_text(self, text, max_chars=2500):
+        """Split long text into chunks of ~600 tokens (~2500 chars).
         Splits on paragraph boundaries first, then sentence boundaries."""
         if len(text) <= max_chars:
             return [text]
@@ -206,7 +228,7 @@ class MemoryRAG:
         # 3. Explicitly Embed Query for Re-Ranking
         try:
              # self.embedding_fn returns list of lists
-             query_embedding = self.embedding_fn([query])[0]
+             query_embedding = self.embedding_fn([query], task="query")[0]
         except Exception as e:
              # If embedding fails, return nothing
              print(f"Embedding error: {e}")
@@ -247,8 +269,8 @@ class MemoryRAG:
         
         # Heuristic Threshold for Cosine Similarity (Range -1 to 1)
         # 1.0 = identical, 0.0 = orthogonal
-        # 0.4 is usually "somewhat related" in text embedding spaces
-        MIN_SEMANTIC_SCORE = 0.15 # Lowered to catch more candidates
+        # For Jina v5, embeddings tend to express un-relatedness very close to 0
+        MIN_SEMANTIC_SCORE = 0.35 # Increased for Jina v5 to filter better
 
         for doc, meta, emb in zip(documents, metadatas, embeddings):
             # A. Semantic Score (High is Good)
@@ -310,7 +332,7 @@ class MemoryRAG:
 
 class DeepResearchRAG:
     """Ephemeral per-chat storage for Deep Research passes."""
-    def __init__(self, persist_path="./backend/chroma_db", api_url="http://localhost:1234", embedding_model="text-embedding-embeddinggemma-300m"):
+    def __init__(self, persist_path="./backend/chroma_db", api_url="http://localhost:1234", embedding_model="text-embedding-jina-embeddings-v5-text-small-retrieval"):
         self.client = chromadb.PersistentClient(path=persist_path)
         self.embedding_fn = LMStudioEmbeddingFunction(
             api_url=api_url,
@@ -342,7 +364,7 @@ class DeepResearchRAG:
         
         # Deduplication check against this chat's existing store
         try:
-            query_embedding = self.embedding_fn([clean_text])[0]
+            query_embedding = self.embedding_fn([clean_text], task="document")[0]
             results = self.collection.query(
                 query_embeddings=[query_embedding],
                 n_results=1,

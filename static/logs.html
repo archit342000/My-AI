@@ -1,188 +1,409 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>My AI | Logs Browser</title>
-    <link rel="icon" media="(prefers-color-scheme: light)" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%234F46E5'/><stop offset='1' stop-color='%2306B6D4'/></linearGradient></defs><path d='M16 2L26 12L16 30L6 12Z' fill='url(%23g)'/><path d='M16 2L26 12H6Z' fill='white' opacity='0.25'/><circle cx='16' cy='12' r='2.5' fill='white' opacity='0.9'/></svg>">
-    <link rel="icon" media="(prefers-color-scheme: dark)" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%236366F1'/><stop offset='1' stop-color='%2322D3EE'/></linearGradient></defs><path d='M16 2L26 12L16 30L6 12Z' fill='url(%23g)'/><path d='M16 2L26 12H6Z' fill='white' opacity='0.3'/><circle cx='16' cy='12' r='2.5' fill='white'/></svg>">
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+    <title>Intelligence | Neural Traffic Monitor</title>
+
+    <!-- Modern Typography -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+
+    <!-- Syntax Highlighting -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/json.min.js"></script>
+
+    <link rel="icon" media="(prefers-color-scheme: light)"
+        href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%234F46E5'/><stop offset='1' stop-color='%2306B6D4'/></linearGradient></defs><path d='M16 2L26 12L16 30L6 12Z' fill='url(%23g)'/><path d='M16 2L26 12H6Z' fill='white' opacity='0.25'/><circle cx='16' cy='12' r='2.5' fill='white' opacity='0.9'/></svg>">
+    <link rel="icon" media="(prefers-color-scheme: dark)"
+        href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%236366F1'/><stop offset='1' stop-color='%2322D3EE'/></linearGradient></defs><path d='M16 2L26 12L16 30L6 12Z' fill='url(%23g)'/><path d='M16 2L26 12H6Z' fill='white' opacity='0.3'/><circle cx='16' cy='12' r='2.5' fill='white'/></svg>">
+
     <style>
         :root {
-            --bg: #0d1117;
-            --sidebar-bg: #161b22;
-            --border: #30363d;
-            --text: #c9d1d9;
-            --text-dim: #8b949e;
-            --accent: #58a6ff;
-            --llm-tag: #238636;
-            --tool-tag: #9e6a03;
-            --hover: #21262d;
-            --font-family: 'Outfit', -apple-system, sans-serif;
-            --font-mono: 'Fira Code', monospace;
+            --bg-deep: #050505;
+            --bg-surface: #0a0a0b;
+            --bg-sidebar: #0d0d0f;
+            --border: rgba(255, 255, 255, 0.08);
+            --border-hover: rgba(59, 130, 246, 0.3);
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --accent: #3b82f6;
+            --accent-glow: rgba(59, 130, 246, 0.4);
+            --accent-bg: rgba(59, 130, 246, 0.1);
+
+            --cat-llm: #22c55e;
+            --cat-tool: #f59e0b;
+            --cat-error: #ef4444;
+
+            --font-main: 'Outfit', sans-serif;
+            --font-mono: 'JetBrains Mono', monospace;
+
+            --radius-xl: 18px;
+            --radius-lg: 12px;
+            --radius-md: 8px;
+
+            --transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        * {
+            box-sizing: border-box;
         }
 
         body {
             margin: 0;
-            padding: 0;
-            background: var(--bg);
-            color: var(--text);
-            font-family: var(--font-family);
-            display: grid;
-            grid-template-columns: 350px 1fr;
+            background: var(--bg-deep);
+            color: var(--text-primary);
+            font-family: var(--font-main);
             height: 100vh;
+            display: flex;
             overflow: hidden;
+            -webkit-font-smoothing: antialiased;
         }
 
-        /* Sidebar - Log List */
+        /* Experimental Scrollbar */
+        ::-webkit-scrollbar {
+            width: 5px;
+            height: 5px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 10px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--text-muted);
+        }
+
+        /* Resizable Sidebar */
         .sidebar {
-            background: var(--sidebar-bg);
+            background: var(--bg-sidebar);
             border-right: 1px solid var(--border);
             display: flex;
             flex-direction: column;
-            overflow: hidden;
+            width: 400px;
+            /* Default */
+            min-width: 320px;
+            max-width: 800px;
+            height: 100%;
+            position: relative;
+            flex-shrink: 0;
+        }
+
+        .resize-handle {
+            position: absolute;
+            right: -3px;
+            top: 0;
+            bottom: 0;
+            width: 6px;
+            cursor: col-resize;
+            z-index: 100;
+            transition: background 0.2s;
+        }
+
+        .resize-handle:hover,
+        .resize-handle.dragging {
+            background: var(--accent);
         }
 
         .sidebar-header {
-            padding: 20px;
-            border-bottom: 1px solid var(--border);
+            padding: 32px 28px 20px;
             display: flex;
-            justify-content: space-between;
             align-items: center;
+            justify-content: space-between;
         }
 
-        .sidebar-header h2 {
-            margin: 0;
-            font-size: 1.2rem;
-            color: var(--text);
-        }
-
-        .tabs {
+        .app-brand {
             display: flex;
-            gap: 10px;
-            padding: 10px 20px;
-            border-bottom: 1px solid var(--border);
+            align-items: center;
+            gap: 12px;
+            text-decoration: none;
+            color: inherit;
         }
 
-        .tab {
-            padding: 6px 12px;
-            border-radius: 6px;
+        .brand-logo {
+            width: 34px;
+            height: 34px;
+            background: linear-gradient(135deg, #4f46e5, #3b82f6);
+            border-radius: 9px;
+            display: grid;
+            place-items: center;
+        }
+
+        .sidebar-header h1 {
+            margin: 0;
+            font-size: 1.15rem;
+            font-weight: 600;
+        }
+
+        .search-area {
+            padding: 0 24px 20px;
+        }
+
+        .search-container {
+            position: relative;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            padding: 0 12px;
+        }
+
+        .search-input {
+            background: none;
+            border: none;
+            color: var(--text-primary);
+            padding: 10px;
             font-size: 0.85rem;
+            width: 100%;
+            outline: none;
+            font-family: var(--font-main);
+        }
+
+        .nav-tabs {
+            display: flex;
+            background: rgba(255, 255, 255, 0.02);
+            margin: 0 24px 24px;
+            padding: 4px;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+        }
+
+        .nav-tab {
+            flex: 1;
+            padding: 9px;
+            text-align: center;
+            font-size: 0.8rem;
+            font-weight: 600;
             cursor: pointer;
-            border: 1px solid transparent;
-            color: var(--text-dim);
-            transition: 0.2s;
+            border-radius: 8px;
+            transition: var(--transition);
+            color: var(--text-secondary);
+            text-transform: uppercase;
         }
 
-        .tab.active {
-            background: var(--bg);
-            border-color: var(--border);
-            color: var(--accent);
+        .nav-tab.active {
+            background: white;
+            color: black;
         }
 
-        .log-list {
+        .list-container {
             flex: 1;
             overflow-y: auto;
-            padding: 10px;
+            padding: 0 24px 24px;
         }
 
-        .log-item {
-            padding: 12px;
-            border-radius: 8px;
-            margin-bottom: 8px;
+        /* Cards */
+        .log-card {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 18px;
+            margin-bottom: 12px;
             cursor: pointer;
-            border: 1px solid transparent;
-            transition: 0.2s;
+            transition: transform 0.2s, border-color 0.2s, background 0.2s;
+            position: relative;
         }
 
-        .log-item:hover {
-            background: var(--hover);
+        .log-card:hover {
+            background: rgba(255, 255, 255, 0.04);
+            border-color: var(--border-hover);
         }
 
-        .log-item.active {
-            background: var(--hover);
+        .log-card.active {
+            background: rgba(59, 130, 246, 0.1);
             border-color: var(--accent);
         }
 
         .log-meta {
             display: flex;
+            align-items: center;
             justify-content: space-between;
-            margin-bottom: 4px;
-            font-size: 0.75rem;
-            color: var(--text-dim);
+            margin-bottom: 10px;
         }
 
-        .category-tag {
-            padding: 2px 6px;
-            border-radius: 4px;
-            font-size: 0.7rem;
+        .pill {
+            padding: 3px 10px;
+            border-radius: 6px;
+            font-size: 0.65rem;
+            font-weight: 700;
             text-transform: uppercase;
-            font-weight: 600;
         }
 
-        .cat-llm { background: rgba(35, 134, 54, 0.2); color: #3fb950; }
-        .cat-tool { background: rgba(158, 106, 3, 0.2); color: #d29922; }
+        .pill-llm {
+            background: rgba(34, 197, 94, 0.15);
+            color: #4ade80;
+            border: 1px solid rgba(34, 197, 94, 0.2);
+        }
+
+        .pill-tool {
+            background: rgba(245, 158, 11, 0.15);
+            color: #fbbf24;
+            border: 1px solid rgba(245, 158, 11, 0.2);
+        }
+
+        .pill-error {
+            background: rgba(239, 68, 68, 0.15);
+            color: #f87171;
+            border: 1px solid rgba(239, 68, 68, 0.2);
+        }
+
+        .log-timestamp {
+            font-family: var(--font-mono);
+            font-size: 0.7rem;
+            color: var(--text-muted);
+        }
 
         .log-title {
-            font-weight: 500;
-            font-size: 0.9rem;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
+            font-size: 0.95rem;
+            font-weight: 600;
+            margin-bottom: 4px;
+            color: var(--text-primary);
         }
 
-        .log-time { font-family: 'Fira Code', monospace; }
+        .log-subtitle {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            font-family: var(--font-mono);
+            word-break: break-all;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
 
-        /* Detail View */
-        .detail-view {
+        /* Detail View Area */
+        .content-area {
+            flex: 1;
+            background: var(--bg-surface);
             display: flex;
             flex-direction: column;
             overflow: hidden;
-            background: var(--bg);
         }
 
         .detail-header {
-            padding: 20px;
+            padding: 30px 40px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(10, 10, 11, 0.8);
+            backdrop-filter: blur(20px);
+        }
+
+        .panes-container {
+            flex: 1;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1px;
+            background: var(--border);
+            overflow: hidden;
+        }
+
+        .pane {
+            background: var(--bg-surface);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .pane-header {
+            padding: 14px 24px;
+            background: rgba(255, 255, 255, 0.02);
             border-bottom: 1px solid var(--border);
             display: flex;
             justify-content: space-between;
             align-items: center;
         }
 
-        .detail-content {
-            flex: 1;
-            overflow: auto;
-            padding: 20px;
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 20px;
-        }
-
-        .json-section {
-            background: #010409;
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            padding: 15px;
-            display: flex;
-            flex-direction: column;
-        }
-
-        .section-label {
-            font-size: 0.75rem;
+        .pane-title {
+            font-size: 0.7rem;
+            font-weight: 700;
             color: var(--accent);
             text-transform: uppercase;
-            margin-bottom: 10px;
-            font-weight: 600;
-            letter-spacing: 0.05em;
+            letter-spacing: 0.1em;
         }
 
-        pre {
-            margin: 0;
-            font-family: 'Fira Code', monospace;
+        .pane-content {
+            flex: 1;
+            padding: 24px;
+            overflow: auto;
+            background: #0d1117;
+        }
+
+        pre code {
+            font-family: var(--font-mono) !important;
+            font-size: 0.85rem !important;
+            line-height: 1.6 !important;
+        }
+
+        /* Sync Indicator */
+        .btn-refresh {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            padding: 8px;
+            border-radius: 10px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+        }
+
+        .btn-refresh:hover {
+            background: var(--border);
+        }
+
+        /* Event Log Layout */
+        .event-card {
+            background: rgba(255, 255, 255, 0.015);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .event-card:hover {
+            border-color: var(--accent);
+        }
+
+        .event-card.active {
+            background: var(--accent-bg);
+            border-color: var(--accent);
+        }
+
+        .event-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .event-name {
+            font-weight: 700;
+            color: var(--accent);
             font-size: 0.85rem;
-            line-height: 1.5;
-            white-space: pre-wrap;
-            word-break: break-all;
+        }
+
+        .event-data-preview {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
         .empty-state {
@@ -191,110 +412,208 @@
             align-items: center;
             justify-content: center;
             height: 100%;
-            color: var(--text-dim);
+            color: var(--text-muted);
+            padding: 40px;
+            text-align: center;
         }
 
-        /* Event Log Style */
-        .event-item {
-            padding: 10px;
-            border-bottom: 1px solid var(--border);
-            font-size: 0.85rem;
+        .copy-btn {
+            background: none;
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-size: 0.65rem;
+            cursor: pointer;
         }
-        .event-type {
-            color: var(--accent);
-            font-weight: 600;
-            margin-right: 10px;
+
+        .copy-btn:hover {
+            color: white;
+            border-color: var(--text-secondary);
         }
     </style>
 </head>
-<body>
-    <div class="sidebar">
-        <div class="sidebar-header">
-            <h2>Network Logs</h2>
-            <button onclick="loadLogs()" style="background:none; border:none; color:var(--accent); cursor:pointer; font-size:0.8rem;">Refresh</button>
-        </div>
-        <div class="tabs">
-            <div class="tab active" id="tab-network" onclick="switchMode('network')">Network</div>
-            <div class="tab" id="tab-events" onclick="switchMode('events')">Events</div>
-        </div>
-        <div class="log-list" id="log-list">
-            <!-- Logs injected here -->
-        </div>
-    </div>
 
-    <div class="detail-view" id="detail-view">
-        <div class="empty-state">
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"></path>
-            </svg>
-            <p>Select a log to view details</p>
+<body>
+    <aside class="sidebar" id="sidebar">
+        <div class="resize-handle" id="resize-handle"></div>
+
+        <header class="sidebar-header">
+            <a href="/" class="app-brand">
+                <div class="brand-logo">
+                    <svg width="18" height="18" viewBox="0 0 32 32" fill="none">
+                        <path d="M16 2L26 12L16 30L6 12Z" fill="white" />
+                        <circle cx="16" cy="12" r="2.5" fill="black" opacity="0.2" />
+                    </svg>
+                </div>
+                <h1>Intelligence</h1>
+            </a>
+            <button class="btn-refresh" onclick="loadData(true)" title="Refresh">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"
+                        stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+            </button>
+        </header>
+
+        <section class="search-area">
+            <div class="search-container">
+                <input type="text" id="log-search" class="search-input" placeholder="Filter stream..."
+                    oninput="renderList()">
+            </div>
+        </section>
+
+        <nav class="nav-tabs">
+            <div class="nav-tab active" id="tab-network" onclick="switchMode('network')">Network</div>
+            <div class="nav-tab" id="tab-events" onclick="switchMode('events')">Events</div>
+        </nav>
+
+        <div class="list-container" id="log-list">
+            <!-- List Items -->
         </div>
-    </div>
+    </aside>
+
+    <main class="content-area" id="detail-view">
+        <div class="empty-state">
+            <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"
+                opacity="0.3" style="margin-bottom: 20px;">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="16" x2="12" y2="12"></line>
+                <line x1="12" y1="8" x2="12.01" y2="8"></line>
+            </svg>
+            <h2 style="font-weight: 500;">Select a stream to begin inspection</h2>
+            <p style="color: var(--text-muted); max-width: 300px;">Capture neural traffic and system events in
+                high-fidelity resolution.</p>
+        </div>
+    </main>
 
     <script>
         let currentMode = 'network';
-        let currentLogs = [];
+        let networkLogs = [];
+        let eventLogs = [];
+        let selectedId = null;
 
-        async function loadLogs() {
+        // Initialize Resizable Sidebar
+        const sidebar = document.getElementById('sidebar');
+        const handle = document.getElementById('resize-handle');
+        let isResizing = false;
+
+        const savedWidth = localStorage.getItem('logs_sidebar_width');
+        if (savedWidth) sidebar.style.width = savedWidth + 'px';
+
+        handle.addEventListener('mousedown', (e) => {
+            isResizing = true;
+            document.body.style.cursor = 'col-resize';
+            handle.classList.add('dragging');
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (!isResizing) return;
+            let newWidth = e.clientX;
+            if (newWidth < 320) newWidth = 320;
+            if (newWidth > 800) newWidth = 800;
+            sidebar.style.width = newWidth + 'px';
+            localStorage.setItem('logs_sidebar_width', newWidth);
+        });
+
+        document.addEventListener('mouseup', () => {
+            isResizing = false;
+            document.body.style.cursor = 'default';
+            handle.classList.remove('dragging');
+        });
+
+        // Data Handling
+        async function loadData(force = false) {
             const listDiv = document.getElementById('log-list');
-            listDiv.innerHTML = '<div class="empty-state">Loading...</div>';
-            
+
+            // Optimization: Only fetch if we don't have data or force is true
+            if (!force && ((currentMode === 'network' && networkLogs.length > 0) || (currentMode === 'events' && eventLogs.length > 0))) {
+                renderList();
+                return;
+            }
+
             try {
                 const endpoint = currentMode === 'network' ? '/api/logs' : '/api/logs/events';
                 const res = await fetch(endpoint);
-                currentLogs = await res.json();
+                const data = await res.json();
+
+                if (currentMode === 'network') networkLogs = data;
+                else eventLogs = data;
+
                 renderList();
             } catch (err) {
-                listDiv.innerHTML = '<div class="empty-state">Failed to load logs</div>';
+                listDiv.innerHTML = '<div class="empty-state">Communications Failure.</div>';
             }
         }
 
         function switchMode(mode) {
             currentMode = mode;
-            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
             document.getElementById(`tab-${mode}`).classList.add('active');
-            loadLogs();
-            document.getElementById('detail-view').innerHTML = '<div class="empty-state"><p>Select a log to view details</p></div>';
+            selectedId = null;
+            resetDetail();
+            // We use the cached data or fetch if needed
+            loadData();
+        }
+
+        function resetDetail() {
+            document.getElementById('detail-view').innerHTML = `
+                <div class="empty-state">
+                    <h2 style="font-weight: 500;">Telemetric Silence</h2>
+                    <p style="color: var(--text-muted);">Select a trace to open inspection windows.</p>
+                </div>
+            `;
         }
 
         function renderList() {
             const listDiv = document.getElementById('log-list');
+            const searchTerm = document.getElementById('log-search').value.toLowerCase();
             listDiv.innerHTML = '';
-            
-            if (currentLogs.length === 0) {
-                listDiv.innerHTML = '<div class="empty-state">No logs found</div>';
-                return;
-            }
 
-            currentLogs.forEach((log, index) => {
+            const logs = currentMode === 'network' ? networkLogs : eventLogs;
+
+            const filtered = logs.filter(log => {
                 if (currentMode === 'network') {
-                    const item = document.createElement('div');
-                    item.className = 'log-item';
-                    item.onclick = () => showDetail(log, item);
-                    
-                    const time = new Date(log.timestamp).toLocaleTimeString();
-                    const date = new Date(log.timestamp).toLocaleDateString();
-                    
-                    item.innerHTML = `
-                        <div class="log-meta">
-                            <span class="category-tag cat-${log.category}">${log.category}</span>
-                            <span class="log-time">${date} ${time}</span>
-                        </div>
-                        <div class="log-title">${log.model_tool}</div>
-                        <div style="font-size:0.75rem; color:var(--text-dim); margin-top:4px;">${log.type || 'blocking'}</div>
-                    `;
-                    listDiv.appendChild(item);
+                    return log.model_tool.toLowerCase().includes(searchTerm) || log.category.toLowerCase().includes(searchTerm);
                 } else {
-                    const item = document.createElement('div');
-                    item.className = 'event-item';
-                    item.innerHTML = `
+                    return log.type.toLowerCase().includes(searchTerm) || JSON.stringify(log.data).toLowerCase().includes(searchTerm);
+                }
+            });
+
+            filtered.forEach((log, index) => {
+                if (currentMode === 'network') {
+                    const card = document.createElement('div');
+                    card.className = `log-card ${selectedId === log.log_file ? 'active' : ''}`;
+                    card.onclick = () => showNetworkDetail(log, card);
+
+                    const time = new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+                    card.innerHTML = `
                         <div class="log-meta">
-                            <span class="log-time">${new Date(log.timestamp).toLocaleTimeString()}</span>
+                            <span class="pill pill-${log.category}">${log.category}</span>
+                            <span class="log-timestamp">${time}</span>
                         </div>
-                        <div><span class="event-type">${log.type}</span></div>
-                        <div style="margin-top:5px; color:var(--text-dim)">${JSON.stringify(log.data)}</div>
+                        <div class="log-title">${escapeHtml(log.model_tool)}</div>
+                        <div class="log-subtitle">${log.type || 'blocking'}</div>
                     `;
-                    listDiv.appendChild(item);
+                    listDiv.appendChild(card);
+                } else {
+                    const card = document.createElement('div');
+                    const id = log.timestamp + index;
+                    card.className = `event-card ${selectedId === id ? 'active' : ''}`;
+                    card.onclick = () => showEventDetail(log, id, card);
+
+                    const time = new Date(log.timestamp).toLocaleTimeString();
+                    const dataStr = JSON.stringify(log.data);
+
+                    card.innerHTML = `
+                        <div class="event-top">
+                            <span class="event-name">${log.type}</span>
+                            <span class="log-timestamp">${time}</span>
+                        </div>
+                        <div class="event-data-preview">${escapeHtml(dataStr)}</div>
+                    `;
+                    listDiv.appendChild(card);
                 }
             });
         }
@@ -306,57 +625,92 @@
             return div.innerHTML;
         }
 
-        async function showDetail(log, element) {
-            document.querySelectorAll('.log-item').forEach(i => i.classList.remove('active'));
+        async function showNetworkDetail(log, element) {
+            selectedId = log.log_file;
+            document.querySelectorAll('.log-card').forEach(i => i.classList.remove('active'));
             element.classList.add('active');
 
             const detailView = document.getElementById('detail-view');
-            detailView.innerHTML = '<div class="empty-state">Loading detail...</div>';
+            detailView.innerHTML = '<div class="empty-state">Streaming Log...</div>';
 
             try {
                 const res = await fetch(`/api/logs/detail?path=${encodeURIComponent(log.log_file)}`);
                 const fullLog = await res.json();
-                
-                const requestJson = JSON.stringify(fullLog.request, null, 2);
-                
-                // If the response is a string (common for LLM), we want to preserve things like <think>
-                // If it's an object (common for tool calls), we stringify it.
-                let responseView = "";
-                if (typeof fullLog.response === 'string') {
-                    responseView = escapeHtml(fullLog.response);
-                } else {
-                    responseView = escapeHtml(JSON.stringify(fullLog.response, null, 2));
-                }
 
-                detailView.innerHTML = `
-                    <div class="detail-header">
-                        <div>
-                            <h2 style="margin:0; font-size:1.2rem;">${escapeHtml(log.model_tool)}</h2>
-                            <p style="margin:5px 0 0 0; font-size:0.8rem; color:var(--text-dim); font-family:'Fira Code'">${fullLog.timestamp}</p>
-                        </div>
-                        <div style="text-align:right">
-                            <span class="category-tag cat-${log.category}">${log.category}</span>
-                            <div style="font-size:0.8rem; color:var(--text-dim); margin-top:5px;">Duration: ${fullLog.duration_s}s</div>
-                        </div>
-                    </div>
-                    <div class="detail-content">
-                        <div class="json-section">
-                            <div class="section-label">Request Payload</div>
-                            <pre>${escapeHtml(requestJson)}</pre>
-                        </div>
-                        <div class="json-section">
-                            <div class="section-label">Response Data</div>
-                            <pre>${responseView}</pre>
-                        </div>
-                    </div>
-                `;
+                renderDualPane(escapeHtml(log.model_tool), fullLog.timestamp, fullLog.duration_s, (log.type || 'blocking'), fullLog.request, fullLog.response);
             } catch (err) {
-                detailView.innerHTML = '<div class="empty-state">Failed to load log detail</div>';
+                detailView.innerHTML = '<div class="empty-state">Handshake Failed.</div>';
             }
         }
 
-        // Initial load
-        loadLogs();
+        function showEventDetail(log, id, element) {
+            selectedId = id;
+            document.querySelectorAll('.event-card').forEach(i => i.classList.remove('active'));
+            element.classList.add('active');
+
+            renderDualPane(log.type, new Date(log.timestamp).toLocaleString(), 0, 'EVENT', {}, log.data);
+        }
+
+        function renderDualPane(title, time, duration, mode, req, res) {
+            const detailView = document.getElementById('detail-view');
+
+            const reqStr = JSON.stringify(req, null, 2);
+            let resStr = "";
+            if (typeof res === 'string') {
+                try { resStr = JSON.stringify(JSON.parse(res), null, 2); }
+                catch { resStr = res; }
+            } else {
+                resStr = JSON.stringify(res, null, 2);
+            }
+
+            detailView.innerHTML = `
+                <header class="detail-header">
+                    <div>
+                        <h2 style="font-family: var(--font-mono); color: var(--accent); font-size: 1.1rem; margin:0;">${title}</h2>
+                        <p style="margin: 5px 0 0; font-size: 0.75rem; color: var(--text-muted); font-family: var(--font-mono);">${time}</p>
+                    </div>
+                    <div style="display: flex; gap: 30px;">
+                        ${duration ? `<div style="text-align:right"><span style="display:block;font-size:0.6rem;color:var(--text-muted);text-transform:uppercase;">Compute</span><span style="font-family:var(--font-mono);font-size:0.9rem;">${duration.toFixed(2)}s</span></div>` : ''}
+                        <div style="text-align:right"><span style="display:block;font-size:0.6rem;color:var(--text-muted);text-transform:uppercase;">Mode</span><span style="font-family:var(--font-mono);font-size:0.9rem;">${mode.toUpperCase()}</span></div>
+                    </div>
+                </header>
+                <div class="panes-container">
+                    <section class="pane">
+                        <div class="pane-header">
+                            <span class="pane-title">Upstream</span>
+                            <button class="copy-btn" onclick="copyText('req-code')">Copy</button>
+                        </div>
+                        <div class="pane-content">
+                            <pre><code id="req-code" class="language-json">${escapeHtml(reqStr)}</code></pre>
+                        </div>
+                    </section>
+                    <section class="pane" style="border-left: 1px solid var(--border);">
+                        <div class="pane-header">
+                            <span class="pane-title">Downstream</span>
+                            <button class="copy-btn" onclick="copyText('res-code')">Copy</button>
+                        </div>
+                        <div class="pane-content">
+                            <pre><code id="res-code" class="${typeof res === 'object' ? 'language-json' : 'language-markdown'}">${escapeHtml(resStr)}</code></pre>
+                        </div>
+                    </section>
+                </div>
+            `;
+
+            document.querySelectorAll('pre code').forEach(hljs.highlightElement);
+        }
+
+        function copyText(id) {
+            const text = document.getElementById(id).innerText;
+            navigator.clipboard.writeText(text);
+            const btn = event.target;
+            const old = btn.innerText;
+            btn.innerText = 'Copied';
+            setTimeout(() => btn.innerText = old, 1500);
+        }
+
+        // Init
+        loadData();
     </script>
 </body>
+
 </html>
