@@ -1,4 +1,4 @@
-# LMStudioChat — Design Directives (v1.0.0)
+# My-AI — Design Directives (v1.0.1)
 
 **Architect:** Visual Design System  
 **Compliance Standard:** WCAG 2.1 AA  

@@ -125,8 +125,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const toggleDeepSearchBtn = document.getElementById('toggle-deep-search');
 
     // 2. Application State - SELECTIVE PERSISTENCE
-    let serverLink = localStorage.getItem('lmstudiochat_server_link') || '';
-    let encryptedToken = localStorage.getItem('lmstudiochat_api_token_secure');
+    let serverLink = localStorage.getItem('my_ai_server_link') || '';
+    let encryptedToken = localStorage.getItem('my_ai_api_token_secure');
     let apiToken = encryptedToken ? d(encryptedToken) : '';
 
     let chatHistory = [];
@@ -144,10 +144,10 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentResearchPlan = null; // Store current unapproved plan text
 
 
-    let selectedModel = localStorage.getItem('lmstudiochat_selected_model') || '';
-    let selectedModelName = localStorage.getItem('lmstudiochat_selected_model_name') || 'Select a Model';
-    let selectedVisionModel = localStorage.getItem('lmstudiochat_selected_vision_model') || '';
-    let selectedVisionModelName = localStorage.getItem('lmstudiochat_selected_vision_model_name') || 'Select a Vision Model';
+    let selectedModel = localStorage.getItem('my_ai_selected_model') || '';
+    let selectedModelName = localStorage.getItem('my_ai_selected_model_name') || 'Select a Model';
+    let selectedVisionModel = localStorage.getItem('my_ai_selected_vision_model') || '';
+    let selectedVisionModelName = localStorage.getItem('my_ai_selected_vision_model_name') || 'Select a Vision Model';
     let availableModels = [];
     let currentChatData = null; // Track full data of loaded chat
 
@@ -188,7 +188,7 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('resize', syncSidebarWidth);
 
     // Initialize Theme
-    let themeMode = localStorage.getItem('lmstudiochat_theme_mode') || 'system';
+    let themeMode = localStorage.getItem('my_ai_theme_mode') || 'system';
 
     function applyTheme() {
         let isDark = false;
@@ -1379,8 +1379,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Just update state and close UI
                 selectedModel = id;
                 selectedModelName = name;
-                localStorage.setItem('lmstudiochat_selected_model', id);
-                localStorage.setItem('lmstudiochat_selected_model_name', name);
+                localStorage.setItem('my_ai_selected_model', id);
+                localStorage.setItem('my_ai_selected_model_name', name);
                 if (modelSelectDropdown) modelSelectDropdown.value = id;
                 updateVisionUI(hasVision);
                 if (settingsModal) {
@@ -1445,8 +1445,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         selectedModel = id;
         selectedModelName = name;
-        localStorage.setItem('lmstudiochat_selected_model', id);
-        localStorage.setItem('lmstudiochat_selected_model_name', name);
+        localStorage.setItem('my_ai_selected_model', id);
+        localStorage.setItem('my_ai_selected_model_name', name);
 
         if (modelSelectDropdown) modelSelectDropdown.value = id;
 
@@ -1485,11 +1485,11 @@ document.addEventListener('DOMContentLoaded', () => {
         selectedVisionModelName = name;
         
         if (id) {
-            localStorage.setItem('lmstudiochat_selected_vision_model', id);
-            localStorage.setItem('lmstudiochat_selected_vision_model_name', name);
+            localStorage.setItem('my_ai_selected_vision_model', id);
+            localStorage.setItem('my_ai_selected_vision_model_name', name);
         } else {
-            localStorage.removeItem('lmstudiochat_selected_vision_model');
-            localStorage.removeItem('lmstudiochat_selected_vision_model_name');
+            localStorage.removeItem('my_ai_selected_vision_model');
+            localStorage.removeItem('my_ai_selected_vision_model_name');
         }
         
         if (visionModelSelectDropdown) {
@@ -1624,11 +1624,11 @@ document.addEventListener('DOMContentLoaded', () => {
             serverLink = link.endsWith('/') ? link.slice(0, -1) : link;
             apiToken = token;
 
-            localStorage.setItem('lmstudiochat_server_link', serverLink);
+            localStorage.setItem('my_ai_server_link', serverLink);
             if (apiToken) {
-                localStorage.setItem('lmstudiochat_api_token_secure', e(apiToken));
+                localStorage.setItem('my_ai_api_token_secure', e(apiToken));
             } else {
-                localStorage.removeItem('lmstudiochat_api_token_secure');
+                localStorage.removeItem('my_ai_api_token_secure');
             }
 
             // Send config to backend
@@ -1683,7 +1683,7 @@ document.addEventListener('DOMContentLoaded', () => {
         radio.addEventListener('change', (e) => {
             if (e.target.checked) {
                 themeMode = e.target.value;
-                localStorage.setItem('lmstudiochat_theme_mode', themeMode);
+                localStorage.setItem('my_ai_theme_mode', themeMode);
                 applyTheme();
             }
         });
@@ -1699,11 +1699,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 serverLink = link.endsWith('/') ? link.slice(0, -1) : link;
                 apiToken = token;
 
-                localStorage.setItem('lmstudiochat_server_link', serverLink);
+                localStorage.setItem('my_ai_server_link', serverLink);
                 if (apiToken) {
-                    localStorage.setItem('lmstudiochat_api_token_secure', e(apiToken));
+                    localStorage.setItem('my_ai_api_token_secure', e(apiToken));
                 } else {
-                    localStorage.removeItem('lmstudiochat_api_token_secure');
+                    localStorage.removeItem('my_ai_api_token_secure');
                 }
 
                 // Send config to backend
@@ -1750,11 +1750,11 @@ document.addEventListener('DOMContentLoaded', () => {
         sysResetAppBtn.addEventListener('click', async (e) => {
             e.preventDefault();
             if (await showConfirm('Reset App', 'Are you sure you want to clear your connection settings? This will require a re-authorization.', true)) {
-                localStorage.removeItem('lmstudiochat_server_link');
-                localStorage.removeItem('lmstudiochat_api_token_secure');
-                localStorage.removeItem('lmstudiochat_selected_model');
-                localStorage.removeItem('lmstudiochat_selected_model_name');
-                localStorage.removeItem('lmstudiochat_theme_mode');
+                localStorage.removeItem('my_ai_server_link');
+                localStorage.removeItem('my_ai_api_token_secure');
+                localStorage.removeItem('my_ai_selected_model');
+                localStorage.removeItem('my_ai_selected_model_name');
+                localStorage.removeItem('my_ai_theme_mode');
                 serverLink = '';
                 apiToken = '';
                 location.reload();
@@ -1776,10 +1776,10 @@ document.addEventListener('DOMContentLoaded', () => {
     clearApiTrigger?.addEventListener('click', async (e) => {
         e.preventDefault();
         if (await showConfirm('Reset Connection', 'Are you sure you want to clear your connection settings? This will require a re-authorization.', true)) {
-            localStorage.removeItem('lmstudiochat_server_link');
-            localStorage.removeItem('lmstudiochat_api_token_secure');
-            localStorage.removeItem('lmstudiochat_selected_model');
-            localStorage.removeItem('lmstudiochat_selected_model_name');
+            localStorage.removeItem('my_ai_server_link');
+            localStorage.removeItem('my_ai_api_token_secure');
+            localStorage.removeItem('my_ai_selected_model');
+            localStorage.removeItem('my_ai_selected_model_name');
             serverLink = '';
             apiToken = '';
             location.reload();

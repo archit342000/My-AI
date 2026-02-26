@@ -12,9 +12,9 @@ Versions are defined as `MAJOR.MINOR.PATCH`:
 
 ## Change Management
 
-- Every release should be accompanied by a tag in the version control system (e.g., `git tag v1.0.0`).
+- Every release should be accompanied by a tag in the version control system (e.g., `git tag v1.0.1`).
 - Every version change must append the changes made in the CHANGELOG.md file.
 
 ## Current Status
 
-Current version - v1.0.0
+Current version - v1.0.1

@@ -1,5 +1,10 @@
 # CHANGELOG
 
+## v1.0.1
+* **Rebranding**: Officially renamed the application from "LMStudioChat" to **My-AI**.
+* **Global Reference Update**: Updated all internal and external references to align with the new brand identity.
+* **Version Bump**: Incremented version to 1.0.1.
+
 ## v1.0.0 (Official Release)
 * **Unified Architectural Overhaul**: Successfully migrated from a frontend-only mock to a robust **Python Flask Backend**.
 * **Persistent Storage**: Integrated **SQLite** for reliable, long-term chat history and metadata storage.
