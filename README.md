@@ -1,4 +1,4 @@
-# 🌌 My-AI v1.0.3
+# 🌌 My-AI v1.1.0
 
 A premium, full-stack AI chat interface designed for local inference with [LM Studio](https://lmstudio.ai/). This application provides a high-fidelity Luminous Material interface for interacting with local LLMs, featuring persistent state, long-term memory, and an advanced deep research agent.
 
@@ -20,7 +20,7 @@ A premium, full-stack AI chat interface designed for local inference with [LM St
 *   **LM Studio**: Running with the local server active (default port `1234`).
 *   **Models**: 
     *   A tool-calling capable chat model (e.g., Llama 3.1+, Mistral, Qwen).
-    *   An embedding model for RAG (e.g., `text-embedding-nomic-embed-text-v1.5`).
+    *   An embedding model for RAG (e.g., `text-embedding-jina-embeddings-v5-text-small-retrieval`).
     *   (Optional) A vision model for image analysis.
 *   **Search API**: A [Tavily API Key](https://tavily.com/) is required for Deep Research mode.
 
@@ -48,7 +48,7 @@ A premium, full-stack AI chat interface designed for local inference with [LM St
     ```env
     TAVILY_API_KEY=your_tavily_api_key_here
     LM_STUDIO_URL=http://localhost:1234
-    EMBEDDING_MODEL=text-embedding-nomic-embed-text-v1.5
+    EMBEDDING_MODEL=text-embedding-jina-embeddings-v5-text-small-retrieval
     ```
 
 ## 🎮 Usage
@@ -69,5 +69,5 @@ A premium, full-stack AI chat interface designed for local inference with [LM St
 
 ## 📄 License & Versioning
 
-This project follows [SemVer v2.0.0](https://semver.org/). Current version: `v1.0.3`.
+This project follows [SemVer v2.0.0](https://semver.org/). Current version: `v1.1.0`.
 See [CHANGELOG.md](./changelog.md) for a detailed history of updates.
