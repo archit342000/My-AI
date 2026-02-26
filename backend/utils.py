@@ -252,9 +252,15 @@ async def async_chat_completion(url, payload):
     # requests, LMStudio (or any local Inference server) will queue them. 
     # A short timeout like 180s will cause the client to disconnect before 
     # the server even begins processing the later requests in the queue.
+    base_url = url.rstrip("/")
+    if not base_url.endswith("/v1"):
+        endpoint = f"{base_url}/v1/chat/completions"
+    else:
+        endpoint = f"{base_url}/chat/completions"
+        
     async with httpx.AsyncClient(timeout=TIMEOUT_LLM_ASYNC) as client:
         try:
-            resp = await client.post(f"{url}/v1/chat/completions", json=payload)
+            resp = await client.post(endpoint, json=payload)
             resp.raise_for_status()
             data = resp.json()
             

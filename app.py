@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 # Load environment variables FIRST
 load_dotenv()
 
+from backend.config import LM_STUDIO_URL, EMBEDDING_MODEL, CHROMA_PATH
 from backend.rag import MemoryRAG, DeepResearchRAG
 from backend.storage import init_db, get_all_chats, get_chat, save_chat, add_message, clear_messages, delete_chat, delete_all_chats, rename_chat
 from backend.agents.deep_research import generate_deep_research_response
@@ -16,11 +17,6 @@ from backend.agents.chat import generate_chat_response
 from backend.task_manager import task_manager
 
 app = Flask(__name__, static_folder='static')
-
-# Configuration from env
-LM_STUDIO_URL = os.getenv("LM_STUDIO_URL", "http://localhost:1234")
-EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-embeddinggemma-300m")
-CHROMA_PATH = os.getenv("CHROMA_PATH", "./backend/chroma_db")
 
 # Initialize components with config
 init_db()
@@ -129,6 +125,7 @@ def update_config():
         updated = True
 
     if updated:
+        from backend.config import EMBEDDING_MODEL
         rag = MemoryRAG(api_url=LM_STUDIO_URL, embedding_model=EMBEDDING_MODEL)
 
     return jsonify({"success": True, "url": LM_STUDIO_URL})

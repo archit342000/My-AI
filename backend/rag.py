@@ -13,9 +13,12 @@ class LMStudioEmbeddingFunction(embedding_functions.EmbeddingFunction):
         self.default_task = default_task
 
     def __call__(self, input, task=None):
-        # Determine endpoint. Some versions use /v1/embeddings, others might vary.
-        # We assume OpenAI compatible /v1/embeddings
-        url = f"{self.api_url}/v1/embeddings"
+        # Ensure base URL is clean and handle /v1 suffix robustly
+        base_url = self.api_url.rstrip("/")
+        if not base_url.endswith("/v1"):
+             url = f"{base_url}/v1/embeddings"
+        else:
+             url = f"{base_url}/embeddings"
 
         # Ensure input is a list of strings
         if isinstance(input, str):

@@ -3,6 +3,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# --- LM Studio Configuration ---
+LM_STUDIO_URL = os.getenv("LM_STUDIO_URL", "http://localhost:1234")
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-jina-embeddings-v5-text-small-retrieval")
+CHROMA_PATH = os.getenv("CHROMA_PATH", "./backend/chroma_db")
+
 # --- Search Configuration ---
 # API Key
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")

@@ -1,5 +1,13 @@
 # CHANGELOG
     
+## v1.1.2
+* **RAG & Infrastructure Fixes**:
+    * **Server Link Mapping**: Fixed a critical bug where Deep Research agents were ignoring the `LM_STUDIO_URL` setting and defaulting to localhost.
+    * **Unified Configuration**: Centralized all backend connection parameters (`LM_STUDIO_URL`, `EMBEDDING_MODEL`, `CHROMA_PATH`) into a dedicated `backend/config.py` for system-wide consistency.
+    * **Robust URL Suffixing**: Implemented automated detection and handling of the `/v1` suffix in inference URLs to prevent connection failures.
+    * **Standardized Defaults**: Aligned global embedding defaults with Jina v5 architecture requirements.
+* **Version Bump**: Incremented version to 1.1.2.
+
 ## v1.1.1
 * **Deep Research Optimization**: Scaled down context parameters for better performance with local 512k context windows (originally built for 1M).
     * **Context Gathering**: Max tokens from web scraping reduced from 700k to 400k.
