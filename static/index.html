@@ -5,363 +5,253 @@
     <meta charset="UTF-8">
     <meta name="viewport"
         content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content">
-    <title>My AI | Luminous Workspace</title>
-    <meta name="description" content="A modern, airy AI interface built with Luminous Material principles.">
+    <title>Agentic AI | Command Center</title>
+    <meta name="description" content="Advanced Agentic AI Interface. Precision tools for deep research and reasoning.">
     <link rel="stylesheet" href="/styles.css">
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <link id="highlight-theme" rel="stylesheet"
         href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-    <link rel="icon" media="(prefers-color-scheme: light)" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%234F46E5'/><stop offset='1' stop-color='%2306B6D4'/></linearGradient></defs><path d='M16 2L26 12L16 30L6 12Z' fill='url(%23g)'/><path d='M16 2L26 12H6Z' fill='white' opacity='0.25'/><circle cx='16' cy='12' r='2.5' fill='white' opacity='0.9'/></svg>">
-    <link rel="icon" media="(prefers-color-scheme: dark)" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%236366F1'/><stop offset='1' stop-color='%2322D3EE'/></linearGradient></defs><path d='M16 2L26 12L16 30L6 12Z' fill='url(%23g)'/><path d='M16 2L26 12H6Z' fill='white' opacity='0.3'/><circle cx='16' cy='12' r='2.5' fill='white'/></svg>">
-
+    <!-- Favicon: Abstract "Agent Eye" Geometric Shape -->
+    <link rel="icon" media="(prefers-color-scheme: light)" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%230F172A' stroke-width='2'><circle cx='12' cy='12' r='10'/><circle cx='12' cy='12' r='4'/><path d='M12 2v4m0 12v4m10-10h-4M6 12H2'/></svg>">
+    <link rel="icon" media="(prefers-color-scheme: dark)" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233B82F6' stroke-width='2'><circle cx='12' cy='12' r='10'/><circle cx='12' cy='12' r='4'/><path d='M12 2v4m0 12v4m10-10h-4M6 12H2'/></svg>">
 </head>
 
-<body class="min-h-screen">
+<body class="dark">
     <!-- Main Shell -->
     <div id="app-root">
 
-        <!-- Navigation Rail (Resizable) -->
+        <!-- Control Rail (Sidebar) -->
         <aside id="sidebar" class="sidebar-expanded">
-            <!-- Precision Drag Handle -->
-            <div class="resize-handle" id="sidebar-resizer"></div>
-
             <!-- Sidebar Header -->
             <div class="sidebar-header">
                 <div class="sidebar-brand">
-                    <svg class="sidebar-logo-icon" width="22" height="22" viewBox="0 0 32 32" fill="none">
-                        <defs>
-                            <linearGradient id="brand-grad" x1="0" y1="0" x2="1" y2="1">
-                                <stop offset="0" stop-color="#4F46E5"/>
-                                <stop offset="1" stop-color="#06B6D4"/>
-                            </linearGradient>
-                        </defs>
-                        <path d="M16 2L26 12L16 30L6 12Z" fill="url(#brand-grad)" opacity="0.9"/>
-                        <path d="M16 2L26 12H6Z" fill="white" opacity="0.3"/>
-                        <circle cx="16" cy="12" r="2.5" fill="white" opacity="0.9"/>
+                    <svg class="sidebar-logo-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
                     </svg>
-                    <span class="sidebar-brand-text font-heading sidebar-text">My AI</span>
+                    <span class="sidebar-brand-text">Agentic</span>
                 </div>
-                <button id="sidebar-toggle" class="sidebar-icon-btn" title="Toggle sidebar" aria-label="Toggle sidebar">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                        stroke-width="2.5">
-                        <path d="M15 6l-6 6 6 6" id="toggle-icon-path" stroke-linecap="round" stroke-linejoin="round" />
+                <button id="sidebar-toggle" class="sidebar-icon-btn" title="Toggle Rail">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                        <line x1="9" y1="3" x2="9" y2="21"/>
                     </svg>
                 </button>
             </div>
 
-            <!-- Sidebar Scrollable Content -->
+            <!-- Sidebar Content -->
             <div class="sidebar-content">
-
-                <!-- Quick Actions Row -->
                 <div class="sidebar-actions">
-                    <button id="new-chat-btn" class="btn-primary sidebar-action-btn" title="New Chat">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                            stroke-width="2.5">
-                            <path d="M12 5v14M5 12h14" stroke-linecap="round" stroke-linejoin="round" />
+                    <button id="new-chat-btn" class="btn-primary sidebar-action-btn" title="New Session">
+                        <span class="sidebar-text">NEW SESSION</span>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <line x1="12" y1="5" x2="12" y2="19"></line>
+                            <line x1="5" y1="12" x2="19" y2="12"></line>
                         </svg>
-                        <span class="sidebar-text">New Chat</span>
                     </button>
-                    <button id="temp-chat-btn" class="sidebar-icon-btn" title="Temporary Chat"
-                        aria-label="Temporary Chat">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                            stroke-width="2">
-                            <circle cx="12" cy="12" r="10" />
-                            <path d="M12 6v6l4 2" stroke-linecap="round" stroke-linejoin="round" />
+                    <button id="temp-chat-btn" class="sidebar-icon-btn" title="Ephemeral Mode">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
                         </svg>
-                        <span class="nav-tooltip">Temporary Chat</span>
                     </button>
                 </div>
 
-                <!-- Chat History Section -->
                 <div class="sidebar-section">
-                    <div class="sidebar-section-label">
-                        <span class="sidebar-text">Recent Chats</span>
-                    </div>
+                    <div class="sidebar-section-label">Session Logs</div>
                     <div id="chat-history-list" class="chat-history-scroll">
-                        <!-- Chat items will be injected here -->
+                        <!-- Chat Items -->
                     </div>
                 </div>
             </div>
 
             <!-- Sidebar Footer -->
             <div class="sidebar-footer">
-                <button id="settings-trigger" class="sidebar-footer-btn" title="Chat Settings">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />
-                        <path
-                            d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z" />
+                <button id="settings-trigger" class="sidebar-footer-btn">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.1a2 2 0 0 1-1-1.72v-.51a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
+                        <circle cx="12" cy="12" r="3"/>
                     </svg>
-                    <span class="sidebar-text">Settings</span>
-                    <span class="nav-tooltip">Settings</span>
+                    <span class="sidebar-text">Parameters</span>
                 </button>
-                <button id="system-settings-trigger" class="sidebar-footer-btn" title="System Settings">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
-                        <line x1="8" y1="21" x2="16" y2="21" stroke-linecap="round"></line>
-                        <line x1="12" y1="17" x2="12" y2="21" stroke-linecap="round"></line>
+                <button id="system-settings-trigger" class="sidebar-footer-btn">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
+                        <line x1="8" y1="21" x2="16" y2="21"/>
+                        <line x1="12" y1="17" x2="12" y2="21"/>
                     </svg>
                     <span class="sidebar-text">System</span>
-                    <span class="nav-tooltip">System Settings</span>
                 </button>
-                <a href="/logs" target="_blank" class="sidebar-footer-btn" title="View Network Logs" style="text-decoration: none;">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"></path>
+                <a href="/logs" target="_blank" class="sidebar-footer-btn">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="4 17 10 11 14 15 20 9"/>
+                        <line x1="20" y1="9" x2="20" y2="17"/>
+                        <line x1="14" y1="9" x2="20" y2="9"/>
                     </svg>
-                    <span class="sidebar-text">Logs</span>
-                    <span class="nav-tooltip">Network Logs</span>
+                    <span class="sidebar-text">Telemetry</span>
                 </a>
             </div>
         </aside>
 
-        <!-- Main Fluid Content -->
+        <!-- Main Workspace -->
         <main>
-            <!-- Mobile Menu Trigger -->
-            <button id="mobile-toggle" class="btn-secondary glass" title="Menu">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                    <path d="M3 12h18M3 6h18M3 18h18" stroke-linecap="round" stroke-linejoin="round" />
+            <!-- Mobile Menu Toggle -->
+            <button id="mobile-toggle" class="btn-secondary" title="Menu">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="3" y1="12" x2="21" y2="12"/>
+                    <line x1="3" y1="6" x2="21" y2="6"/>
+                    <line x1="3" y1="18" x2="21" y2="18"/>
                 </svg>
             </button>
 
-            <!-- Chat Context Header (Gemini Style) -->
+            <!-- Context Header -->
             <div id="chat-title-header" class="chat-title-header hidden">
                 <div class="chat-header-content">
-                    <div class="chat-title-display" id="chat-title-display">New Chat</div>
+                    <div class="chat-title-display" id="chat-title-display">INITIALIZING...</div>
                 </div>
             </div>
 
-            <!-- Centered Message Stream -->
+            <!-- Terminal Stream -->
             <div id="messages">
-                <!-- Welcome Hero (Carousel State) - Directive M -->
                 <div id="welcome-hero">
                     <div class="empty-state-content">
                         <div class="empty-state-greeting">
-                            <span class="greeting-text font-heading">Hello there</span>
-                            <span class="greeting-sub font-heading">How can I help you today?</span>
+                            <span class="greeting-text">AGENT ONLINE</span>
+                            <span class="greeting-sub font-mono">AWAITING INPUT...</span>
                         </div>
 
-                        <!-- Research Depth Mode Toggle -->
-                        <div class="research-depth-selector"
-                            style="display: flex; justify-content: center; margin-top: 2rem;">
-                            <div
-                                style="display: inline-flex; background: var(--surface-secondary); padding: 0.375rem; border-radius: 9999px; border: 1px solid var(--border-subtle); box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
-                                <button id="toggle-regular-search"
-                                    style="padding: 0.5rem 1.5rem; border-radius: 9999px; border: none; background: var(--color-primary-500); color: white; font-weight: 600; font-size: 0.875rem; cursor: pointer; transition: all 0.2s var(--ease-spring); box-shadow: 0 2px 4px rgba(37, 99, 235, 0.2);">
-                                    <span style="display: flex; align-items: center; gap: 0.5rem;">
-                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
-                                            stroke="currentColor" stroke-width="2.5">
-                                            <circle cx="11" cy="11" r="8"></circle>
-                                            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                                        </svg>
-                                        Regular
-                                    </span>
-                                </button>
-                                <button id="toggle-deep-search"
-                                    style="padding: 0.5rem 1.5rem; border-radius: 9999px; border: none; background: transparent; color: var(--content-muted); font-weight: 600; font-size: 0.875rem; cursor: pointer; transition: all 0.2s var(--ease-spring);">
-                                    <span style="display: flex; align-items: center; gap: 0.5rem;">
-                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
-                                            stroke="currentColor" stroke-width="2.5">
-                                            <circle cx="12" cy="12" r="10"></circle>
-                                            <line x1="2" y1="12" x2="22" y2="12"></line>
-                                            <path
-                                                d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z">
-                                            </path>
-                                        </svg>
-                                        Deep
-                                    </span>
-                                </button>
+                        <!-- Research Depth Selector -->
+                        <div class="research-depth-selector" style="display: flex; justify-content: center; margin-top: 2rem;">
+                            <div style="display: inline-flex; border: 1px solid var(--border-user-message); border-radius: 999px; padding: 2px;">
+                                <button id="toggle-regular-search" class="btn-ghost active" style="font-size: 11px; padding: 6px 16px;">STANDARD</button>
+                                <button id="toggle-deep-search" class="btn-ghost" style="font-size: 11px; padding: 6px 16px;">DEEP SCAN</button>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Global Clear Chat Action (Context Aware) -->
-                <button id="clear-chat-btn" class="utility-btn glass" title="Clear Chat">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path
-                            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-4v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                            stroke-linecap="round" stroke-linejoin="round" />
+                <button id="clear-chat-btn" class="utility-btn glass">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
                     </svg>
-                    <span>Clear Chat</span>
+                    <span>PURGE LOGS</span>
                 </button>
             </div>
 
-            <!-- Floating Entry Area -->
+            <!-- Command Input Area -->
             <div id="chat-input-area">
                 <div id="temp-chat-banner" class="temp-chat-banner hidden">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                        stroke-width="2.5">
-                        <circle cx="12" cy="12" r="10" />
-                        <path d="M12 6v6l4 2" stroke-linecap="round" stroke-linejoin="round" />
-                    </svg>
-                    <span>Temporary chat — not saved to history</span>
-                    <button id="save-temp-chat-btn" class="temp-chat-save-btn">Save Chat</button>
+                    <span class="font-mono text-xs">MODE: EPHEMERAL [NO SAVE]</span>
+                    <button id="save-temp-chat-btn" class="temp-chat-save-btn">PERSIST</button>
                 </div>
-                <div class="input-container" style="position: relative;">
+                <div class="input-container">
                     <input type="file" id="image-input" accept="image/*" style="display: none;">
 
                     <div id="image-preview-container" class="hidden">
-                        <img id="image-preview" src="" alt="Image Preview">
+                        <img id="image-preview" src="" alt="Preview">
                         <button id="remove-image-btn">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                stroke-width="3">
-                                <path d="M18 6L6 18M6 6l12 12" stroke-linecap="round" stroke-linejoin="round" />
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                                <line x1="18" y1="6" x2="6" y2="18"/>
+                                <line x1="6" y1="6" x2="18" y2="18"/>
                             </svg>
                         </button>
                     </div>
 
-                    <button id="attach-btn" class="btn-ghost" title="Attach image">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                            stroke-width="2">
-                            <path
-                                d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"
-                                stroke-linecap="round" stroke-linejoin="round"></path>
+                    <button id="attach-btn" class="btn-ghost" title="Upload Data">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
                         </svg>
                     </button>
 
-                    <!-- Localized Deep Research Toggle -->
-                    <button id="deep-research-toggle" class="btn-ghost deep-research-toggle"
-                        title="Enable Deep Research Mode">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" class="globe-icon"
-                            stroke="currentColor" stroke-width="2.5">
-                            <circle cx="12" cy="12" r="10"></circle>
-                            <line x1="2" y1="12" x2="22" y2="12"></line>
-                            <path
-                                d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z">
-                            </path>
+                    <button id="deep-research-toggle" class="btn-ghost deep-research-toggle" title="Toggle Deep Research">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"/>
+                            <line x1="2" y1="12" x2="22" y2="12"/>
+                            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
                         </svg>
-                        <span class="deep-research-label">Deep Research</span>
                     </button>
 
-                    <textarea id="chat-textarea" placeholder="Start a conversation..." rows="1"></textarea>
+                    <textarea id="chat-textarea" placeholder="Input command..." rows="1"></textarea>
 
-                    <div id="send-btn-wrapper" style="position: relative; display: flex;">
-                        <button id="send-btn" class="send-btn">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                stroke-width="2.5">
-                                <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" stroke-linecap="round"
-                                    stroke-linejoin="round" />
-                            </svg>
-                        </button>
-                    </div>
+                    <button id="send-btn" class="send-btn">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <line x1="22" y1="2" x2="11" y2="13"/>
+                            <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                        </svg>
+                    </button>
                 </div>
             </div>
         </main>
     </div>
 
-    <!-- Authorization Overlay (Renamed to Backend Settings) -->
+    <!-- Backend Config Modal -->
     <div id="api-modal" class="modal-backdrop open">
-        <div class="modal-content" style="text-align: center;">
-            <div class="modal-body" style="padding: 32px;">
-                <div class="hardware-surface"
-                    style="width: 4rem; height: 4rem; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 1.5rem auto; color: var(--color-primary-600); padding: 0;">
-                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                        <path d="M7 11V7a5 5 0 0110 0v4" />
-                    </svg>
-                </div>
-                <h2 class="font-heading"
-                    style="font-size: 1.75rem; font-weight: 800; color: var(--content-primary); margin-bottom: 0.75rem; letter-spacing: -0.02em;">
-                    Backend Settings</h2>
-                <p style="color: var(--content-muted); font-size: 0.875rem; line-height: 1.6; margin-bottom: 2rem;">
-                    Configure where the backend connects to LM Studio. If no API token is required, leave it blank.</p>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="text-h2">SYSTEM INITIALIZATION</h2>
+            </div>
+            <div class="modal-body">
+                <p class="text-label" style="margin-bottom: 1rem;">ESTABLISH LINK TO LLM BACKEND</p>
 
-                <div style="text-align: left; margin-bottom: 1.25rem;">
-                    <label class="text-xs"
-                        style="color: var(--content-muted); font-weight: 700; margin-bottom: 0.5rem; display: block; letter-spacing: 0.1em;">SERVER
-                        LINK</label>
-                    <input type="text" id="server-link-input" class="input-luminous" placeholder="http://localhost:1234"
-                        autofocus style="width: 100%; height: 3rem;">
-                </div>
+                <label class="text-label">SERVER ENDPOINT</label>
+                <input type="text" id="server-link-input" class="input-luminous" placeholder="http://localhost:1234">
 
-                <div style="text-align: left; margin-bottom: 2rem;">
-                    <label class="text-xs"
-                        style="color: var(--content-muted); font-weight: 700; margin-bottom: 0.5rem; display: block; letter-spacing: 0.1em;">API
-                        TOKEN (OPTIONAL)</label>
-                    <input type="password" id="api-token-input" class="input-luminous" placeholder="lm-studio"
-                        style="width: 100%; height: 3rem;">
-                </div>
+                <label class="text-label" style="margin-top: 1rem;">ACCESS TOKEN (OPTIONAL)</label>
+                <input type="password" id="api-token-input" class="input-luminous" placeholder="••••••••">
 
-                <button id="save-api-key" class="btn-primary"
-                    style="width: 100%; height: 3.5rem; font-size: 1rem; border: none; border-radius: 12px; font-weight: 600; cursor: pointer;">Connect
-                    & Initialize</button>
+                <button id="save-api-key" class="btn-primary" style="width: 100%; margin-top: 2rem;">CONNECT</button>
             </div>
         </div>
     </div>
 
     <!-- System Settings Modal -->
     <div id="system-settings-modal" class="modal-backdrop">
-        <div class="modal-content" style="max-width: 512px;">
+        <div class="modal-content">
             <div class="modal-header">
-                <div style="display: flex; align-items: center; justify-content: space-between;">
-                    <h2 class="font-heading"
-                        style="font-size: 1.5rem; font-weight: 800; color: var(--content-primary); margin: 0;">
-                        System Settings
-                    </h2>
-                    <button id="close-system-settings" class="btn-ghost"
-                        style="width: 2.5rem; height: 2.5rem; padding: 0; border-radius: 0.75rem;">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                            stroke-width="2.5">
-                            <path d="M18 6L6 18M6 6l12 12" stroke-linecap="round" stroke-linejoin="round" />
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <h2 class="text-h2">SYSTEM CONFIG</h2>
+                    <button id="close-system-settings" class="btn-ghost">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="18" y1="6" x2="6" y2="18"/>
+                            <line x1="6" y1="6" x2="18" y2="18"/>
                         </svg>
                     </button>
                 </div>
             </div>
-
             <div class="modal-body">
-                <!-- Appearance -->
-                <div class="hardware-surface" style="padding: 1.5rem; margin-bottom: 1rem;">
-                    <h3 class="text-h2" style="font-size: 1.1rem; margin-bottom: 1rem;">Appearance</h3>
+                <div class="hardware-surface" style="margin-bottom: 1rem;">
+                    <h3 class="text-h2" style="font-size: 1rem; margin-bottom: 1rem;">VISUAL INTERFACE</h3>
                     <div style="display: flex; gap: 1rem;">
                         <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                            <input type="radio" name="theme" value="dark" class="radio-input" checked>
+                            <span class="font-mono text-xs">VOID (DEFAULT)</span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
                             <input type="radio" name="theme" value="light" class="radio-input">
-                            <span>Light</span>
+                            <span class="font-mono text-xs">CLINICAL</span>
                         </label>
                         <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
-                            <input type="radio" name="theme" value="dark" class="radio-input">
-                            <span>Dark</span>
-                        </label>
-                        <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
-                            <input type="radio" name="theme" value="system" class="radio-input" checked>
-                            <span>System</span>
+                            <input type="radio" name="theme" value="system" class="radio-input">
+                            <span class="font-mono text-xs">SYSTEM</span>
                         </label>
                     </div>
                 </div>
 
-                <!-- Connection Settings -->
-                <div class="hardware-surface" style="padding: 1.5rem; margin-bottom: 1rem;">
-                    <h3 class="text-h2" style="font-size: 1.1rem; margin-bottom: 1rem;">Connection</h3>
-                    <div style="margin-bottom: 1rem;">
-                        <label class="text-xs"
-                            style="color: var(--content-muted); font-weight: 700; display: block; margin-bottom: 0.5rem;">SERVER
-                            LINK</label>
-                        <input type="text" id="sys-server-link" class="input-luminous" placeholder="http://localhost:1234">
-                    </div>
-                    <div style="margin-bottom: 1rem;">
-                        <label class="text-xs"
-                            style="color: var(--content-muted); font-weight: 700; display: block; margin-bottom: 0.5rem;">API
-                            TOKEN</label>
-                        <input type="password" id="sys-api-token" class="input-luminous" placeholder="lm-studio">
-                    </div>
-                    <button id="sys-save-connection" class="btn-primary" style="width: 100%;">Update Connection</button>
+                <div class="hardware-surface" style="margin-bottom: 1rem;">
+                    <h3 class="text-h2" style="font-size: 1rem; margin-bottom: 1rem;">CONNECTION</h3>
+                    <label class="text-label">ENDPOINT</label>
+                    <input type="text" id="sys-server-link" class="input-luminous" placeholder="http://localhost:1234">
+
+                    <label class="text-label" style="margin-top: 0.5rem;">TOKEN</label>
+                    <input type="password" id="sys-api-token" class="input-luminous" placeholder="••••••••">
+
+                    <button id="sys-save-connection" class="btn-primary" style="width: 100%; margin-top: 1rem;">UPDATE LINK</button>
                 </div>
 
-                <!-- Reset -->
-                <div class="hardware-surface" style="padding: 1.5rem; border-color: var(--color-rose-500);">
-                    <h3 class="text-h2" style="font-size: 1.1rem; margin-bottom: 1rem; color: var(--color-rose-500);">Danger
-                        Zone</h3>
-                    <button id="sys-clear-all-chats" class="btn-secondary"
-                        style="width: 100%; border-color: var(--color-rose-500); color: var(--color-rose-500); margin-bottom: 0.5rem;">
-                        Clear All Chat Conversations
-                    </button>
-                    <button id="sys-reset-memory" class="btn-secondary"
-                        style="width: 100%; border-color: var(--color-rose-500); color: var(--color-rose-500); margin-bottom: 0.5rem;">
-                        Reset All Long-Term Memory
-                    </button>
-                    <button id="sys-reset-app" class="btn-secondary"
-                        style="width: 100%; border-color: var(--color-rose-500); color: var(--color-rose-500);">
-                        Reset Application Data
-                    </button>
+                <div class="hardware-surface" style="border-color: var(--color-rose-500);">
+                    <h3 class="text-h2" style="font-size: 1rem; margin-bottom: 1rem; color: var(--color-rose-500);">DANGER ZONE</h3>
+                    <button id="sys-clear-all-chats" class="btn-secondary" style="width: 100%; color: var(--color-rose-500); border-color: var(--color-rose-500); margin-bottom: 0.5rem;">PURGE ALL LOGS</button>
+                    <button id="sys-reset-memory" class="btn-secondary" style="width: 100%; color: var(--color-rose-500); border-color: var(--color-rose-500); margin-bottom: 0.5rem;">WIPE LONG-TERM MEMORY</button>
+                    <button id="sys-reset-app" class="btn-secondary" style="width: 100%; color: var(--color-rose-500); border-color: var(--color-rose-500);">FACTORY RESET</button>
                 </div>
             </div>
         </div>
@@ -371,193 +261,115 @@
     <div id="settings-modal" class="modal-backdrop">
         <div class="modal-content" style="max-width: 640px;">
             <div class="modal-header">
-                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem;">
-                    <h2 class="font-heading"
-                        style="font-size: 1.5rem; font-weight: 800; color: var(--content-primary); margin: 0;">
-                        Chat Settings
-                    </h2>
-                    <button id="close-settings" class="btn-ghost"
-                        style="width: 2.5rem; height: 2.5rem; padding: 0; border-radius: 0.75rem;">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                            stroke-width="2.5">
-                            <path d="M18 6L6 18M6 6l12 12" stroke-linecap="round" stroke-linejoin="round" />
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                    <h2 class="text-h2">SESSION PARAMETERS</h2>
+                    <button id="close-settings" class="btn-ghost">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="18" y1="6" x2="6" y2="18"/>
+                            <line x1="6" y1="6" x2="18" y2="18"/>
                         </svg>
                     </button>
                 </div>
-
-                <!-- Tabs -->
-                <div class="tab-container" style="margin-bottom: 0;">
-                    <div class="tab-item active" data-tab="general">General</div>
-                    <div class="tab-item" data-tab="persona">Persona</div>
-                    <div class="tab-item" data-tab="tuning">Parameters</div>
+                <div class="tab-container">
+                    <div class="tab-item active" data-tab="general">GENERAL</div>
+                    <div class="tab-item" data-tab="persona">PERSONA</div>
+                    <div class="tab-item" data-tab="tuning">TUNING</div>
                 </div>
             </div>
 
             <div class="modal-body" style="padding-top: 1.5rem;">
-                <!-- Tab Content: General -->
+                <!-- General Tab -->
                 <div id="tab-general" class="tab-content active">
-                    <div class="hardware-surface" style="padding: 1.5rem; margin-bottom: 1rem;">
-                        <h3 class="text-h2" style="font-size: 1.1rem; margin-bottom: 1rem;">Memory Mode</h3>
-                        <div
-                            style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
-                            <p style="font-size: 0.9rem; color: var(--content-muted); margin: 0; max-width: 80%;">
-                                Enables RAG-based long-term memory. Context from previous conversations will be injected
-                                into the prompt.
-                            </p>
-                            <div class="toggle-switch" id="memory-toggle-switch">
-                                <div class="toggle-handle"></div>
-                            </div>
+                    <div class="hardware-surface" style="margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <h3 class="text-h2" style="font-size: 1rem;">RAG MEMORY</h3>
+                            <p class="text-label" style="text-transform: none; opacity: 0.7;">Inject context from vector database</p>
+                        </div>
+                        <div class="toggle-switch" id="memory-toggle-switch">
+                            <div class="toggle-handle"></div>
                         </div>
                     </div>
 
-
-                    <div class="hardware-surface" style="padding: 1.5rem;">
-                        <h3 class="text-h2" style="font-size: 1.1rem; margin-bottom: 0.5rem;">Model Selection</h3>
-                        <p style="font-size: 0.85rem; color: var(--content-muted); margin-bottom: 1rem;">Select the primary LLM for chat completions.</p>
-                        <select id="model-select-dropdown" class="input-luminous" style="width: 100%; cursor: pointer;">
-                            <option value="" disabled selected>Loading models...</option>
+                    <div class="hardware-surface" style="margin-bottom: 1rem;">
+                        <h3 class="text-h2" style="font-size: 1rem; margin-bottom: 0.5rem;">PRIMARY MODEL</h3>
+                        <select id="model-select-dropdown" class="input-luminous">
+                            <option value="" disabled selected>SCANNING...</option>
                         </select>
                     </div>
 
-                    <div class="hardware-surface" style="padding: 1.5rem; margin-top: 1rem;">
-                        <h3 class="text-h2" style="font-size: 1.1rem; margin-bottom: 0.5rem;">Deep Research Vision Model</h3>
-                        <p style="font-size: 0.85rem; color: var(--content-muted); margin-bottom: 1rem;">Select a vision model to extract descriptions from images encountered during deep research.</p>
-                        <select id="vision-model-select-dropdown" class="input-luminous" style="width: 100%; cursor: pointer;">
-                            <option value="">None (Skip Images)</option>
-                            <option value="" disabled selected>Loading vision models...</option>
+                    <div class="hardware-surface">
+                        <h3 class="text-h2" style="font-size: 1rem; margin-bottom: 0.5rem;">VISION MODEL</h3>
+                        <select id="vision-model-select-dropdown" class="input-luminous">
+                            <option value="">DISABLED</option>
                         </select>
                     </div>
                 </div>
 
-                <!-- Tab Content: Persona -->
+                <!-- Persona Tab -->
                 <div id="tab-persona" class="tab-content hidden">
-                    <p style="color: var(--content-muted); font-size: 0.875rem; line-height: 1.6; margin-bottom: 1.5rem;">
-                        Define the personality, constraints, and expertise level for the AI cluster.
-                    </p>
-                    <textarea id="system-prompt-input" class="input-luminous"
-                        placeholder="You are a helpful assistant specialized in..."
-                        style="width: 100%; height: 300px; padding: 1.25rem; font-family: var(--font-serif); resize: vertical; line-height: 1.6;"></textarea>
+                    <p class="text-label" style="text-transform: none; margin-bottom: 1rem;">DEFINE AGENT BEHAVIOR CONSTRAINTS</p>
+                    <textarea id="system-prompt-input" class="input-luminous" style="height: 300px; font-family: var(--font-mono); font-size: 13px; line-height: 1.6;" placeholder="SYSTEM INSTRUCTION..."></textarea>
                 </div>
 
-                <!-- Tab Content: Tuning -->
+                <!-- Tuning Tab -->
                 <div id="tab-tuning" class="tab-content hidden">
-                    <div style="display: flex; flex-direction: column; gap: 1.25rem;">
-                        <!-- Temperature -->
-                        <div class="hardware-surface" style="padding: 1.25rem;">
-                            <div
-                                style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
-                                <span class="text-xs"
-                                    style="color: var(--content-muted); font-weight: 700;">TEMPERATURE</span>
-                                <span id="temp-val" class="badge">1.0</span>
+                    <div style="display: flex; flex-direction: column; gap: 1rem;">
+                        <div class="hardware-surface">
+                            <div style="display: flex; justify-content: space-between;">
+                                <span class="text-label">TEMPERATURE</span>
+                                <span id="temp-val" class="text-label">1.0</span>
                             </div>
                             <input type="range" id="temp-slider" min="0" max="2" step="0.1" value="1">
                         </div>
-                        <!-- Top P -->
-                        <div class="hardware-surface" style="padding: 1.25rem;">
-                            <div
-                                style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
-                                <span class="text-xs" style="color: var(--content-muted); font-weight: 700;">TOP P</span>
-                                <span id="top-p-val" class="badge">1.0</span>
-                            </div>
-                            <input type="range" id="top-p-slider" min="0" max="1" step="0.05" value="1">
-                        </div>
-                        <!-- Max Tokens -->
-                        <div class="hardware-surface" style="padding: 1.25rem;">
-                            <div
-                                style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
-                                <span class="text-xs" style="color: var(--content-muted); font-weight: 700;">MAX
-                                    TOKENS</span>
-                                <span id="max-tokens-val" class="badge">2048</span>
+
+                        <div class="hardware-surface">
+                            <div style="display: flex; justify-content: space-between;">
+                                <span class="text-label">MAX TOKENS</span>
+                                <span id="max-tokens-val" class="text-label">2048</span>
                             </div>
                             <input type="range" id="max-tokens-slider" min="0" max="32768" step="128" value="2048">
                         </div>
-                        <!-- Other Params -->
-                        <div class="hardware-surface" style="padding: 1.25rem;">
-                            <div
-                                style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
-                                <span class="text-xs" style="color: var(--content-muted); font-weight: 700;">REASONING
-                                    LEVEL</span>
-                                <span id="reasoning-level-val" class="badge">Medium</span>
+
+                        <div class="hardware-surface">
+                            <div style="display: flex; justify-content: space-between;">
+                                <span class="text-label">REASONING EFFORT</span>
+                                <span id="reasoning-level-val" class="text-label">MEDIUM</span>
                             </div>
                             <input type="range" id="reasoning-level-slider" min="0" max="3" step="1" value="2">
-                            <div
-                                style="display: flex; justify-content: space-between; margin-top: 0.5rem; font-size: 0.625rem; color: var(--content-muted); font-weight: 600;">
-                                <span>NONE</span><span>LOW</span><span>MEDIUM</span><span>HIGH</span>
-                            </div>
                         </div>
-                        <div class="hardware-surface" style="padding: 1.25rem;">
-                            <div
-                                style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
-                                <span class="text-xs" style="color: var(--content-muted); font-weight: 700;">TOP K</span>
-                                <span id="top-k-val" class="badge">40</span>
-                            </div>
-                            <input type="range" id="top-k-slider" min="0" max="100" step="1" value="40">
-                        </div>
-                        <div class="hardware-surface" style="padding: 1.25rem;">
-                            <div
-                                style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
-                                <span class="text-xs" style="color: var(--content-muted); font-weight: 700;">MIN P</span>
-                                <span id="min-p-val" class="badge">0.05</span>
-                            </div>
-                            <input type="range" id="min-p-slider" min="0" max="1" step="0.01" value="0.05">
-                        </div>
-                        <div class="hardware-surface" style="padding: 1.25rem;">
-                            <div
-                                style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
-                                <span class="text-xs" style="color: var(--content-muted); font-weight: 700;">PRESENCE
-                                    PENALTY</span>
-                                <span id="presence-penalty-val" class="badge">0.0</span>
-                            </div>
-                            <input type="range" id="presence-penalty-slider" min="-2" max="2" step="0.1" value="0">
-                        </div>
-                        <div class="hardware-surface" style="padding: 1.25rem;">
-                            <div
-                                style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
-                                <span class="text-xs" style="color: var(--content-muted); font-weight: 700;">FREQUENCY
-                                    PENALTY</span>
-                                <span id="frequency-penalty-val" class="badge">0.0</span>
-                            </div>
-                            <input type="range" id="frequency-penalty-slider" min="-2" max="2" step="0.1" value="0">
-                        </div>
+
+                        <!-- Add other sliders as needed -->
                     </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Model Switching Overlay -->
-    <div id="model-switch-overlay" class="modal-backdrop"
-        style="display: none; align-items: center; justify-content: center; z-index: 9999; background: rgba(0, 0, 0, 0.5); backdrop-filter: blur(10px);">
-        <div style="display: flex; flex-direction: column; align-items: center; gap: 1rem;">
-            <div class="spinner-xl"></div>
-            <div id="model-switch-text" class="font-heading"
-                style="color: white; font-size: 1.2rem; font-weight: 600; text-align: center;">Switching Models...</div>
-            <div class="text-xs" style="color: rgba(255, 255, 255, 0.7);">Please wait while we free up resources</div>
-        </div>
-    </div>
-
-    <!-- Custom Confirmation Modal -->
+    <!-- Confirm Modal -->
     <div id="confirm-modal" class="modal-backdrop">
         <div class="modal-content" style="max-width: 400px; text-align: center;">
-            <div class="modal-body" style="padding: 2.5rem 2rem;">
-                <div id="confirm-icon-container" class="hardware-surface"
-                    style="width: 3.5rem; height: 3.5rem; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 1.5rem auto; color: var(--color-primary-600); padding: 0;">
-                    <div id="confirm-icon-svg">
-                        <!-- Dynamic Icon -->
-                    </div>
+            <div class="modal-body" style="padding: 2rem;">
+                <div id="confirm-icon-container" class="hardware-surface" style="width: 48px; height: 48px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 1.5rem auto; padding: 0;">
+                    <div id="confirm-icon-svg"></div>
                 </div>
-                <h3 id="confirm-title" class="font-heading" style="font-size: 1.25rem; font-weight: 800; color: var(--content-primary); margin-bottom: 0.75rem;">Confirm Action</h3>
-                <p id="confirm-message" style="color: var(--content-muted); font-size: 0.9375rem; line-height: 1.6; margin-bottom: 2rem;">Are you sure you want to proceed?</p>
-                
-                <div style="display: flex; gap: 0.75rem;">
-                    <button id="confirm-cancel-btn" class="btn-secondary" style="flex: 1; height: 3rem; border-radius: 12px; font-weight: 600;">Cancel</button>
-                    <button id="confirm-action-btn" class="btn-primary" style="flex: 1; height: 3rem; border-radius: 12px; font-weight: 600;">Confirm</button>
+                <h3 id="confirm-title" class="text-h2" style="margin-bottom: 0.5rem;">CONFIRM</h3>
+                <p id="confirm-message" class="text-label" style="text-transform: none; margin-bottom: 2rem; opacity: 0.8;">Proceed with action?</p>
+                <div style="display: flex; gap: 1rem;">
+                    <button id="confirm-cancel-btn" class="btn-secondary" style="flex: 1;">ABORT</button>
+                    <button id="confirm-action-btn" class="btn-primary" style="flex: 1;">EXECUTE</button>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div id="model-switch-overlay" class="modal-backdrop" style="display: none; z-index: 9999;">
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 1rem;">
+            <div class="spinner-xl"></div>
+            <div id="model-switch-text" class="text-h2" style="font-size: 1rem;">INITIALIZING MODEL...</div>
         </div>
     </div>
 
     <script src="/script.js"></script>
 </body>
-
 </html>
