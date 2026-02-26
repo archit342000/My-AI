@@ -1,4 +1,4 @@
-# 🌌 LMStudioChat v1.0.0
+# 🌌 My-AI v1.0.1
 
 A premium, full-stack AI chat interface designed for local inference with [LM Studio](https://lmstudio.ai/). This application provides a high-fidelity Luminous Material interface for interacting with local LLMs, featuring persistent state, long-term memory, and an advanced deep research agent.
 
@@ -29,7 +29,7 @@ A premium, full-stack AI chat interface designed for local inference with [LM St
 1.  **Clone the repository**:
     ```bash
     git clone <repository-url>
-    cd LMStudioChat
+    cd My-AI
     ```
 
 2.  **Set up Virtual Environment**:
@@ -69,5 +69,5 @@ A premium, full-stack AI chat interface designed for local inference with [LM St
 
 ## 📄 License & Versioning
 
-This project follows [SemVer v2.0.0](https://semver.org/). Current version: `v1.0.0`.
+This project follows [SemVer v2.0.0](https://semver.org/). Current version: `v1.0.1`.
 See [CHANGELOG.md](./changelog.md) for a detailed history of updates.
