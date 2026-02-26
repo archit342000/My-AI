@@ -1,4 +1,4 @@
-# My-AI — Design Directives (v1.0.1)
+# My-AI — Design Directives (v1.0.2)
 
 **Architect:** Visual Design System  
 **Compliance Standard:** WCAG 2.1 AA  
