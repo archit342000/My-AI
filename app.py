@@ -55,6 +55,13 @@ def get_chat_details(chat_id):
     chat["is_research_running"] = task_manager.is_task_running(chat_id)
     return jsonify(chat)
 
+@app.route('/api/chats/<chat_id>/events', methods=['GET'])
+def chat_events_stream(chat_id):
+    def generate_event_stream():
+        for chunk in task_manager.stream_task(chat_id):
+            yield chunk
+    return Response(generate_event_stream(), mimetype='text/event-stream')
+
 @app.route('/api/chats/save', methods=['POST'])
 def save_chat_endpoint():
     data = request.json
@@ -204,8 +211,9 @@ def chat_completions():
 
         if deep_research_mode and chat_id:
             if not task_manager.is_task_running(chat_id):
+                # Fix: Pass model ID (model) for execution, and Display Name (last_model_name) for persistence
                 task_manager.start_research_task(
-                    last_model_name, messages, approved_plan, chat_id, search_depth_mode, vision_model, generate_deep_research_response
+                    model, last_model_name, messages, approved_plan, chat_id, search_depth_mode, vision_model, generate_deep_research_response
                 )
             
             def generate_deep_stream():
