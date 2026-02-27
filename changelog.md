@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## v1.2.0
+* **Deep Research Resumption**:
+    - **Resume Compatibility**: Implemented full state recovery for interrupted Deep Research tasks. Clients now automatically reconnect to the stream upon page reload.
+    - **Event Streaming Endpoint**: Added `/api/chats/<chat_id>/events` to replay task logs and stream live updates to reconnected clients.
+    - **Race Condition Fix**: Hardened `task_manager.py` to ensure data persistence before status updates, preventing synchronization issues.
+    - **Duplicate Prevention**: Refined frontend logic to detect existing completion states and avoid duplicate message bubbles.
+* **Refactoring**:
+    - **Stream Processing**: Unified stream handling logic in `static/script.js` to reduce code duplication between `sendMessage` and `resumeStream`.
+* **Version Bump**: Incremented version to 1.2.0.
+
 ## v1.1.3
 * **RAG Engine Overhaul**:
     - **Proper Similarity Metric**: Switched ChromaDB to use `cosine` distance instead of default `L2`, resolving search relevance issues with Jina v5.

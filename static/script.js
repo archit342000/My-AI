@@ -510,7 +510,15 @@ document.addEventListener('DOMContentLoaded', () => {
             renderChatList();
 
             if (chat.is_research_running) {
-                resumeStream(id);
+                // If the last message is already from the assistant, it means the task completed
+                // and saved to DB just before we loaded, even if the status file hasn't updated yet.
+                // In this case, we skip resuming to avoid a duplicate message bubble.
+                const lastMsg = chatHistory[chatHistory.length - 1];
+                if (lastMsg && lastMsg.role === 'assistant') {
+                    console.log("Task marked running but assistant message found in DB. Assuming complete.");
+                } else {
+                    resumeStream(id);
+                }
             }
 
             if (pushState && window.location.pathname !== `/chat/${id}`) {
@@ -2129,6 +2137,16 @@ document.addEventListener('DOMContentLoaded', () => {
             // If `loadChat` loaded a partial last message, we have now appended a NEW one.
             // Ideally, we should remove the partial last message before starting resume.
             // But for now, let's just append. User will see the completed stream.
+
+            // Fix State Desync: Update chatHistory so subsequent messages have the context
+            let finalCombinedContent = accumulatedContent;
+            if (accumulatedReasoning) {
+                finalCombinedContent = `<think>\n${accumulatedReasoning}\n</think>\n${accumulatedContent}`;
+            }
+
+            // Push to local history
+            const assistantMsgObj = { role: 'assistant', content: finalCombinedContent, model: selectedModelName };
+            chatHistory.push(assistantMsgObj);
 
         } catch (error) {
             if (error.name === 'AbortError') {

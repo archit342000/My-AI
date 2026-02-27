@@ -173,19 +173,21 @@ class TaskManager:
                             q.put((chunk, chunk_index))
                             
                 # Finished successfully
-                task_info["status"] = "completed"
-                with open(os.path.join(TASKS_DIR, f"{chat_id}.json"), "w") as f:
-                    json.dump(task_info, f)
-                    
-                with open(log_path, "a") as f:
-                    f.write(json.dumps({"type": "done", "data": "DONE"}) + "\n")
-                    
                 store_content = full_content
                 full_reasoning = activity_reasoning + ("\n" + llm_reasoning if llm_reasoning else "")
                 if full_reasoning.strip():
                     store_content = f"{full_content}\n<think>\n{full_reasoning}\n</think>"
 
                 add_message(chat_id, 'assistant', store_content, model=task_info.get("model"))
+
+                # Update status AFTER saving message to avoid race condition where frontend sees 'completed'
+                # but DB doesn't have the message yet.
+                task_info["status"] = "completed"
+                with open(os.path.join(TASKS_DIR, f"{chat_id}.json"), "w") as f:
+                    json.dump(task_info, f)
+
+                with open(log_path, "a") as f:
+                    f.write(json.dumps({"type": "done", "data": "DONE"}) + "\n")
 
                 # Persist Finalized Raw Backup
                 backup_path = os.path.join(LOGS_DIR, f"{chat_id}_final_backup.md")
