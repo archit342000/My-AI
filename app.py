@@ -55,6 +55,13 @@ def get_chat_details(chat_id):
     chat["is_research_running"] = task_manager.is_task_running(chat_id)
     return jsonify(chat)
 
+@app.route('/api/chats/<chat_id>/events', methods=['GET'])
+def chat_events_stream(chat_id):
+    def generate_event_stream():
+        for chunk in task_manager.stream_task(chat_id):
+            yield chunk
+    return Response(generate_event_stream(), mimetype='text/event-stream')
+
 @app.route('/api/chats/save', methods=['POST'])
 def save_chat_endpoint():
     data = request.json
