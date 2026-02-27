@@ -211,8 +211,9 @@ def chat_completions():
 
         if deep_research_mode and chat_id:
             if not task_manager.is_task_running(chat_id):
+                # Fix: Pass model ID (model) for execution, and Display Name (last_model_name) for persistence
                 task_manager.start_research_task(
-                    last_model_name, messages, approved_plan, chat_id, search_depth_mode, vision_model, generate_deep_research_response
+                    model, last_model_name, messages, approved_plan, chat_id, search_depth_mode, vision_model, generate_deep_research_response
                 )
             
             def generate_deep_stream():
