@@ -131,12 +131,14 @@ class ResponseCache:
                 'status': 'recovered'
             }
 
-    def mark_completed(self, chat_id):
+    def mark_completed(self, chat_id, cleanup=True):
         """
-        Finalizes the chat. Persists full content to DB.
+        Finalizes the chat. Returns full content.
+        cleanup: If True, deletes WAL and removes from memory immediately.
+                 If False, keeps it until cleanup_chat() is called.
         """
         if chat_id not in self._cache:
-            return
+            return None
 
         # Notify subscribers of completion
         self.append_chunk(chat_id, "[[DONE]]")
@@ -158,37 +160,34 @@ class ResponseCache:
                     if choices:
                         delta = choices[0].get('delta', {})
                         content = delta.get('content', '')
-                        reasoning = delta.get('reasoning_content', '')
+                        reasoning = delta.get('reasoning_content', '') or delta.get('reasoning', '')
 
                         if content: full_content += content
                         if reasoning: full_reasoning += reasoning
                 except:
                     pass
 
-        # Persist to DB
-        # Combine reasoning and content
         final_content = full_content
         if full_reasoning:
             final_content = f"{full_content}\n<think>\n{full_reasoning}\n</think>"
 
-        # We need the model name. It's usually in the chunks or we need to pass it.
-        # For now, we assume the last chunk might have it or we updated DB earlier.
-        # Ideally, add_message is called here.
-        # But add_message requires role='assistant'.
-
-        # Note: We should probably store the 'model' in the cache initialization or first chunk.
-
-        # Cleanup
-        with self._lock:
-            del self._cache[chat_id]
-
-        # Delete WAL (or archive it)
-        try:
-            os.remove(self._get_wal_path(chat_id))
-        except:
-            pass
+        if cleanup:
+            self.cleanup_chat(chat_id)
 
         return final_content
+
+    def cleanup_chat(self, chat_id):
+        """Removes chat from cache and deletes WAL."""
+        with self._lock:
+            if chat_id in self._cache:
+                del self._cache[chat_id]
+
+        try:
+            wal_path = self._get_wal_path(chat_id)
+            if os.path.exists(wal_path):
+                os.remove(wal_path)
+        except:
+            pass
 
     def is_active(self, chat_id):
         return chat_id in self._cache

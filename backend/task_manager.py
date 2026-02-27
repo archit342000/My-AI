@@ -3,6 +3,7 @@ import json
 import asyncio
 import threading
 import time
+import inspect
 from backend.storage import add_message
 from backend.logger import log_event
 from backend import config
@@ -55,20 +56,29 @@ class TaskManager:
         """Generic starter for any chat task (normal or deep research)."""
         cache_system.initialize_chat(chat_id)
 
-        task_info = {
+        # Filter kwargs for persistent JSON storage (exclude complex objects like 'rag')
+        persistent_info = {
             "chat_id": chat_id,
             "status": "running",
             "timestamp": time.time(),
-            **kwargs
         }
 
-        if "messages" in task_info:
-            task_info["messages"] = _strip_images_from_messages(task_info["messages"])
+        # Explicitly copy serializable fields we care about
+        for key in ['model', 'messages', 'approved_plan', 'search_depth_mode', 'vision_model', 'mode', 'memory_mode', 'has_vision']:
+            if key in kwargs:
+                if key == 'messages':
+                    persistent_info[key] = _strip_images_from_messages(kwargs[key])
+                else:
+                    persistent_info[key] = kwargs[key]
 
+        # Save to disk
         with open(os.path.join(TASKS_DIR, f"{chat_id}.json"), "w") as f:
-            json.dump(task_info, f)
+            json.dump(persistent_info, f)
             
-        threading.Thread(target=self._run_task, args=(task_info, execute_fn), daemon=True).start()
+        # Pass ALL kwargs (including objects) to the thread
+        runtime_info = {**persistent_info, **kwargs}
+
+        threading.Thread(target=self._run_task, args=(runtime_info, execute_fn), daemon=True).start()
 
     def start_research_task(self, model, messages, approved_plan, chat_id, search_depth_mode, vision_model, execute_fn):
         self.start_chat_task(
@@ -83,7 +93,6 @@ class TaskManager:
         )
         
     def _run_task(self, task_info, execute_fn):
-        print(f"[DEBUG] Starting task {task_info['chat_id']}")
         chat_id = task_info["chat_id"]
         
         loop = asyncio.new_event_loop()
@@ -108,37 +117,43 @@ class TaskManager:
         # Normal Chat params (extracted from kwargs in start_chat_task)
         if "rag" in task_info:
              fn_kwargs["body_params"] = task_info.get("body_params", {})
-             # Important: 'rag' passed in task_info is likely not thread-safe or picklable if it's an object.
-             # However, start_chat_task is called from app.py where 'rag' is a global object reference.
-             # Threading shares memory, so it's fine.
              fn_kwargs["rag"] = task_info.get("rag")
              fn_kwargs["memory_mode"] = task_info.get("memory_mode")
              fn_kwargs["has_vision"] = task_info.get("has_vision")
 
         try:
+            # Sync/Async Generator Handling
             generator = execute_fn(**fn_kwargs)
             
             async def consume():
                 try:
-                    async for chunk in generator:
-                        if chat_id in self.interrupted_tasks:
-                            raise InterruptedError("Task stopped")
+                    # Handle both sync (standard chat) and async (deep research) generators
+                    if inspect.isasyncgen(generator):
+                        async for chunk in generator:
+                            if chat_id in self.interrupted_tasks:
+                                raise InterruptedError("Task stopped")
+                            cache_system.append_chunk(chat_id, chunk)
+                    else:
+                        # Wrap synchronous generator in thread executor to avoid blocking loop
+                        # Or simpler: iterate synchronously since we are already in a thread dedicated to this task
+                        for chunk in generator:
+                            if chat_id in self.interrupted_tasks:
+                                raise InterruptedError("Task stopped")
+                            cache_system.append_chunk(chat_id, chunk)
+                            # Yield control briefly to allow event loop to process other things if needed
+                            # (though this is the only task in this loop/thread)
+                            await asyncio.sleep(0)
                         
-                        # print(f"[DEBUG] Chunk for {chat_id}: {chunk[:50]}")
-                        cache_system.append_chunk(chat_id, chunk)
-
                     task_info["status"] = "completed"
-                    final_content = cache_system.mark_completed(chat_id)
                     
-                    print(f"[DEBUG] Task completed. Final content length: {len(final_content) if final_content else 0}")
+                    # Mark completed returns content but keeps WAL until we are done
+                    final_content = cache_system.mark_completed(chat_id, cleanup=False)
                     
                     if final_content:
                          add_message(chat_id, 'assistant', final_content, model=task_info.get("model"))
-                         print(f"[DEBUG] Message added to DB for {chat_id}")
 
                          if task_info.get("mode") != "deep_research" and task_info.get("memory_mode"):
                             try:
-                                # Simple heuristic to get user message
                                 msgs = task_info.get("messages", [])
                                 user_content = ""
                                 for m in reversed(msgs):
@@ -148,12 +163,8 @@ class TaskManager:
                                         elif isinstance(c, list):
                                             user_content = next((p['text'] for p in c if p.get('type') == 'text'), "")
                                         break
-                                # Note: Actual RAG update logic usually requires the RAG object.
-                                # If fn_kwargs["rag"] is valid, we could use it here.
+
                                 if fn_kwargs.get("rag"):
-                                    # Note: We are in a thread, rag.add_conversation_turn might be thread-safe or not.
-                                    # Assuming ChromaDB client is thread-safe.
-                                    # We need to extract the CLEAN content from final_content (remove <think> tags)
                                     clean_content = final_content
                                     if "<think>" in final_content:
                                         import re
@@ -164,8 +175,14 @@ class TaskManager:
                             except Exception as e:
                                 log_event("rag_update_error", {"error": str(e)})
 
+                    # Now clean up cache/WAL
+                    cache_system.cleanup_chat(chat_id)
+
+                    # Update status on disk
+                    # Filter again to avoid saving runtime objects if task_info was modified
+                    persistent_info = {k: v for k, v in task_info.items() if k not in ['rag', 'body_params']}
                     with open(os.path.join(TASKS_DIR, f"{chat_id}.json"), "w") as f:
-                        json.dump(task_info, f)
+                        json.dump(persistent_info, f)
 
                 except Exception as e:
                     import traceback
@@ -176,10 +193,13 @@ class TaskManager:
                     
                     task_info["status"] = "failed"
                     task_info["error"] = str(e)
-                    with open(os.path.join(TASKS_DIR, f"{chat_id}.json"), "w") as f:
-                        json.dump(task_info, f)
                     
+                    persistent_info = {k: v for k, v in task_info.items() if k not in ['rag', 'body_params']}
+                    with open(os.path.join(TASKS_DIR, f"{chat_id}.json"), "w") as f:
+                        json.dump(persistent_info, f)
+
                     add_message(chat_id, 'assistant', f"Error: {str(e)}", model=task_info.get("model"))
+                    cache_system.cleanup_chat(chat_id)
 
                 finally:
                     if chat_id in self.interrupted_tasks:
@@ -190,6 +210,7 @@ class TaskManager:
              err_msg = json.dumps({"error": str(e)})
              cache_system.append_chunk(chat_id, f"data: {err_msg}\n\n")
              cache_system.append_chunk(chat_id, "[[ERROR]]")
+             cache_system.cleanup_chat(chat_id)
         finally:
             loop.close()
 
