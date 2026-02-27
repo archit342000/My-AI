@@ -116,7 +116,8 @@ class TaskManager:
 
         # Normal Chat params (extracted from kwargs in start_chat_task)
         if "rag" in task_info:
-             fn_kwargs["body_params"] = task_info.get("body_params", {})
+             # FIX: generate_chat_response expects 'extra_body', not 'body_params'
+             fn_kwargs["extra_body"] = task_info.get("body_params", {})
              fn_kwargs["rag"] = task_info.get("rag")
              fn_kwargs["memory_mode"] = task_info.get("memory_mode")
              fn_kwargs["has_vision"] = task_info.get("has_vision")
