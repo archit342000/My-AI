@@ -121,14 +121,14 @@ def audit_tavily_search(chat_id):
 
 import httpx
 
-async def async_tavily_search(query, topic="general", time_range=None, start_date=None, end_date=None):
+async def async_tavily_search(query, topic="general", time_range=None, start_date=None, end_date=None, max_results=10):
     url = f"{config.TAVILY_BASE_URL}/search"
     payload = {
         "api_key": config.TAVILY_API_KEY,
         "query": query,
         "search_depth": "basic",
         "topic": topic if topic in ["general", "news", "finance"] else "general",
-        "max_results": 10,
+        "max_results": max_results,
         "include_answer": False,
         "include_raw_content": True,
         "include_images": True
