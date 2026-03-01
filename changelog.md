@@ -1,5 +1,19 @@
 # CHANGELOG
 
+## v1.2.0
+* **Sequential Deep Research Pipeline**: Rewrote the entire execution phase from parallel to sequential step processing. Each step now builds on accumulated context from prior steps, enabling progressive understanding.
+* **Per-Step Reflection & Gap Filling**: Added an LLM-based reflection phase after each step that analyzes extracted content, identifies information gaps, and executes up to 2 targeted follow-up searches to fill them.
+* **Deterministic URL Selection**: Replaced the AI-based URL ranking LLM call with a deterministic heuristic (Tavily score + domain diversity), eliminating an entire LLM round-trip per step.
+* **Enhanced Content Extraction**: Implemented a multi-strategy extraction chain for deep mode — direct HTTP GET with markdownify, Tavily Extract fallback for JS-rendered pages, and PyMuPDF (`fitz`) fallback for PDF documents.
+* **Phase 2.5 — Retrieval Planning**: Added a pre-report phase where the LLM generates cross-step retrieval queries based on accumulated summaries, capturing comparisons, contradictions, and synthesis points across research steps.
+* **Multi-Query Semantic Retrieval**: Reporter context is now assembled via dynamic per-query token budgeting across step goals + interconnected queries, replacing the old flat chunk dump.
+* **Unlimited Storage, Budgeted Retrieval**: Removed the 400k token storage cap. All extracted content is stored in ChromaDB; the 400k budget now applies only to the final retrieval for the reporter.
+* **Vision Processing Refactor**: Extracted vision model integration into reusable helper functions (`_process_images_in_content`, `_process_tavily_search_images`) for both regular and deep modes.
+* **Conservative Plan Modification**: Reflection can now suggest modifications to future steps when findings necessitate it, with full logging and user visibility.
+* **Embedding Model Update**: Switched default embedding model to `text-embedding-embeddinggemma-300m`.
+* **New Frontend Activity Types**: Added `reflection`, `follow_up_search`, and `retrieval_planning` activity renderers for step-by-step execution visibility.
+* **Version Bump**: Incremented version to 1.2.0.
+
 ## v1.1.5
 * **Phase 0: Context Scout**: Implemented a pre-planning analysis phase that classifies research topics, assesses time-sensitivity, and gathers preliminary web context to inform the main research strategy.
 * **Enhanced Planning Strategy**: Relaxed the strict "maximum isolation" constraint on research steps, allowing the planner to design a logical progression where later steps can build on earlier foundational findings.
