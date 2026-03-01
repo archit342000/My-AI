@@ -4,7 +4,7 @@ import re
 import urllib.parse
 import base64
 from backend.logger import log_event
-import xml.etree.ElementTree as ET
+from bs4 import BeautifulSoup
 import httpx
 import markdownify
 from backend.prompts import (
@@ -18,7 +18,7 @@ from backend.utils import (
     create_chunk, visit_page, estimate_tokens, validate_research_plan, 
     get_domain, check_url_safety, execute_tavily_search, 
     get_current_time, async_tavily_search, async_tavily_map, 
-    async_tavily_extract, async_chat_completion
+    async_tavily_extract, async_chat_completion, is_safe_web_url
 )
 from backend.llm import stream_chat_completion, chat_completion
 from backend.agents.chat import _stream_and_accumulate
@@ -55,11 +55,29 @@ def _extract_json_from_text(text):
 
 
 async def _fetch_and_encode_image(url):
+    if not is_safe_web_url(url):
+        return None
     try:
-        async with httpx.AsyncClient(timeout=TIMEOUT_IMAGE_FETCH) as client:
-            resp = await client.get(url)
+        current_url = url
+        resp = None
+        async with httpx.AsyncClient(timeout=config.TIMEOUT_IMAGE_FETCH, follow_redirects=False) as client:
+            for _ in range(5):
+                resp = await client.get(current_url)
+                if resp.status_code in (301, 302, 303, 307, 308):
+                    next_url = resp.headers.get('Location')
+                    if not next_url:
+                        break
+                    next_url = urllib.parse.urljoin(current_url, next_url)
+                    if not is_safe_web_url(next_url):
+                        return None
+                    current_url = next_url
+                else:
+                    break
+                    
+            if not resp:
+                return None
             resp.raise_for_status()
-            mime = resp.headers.get('content-type', 'image/jpeg')
+            mime = resp.headers.get('content-type', 'image/jpeg').split(';')[0].strip()
             b64 = base64.b64encode(resp.content).decode('utf-8')
             return f"data:{mime};base64,{b64}"
     except:
@@ -85,16 +103,20 @@ def _create_activity_chunk(model, activity_type, data):
     })
 
 
-async def _process_step(api_url, model, chat_id, step_node, step_index, search_depth_mode, queue=None):
+async def _process_step(api_url, model, chat_id, step_node, step_index, search_depth_mode, queue=None, vision_model=None, vlm_lock=None, model_name=None):
     """
     Handles a single step: Search -> Rank -> (Map if Deep)
     """
-    goal = step_node.findtext('goal', 'Unknown Goal')
-    description = step_node.findtext('description', '')
-    query = step_node.findtext('query', '')
+    goal_tag = step_node.find('goal')
+    goal = goal_tag.get_text(strip=True) if goal_tag else 'Unknown Goal'
+    desc_tag = step_node.find('description')
+    description = desc_tag.get_text(strip=True) if desc_tag else ''
+    query_tag = step_node.find('query')
+    query = query_tag.get_text(strip=True) if query_tag else ''
     
+    display_model = model_name or model
     if queue:
-        queue.put_nowait(f"data: {_create_activity_chunk(model, 'search', {'query': query, 'step_id': step_index, 'displayMessage': 'Searching...'})}\n\n")
+        queue.put_nowait(f"data: {_create_activity_chunk(display_model, 'search', {'query': query, 'step_id': step_index, 'displayMessage': 'Searching...'})}\n\n")
 
     # 1. Search (Always 1 search per step)
     results, images = await async_tavily_search(query)
@@ -107,8 +129,8 @@ async def _process_step(api_url, model, chat_id, step_node, step_index, search_d
     if queue:
         # Send all results back to UI
         filtered_results = [{'title': r.get('title'), 'url': r.get('url'), 'snippet': r.get('content')} for r in results]
-        queue.put_nowait(f"data: {_create_activity_chunk(model, 'search_results', {'results': filtered_results, 'step_id': step_index})}\n\n")
-        queue.put_nowait(f"data: {_create_activity_chunk(model, 'status', {'message': 'Evaluating sources...', 'step_id': step_index, 'icon': '🧠'})}\n\n")
+        queue.put_nowait(f"data: {_create_activity_chunk(display_model, 'search_results', {'results': filtered_results, 'step_id': step_index})}\n\n")
+        queue.put_nowait(f"data: {_create_activity_chunk(display_model, 'status', {'message': 'Evaluating sources...', 'step_id': step_index, 'icon': '🧠'})}\n\n")
         
     # 2. Rank via AI
     search_results_str = ""
@@ -158,7 +180,7 @@ async def _process_step(api_url, model, chat_id, step_node, step_index, search_d
         while success_count < 4 and tried_indices < len(ranked_urls):
             target_url = ranked_urls[tried_indices]
             if queue:
-                queue.put_nowait(f"data: {_create_activity_chunk(model, 'status', {'message': f'Deep mapping: {target_url[:30]}...', 'step_id': step_index, 'icon': '🗺️'})}\n\n")
+                queue.put_nowait(f"data: {_create_activity_chunk(display_model, 'status', {'message': f'Deep mapping: {target_url[:30]}...', 'step_id': step_index, 'icon': '🗺️'})}\n\n")
             sub_mapped = await async_tavily_map(target_url, instruction=f"Researching: {goal}. Find deep data pages.")
             if sub_mapped:
                 mapped_urls_all.extend(sub_mapped)
@@ -168,10 +190,11 @@ async def _process_step(api_url, model, chat_id, step_node, step_index, search_d
         # The URLs to explore are the mapped ones. 
         return mapped_urls_all, [], images
 
-async def generate_deep_research_response(api_url, model, messages, approved_plan=None, chat_id=None, search_depth_mode='regular', vision_model=None):
+async def generate_deep_research_response(api_url, model, messages, approved_plan=None, chat_id=None, search_depth_mode='regular', vision_model=None, model_name=None):
     """
     Main n+1 Pass Pipeline
     """
+    display_model = model_name or model
     log_event("deep_research_start", {"chat_id": chat_id, "mode": 'execution' if approved_plan else 'planning', "model": model, "vision_model": vision_model})
 
     # ===== PARSE PLAN IF EXECUTING =====
@@ -182,8 +205,8 @@ async def generate_deep_research_response(api_url, model, messages, approved_pla
             if not xml_content.startswith("<research_plan>"):
                 xml_content = f"<research_plan>\n{xml_content}\n</research_plan>"
                 
-            plan_root = ET.fromstring(xml_content)
-            steps = plan_root.findall('step')
+            plan_root = BeautifulSoup(xml_content, 'html.parser')
+            steps = plan_root.find_all('step')
         except Exception as e:
             yield f"data: {create_chunk(model, content=f'**Error parsing XML plan:** {str(e)}')}\n\n"
             yield "data: [DONE]\n\n"
@@ -210,7 +233,7 @@ async def generate_deep_research_response(api_url, model, messages, approved_pla
             "max_tokens": 16384,
         }
         
-        yield f"data: {_create_activity_chunk(model, 'planning', {'message': 'Analyzing your query and designing a research strategy...', 'state': 'thinking'})}\n\n"
+        yield f"data: {_create_activity_chunk(display_model, 'planning', {'message': 'Analyzing your query and designing a research strategy...', 'state': 'thinking'})}\n\n"
 
         for attempt in range(1, MAX_PLAN_RETRIES + 1):
             payload["messages"] = list(messages_to_send)
@@ -241,14 +264,14 @@ async def generate_deep_research_response(api_url, model, messages, approved_pla
                             reasoning_token_count += 1
                             if reasoning_token_count % 40 == 0:
                                 snippet = full_content.replace('<think>', '').replace('\n', ' ').strip()[-150:]
-                                yield f"data: {_create_activity_chunk(model, 'planning', {'message': f'...{snippet}', 'state': 'thinking'})}\n\n"
+                                yield f"data: {_create_activity_chunk(display_model, 'planning', {'message': f'...{snippet}', 'state': 'thinking'})}\n\n"
                                 
                     if reasoning:
                         full_reasoning += reasoning
                         reasoning_token_count += 1
                         if reasoning_token_count % 40 == 0:
                             snippet = full_reasoning[-150:].replace('\n', ' ').strip()
-                            yield f"data: {_create_activity_chunk(model, 'planning', {'message': f'...{snippet}', 'state': 'thinking'})}\n\n"
+                            yield f"data: {_create_activity_chunk(display_model, 'planning', {'message': f'...{snippet}', 'state': 'thinking'})}\n\n"
                 except Exception as e:
                     pass
 
@@ -263,20 +286,20 @@ async def generate_deep_research_response(api_url, model, messages, approved_pla
                     plan_source = full_reasoning
 
             if not plan_source or not plan_source.strip():
-                yield f"data: {_create_activity_chunk(model, 'planning', {'message': f'Attempt {attempt}: No output received. Retrying...', 'state': 'warning'})}\n\n"
+                yield f"data: {_create_activity_chunk(display_model, 'planning', {'message': f'Attempt {attempt}: No output received. Retrying...', 'state': 'warning'})}\n\n"
                 continue
 
-            yield f"data: {_create_activity_chunk(model, 'planning', {'message': 'Validating research plan structure...', 'state': 'validating'})}\n\n"
+            yield f"data: {_create_activity_chunk(display_model, 'planning', {'message': 'Validating research plan structure...', 'state': 'validating'})}\n\n"
 
             clean_xml, error = validate_research_plan(plan_source)
 
             if clean_xml:
-                yield f"data: {_create_activity_chunk(model, 'planning', {'message': 'Plan generated successfully!', 'state': 'complete'})}\n\n"
-                yield f"data: {create_chunk(model, content=clean_xml)}\n\n"
+                yield f"data: {_create_activity_chunk(display_model, 'planning', {'message': 'Plan generated successfully!', 'state': 'complete'})}\n\n"
+                yield f"data: {create_chunk(display_model, content=clean_xml)}\n\n"
                 yield "data: [DONE]\n\n"
                 return
             else:
-                yield f"data: {_create_activity_chunk(model, 'planning', {'message': f'Validation issue: {error}. Refining plan...', 'state': 'warning'})}\n\n"
+                yield f"data: {_create_activity_chunk(display_model, 'planning', {'message': f'Validation issue: {error}. Refining plan...', 'state': 'warning'})}\n\n"
                 if attempt < MAX_PLAN_RETRIES:
                     # Create a fresh copy to avoid mutation issues across retries
                     messages_to_send = list(messages_to_send)
@@ -292,14 +315,15 @@ async def generate_deep_research_response(api_url, model, messages, approved_pla
 
     # ===== PASS N EXECUTION PHASE (PARALLEL SEARCH & MAPPING) =====
     
-    yield f"data: {_create_activity_chunk(model, 'phase', {'message': 'Initiating web searches...', 'icon': '🚀', 'collapsible': True})}\n\n"
+    yield f"data: {_create_activity_chunk(display_model, 'phase', {'message': 'Initiating web searches...', 'icon': '🚀', 'collapsible': True})}\n\n"
 
     try:
         # Create asynchronous tasks for each step, use an asyncio Queue to stream updates
         ui_queue = asyncio.Queue()
+        vlm_lock = asyncio.Lock()
         all_tasks = []
         for i, step_node in enumerate(steps):
-            t = _process_step(api_url, model, chat_id, step_node, i, search_depth_mode, ui_queue)
+            t = _process_step(api_url, model, chat_id, step_node, i, search_depth_mode, ui_queue, vision_model, vlm_lock, model_name=display_model)
             all_tasks.append(asyncio.create_task(t))
         
         # Async generator natively embedded: wait for all while yielding from queue
@@ -360,16 +384,16 @@ async def generate_deep_research_response(api_url, model, messages, approved_pla
 
     # ===== EXTRACTION PHASE =====
     if search_depth_mode == 'regular':
-        yield f"data: {_create_activity_chunk(model, 'phase', {'message': f'Extracting content from {len(manual_data_to_store)} sources...', 'icon': '🧹', 'collapsible': True})}\n\n"
+        yield f"data: {_create_activity_chunk(display_model, 'phase', {'message': f'Extracting content from {len(manual_data_to_store)} sources...', 'icon': '🧹', 'collapsible': True})}\n\n"
         for d in manual_data_to_store:
-            yield f"data: {_create_activity_chunk(model, 'visit', {'url': d['url']})}\n\n"
+            yield f"data: {_create_activity_chunk(display_model, 'visit', {'url': d['url']})}\n\n"
             success, tok_count = rag_engine.store_chunk(chat_id, d.get('step_index', 0), d['url'], d['raw_content'])
             if success: 
                 total_tokens_stored += tok_count
-                yield f"data: {_create_activity_chunk(model, 'visit_complete', {'url': d['url'], 'chars': len(d['raw_content'])})}\n\n"
+                yield f"data: {_create_activity_chunk(display_model, 'visit_complete', {'url': d['url'], 'chars': len(d['raw_content'])})}\n\n"
     else:
         # Deep Mode Extraction Loop
-        yield f"data: {_create_activity_chunk(model, 'phase', {'message': f'Extracting content from {len(all_urls_to_extract)} sources...', 'icon': '⛏️', 'collapsible': True})}\n\n"
+        yield f"data: {_create_activity_chunk(display_model, 'phase', {'message': f'Extracting content from {len(all_urls_to_extract)} sources...', 'icon': '⛏️', 'collapsible': True})}\n\n"
         
         # 1. Parallel requests for all URLs
         # Actually, let's process in batches for UI feedback
@@ -380,7 +404,7 @@ async def generate_deep_research_response(api_url, model, messages, approved_pla
             batch = all_urls_to_extract[i:i+batch_size]  # List of (url, step_idx) tuples
             batch_urls = [url for url, _ in batch]
             url_to_step = {url: step_idx for url, step_idx in batch}
-            yield f"data: {_create_activity_chunk(model, 'status', {'message': f'Extracting batch {i//batch_size + 1}...', 'icon': '📥'})}\n\n"
+            yield f"data: {_create_activity_chunk(display_model, 'status', {'message': f'Extracting batch {i//batch_size + 1}...', 'icon': '📥'})}\n\n"
             
             # Step 1: Try async standard GET for the whole batch using a shared client
             async def try_extract(client, url):
@@ -398,6 +422,9 @@ async def generate_deep_research_response(api_url, model, messages, approved_pla
                             
                             valid_images = []
                             for alt, img_url in img_matches:
+                                # Sanitize URL: decode HTML entities, strip fragments
+                                import html
+                                img_url = html.unescape(img_url).split('#')[0].strip()
                                 # Prioritize likely genuine photos/diagrams
                                 parsed_path = urllib.parse.urlparse(img_url).path.lower()
                                 if parsed_path.endswith(('.png', '.jpg', '.jpeg', '.webp')) and 'icon' not in img_url.lower() and 'logo' not in img_url.lower():
@@ -431,7 +458,13 @@ async def generate_deep_research_response(api_url, model, messages, approved_pla
                                         max_retries = 3
                                         for attempt in range(max_retries):
                                             try:
-                                                img_desc = await async_chat_completion(api_url, payload)
+                                                # Sequential lock to avoid bombarding local vision model
+                                                if vlm_lock:
+                                                    async with vlm_lock:
+                                                        img_desc = await async_chat_completion(api_url, payload)
+                                                else:
+                                                    img_desc = await async_chat_completion(api_url, payload)
+
                                                 if img_desc and len(img_desc) > 50:
                                                     # Parse the XML structure
                                                     c_match = re.search(r'<caption_for_report>(.*?)</caption_for_report>', img_desc, re.DOTALL)
@@ -467,7 +500,7 @@ async def generate_deep_research_response(api_url, model, messages, approved_pla
                 except Exception as e:
                     return url, None
 
-            async with httpx.AsyncClient(timeout=TIMEOUT_WEB_SCRAPE, follow_redirects=True) as client:
+            async with httpx.AsyncClient(timeout=config.TIMEOUT_WEB_SCRAPE, follow_redirects=True) as client:
                 batch_results = await asyncio.gather(*[try_extract(client, u) for u in batch_urls])
             
             # Step 2: Handle successes and collect failures for Tavily Extract
@@ -481,7 +514,7 @@ async def generate_deep_research_response(api_url, model, messages, approved_pla
             
             # Step 3: Use Tavily Extract for failures
             if failed_urls:
-                 yield f"data: {_create_activity_chunk(model, 'status', {'message': f'Fallback to Tavily Extract for {len(failed_urls)} URLs...', 'icon': '🔄'})}\n\n"
+                 yield f"data: {_create_activity_chunk(display_model, 'status', {'message': f'Fallback to Tavily Extract for {len(failed_urls)} URLs...', 'icon': '🔄'})}\n\n"
                  tavily_results = await async_tavily_extract(failed_urls)
                  for tr in tavily_results:
                      if tr.get('raw_content'):
@@ -489,20 +522,20 @@ async def generate_deep_research_response(api_url, model, messages, approved_pla
 
             # Step 4: Vault successes with correct step_index
             for url, content in success_urls:
-                yield f"data: {_create_activity_chunk(model, 'visit', {'url': url})}\n\n"
+                yield f"data: {_create_activity_chunk(display_model, 'visit', {'url': url})}\n\n"
                 step_idx = url_to_step.get(url, 0)
                 success, tok_count = rag_engine.store_chunk(chat_id, step_idx, url, content)
                 if success: 
                     total_tokens_stored += tok_count
-                    yield f"data: {_create_activity_chunk(model, 'visit_complete', {'url': url, 'chars': len(content)})}\n\n"
+                    yield f"data: {_create_activity_chunk(display_model, 'visit_complete', {'url': url, 'chars': len(content)})}\n\n"
                 
                 if total_tokens_stored >= TOKEN_LIMIT:
-                    yield f"data: {_create_activity_chunk(model, 'status', {'message': 'Global 400k token limit reached. Stopping extraction.', 'icon': '🛑'})}\n\n"
+                    yield f"data: {_create_activity_chunk(display_model, 'status', {'message': 'Global 400k token limit reached. Stopping extraction.', 'icon': '🛑'})}\n\n"
                     break
 
     # ===== SEARCH VISION PHASE =====
     if vision_model and tavily_images_to_process:
-        yield f"data: {_create_activity_chunk(model, 'phase', {'message': f'Processing {len(tavily_images_to_process)} images from search engines...', 'icon': '🖼️', 'collapsible': True})}\n\n"
+        yield f"data: {_create_activity_chunk(display_model, 'phase', {'message': f'Processing {len(tavily_images_to_process)} images from search engines...', 'icon': '🖼️', 'collapsible': True})}\n\n"
         
         async def process_tavily_image(client, item):
             img_url = item["url"]
@@ -555,18 +588,23 @@ async def generate_deep_research_response(api_url, model, messages, approved_pla
                         pass
             return None, img_url, step_idx
             
-        async with httpx.AsyncClient(timeout=TIMEOUT_WEB_SCRAPE, follow_redirects=True) as client:
-            t_images_results = await asyncio.gather(*[process_tavily_image(client, img) for img in tavily_images_to_process])
+        async with httpx.AsyncClient(timeout=config.TIMEOUT_WEB_SCRAPE, follow_redirects=True) as client:
+            t_images_results = []
+            for img in tavily_images_to_process:
+                # Reuse the same vlm_lock to ensure global vision serialization
+                async with vlm_lock:
+                    res = await process_tavily_image(client, img)
+                    t_images_results.append(res)
             
         for result, img_url, step_idx in t_images_results:
             if result:
                 success, tok_count = rag_engine.store_chunk(chat_id, step_idx, img_url, result)
                 if success:
                     total_tokens_stored += tok_count
-                    yield f"data: {_create_activity_chunk(model, 'visit_complete', {'url': 'Processed Search Image', 'chars': len(result)})}\n\n"
+                    yield f"data: {_create_activity_chunk(display_model, 'visit_complete', {'url': 'Processed Search Image', 'chars': len(result)})}\n\n"
 
     # ===== FINAL +1 REPORT GENERATION PHASE (WITH VALIDATION) =====
-    yield f"data: {_create_activity_chunk(model, 'phase', {'message': f'Compiling final report ({search_depth_mode} mode)...', 'icon': '📝'})}\n\n"
+    yield f"data: {_create_activity_chunk(display_model, 'phase', {'message': f'Compiling final report ({search_depth_mode} mode)...', 'icon': '📝'})}\n\n"
     
     # [Data fetching and prompt building... same as before]
     raw_chunks = rag_engine.get_all_chunks(chat_id)
@@ -617,13 +655,13 @@ async def generate_deep_research_response(api_url, model, messages, approved_pla
         CHUNK_SIZE = 100
         for i in range(0, len(fixed_content), CHUNK_SIZE):
             chunk_text = fixed_content[i:i + CHUNK_SIZE]
-            yield f"data: {create_chunk(model, content=chunk_text)}\n\n"
+            yield f"data: {create_chunk(display_model, content=chunk_text)}\n\n"
 
     # Core generation loop
     full_content = ""
     for sse_chunk, final_state in _stream_and_accumulate(api_url, model, reporter_payload):
         if final_state is not None:
-            full_content, _ = final_state
+            full_content, *_ = final_state
         elif sse_chunk is not None:
             yield sse_chunk
 
@@ -678,7 +716,7 @@ async def generate_deep_research_response(api_url, model, messages, approved_pla
             full_content = ""
             for sse_chunk, final_state in _stream_and_accumulate(api_url, model, regen_payload):
                 if final_state is not None:
-                    full_content, _ = final_state
+                    full_content, *_ = final_state
                 elif sse_chunk is not None:
                     yield sse_chunk
                     

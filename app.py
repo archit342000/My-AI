@@ -15,8 +15,11 @@ from backend.storage import init_db, get_all_chats, get_chat, save_chat, add_mes
 from backend.agents.deep_research import generate_deep_research_response
 from backend.agents.chat import generate_chat_response
 from backend.task_manager import task_manager
+from backend.cache_system import cache_system
 
 app = Flask(__name__, static_folder='static')
+# Limit request size to 16MB to prevent unbounded payload DoS (e.g. extremely large JSON arrays)
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 
 # Initialize components with config
 init_db()
@@ -52,6 +55,7 @@ def get_chat_details(chat_id):
     chat = get_chat(chat_id)
     if not chat:
         return jsonify({"error": "Chat not found"}), 404
+    # Replaced task_manager.is_task_running logic with generic active status
     chat["is_research_running"] = task_manager.is_task_running(chat_id)
     return jsonify(chat)
 
@@ -64,8 +68,8 @@ def save_chat_endpoint():
     memory_mode = data.get('memory_mode', False)
     deep_research_mode = data.get('deep_research_mode', False)
     
-    if not chat_id:
-        return jsonify({"error": "Missing chat_id"}), 400
+    if not chat_id or '..' in chat_id or '/' in chat_id or '\\' in chat_id:
+        return jsonify({"error": "Invalid or missing chat_id"}), 400
         
     save_chat(
         chat_id, 
@@ -163,115 +167,79 @@ def chat_completions():
         approved_plan = data.get('approvedPlan')
         last_model_name = data.get('lastModelName', model)
 
-        
         extra_body = {k: v for k, v in data.items() if k not in ['messages', 'chatId', 'memoryMode', 'deepResearchMode', 'searchDepthMode', 'visionModel', 'stream', 'approvedPlan', 'lastModelName', 'hasVision']}
 
-        # Persistent Chat Handling
-        if chat_id:
-            if messages and messages[-1]['role'] == 'user':
-                user_msg = messages[-1]
-                title = user_msg['content']
+        if not chat_id or '..' in chat_id or '/' in chat_id or '\\' in chat_id:
+             return jsonify({"error": "Invalid or missing chatId"}), 400
 
-                # Only track vision/model history for regular chats, not deep research
-                if not deep_research_mode:
-                    has_image_in_messages = any(
-                        isinstance(msg.get('content'), list) and any(
-                            isinstance(part, dict) and part.get('type') == 'image_url' for part in msg['content']
-                        ) for msg in messages
-                    )
-                    
-                    # Check for is_vision from database first to avoid overwriting
-                    existing_chat = get_chat(chat_id)
-                    current_is_vision = existing_chat.get('is_vision', 0) if existing_chat else 0
-                    new_is_vision = 1 if (has_image_in_messages or current_is_vision) else 0
-                else:
-                    new_is_vision = 0
-
-                if isinstance(title, list):
-                    title = next((p['text'] for p in title if p.get('type') == 'text'), "Image Message")
-                title = title[:50] if isinstance(title, str) else "New Chat"
-
-                save_chat(
-                    chat_id, 
-                    title, 
-                    time.time(), 
-                    memory_mode, 
-                    deep_research_mode, 
-                    is_vision=new_is_vision, 
-                    last_model=last_model_name
-                )
-                add_message(chat_id, 'user', user_msg['content'])
-
-        if deep_research_mode and chat_id:
-            if not task_manager.is_task_running(chat_id):
-                task_manager.start_research_task(
-                    last_model_name, messages, approved_plan, chat_id, search_depth_mode, vision_model, generate_deep_research_response
-                )
-            
-            def generate_deep_stream():
-                for chunk in task_manager.stream_task(chat_id):
+        # === 1. Handle Active Tasks (Resume/Stream) ===
+        if task_manager.is_task_running(chat_id):
+            # If task is running, subscribe to its cache stream
+            def generate_stream():
+                for chunk in cache_system.subscribe(chat_id):
                     yield chunk
-            return Response(generate_deep_stream(), mimetype='text/event-stream')
+            return Response(generate_stream(), mimetype='text/event-stream')
 
-        def generate_with_persistence():
-            full_content = ""
-            full_reasoning = ""
+        # === 2. Persist User Message Immediately (for new turns) ===
+        if messages and messages[-1]['role'] == 'user':
+            user_msg = messages[-1]
+            title = user_msg['content']
             
+            # (Vision/Title logic kept same)
+            if not deep_research_mode:
+                has_image_in_messages = any(
+                    isinstance(msg.get('content'), list) and any(
+                        isinstance(part, dict) and part.get('type') == 'image_url' for part in msg['content']
+                    ) for msg in messages
+                )
+                existing_chat = get_chat(chat_id)
+                current_is_vision = existing_chat.get('is_vision', 0) if existing_chat else 0
+                new_is_vision = 1 if (has_image_in_messages or current_is_vision) else 0
+            else:
+                new_is_vision = 0
+
+            if isinstance(title, list):
+                title = next((p['text'] for p in title if p.get('type') == 'text'), "Image Message")
+            title = title[:50] if isinstance(title, str) else "New Chat"
+
+            save_chat(
+                chat_id,
+                title,
+                time.time(),
+                memory_mode,
+                deep_research_mode,
+                is_vision=new_is_vision,
+                last_model=last_model_name
+            )
+            add_message(chat_id, 'user', user_msg['content'])
+
+        # === 3. Enqueue Background Task ===
+        if deep_research_mode:
+            task_manager.start_research_task(
+                model, messages, approved_plan, chat_id, search_depth_mode, vision_model, generate_deep_research_response,
+                model_name=last_model_name
+            )
+        else:
+            # Normal Chat Task
             has_vision = data.get('hasVision', False)
-            generator = generate_chat_response(config.LM_STUDIO_URL, model, messages, extra_body, rag, memory_mode, chat_id=chat_id, has_vision=has_vision)
-            try:
-                for chunk in generator:
-                    yield chunk
-                    try:
-                        if isinstance(chunk, str) and chunk.startswith("data: "):
-                            if chunk.strip() == "data: [DONE]": continue
-                            data_json = json.loads(chunk[6:])
-                            
-                            # Handle accumulator reset (triggered by validation healing)
-                            if data_json.get('__reset_accumulator__'):
-                                full_content = ""
-                                full_reasoning = ""
-                                continue
-                            
-                            choices = data_json.get('choices', [])
-                            if choices:
-                                delta = choices[0].get('delta', {})
-                                if 'content' in delta:
-                                    full_content += delta.get('content', '') or ''
-                                if 'reasoning_content' in delta:
-                                    full_reasoning += delta.get('reasoning_content', '') or ''
-                    except Exception:
-                        pass
-            except GeneratorExit:
-                return # Client disconnected, do not persist assistant partial response
+            task_manager.start_chat_task(
+                chat_id,
+                generate_chat_response,
+                model=model,
+                messages=messages,
+                body_params=extra_body,
+                rag=rag,
+                memory_mode=memory_mode,
+                has_vision=has_vision
+            )
 
-            # Save assistant message to chat history DB
-            if chat_id and (full_content or full_reasoning):
-                # Combine reasoning and content for storage, wrapped in tags if reasoning exists
-                final_content_for_db = full_content
-                if full_reasoning:
-                    final_content_for_db = f"<think>{full_reasoning}</think>\n{full_content}"
-
-                add_message(chat_id, 'assistant', final_content_for_db, model=last_model_name)
-                
-                # RAG Memory Update — ONLY for standard chat, NEVER for deep research
-                if memory_mode:
-                    try:
-                        user_content_str = ""
-                        for m in reversed(messages):
-                            if m['role'] == 'user':
-                                c = m.get('content', '')
-                                if isinstance(c, str): user_content_str = c
-                                elif isinstance(c, list): 
-                                    user_content_str = next((p['text'] for p in c if p.get('type') == 'text'), "")
-                                break
-                        
-                        if user_content_str:
-                            rag.add_conversation_turn(user_content_str, full_content, chat_id)
-                    except Exception as e:
-                        log_event("memory_rag_update_error", {"chat_id": chat_id, "error": str(e)})
-
-        return Response(generate_with_persistence(), mimetype='text/event-stream')
+        # === 4. Return Stream Subscription ===
+        def generate_stream():
+            # Wait briefly for cache initialization to ensure subscriber doesn't miss start
+            time.sleep(0.1)
+            for chunk in cache_system.subscribe(chat_id):
+                yield chunk
+        return Response(generate_stream(), mimetype='text/event-stream')
 
     except Exception as e:
         import traceback
@@ -308,7 +276,7 @@ def get_log_detail():
     base_logs = os.path.abspath(os.path.join("backend", "logs"))
     target_path = os.path.abspath(os.path.join(base_logs, rel_path))
     
-    if not target_path.startswith(base_logs):
+    if not target_path.startswith(base_logs + os.sep) and target_path != base_logs:
         return jsonify({"error": "Access denied"}), 403
         
     if not os.path.exists(target_path):

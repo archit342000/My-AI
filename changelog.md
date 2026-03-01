@@ -1,5 +1,10 @@
 # CHANGELOG
 
+## v1.1.4
+* **Deep Research Resume Compatbility Fix**: Deep Research agent now resumes properly after user resumes the conversation.
+* **Fix Embedding Model**: Fixed embedding model to use `text-embedding-qwen3-embedding-0.6b` instead of `text-embedding-jina-embeddings-v5-text-small-retrieval`.
+* **Version Bump**: Incremented version to 1.1.4.
+
 ## v1.1.3
 * **RAG Engine Overhaul**:
     - **Proper Similarity Metric**: Switched ChromaDB to use `cosine` distance instead of default `L2`, resolving search relevance issues with Jina v5.

@@ -5,7 +5,7 @@ load_dotenv()
 
 # --- LM Studio Configuration ---
 LM_STUDIO_URL = os.getenv("LM_STUDIO_URL", "http://localhost:1234")
-EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-jina-embeddings-v5-text-small-retrieval")
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-qwen3-embedding-0.6b")
 CHROMA_PATH = os.getenv("CHROMA_PATH", "./backend/chroma_db")
 
 # --- Search Configuration ---

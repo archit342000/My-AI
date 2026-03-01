@@ -8,7 +8,7 @@ import time
 from backend.logger import log_event, log_llm_call
 
 class LMStudioEmbeddingFunction(embedding_functions.EmbeddingFunction):
-    def __init__(self, api_url="http://localhost:1234", model_name="text-embedding-jina-embeddings-v5-text-small-retrieval", default_task="document"):
+    def __init__(self, api_url="http://localhost:1234", model_name="text-embedding-qwen3-embedding-0.6b", default_task="document"):
         self.api_url = api_url
         self.model_name = model_name
         self.default_task = default_task
@@ -30,19 +30,8 @@ class LMStudioEmbeddingFunction(embedding_functions.EmbeddingFunction):
             input = [input]
 
         processed_input = []
-        is_jina = "jina" in self.model_name.lower()
-        
         for item in input:
-            if is_jina:
-                current_task = task or self.default_task
-                prefix = "Query: " if current_task == "query" else "Document: "
-                # Avoid double prefixing
-                if item.startswith("Query: ") or item.startswith("Document: "):
-                    processed_input.append(item)
-                else:
-                    processed_input.append(f"{prefix}{item}")
-            else:
-                processed_input.append(item)
+            processed_input.append(item)
 
         payload = {
             "model": self.model_name,
@@ -55,7 +44,7 @@ class LMStudioEmbeddingFunction(embedding_functions.EmbeddingFunction):
                 url, 
                 json=payload, 
                 headers={"Content-Type": "application/json"},
-                timeout=10
+                timeout=60
             )
             
             if response.status_code != 200:
@@ -107,7 +96,7 @@ class MemoryRAG:
             metadata=MemoryRAG.COSINE_METADATA
         )
 
-    def __init__(self, persist_path="./backend/chroma_db", api_url="http://localhost:1234", embedding_model="text-embedding-jina-embeddings-v5-text-small-retrieval"):
+    def __init__(self, persist_path="./backend/chroma_db", api_url="http://localhost:1234", embedding_model="text-embedding-qwen3-embedding-0.6b"):
         self.client = chromadb.PersistentClient(path=persist_path)
 
         # Initialize custom embedding function
@@ -165,8 +154,8 @@ class MemoryRAG:
         clean = "".join(c for c in text.strip().lower() if c.isalnum() or c.isspace())
         return clean in self.TRIVIAL_MESSAGES or len(clean) < 5
 
-    def _chunk_text(self, text, max_chars=2500):
-        """Split long text into chunks of ~600 tokens (~2500 chars).
+    def _chunk_text(self, text, max_chars=2200):
+        """Split long text into chunks of ~600-800 tokens (~2200 chars).
         Splits on paragraph boundaries first, then sentence boundaries."""
         if len(text) <= max_chars:
             return [text]
@@ -323,7 +312,7 @@ class MemoryRAG:
         
         # Heuristic Threshold for Cosine Similarity (Range -1 to 1)
         # 1.0 = identical, 0.0 = orthogonal
-        # With cosine distance metric properly set, Jina v5 scores are well-
+        # With cosine distance metric properly set, Qwen model scores are well-
         # calibrated: >0.7 strong match, 0.5-0.7 moderate, <0.5 weak.
         MIN_SEMANTIC_SCORE = 0.50
 
@@ -389,7 +378,7 @@ class MemoryRAG:
 
 class DeepResearchRAG:
     """Ephemeral per-chat storage for Deep Research passes."""
-    def __init__(self, persist_path="./backend/chroma_db", api_url="http://localhost:1234", embedding_model="text-embedding-jina-embeddings-v5-text-small-retrieval"):
+    def __init__(self, persist_path="./backend/chroma_db", api_url="http://localhost:1234", embedding_model="text-embedding-qwen3-embedding-0.6b"):
         self.client = chromadb.PersistentClient(path=persist_path)
         self.embedding_fn = LMStudioEmbeddingFunction(
             api_url=api_url,
@@ -399,79 +388,123 @@ class DeepResearchRAG:
             self.client, "deep_research_store", self.embedding_fn
         )
 
-    def store_chunk(self, chat_id, step_index, url, chunk_text):
-        if not chunk_text or len(chunk_text.strip()) < 10:
-            return False, 0
-            
-        # Clean data for EMBEDDING & DEDUP ONLY (not for storage)
-        import re
-        # Remove markdown URLs [text](url) but keep the text
-        clean_text = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', chunk_text)
-        # Remove raw http/https links
-        clean_text = re.sub(r'https?://\S+', '', clean_text)
-        # Remove any other common noisy artifacts
-        clean_text = clean_text.strip()
-        
-        if len(clean_text) < 10:
-            return False, 0
-
-        # Unique ID based on content to prevent absolute duplicates
-        doc_id = hashlib.sha256((chat_id + url + clean_text[:50]).encode('utf-8')).hexdigest()
-        
-        # Deduplication check against this chat's existing store
-        try:
-            if hasattr(self.embedding_fn, '_embed_with_task'):
-                query_embedding = self.embedding_fn._embed_with_task([clean_text], task="document")[0]
+    def _chunk_text(self, text, max_chars=2200):
+        """Split text into smaller chunks for more granular deduplication (~600 tokens)."""
+        if len(text) <= max_chars:
+            return [text]
+        chunks = []
+        paragraphs = text.split('\n\n')
+        current_chunk = ""
+        for para in paragraphs:
+            if len(current_chunk) + len(para) + 2 <= max_chars:
+                current_chunk += ("\n\n" if current_chunk else "") + para
             else:
-                query_embedding = self.embedding_fn([clean_text])[0]
-            results = self.collection.query(
-                query_embeddings=[query_embedding],
-                n_results=1,
-                where={"chat_id": chat_id},
-                include=['embeddings']
-            )
+                if current_chunk:
+                    chunks.append(current_chunk.strip())
+                if len(para) > max_chars:
+                    sentences = para.replace('. ', '.\n').split('\n')
+                    current_chunk = ""
+                    for sent in sentences:
+                        if len(current_chunk) + len(sent) + 1 <= max_chars:
+                            current_chunk += (" " if current_chunk else "") + sent
+                        else:
+                            if current_chunk:
+                                chunks.append(current_chunk.strip())
+                            current_chunk = sent
+                else:
+                    current_chunk = para
+        if current_chunk.strip():
+            chunks.append(current_chunk.strip())
+        return chunks if chunks else [text]
+
+    def store_chunk(self, chat_id, step_index, url, full_text):
+        if not full_text or len(full_text.strip()) < 10:
+            return False, 0
             
-            if results and results.get('embeddings') and len(results['embeddings'][0]) > 0:
-                emb = results['embeddings'][0][0]
-                def cosine_similarity(v1, v2):
-                    dot_product = sum(a * b for a, b in zip(v1, v2))
-                    norm_a = sum(a * a for a in v1) ** 0.5
-                    norm_b = sum(b * b for b in v2) ** 0.5
-                    if norm_a == 0 or norm_b == 0: return 0.0
-                    return dot_product / (norm_a * norm_b)
+        import re
+        import hashlib
+        import time
+
+        # Split full_text into smaller chunks for granular deduplication
+        text_chunks = self._chunk_text(full_text)
+        total_tokens = 0
+        any_success = False
+
+        for i, chunk_text in enumerate(text_chunks):
+            # Clean data for EMBEDDING & DEDUP ONLY (not for storage)
+            clean_text = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', chunk_text)
+            clean_text = re.sub(r'https?://\S+', '', clean_text)
+            clean_text = clean_text.strip()
+            
+            if len(clean_text) < 10:
+                continue
+
+            # Unique ID based on full content to prevent absolute duplicates
+            doc_id = hashlib.sha256((chat_id + url + clean_text).encode('utf-8')).hexdigest()
+            
+            # Deduplication check
+            try:
+                # 1. First check if this exact hash already exists (Fast path)
+                existing = self.collection.get(ids=[doc_id])
+                if existing and existing.get('ids'):
+                    continue
+
+                # 2. Embedding-based similarity check
+                if hasattr(self.embedding_fn, '_embed_with_task'):
+                    query_embedding = self.embedding_fn._embed_with_task([clean_text], task="document")[0]
+                else:
+                    query_embedding = self.embedding_fn([clean_text])[0]
                 
-                sim = cosine_similarity(query_embedding, emb)
-                # Lenient deduplication threshold: > 85% means structurally identical (boilerplate)
-                if sim > 0.85:
-                    return False, 0 # dropped
-        except Exception as e:
-            print(f"[DeepResearchRAG] Deduplication error: {e}")
-            return False, 0
+                # Fetch up to 3 nearest neighbors from the current chat
+                count = self.collection.count()
+                n = min(3, count) if count > 0 else 0
 
-        # Store ORIGINAL text (with URLs intact for citation), use clean_text only for embedding
-        original_text = chunk_text.strip()
+                is_duplicate = False
+                if n > 0:
+                    results = self.collection.query(
+                        query_embeddings=[query_embedding],
+                        n_results=n,
+                        where={"chat_id": chat_id},
+                        include=['embeddings']
+                    )
+                    
+                    if results and results.get('embeddings') and len(results['embeddings'][0]) > 0:
+                        def cosine_similarity(v1, v2):
+                            dot_product = sum(a * b for a, b in zip(v1, v2))
+                            norm_a = sum(a * a for a in v1) ** 0.5
+                            norm_b = sum(b * b for b in v2) ** 0.5
+                            if norm_a == 0 or norm_b == 0: return 0.0
+                            return dot_product / (norm_a * norm_b)
+                        
+                        for emb in results['embeddings'][0]:
+                            sim = cosine_similarity(query_embedding, emb)
+                            # 0.92 is solid for 2000-char chunks; catches boilerplate/copies
+                            if sim > 0.92:
+                                is_duplicate = True
+                                break
+                
+                if not is_duplicate:
+                    meta = {
+                        "chat_id": chat_id,
+                        "step_index": step_index,
+                        "url": url,
+                        "timestamp": time.time()
+                    }
+                    self.collection.upsert(
+                        documents=[chunk_text.strip()],
+                        metadatas=[meta],
+                        ids=[doc_id],
+                        embeddings=[query_embedding]
+                    )
+                    total_tokens += len(chunk_text) // 4
+                    any_success = True
+                    
+            except Exception as e:
+                # Minimal logging for background errors
+                print(f"[DeepResearchRAG] Store error: {e}")
+                continue
 
-        meta = {
-            "chat_id": chat_id,
-            "step_index": step_index,
-            "url": url,
-            "timestamp": time.time()
-        }
-        
-        try:
-            # Pass our manually computed embedding to bypass Chroma's internal embedding 
-            # attempt, which would otherwise crash on the huge original_text
-            self.collection.upsert(
-                documents=[original_text],
-                metadatas=[meta],
-                ids=[doc_id],
-                embeddings=[query_embedding]
-            )
-            # Approximate token count for budgeting - after cleaning
-            return True, len(original_text) // 4
-        except Exception as e:
-            print(f"[DeepResearchRAG] Store error: {e}")
-            return False, 0
+        return any_success, total_tokens
             
     def get_all_chunks(self, chat_id):
         try:

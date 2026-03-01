@@ -1,0 +1,1 @@
+{"chat_id": "repro_crash_test", "status": "completed", "timestamp": 1772182493.0166926, "model": "test-model", "messages": [{"role": "user", "content": "Test"}], "mode": "chat"}
