@@ -8,7 +8,7 @@ import time
 from backend.logger import log_event, log_llm_call
 
 class LMStudioEmbeddingFunction(embedding_functions.EmbeddingFunction):
-    def __init__(self, api_url="http://localhost:1234", model_name="text-embedding-qwen3-embedding-0.6b", default_task="document"):
+    def __init__(self, api_url="http://localhost:1234", model_name="text-embedding-embeddinggemma-300m", default_task="document"):
         self.api_url = api_url
         self.model_name = model_name
         self.default_task = default_task
@@ -96,7 +96,7 @@ class MemoryRAG:
             metadata=MemoryRAG.COSINE_METADATA
         )
 
-    def __init__(self, persist_path="./backend/chroma_db", api_url="http://localhost:1234", embedding_model="text-embedding-qwen3-embedding-0.6b"):
+    def __init__(self, persist_path="./backend/chroma_db", api_url="http://localhost:1234", embedding_model="text-embedding-embeddinggemma-300m"):
         self.client = chromadb.PersistentClient(path=persist_path)
 
         # Initialize custom embedding function
@@ -378,7 +378,7 @@ class MemoryRAG:
 
 class DeepResearchRAG:
     """Ephemeral per-chat storage for Deep Research passes."""
-    def __init__(self, persist_path="./backend/chroma_db", api_url="http://localhost:1234", embedding_model="text-embedding-qwen3-embedding-0.6b"):
+    def __init__(self, persist_path="./backend/chroma_db", api_url="http://localhost:1234", embedding_model="text-embedding-embeddinggemma-300m"):
         self.client = chromadb.PersistentClient(path=persist_path)
         self.embedding_fn = LMStudioEmbeddingFunction(
             api_url=api_url,
@@ -523,6 +523,126 @@ class DeepResearchRAG:
         except Exception as e:
             print(f"[DeepResearchRAG] Retreival error: {e}")
             return []
+
+    def get_step_chunks(self, chat_id, step_index):
+        """Retrieve all stored chunks for a specific step.
+        Used for post-step verification and debugging."""
+        try:
+            results = self.collection.get(
+                where={"$and": [{"chat_id": chat_id}, {"step_index": step_index}]}
+            )
+            if not results or not results.get('documents'):
+                return []
+            
+            chunks = []
+            for doc, meta in zip(results['documents'], results['metadatas']):
+                chunks.append({
+                    "text": doc,
+                    "url": meta.get("url", ""),
+                    "step_index": meta.get("step_index", 0)
+                })
+            return chunks
+        except Exception as e:
+            print(f"[DeepResearchRAG] Step retrieval error: {e}")
+            return []
+
+    def retrieve_for_report(self, chat_id, queries, max_tokens=400000):
+        """Multi-query semantic retrieval with dynamic per-query token budgeting.
+        
+        Args:
+            chat_id: The research session ID
+            queries: List of {"query": str, "step_filter": int|None}
+                     step_filter=None means global retrieval (no step scope)
+            max_tokens: Total token budget across all queries
+        
+        Returns:
+            List of {"text": str, "url": str, "step_index": int} chunks,
+            deduplicated and capped at token budget.
+        """
+        if not queries:
+            return self.get_all_chunks(chat_id)
+
+        per_query_budget = max_tokens // len(queries)
+        all_chunks = []
+        seen_doc_ids = set()  # For deduplication across queries
+        total_tokens = 0
+
+        def cosine_similarity(v1, v2):
+            dot_product = sum(a * b for a, b in zip(v1, v2))
+            norm_a = sum(a * a for a in v1) ** 0.5
+            norm_b = sum(b * b for b in v2) ** 0.5
+            if norm_a == 0 or norm_b == 0: return 0.0
+            return dot_product / (norm_a * norm_b)
+
+        for q_info in queries:
+            query_text = q_info["query"]
+            step_filter = q_info.get("step_filter")
+
+            try:
+                # Embed using "query" task for retrieval
+                if hasattr(self.embedding_fn, '_embed_with_task'):
+                    query_emb = self.embedding_fn._embed_with_task([query_text], task="query")[0]
+                else:
+                    query_emb = self.embedding_fn([query_text])[0]
+
+                # Build where clause: always filter by chat_id, optionally by step
+                if step_filter is not None:
+                    where_clause = {"$and": [
+                        {"chat_id": chat_id},
+                        {"step_index": step_filter}
+                    ]}
+                else:
+                    where_clause = {"chat_id": chat_id}
+
+                # Retrieve candidates (generous limit, ChromaDB ranks by distance)
+                results = self.collection.query(
+                    query_embeddings=[query_emb],
+                    n_results=100,
+                    where=where_clause,
+                    include=["documents", "metadatas", "embeddings"]
+                )
+
+                if not results or not results.get('documents') or not results['documents'][0]:
+                    continue
+
+                # Accumulate within per-query budget, skip already-seen chunks
+                query_tokens = 0
+                for doc, meta, emb in zip(
+                    results['documents'][0],
+                    results['metadatas'][0],
+                    results['embeddings'][0]
+                ):
+                    # Dedup: use content hash
+                    doc_hash = hash(doc[:200] + doc[-200:] if len(doc) > 400 else doc)
+                    if doc_hash in seen_doc_ids:
+                        continue
+
+                    chunk_tokens = len(doc) // 4
+                    if query_tokens + chunk_tokens > per_query_budget:
+                        break
+                    if total_tokens + chunk_tokens > max_tokens:
+                        return all_chunks  # Global budget exhausted
+
+                    # Compute relevance score for potential future sorting
+                    relevance = cosine_similarity(query_emb, emb)
+                    
+                    all_chunks.append({
+                        "text": doc,
+                        "url": meta.get("url", ""),
+                        "step_index": meta.get("step_index", 0),
+                        "relevance": relevance
+                    })
+                    seen_doc_ids.add(doc_hash)
+                    query_tokens += chunk_tokens
+                    total_tokens += chunk_tokens
+
+            except Exception as e:
+                print(f"[DeepResearchRAG] Retrieval error for query '{query_text[:50]}': {e}")
+                continue
+
+        # Sort by relevance descending for optimal reporter context ordering
+        all_chunks.sort(key=lambda x: x.get("relevance", 0), reverse=True)
+        return all_chunks
 
     def cleanup_chat(self, chat_id):
         """Delete all stored chunks for a given chat_id to prevent unbounded growth."""

@@ -3036,6 +3036,52 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+
+        if (type === 'reflection') {
+            const currentPhase = feed.querySelector('.research-phase-indicator.collapsible:last-of-type');
+            const targetContainer = currentPhase ? currentPhase.querySelector('.phase-content') : feed;
+            item.className = 'research-activity-item compact';
+            item.innerHTML = `
+                <div class="activity-icon status">🧠</div>
+                <div class="activity-body">
+                    <div class="activity-detail">${escapeHtml(data.message)}</div>
+                </div>
+            `;
+            targetContainer.appendChild(item);
+            return;
+        }
+
+        if (type === 'follow_up_search') {
+            const currentPhase = feed.querySelector('.research-phase-indicator.collapsible:last-of-type');
+            const targetContainer = currentPhase ? currentPhase.querySelector('.phase-content') : feed;
+            item.className = 'research-activity-item compact';
+            let queriesHtml = '';
+            if (data.queries && data.queries.length) {
+                queriesHtml = data.queries.map(q => `<code>${escapeHtml(q)}</code>`).join(' ');
+            }
+            item.innerHTML = `
+                <div class="activity-icon status">🔎</div>
+                <div class="activity-body">
+                    <div class="activity-label">${escapeHtml(data.message)}</div>
+                    ${queriesHtml ? `<div class="activity-detail">${queriesHtml}</div>` : ''}
+                </div>
+            `;
+            targetContainer.appendChild(item);
+            return;
+        }
+
+        if (type === 'retrieval_planning') {
+            item.className = 'research-activity-item compact';
+            item.innerHTML = `
+                <div class="activity-icon status">${data.icon || '🔗'}</div>
+                <div class="activity-body">
+                    <div class="activity-detail">${escapeHtml(data.message)}</div>
+                </div>
+            `;
+            feed.appendChild(item);
+            return;
+        }
+
         if (type === 'search') {
             const targetContainer = feed.querySelector('.research-phase-indicator.collapsible:last-of-type .phase-content') || feed;
             let existingItem = targetContainer.querySelector(`[data-step-id="${data.step_id}"]`);

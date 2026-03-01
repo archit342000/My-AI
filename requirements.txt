@@ -3,7 +3,7 @@ chromadb
 requests
 python-dotenv
 tavily-python
-pypdf
+pymupdf
 beautifulsoup4
 httpx
 selectolax
