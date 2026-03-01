@@ -8,6 +8,7 @@ from bs4 import BeautifulSoup
 import httpx
 import markdownify
 from backend.prompts import (
+    DEEP_RESEARCH_SCOUT_PROMPT,
     DEEP_RESEARCH_PLANNER_PROMPT, 
     DEEP_RESEARCH_URL_SELECTION_PROMPT, 
     DEEP_RESEARCH_REPORTER_PROMPT,
@@ -102,6 +103,31 @@ def _create_activity_chunk(model, activity_type, data):
         }]
     })
 
+def _clean_thinking_snippet(raw_text):
+    """Cleans up raw model reasoning text for human-friendly UI display.
+    Strips XML/JSON structural artifacts, collapses whitespace, and 
+    extracts only readable natural language fragments."""
+    text = raw_text
+    # Strip XML tags (e.g. <research_plan>, <step>, <goal>, <query>, etc.)
+    text = re.sub(r'<[^>]+>', ' ', text)
+    # Strip JSON-style structural characters
+    text = re.sub(r'[{}\[\]"]', ' ', text)
+    # Strip markdown formatting artifacts
+    text = re.sub(r'[*#`_~]', '', text)
+    # Collapse multiple spaces and newlines into single spaces
+    text = re.sub(r'\s+', ' ', text).strip()
+    # If result is too short after cleaning, return a generic message
+    if len(text) < 15:
+        return "Analyzing and structuring research approach..."
+    # Take last 120 chars for a readable trailing snippet
+    if len(text) > 120:
+        text = text[-120:]
+        # Try to start at a word boundary
+        first_space = text.find(' ')
+        if first_space != -1 and first_space < 30:
+            text = text[first_space + 1:]
+    return text
+
 
 async def _process_step(api_url, model, chat_id, step_node, step_index, search_depth_mode, queue=None, vision_model=None, vlm_lock=None, model_name=None):
     """
@@ -114,12 +140,22 @@ async def _process_step(api_url, model, chat_id, step_node, step_index, search_d
     query_tag = step_node.find('query')
     query = query_tag.get_text(strip=True) if query_tag else ''
     
+    # Extract optional per-step search parameters from the plan XML
+    topic_tag = step_node.find('topic')
+    step_topic = topic_tag.get_text(strip=True) if topic_tag else 'general'
+    time_range_tag = step_node.find('time_range')
+    step_time_range = time_range_tag.get_text(strip=True) if time_range_tag else None
+    start_date_tag = step_node.find('start_date')
+    step_start_date = start_date_tag.get_text(strip=True) if start_date_tag else None
+    end_date_tag = step_node.find('end_date')
+    step_end_date = end_date_tag.get_text(strip=True) if end_date_tag else None
+    
     display_model = model_name or model
     if queue:
         queue.put_nowait(f"data: {_create_activity_chunk(display_model, 'search', {'query': query, 'step_id': step_index, 'displayMessage': 'Searching...'})}\n\n")
 
-    # 1. Search (Always 1 search per step)
-    results, images = await async_tavily_search(query)
+    # 1. Search (Always 1 search per step, with optional parameters from the plan)
+    results, images = await async_tavily_search(query, topic=step_topic, time_range=step_time_range, start_date=step_start_date, end_date=step_end_date)
     
     # Pre-filtering: remove empty raw_content
     results = [r for r in results if r.get('raw_content')]
@@ -219,9 +255,97 @@ async def generate_deep_research_response(api_url, model, messages, approved_pla
             
     n_steps = len(steps)
     if not approved_plan:
-        system_prompt = DEEP_RESEARCH_PLANNER_PROMPT
-        messages_to_send = [{"role": "system", "content": system_prompt}]
+        current_time = get_current_time()
         conversation_history = [m for m in messages if m['role'] != 'system']
+        
+        # ===== PHASE 0: CONTEXT SCOUT =====
+        yield f"data: {_create_activity_chunk(display_model, 'planning', {'message': 'Analyzing your research query...', 'state': 'thinking'})}\n\n"
+        
+        scout_prompt = DEEP_RESEARCH_SCOUT_PROMPT.format(current_time=current_time)
+        scout_messages = [{"role": "system", "content": scout_prompt}]
+        scout_messages.extend(conversation_history[-5:])
+        
+        scout_payload = {
+            "model": model,
+            "messages": scout_messages,
+            "temperature": 0.1,
+        }
+        
+        scout_analysis = None
+        scout_context_str = ""
+        preliminary_search_results = ""
+        
+        try:
+            raw_scout = await async_chat_completion(api_url, scout_payload)
+            if raw_scout:
+                scout_analysis = _extract_json_from_text(raw_scout)
+                
+            if scout_analysis and isinstance(scout_analysis, dict):
+                log_event("deep_research_scout_complete", {
+                    "chat_id": chat_id,
+                    "topic_type": scout_analysis.get("topic_type"),
+                    "time_sensitive": scout_analysis.get("time_sensitive"),
+                    "confidence": scout_analysis.get("confidence"),
+                    "needs_search": scout_analysis.get("needs_search")
+                })
+                
+                yield f"data: {_create_activity_chunk(display_model, 'planning', {'message': f'Topic classified as: {scout_analysis.get("topic_type", "general")} | Time-sensitive: {scout_analysis.get("time_sensitive", False)} | Confidence: {scout_analysis.get("confidence", "unknown")}', 'state': 'thinking'})}\n\n"
+                
+                # Execute preliminary search if scout requests one
+                if scout_analysis.get("needs_search") and scout_analysis.get("preliminary_search"):
+                    prelim = scout_analysis["preliminary_search"]
+                    prelim_query = prelim.get("query", "")
+                    prelim_topic = prelim.get("topic", "general")
+                    prelim_time_range = prelim.get("time_range")
+                    
+                    if prelim_query:
+                        yield f"data: {_create_activity_chunk(display_model, 'planning', {'message': f'Gathering preliminary context: \"{prelim_query}\"...', 'state': 'thinking'})}\n\n"
+                        
+                        prelim_results, _ = await async_tavily_search(
+                            prelim_query, 
+                            topic=prelim_topic, 
+                            time_range=prelim_time_range
+                        )
+                        
+                        if prelim_results:
+                            # Format top 5 results as context for the planner
+                            context_snippets = []
+                            for r in prelim_results[:5]:
+                                title = r.get('title', 'Untitled')
+                                snippet = r.get('content', '')
+                                url = r.get('url', '')
+                                context_snippets.append(f"- **{title}** ({url}): {snippet}")
+                            preliminary_search_results = "\n".join(context_snippets)
+                            
+                            yield f"data: {_create_activity_chunk(display_model, 'planning', {'message': f'Gathered context from {len(prelim_results[:5])} sources.', 'state': 'thinking'})}\n\n"
+                        else:
+                            yield f"data: {_create_activity_chunk(display_model, 'planning', {'message': 'Preliminary search returned no results. Proceeding to planning...', 'state': 'thinking'})}\n\n"
+                
+                # Build the scout context block for the planner prompt
+                scout_context_parts = []
+                scout_context_parts.append(f"## Context Analysis (from pre-planning scout)")
+                scout_context_parts.append(f"- **Topic Type:** {scout_analysis.get('topic_type', 'general')}")
+                scout_context_parts.append(f"- **Time-Sensitive:** {scout_analysis.get('time_sensitive', False)}")
+                scout_context_parts.append(f"- **Confidence Level:** {scout_analysis.get('confidence', 'unknown')}")
+                if scout_analysis.get('context_notes'):
+                    scout_context_parts.append(f"- **Analysis Notes:** {scout_analysis['context_notes']}")
+                if preliminary_search_results:
+                    scout_context_parts.append(f"\n### Preliminary Search Results (use these to inform your plan)")
+                    scout_context_parts.append(preliminary_search_results)
+                scout_context_str = "\n".join(scout_context_parts)
+            else:
+                log_event("deep_research_scout_failed", {"chat_id": chat_id, "raw_output": raw_scout[:200] if raw_scout else "empty"})
+                scout_context_str = "## Context Analysis\nScout analysis was not available. Proceed with general planning based on the user query alone."
+        except Exception as e:
+            log_event("deep_research_scout_error", {"chat_id": chat_id, "error": str(e)})
+            scout_context_str = "## Context Analysis\nScout analysis encountered an error. Proceed with general planning based on the user query alone."
+        
+        # ===== PHASE 1: PLANNING =====
+        system_prompt = DEEP_RESEARCH_PLANNER_PROMPT.format(
+            current_time=current_time,
+            scout_context=scout_context_str
+        )
+        messages_to_send = [{"role": "system", "content": system_prompt}]
         messages_to_send.extend(conversation_history[-10:])
         
         payload = {
@@ -233,7 +357,7 @@ async def generate_deep_research_response(api_url, model, messages, approved_pla
             "max_tokens": 16384,
         }
         
-        yield f"data: {_create_activity_chunk(display_model, 'planning', {'message': 'Analyzing your query and designing a research strategy...', 'state': 'thinking'})}\n\n"
+        yield f"data: {_create_activity_chunk(display_model, 'planning', {'message': 'Designing research strategy...', 'state': 'thinking'})}\n\n"
 
         for attempt in range(1, MAX_PLAN_RETRIES + 1):
             payload["messages"] = list(messages_to_send)
@@ -263,14 +387,15 @@ async def generate_deep_research_response(api_url, model, messages, approved_pla
                         if "<think>" in full_content and "</think>" not in full_content:
                             reasoning_token_count += 1
                             if reasoning_token_count % 40 == 0:
-                                snippet = full_content.replace('<think>', '').replace('\n', ' ').strip()[-150:]
+                                raw_snippet = full_content.replace('<think>', '').strip()
+                                snippet = _clean_thinking_snippet(raw_snippet)
                                 yield f"data: {_create_activity_chunk(display_model, 'planning', {'message': f'...{snippet}', 'state': 'thinking'})}\n\n"
                                 
                     if reasoning:
                         full_reasoning += reasoning
                         reasoning_token_count += 1
                         if reasoning_token_count % 40 == 0:
-                            snippet = full_reasoning[-150:].replace('\n', ' ').strip()
+                            snippet = _clean_thinking_snippet(full_reasoning)
                             yield f"data: {_create_activity_chunk(display_model, 'planning', {'message': f'...{snippet}', 'state': 'thinking'})}\n\n"
                 except Exception as e:
                     pass

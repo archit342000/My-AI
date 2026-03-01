@@ -1,4 +1,4 @@
-# 🌌 My-AI v1.1.4
+# 🌌 My-AI v1.1.5
 
 A premium, full-stack AI chat interface designed for local inference with [LM Studio](https://lmstudio.ai/). This application provides a high-fidelity Luminous Material interface for interacting with local LLMs, featuring persistent state, long-term memory, and an advanced deep research agent.
 
@@ -69,5 +69,5 @@ A premium, full-stack AI chat interface designed for local inference with [LM St
 
 ## 📄 License & Versioning
 
-This project follows [SemVer v2.0.0](https://semver.org/). Current version: `v1.1.4`.
+This project follows [SemVer v2.0.0](https://semver.org/). Current version: `v1.1.5`.
 See [CHANGELOG.md](./changelog.md) for a detailed history of updates.
