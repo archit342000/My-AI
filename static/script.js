@@ -479,6 +479,17 @@ document.addEventListener('DOMContentLoaded', () => {
                             plainThoughts = plainThoughts.replace(s, '');
                         });
                         plainThoughts = plainThoughts.replace(/<think>|<\/think>/g, '').trim();
+
+                        // If no plain-text reasoning remains but we have planning activity messages,
+                        // reconstruct a readable thought process from the activity data
+                        if (!plainThoughts) {
+                            const planningMessages = activityObjs
+                                .filter(o => o.type === 'planning' && o.data && o.data.message)
+                                .map(o => o.data.message);
+                            if (planningMessages.length > 0) {
+                                plainThoughts = planningMessages.join('\n');
+                            }
+                        }
                     } else {
                         plainThoughts = plainThoughts.replace(/<think>|<\/think>/g, '').trim();
                     }
@@ -2094,7 +2105,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
             let accumulatedContent = '';
-            let accumulatedReasoning = '';
+            let accumulatedReasoning = '';  // Raw accumulator for DB persistence (includes JSON activity chunks)
+            let displayReasoning = '';      // Clean accumulator for live thought bubble rendering
             let buffer = '';
             let usageCounted = false;
             let isReasoningPhase = true; // Track if we're still in reasoning-only mode
@@ -2160,8 +2172,12 @@ document.addEventListener('DOMContentLoaded', () => {
                                     const parsed = JSON.parse(delta.reasoning_content);
                                     if (parsed.__deep_research_activity__) {
                                         renderResearchActivity(activityFeed, parsed.type, parsed.data);
-                                        // Save the activity chunk as thought so it persists
+                                        // Save raw JSON to accumulatedReasoning for DB persistence & reload
                                         accumulatedReasoning += delta.reasoning_content;
+                                        // Save only human-readable message for live thought bubble display
+                                        if (parsed.data && parsed.data.message) {
+                                            displayReasoning += parsed.data.message + '\n';
+                                        }
                                         botMsgDiv.classList.remove('thinking');
                                         continue; // skip rendering as standard text
                                     }
@@ -2171,6 +2187,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             // Extract content/reasoning from standard OpenAI delta fields
                             if (delta.reasoning_content) {
                                 accumulatedReasoning += delta.reasoning_content;
+                                displayReasoning += delta.reasoning_content;
                             }
                             if (delta.content) {
                                 accumulatedContent += delta.content;
@@ -2222,7 +2239,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (accumulatedReasoning && thoughtWrapper) {
                     const thoughtBodyContent = thoughtWrapper.querySelector('.thought-body-content');
                     if (thoughtBodyContent) {
-                        const formatted = formatMarkdown(accumulatedReasoning);
+                        // Use displayReasoning (clean text) instead of accumulatedReasoning (raw JSON)
+                        const formatted = formatMarkdown(displayReasoning);
                         if (thoughtBodyContent.innerHTML !== formatted) {
                             thoughtBodyContent.innerHTML = formatted;
                         }

@@ -1,5 +1,12 @@
 # CHANGELOG
 
+## v1.1.5
+* **Phase 0: Context Scout**: Implemented a pre-planning analysis phase that classifies research topics, assesses time-sensitivity, and gathers preliminary web context to inform the main research strategy.
+* **Enhanced Planning Strategy**: Relaxed the strict "maximum isolation" constraint on research steps, allowing the planner to design a logical progression where later steps can build on earlier foundational findings.
+* **Per-Step Search Parameters**: The research plan now supports granular control over each search step, with optional `<topic>`, `<time_range>`, `<start_date>`, and `<end_date>` parameters.
+* **Thought Process Persistence & UX**: Fixed an issue where planning thoughts disappeared on reload and optimized the real-time display to filter out raw JSON activity chunks, showing only human-readable reasoning.
+* **Version Bump**: Incremented version to 1.1.5.
+
 ## v1.1.4
 * **Deep Research Resume Compatbility Fix**: Deep Research agent now resumes properly after user resumes the conversation.
 * **Fix Embedding Model**: Fixed embedding model to use `text-embedding-qwen3-embedding-0.6b` instead of `text-embedding-jina-embeddings-v5-text-small-retrieval`.
