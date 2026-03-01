@@ -80,7 +80,7 @@ class TaskManager:
 
         threading.Thread(target=self._run_task, args=(runtime_info, execute_fn), daemon=True).start()
 
-    def start_research_task(self, model, messages, approved_plan, chat_id, search_depth_mode, vision_model, execute_fn):
+    def start_research_task(self, model, messages, approved_plan, chat_id, search_depth_mode, vision_model, execute_fn, **kwargs):
         self.start_chat_task(
             chat_id,
             execute_fn,
@@ -89,7 +89,8 @@ class TaskManager:
             approved_plan=approved_plan,
             search_depth_mode=search_depth_mode,
             vision_model=vision_model,
-            mode="deep_research"
+            mode="deep_research",
+            **kwargs
         )
         
     def _run_task(self, task_info, execute_fn):
@@ -113,6 +114,8 @@ class TaskManager:
             fn_kwargs["approved_plan"] = task_info["approved_plan"]
             fn_kwargs["search_depth_mode"] = task_info.get("search_depth_mode")
             fn_kwargs["vision_model"] = task_info.get("vision_model")
+            if "model_name" in task_info:
+                fn_kwargs["model_name"] = task_info["model_name"]
 
         # Normal Chat params (extracted from kwargs in start_chat_task)
         if "rag" in task_info:
@@ -176,8 +179,11 @@ class TaskManager:
                             except Exception as e:
                                 log_event("rag_update_error", {"error": str(e)})
 
-                    # Now clean up cache/WAL
+                    # Now clean up cache/WAL and RAG
                     cache_system.cleanup_chat(chat_id)
+                    if fn_kwargs.get("rag") and hasattr(fn_kwargs["rag"], "cleanup_chat"):
+                        try: fn_kwargs["rag"].cleanup_chat(chat_id)
+                        except: pass
 
                     # Update status on disk
                     # Filter again to avoid saving runtime objects if task_info was modified
@@ -201,6 +207,9 @@ class TaskManager:
 
                     add_message(chat_id, 'assistant', f"Error: {str(e)}", model=task_info.get("model"))
                     cache_system.cleanup_chat(chat_id)
+                    if fn_kwargs.get("rag") and hasattr(fn_kwargs["rag"], "cleanup_chat"):
+                        try: fn_kwargs["rag"].cleanup_chat(chat_id)
+                        except: pass
 
                 finally:
                     if chat_id in self.interrupted_tasks:
@@ -212,6 +221,9 @@ class TaskManager:
              cache_system.append_chunk(chat_id, f"data: {err_msg}\n\n")
              cache_system.append_chunk(chat_id, "[[ERROR]]")
              cache_system.cleanup_chat(chat_id)
+             if fn_kwargs.get("rag") and hasattr(fn_kwargs["rag"], "cleanup_chat"):
+                 try: fn_kwargs["rag"].cleanup_chat(chat_id)
+                 except: pass
         finally:
             loop.close()
 

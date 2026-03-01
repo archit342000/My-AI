@@ -30,12 +30,15 @@ backend/chroma_db/
 *.log
 backend/logs/
 backend/task_logs/
+backend/tasks/
+backend/cache/
 curl_output*.txt
 mock.log
 parse_test.log
 app.log
 *.bak
 *.tmp
+
 
 # IDEs
 .vscode/

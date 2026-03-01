@@ -9,11 +9,14 @@
     <meta name="description" content="A modern, airy AI interface built with Luminous Material principles.">
     <link rel="stylesheet" href="/styles.css">
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.9/purify.min.js"></script>
     <link id="highlight-theme" rel="stylesheet"
         href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-    <link rel="icon" media="(prefers-color-scheme: light)" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%234F46E5'/><stop offset='1' stop-color='%2306B6D4'/></linearGradient></defs><path d='M16 2L26 12L16 30L6 12Z' fill='url(%23g)'/><path d='M16 2L26 12H6Z' fill='white' opacity='0.25'/><circle cx='16' cy='12' r='2.5' fill='white' opacity='0.9'/></svg>">
-    <link rel="icon" media="(prefers-color-scheme: dark)" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%236366F1'/><stop offset='1' stop-color='%2322D3EE'/></linearGradient></defs><path d='M16 2L26 12L16 30L6 12Z' fill='url(%23g)'/><path d='M16 2L26 12H6Z' fill='white' opacity='0.3'/><circle cx='16' cy='12' r='2.5' fill='white'/></svg>">
+    <link rel="icon" media="(prefers-color-scheme: light)"
+        href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%234F46E5'/><stop offset='1' stop-color='%2306B6D4'/></linearGradient></defs><path d='M16 2L26 12L16 30L6 12Z' fill='url(%23g)'/><path d='M16 2L26 12H6Z' fill='white' opacity='0.25'/><circle cx='16' cy='12' r='2.5' fill='white' opacity='0.9'/></svg>">
+    <link rel="icon" media="(prefers-color-scheme: dark)"
+        href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%236366F1'/><stop offset='1' stop-color='%2322D3EE'/></linearGradient></defs><path d='M16 2L26 12L16 30L6 12Z' fill='url(%23g)'/><path d='M16 2L26 12H6Z' fill='white' opacity='0.3'/><circle cx='16' cy='12' r='2.5' fill='white'/></svg>">
 
 </head>
 
@@ -32,13 +35,13 @@
                     <svg class="sidebar-logo-icon" width="22" height="22" viewBox="0 0 32 32" fill="none">
                         <defs>
                             <linearGradient id="brand-grad" x1="0" y1="0" x2="1" y2="1">
-                                <stop offset="0" stop-color="#4F46E5"/>
-                                <stop offset="1" stop-color="#06B6D4"/>
+                                <stop offset="0" stop-color="#4F46E5" />
+                                <stop offset="1" stop-color="#06B6D4" />
                             </linearGradient>
                         </defs>
-                        <path d="M16 2L26 12L16 30L6 12Z" fill="url(#brand-grad)" opacity="0.9"/>
-                        <path d="M16 2L26 12H6Z" fill="white" opacity="0.3"/>
-                        <circle cx="16" cy="12" r="2.5" fill="white" opacity="0.9"/>
+                        <path d="M16 2L26 12L16 30L6 12Z" fill="url(#brand-grad)" opacity="0.9" />
+                        <path d="M16 2L26 12H6Z" fill="white" opacity="0.3" />
+                        <circle cx="16" cy="12" r="2.5" fill="white" opacity="0.9" />
                     </svg>
                     <span class="sidebar-brand-text font-heading sidebar-text">My AI</span>
                 </div>
@@ -104,7 +107,8 @@
                     <span class="sidebar-text">System</span>
                     <span class="nav-tooltip">System Settings</span>
                 </button>
-                <a href="/logs" target="_blank" class="sidebar-footer-btn" title="View Network Logs" style="text-decoration: none;">
+                <a href="/logs" target="_blank" class="sidebar-footer-btn" title="View Network Logs"
+                    style="text-decoration: none;">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"></path>
                     </svg>
@@ -255,7 +259,8 @@
             <div class="modal-body" style="padding: 32px;">
                 <div class="hardware-surface"
                     style="width: 4rem; height: 4rem; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 1.5rem auto; color: var(--color-primary-600); padding: 0;">
-                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2.5">
                         <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
                         <path d="M7 11V7a5 5 0 0110 0v4" />
                     </svg>
@@ -335,7 +340,8 @@
                         <label class="text-xs"
                             style="color: var(--content-muted); font-weight: 700; display: block; margin-bottom: 0.5rem;">SERVER
                             LINK</label>
-                        <input type="text" id="sys-server-link" class="input-luminous" placeholder="http://localhost:1234">
+                        <input type="text" id="sys-server-link" class="input-luminous"
+                            placeholder="http://localhost:1234">
                     </div>
                     <div style="margin-bottom: 1rem;">
                         <label class="text-xs"
@@ -348,7 +354,8 @@
 
                 <!-- Reset -->
                 <div class="hardware-surface" style="padding: 1.5rem; border-color: var(--color-rose-500);">
-                    <h3 class="text-h2" style="font-size: 1.1rem; margin-bottom: 1rem; color: var(--color-rose-500);">Danger
+                    <h3 class="text-h2" style="font-size: 1.1rem; margin-bottom: 1rem; color: var(--color-rose-500);">
+                        Danger
                         Zone</h3>
                     <button id="sys-clear-all-chats" class="btn-secondary"
                         style="width: 100%; border-color: var(--color-rose-500); color: var(--color-rose-500); margin-bottom: 0.5rem;">
@@ -413,16 +420,20 @@
 
                     <div class="hardware-surface" style="padding: 1.5rem;">
                         <h3 class="text-h2" style="font-size: 1.1rem; margin-bottom: 0.5rem;">Model Selection</h3>
-                        <p style="font-size: 0.85rem; color: var(--content-muted); margin-bottom: 1rem;">Select the primary LLM for chat completions.</p>
+                        <p style="font-size: 0.85rem; color: var(--content-muted); margin-bottom: 1rem;">Select the
+                            primary LLM for chat completions.</p>
                         <select id="model-select-dropdown" class="input-luminous" style="width: 100%; cursor: pointer;">
                             <option value="" disabled selected>Loading models...</option>
                         </select>
                     </div>
 
                     <div class="hardware-surface" style="padding: 1.5rem; margin-top: 1rem;">
-                        <h3 class="text-h2" style="font-size: 1.1rem; margin-bottom: 0.5rem;">Deep Research Vision Model</h3>
-                        <p style="font-size: 0.85rem; color: var(--content-muted); margin-bottom: 1rem;">Select a vision model to extract descriptions from images encountered during deep research.</p>
-                        <select id="vision-model-select-dropdown" class="input-luminous" style="width: 100%; cursor: pointer;">
+                        <h3 class="text-h2" style="font-size: 1.1rem; margin-bottom: 0.5rem;">Deep Research Vision Model
+                        </h3>
+                        <p style="font-size: 0.85rem; color: var(--content-muted); margin-bottom: 1rem;">Select a vision
+                            model to extract descriptions from images encountered during deep research.</p>
+                        <select id="vision-model-select-dropdown" class="input-luminous"
+                            style="width: 100%; cursor: pointer;">
                             <option value="">None (Skip Images)</option>
                             <option value="" disabled selected>Loading vision models...</option>
                         </select>
@@ -431,7 +442,8 @@
 
                 <!-- Tab Content: Persona -->
                 <div id="tab-persona" class="tab-content hidden">
-                    <p style="color: var(--content-muted); font-size: 0.875rem; line-height: 1.6; margin-bottom: 1.5rem;">
+                    <p
+                        style="color: var(--content-muted); font-size: 0.875rem; line-height: 1.6; margin-bottom: 1.5rem;">
                         Define the personality, constraints, and expertise level for the AI cluster.
                     </p>
                     <textarea id="system-prompt-input" class="input-luminous"
@@ -456,7 +468,8 @@
                         <div class="hardware-surface" style="padding: 1.25rem;">
                             <div
                                 style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
-                                <span class="text-xs" style="color: var(--content-muted); font-weight: 700;">TOP P</span>
+                                <span class="text-xs" style="color: var(--content-muted); font-weight: 700;">TOP
+                                    P</span>
                                 <span id="top-p-val" class="badge">1.0</span>
                             </div>
                             <input type="range" id="top-p-slider" min="0" max="1" step="0.05" value="1">
@@ -488,7 +501,8 @@
                         <div class="hardware-surface" style="padding: 1.25rem;">
                             <div
                                 style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
-                                <span class="text-xs" style="color: var(--content-muted); font-weight: 700;">TOP K</span>
+                                <span class="text-xs" style="color: var(--content-muted); font-weight: 700;">TOP
+                                    K</span>
                                 <span id="top-k-val" class="badge">40</span>
                             </div>
                             <input type="range" id="top-k-slider" min="0" max="100" step="1" value="40">
@@ -496,7 +510,8 @@
                         <div class="hardware-surface" style="padding: 1.25rem;">
                             <div
                                 style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
-                                <span class="text-xs" style="color: var(--content-muted); font-weight: 700;">MIN P</span>
+                                <span class="text-xs" style="color: var(--content-muted); font-weight: 700;">MIN
+                                    P</span>
                                 <span id="min-p-val" class="badge">0.05</span>
                             </div>
                             <input type="range" id="min-p-slider" min="0" max="1" step="0.01" value="0.05">
@@ -546,12 +561,18 @@
                         <!-- Dynamic Icon -->
                     </div>
                 </div>
-                <h3 id="confirm-title" class="font-heading" style="font-size: 1.25rem; font-weight: 800; color: var(--content-primary); margin-bottom: 0.75rem;">Confirm Action</h3>
-                <p id="confirm-message" style="color: var(--content-muted); font-size: 0.9375rem; line-height: 1.6; margin-bottom: 2rem;">Are you sure you want to proceed?</p>
-                
+                <h3 id="confirm-title" class="font-heading"
+                    style="font-size: 1.25rem; font-weight: 800; color: var(--content-primary); margin-bottom: 0.75rem;">
+                    Confirm Action</h3>
+                <p id="confirm-message"
+                    style="color: var(--content-muted); font-size: 0.9375rem; line-height: 1.6; margin-bottom: 2rem;">
+                    Are you sure you want to proceed?</p>
+
                 <div style="display: flex; gap: 0.75rem;">
-                    <button id="confirm-cancel-btn" class="btn-secondary" style="flex: 1; height: 3rem; border-radius: 12px; font-weight: 600;">Cancel</button>
-                    <button id="confirm-action-btn" class="btn-primary" style="flex: 1; height: 3rem; border-radius: 12px; font-weight: 600;">Confirm</button>
+                    <button id="confirm-cancel-btn" class="btn-secondary"
+                        style="flex: 1; height: 3rem; border-radius: 12px; font-weight: 600;">Cancel</button>
+                    <button id="confirm-action-btn" class="btn-primary"
+                        style="flex: 1; height: 3rem; border-radius: 12px; font-weight: 600;">Confirm</button>
                 </div>
             </div>
         </div>

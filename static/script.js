@@ -285,7 +285,28 @@ document.addEventListener('DOMContentLoaded', () => {
         return Date.now().toString(36) + Math.random().toString(36).substr(2);
     }
 
+    function resetGenerationState() {
+        if (isGenerating && currentAbortController) {
+            try { currentAbortController.abort(); } catch (e) { }
+        }
+        isGenerating = false;
+        currentAbortController = null;
+        if (sendBtn) {
+            sendBtn.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+            sendBtn.classList.remove('stop-mode');
+        }
+        if (textArea) {
+            textArea.value = '';
+            textArea.style.height = 'auto';
+        }
+        currentImageBase64 = null;
+        if (typeof imageInput !== 'undefined' && imageInput) imageInput.value = '';
+        if (typeof imagePreview !== 'undefined' && imagePreview) imagePreview.src = '';
+        if (typeof imagePreviewContainer !== 'undefined' && imagePreviewContainer) imagePreviewContainer.classList.add('hidden');
+    }
+
     function startNewChat(temporary = false, updateUrl = true) {
+        resetGenerationState();
         isTemporaryChat = temporary;
         chatHistory = [];
         currentResearchPlan = null;
@@ -340,6 +361,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function loadChat(id, pushState = true) {
+        resetGenerationState();
         try {
             const response = await fetch(`/api/chats/${id}`);
             if (!response.ok) {
@@ -2077,6 +2099,7 @@ document.addEventListener('DOMContentLoaded', () => {
             let usageCounted = false;
             let isReasoningPhase = true; // Track if we're still in reasoning-only mode
             let contentStarted = false;  // Track if actual content has started
+            let actualModelName = selectedModelName; // Fallback
 
             while (true) {
                 const { done, value } = await reader.read();
@@ -2102,6 +2125,11 @@ document.addEventListener('DOMContentLoaded', () => {
                         // Handle Errors sent as data
                         if (json.error) {
                             throw new Error(json.error);
+                        }
+
+                        // Capture the actual model name from the server stream if present
+                        if (json.model) {
+                            actualModelName = json.model;
                         }
 
                         // Handle redaction (validation detected formatting issues, correcting...)
@@ -2135,8 +2163,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                         // Save the activity chunk as thought so it persists
                                         accumulatedReasoning += delta.reasoning_content;
                                         botMsgDiv.classList.remove('thinking');
-                                        scrollToBottom('auto', false);
-                                        continue;
+                                        continue; // skip rendering as standard text
                                     }
                                 } catch (ignored) { /* Not JSON activity, treat as normal reasoning */ }
                             }
@@ -2165,13 +2192,6 @@ document.addEventListener('DOMContentLoaded', () => {
                                             <div class="thought-body"><div class="thought-body-inner"><div class="thought-body-content"></div></div></div>
                                         </div>`;
                                 }
-                                const thoughtBodyContent = thoughtWrapper.querySelector('.thought-body-content');
-                                if (thoughtBodyContent) {
-                                    const formatted = formatMarkdown(accumulatedReasoning);
-                                    if (thoughtBodyContent.innerHTML !== formatted) {
-                                        thoughtBodyContent.innerHTML = formatted;
-                                    }
-                                }
                             }
 
                             // Determine phase: content started
@@ -2194,15 +2214,30 @@ document.addEventListener('DOMContentLoaded', () => {
                                     }
                                 }
                             }
-
-                            if (hasRealContent) {
-                                mainWrapper.innerHTML = formatMarkdown(accumulatedContent);
-                            }
-
-                            scrollToBottom('auto', false);
                         }
                     } catch (e) { }
                 }
+
+                // Batch DOM Updates after processing all lines from this network chunk
+                if (accumulatedReasoning && thoughtWrapper) {
+                    const thoughtBodyContent = thoughtWrapper.querySelector('.thought-body-content');
+                    if (thoughtBodyContent) {
+                        const formatted = formatMarkdown(accumulatedReasoning);
+                        if (thoughtBodyContent.innerHTML !== formatted) {
+                            thoughtBodyContent.innerHTML = formatted;
+                        }
+                    }
+                }
+
+                const hasRealContentBatch = accumulatedContent.trim().length > 0;
+                if (hasRealContentBatch) {
+                    mainWrapper.innerHTML = formatMarkdown(accumulatedContent);
+                }
+
+                if (contentStarted || accumulatedReasoning) {
+                    scrollToBottom('auto', false);
+                }
+
             }
 
             botMsgDiv.classList.remove('thinking');
@@ -2239,13 +2274,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 finalCombinedContent = `<think>\n${accumulatedReasoning}\n</think>\n${accumulatedContent}`;
             }
 
-            const assistantMsgObj = { role: 'assistant', content: finalCombinedContent, model: selectedModelName };
+            const assistantMsgObj = { role: 'assistant', content: finalCombinedContent, model: actualModelName };
             chatHistory.push(assistantMsgObj);
 
             // Update the bot message row to show which model generated this response
             const modelLabel = botMsgDiv.querySelector('.bot-model-label');
             if (modelLabel) {
-                modelLabel.textContent = selectedModelName;
+                modelLabel.textContent = actualModelName;
                 modelLabel.closest('.bot-message-footer').style.display = 'flex';
             }
 
@@ -2743,10 +2778,20 @@ document.addEventListener('DOMContentLoaded', () => {
         const { cleaned } = parseContent(text);
         // Convert any literal \n sequences (backslash + n) to real newlines
         const normalized = cleaned.replace(/\\n/g, '\n');
+
+        let html;
         if (typeof marked !== 'undefined') {
-            return marked.parse(normalized, { breaks: true });
+            html = marked.parse(normalized, { breaks: true });
+        } else {
+            html = normalized.replace(/\n/g, '<br>');
         }
-        return normalized.replace(/\n/g, '<br>');
+
+        // Critical Security Step: Sanitize HTML to prevent Stored XSS
+        if (typeof DOMPurify !== 'undefined') {
+            return DOMPurify.sanitize(html);
+        }
+        console.warn("DOMPurify is not loaded. Rendering potentially unsafe HTML.");
+        return html;
     }
 
     function parseContent(text) {

@@ -236,6 +236,25 @@ import markdownify
 import re
 from urllib.parse import urljoin
 import threading
+import ipaddress
+import socket
+from urllib.parse import urlparse
+
+def is_safe_web_url(url):
+    try:
+        parsed = urlparse(url)
+        if parsed.scheme not in ['http', 'https']:
+            return False
+        hostname = parsed.hostname
+        if not hostname:
+            return False
+        ip = socket.gethostbyname(hostname)
+        ip_obj = ipaddress.ip_address(ip)
+        if ip_obj.is_loopback or ip_obj.is_private or ip_obj.is_link_local or ip_obj.is_multicast or ip_obj.is_reserved:
+            return False
+        return True
+    except Exception:
+        return False
 
 async def async_chat_completion(url, payload):
     start_time = time.time()
@@ -268,11 +287,30 @@ async def async_chat_completion(url, payload):
             return ""
 
 async def _async_visit_page(url, max_chars):
+    if not is_safe_web_url(url):
+        return "Error: URL is forbidden (SSRF protection). Cannot visit local or private IP addresses."
     try:
         headers = {'User-Agent': random.choice(USER_AGENTS)}
         
-        async with httpx.AsyncClient(headers=headers, timeout=config.TIMEOUT_WEB_SCRAPE, follow_redirects=True) as client:
-            response = await client.get(url)
+        async with httpx.AsyncClient(headers=headers, timeout=config.TIMEOUT_WEB_SCRAPE, follow_redirects=False) as client:
+            current_url = url
+            response = None
+            for _ in range(5):
+                response = await client.get(current_url)
+                if response.status_code in (301, 302, 303, 307, 308):
+                    next_url = response.headers.get('Location')
+                    if not next_url:
+                        break
+                    next_url = urljoin(current_url, next_url)
+                    if not is_safe_web_url(next_url):
+                        return "Error: Redirected URL is forbidden (SSRF protection)."
+                    current_url = next_url
+                else:
+                    break
+                    
+            if not response:
+                return "Error: Could not fetch URL."
+                
             response.raise_for_status()
             
             # Handle PDF

@@ -18,6 +18,8 @@ from backend.task_manager import task_manager
 from backend.cache_system import cache_system
 
 app = Flask(__name__, static_folder='static')
+# Limit request size to 16MB to prevent unbounded payload DoS (e.g. extremely large JSON arrays)
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 
 # Initialize components with config
 init_db()
@@ -66,8 +68,8 @@ def save_chat_endpoint():
     memory_mode = data.get('memory_mode', False)
     deep_research_mode = data.get('deep_research_mode', False)
     
-    if not chat_id:
-        return jsonify({"error": "Missing chat_id"}), 400
+    if not chat_id or '..' in chat_id or '/' in chat_id or '\\' in chat_id:
+        return jsonify({"error": "Invalid or missing chat_id"}), 400
         
     save_chat(
         chat_id, 
@@ -167,8 +169,8 @@ def chat_completions():
 
         extra_body = {k: v for k, v in data.items() if k not in ['messages', 'chatId', 'memoryMode', 'deepResearchMode', 'searchDepthMode', 'visionModel', 'stream', 'approvedPlan', 'lastModelName', 'hasVision']}
 
-        if not chat_id:
-             return jsonify({"error": "chatId is required"}), 400
+        if not chat_id or '..' in chat_id or '/' in chat_id or '\\' in chat_id:
+             return jsonify({"error": "Invalid or missing chatId"}), 400
 
         # === 1. Handle Active Tasks (Resume/Stream) ===
         if task_manager.is_task_running(chat_id):
@@ -214,7 +216,8 @@ def chat_completions():
         # === 3. Enqueue Background Task ===
         if deep_research_mode:
             task_manager.start_research_task(
-                last_model_name, messages, approved_plan, chat_id, search_depth_mode, vision_model, generate_deep_research_response
+                model, messages, approved_plan, chat_id, search_depth_mode, vision_model, generate_deep_research_response,
+                model_name=last_model_name
             )
         else:
             # Normal Chat Task
@@ -273,7 +276,7 @@ def get_log_detail():
     base_logs = os.path.abspath(os.path.join("backend", "logs"))
     target_path = os.path.abspath(os.path.join(base_logs, rel_path))
     
-    if not target_path.startswith(base_logs):
+    if not target_path.startswith(base_logs + os.sep) and target_path != base_logs:
         return jsonify({"error": "Access denied"}), 403
         
     if not os.path.exists(target_path):

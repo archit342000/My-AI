@@ -1,1 +1,1 @@
-{"chat_id": "test_kwargs", "status": "running", "timestamp": 1772183153.6607175, "model": "test", "messages": []}
+{"chat_id": "test_kwargs", "status": "interrupted", "timestamp": 1772183153.6607175, "model": "test", "messages": [], "error": "Server restarted."}
