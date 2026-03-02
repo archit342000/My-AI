@@ -114,7 +114,7 @@ You MUST output ONLY a valid JSON object. No markdown, no explanation, no other 
 - If `needs_search` is `false`, `preliminary_search` MUST be `null`.
 - The `topic_type` classification will directly influence how the Planner structures its plan, so be accurate.
 - When in doubt, err on the side of searching — a small upfront search cost is worth a much better research plan.
-- **CRITICAL FOR REASONING MODELS**: If you generate a `<think>` block, it MUST strictly follow this exact structure and nothing else:
+- **CRITICAL FOR REASONING MODELS**: Your `<think>` block MUST be under 200 words. State 'Proceeding to generation' and close the thought block immediately. Your output budget is limited — excessive thinking will exhaust it and produce an empty section.
   1. Identify if real-time data is needed (Yes/No & Why).
   2. Identify the primary domain (News/Finance/Academic/General).
   3. Formulate one exact query string for preliminary search (if any).
@@ -170,7 +170,7 @@ You MUST output ONLY the following structured XML sequence. No other text, no ma
 - Do NOT wrap in markdown code blocks (```xml).
 - Every `<step>` must be an actionable research task, not a vague instruction.
 - The `<topic>`, `<time_range>`, `<start_date>`, and `<end_date>` tags are OPTIONAL. Only include them when they genuinely improve the search for that step. Most steps will only need `<goal>`, `<description>`, and `<query>`.
-- **CRITICAL FOR REASONING MODELS**: If you generate a `<think>` block, it MUST strictly follow this exact structure and nothing else:
+- **CRITICAL FOR REASONING MODELS**: Your `<think>` block MUST be under 200 words. State 'Proceeding to generation' and close the thought block immediately. Your output budget is limited — excessive thinking will exhaust it and produce an empty section.
   1. List 5-10 sub-questions derived from the main topic.
   2. Convert each sub-question into a concise search query.
   3. Map them into a logical sequence (broad to specific).
@@ -226,7 +226,7 @@ If suggesting a plan modification (rare), use this format for plan_modification:
 - Each summary point should contain **specific facts, data, or insights**, not vague statements.
 - Only suggest `plan_modification` if findings genuinely necessitate changing a future step. Most of the time this should be `null`.
 - If the content fully covers the step goal with no gaps, return an empty `gaps` array.
-- **CRITICAL FOR REASONING MODELS**: If you generate a `<think>` block, it MUST strictly follow this exact structure and nothing else:
+- **CRITICAL FOR REASONING MODELS**: Your `<think>` block MUST be under 200 words. State 'Proceeding to generation' and close the thought block immediately. Your output budget is limited — excessive thinking will exhaust it and produce an empty section.
   1. State the step goal.
   2. List the 2 most critical answers clearly missing from the provided text.
   3. Formulate 1-2 follow-up queries to find them.
@@ -266,7 +266,7 @@ Example:
 - Each query should be designed to retrieve content from MULTIPLE steps.
 - Do NOT duplicate the original step goals — those are already being used separately.
 - Generate at least 3 and at most 8 queries.
-- **CRITICAL FOR REASONING MODELS**: If you generate a `<think>` block, it MUST strictly follow this exact structure and nothing else:
+- **CRITICAL FOR REASONING MODELS**: Your `<think>` block MUST be under 200 words. State 'Proceeding to generation' and close the thought block immediately. Your output budget is limited — excessive thinking will exhaust it and produce an empty section.
   1. Identify 3-4 major themes present in the research summaries.
   2. Identify intersections or missing connections between these themes.
   3. Draft 3-8 query strings designed to retrieve data spanning these intersections.
@@ -327,7 +327,7 @@ Output ONLY a valid JSON object. No markdown, no explanation.
 - For DEEP mode: aim for 10+ body sections with granular sub-topic coverage, 8000-20000 word final report.
 - The "Key Takeaways" section gets NO chunk IDs — it synthesizes from prior sections.
 - The "References" section gets NO chunk IDs — it will be auto-generated.
-- **CRITICAL FOR REASONING MODELS**: If you generate a `<think>` block, it MUST strictly follow this exact structure and nothing else:
+- **CRITICAL FOR REASONING MODELS**: Your `<think>` block MUST be under 200 words. State 'Proceeding to generation' and close the thought block immediately. Your output budget is limited — excessive thinking will exhaust it and produce an empty section.
   1. List the titles of the 4-10 body sections you will create.
   2. Mentally assign high-level topics to each section. ABSOLUTELY DO NOT write out or try to map individual chunk IDs in your thought block.
   3. End thought block and begin generating the JSON structure (you will map chunks to sections on the fly while writing the JSON).
