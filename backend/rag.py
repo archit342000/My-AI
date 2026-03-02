@@ -7,6 +7,16 @@ import hashlib
 import time
 from backend.logger import log_event, log_llm_call
 
+
+def _cosine_similarity(v1, v2):
+    """Compute cosine similarity between two vectors."""
+    dot_product = sum(a * b for a, b in zip(v1, v2))
+    norm_a = sum(a * a for a in v1) ** 0.5
+    norm_b = sum(b * b for b in v2) ** 0.5
+    if norm_a == 0 or norm_b == 0:
+        return 0.0
+    return dot_product / (norm_a * norm_b)
+
 class LMStudioEmbeddingFunction(embedding_functions.EmbeddingFunction):
     def __init__(self, api_url="http://localhost:1234", model_name="text-embedding-embeddinggemma-300m", default_task="document"):
         self.api_url = api_url
@@ -297,13 +307,6 @@ class MemoryRAG:
         embeddings = results['embeddings'][0]
 
         # 5. Helper: Manual Cosine Similarity
-        def cosine_similarity(v1, v2):
-            dot_product = sum(a * b for a, b in zip(v1, v2))
-            norm_a = sum(a * a for a in v1) ** 0.5
-            norm_b = sum(b * b for b in v2) ** 0.5
-            if norm_a == 0 or norm_b == 0:
-                return 0.0
-            return dot_product / (norm_a * norm_b)
 
         # 6. Scoring & Re-Ranking
         scored_results = []
@@ -318,7 +321,7 @@ class MemoryRAG:
 
         for doc, meta, emb in zip(documents, metadatas, embeddings):
             # A. Semantic Score (High is Good)
-            sem_score = cosine_similarity(query_embedding, emb)
+            sem_score = _cosine_similarity(query_embedding, emb)
             print(f"[RAG DEBUG] Candidate: '{doc[:50]}...' Score: {sem_score:.3f}")
             
             if sem_score < MIN_SEMANTIC_SCORE:
@@ -378,12 +381,13 @@ class MemoryRAG:
 
 class DeepResearchRAG:
     """Ephemeral per-chat storage for Deep Research passes."""
-    def __init__(self, persist_path="./backend/chroma_db", api_url="http://localhost:1234", embedding_model="text-embedding-embeddinggemma-300m"):
+    def __init__(self, persist_path="./backend/chroma_db", api_url="http://localhost:1234", embedding_model="text-embedding-embeddinggemma-300m", dedup_threshold=0.90):
         self.client = chromadb.PersistentClient(path=persist_path)
         self.embedding_fn = LMStudioEmbeddingFunction(
             api_url=api_url,
             model_name=embedding_model
         )
+        self.dedup_threshold = dedup_threshold
         self.collection = MemoryRAG._ensure_cosine_collection(
             self.client, "deep_research_store", self.embedding_fn
         )
@@ -469,17 +473,9 @@ class DeepResearchRAG:
                     )
                     
                     if results and results.get('embeddings') and len(results['embeddings'][0]) > 0:
-                        def cosine_similarity(v1, v2):
-                            dot_product = sum(a * b for a, b in zip(v1, v2))
-                            norm_a = sum(a * a for a in v1) ** 0.5
-                            norm_b = sum(b * b for b in v2) ** 0.5
-                            if norm_a == 0 or norm_b == 0: return 0.0
-                            return dot_product / (norm_a * norm_b)
-                        
                         for emb in results['embeddings'][0]:
-                            sim = cosine_similarity(query_embedding, emb)
-                            # 0.92 is solid for 2000-char chunks; catches boilerplate/copies
-                            if sim > 0.92:
+                            sim = _cosine_similarity(query_embedding, emb)
+                            if sim > self.dedup_threshold:
                                 is_duplicate = True
                                 break
                 
@@ -521,7 +517,7 @@ class DeepResearchRAG:
                 })
             return chunks
         except Exception as e:
-            print(f"[DeepResearchRAG] Retreival error: {e}")
+            print(f"[DeepResearchRAG] Retrieval error: {e}")
             return []
 
     def get_step_chunks(self, chat_id, step_index):
@@ -567,13 +563,6 @@ class DeepResearchRAG:
         seen_doc_ids = set()  # For deduplication across queries
         total_tokens = 0
 
-        def cosine_similarity(v1, v2):
-            dot_product = sum(a * b for a, b in zip(v1, v2))
-            norm_a = sum(a * a for a in v1) ** 0.5
-            norm_b = sum(b * b for b in v2) ** 0.5
-            if norm_a == 0 or norm_b == 0: return 0.0
-            return dot_product / (norm_a * norm_b)
-
         for q_info in queries:
             query_text = q_info["query"]
             step_filter = q_info.get("step_filter")
@@ -597,7 +586,7 @@ class DeepResearchRAG:
                 # Retrieve candidates (generous limit, ChromaDB ranks by distance)
                 results = self.collection.query(
                     query_embeddings=[query_emb],
-                    n_results=100,
+                    n_results=200,
                     where=where_clause,
                     include=["documents", "metadatas", "embeddings"]
                 )
@@ -624,7 +613,7 @@ class DeepResearchRAG:
                         return all_chunks  # Global budget exhausted
 
                     # Compute relevance score for potential future sorting
-                    relevance = cosine_similarity(query_emb, emb)
+                    relevance = _cosine_similarity(query_emb, emb)
                     
                     all_chunks.append({
                         "text": doc,

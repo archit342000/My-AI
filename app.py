@@ -165,9 +165,10 @@ def chat_completions():
         search_depth_mode = data.get('searchDepthMode', 'regular')
         vision_model = data.get('visionModel')
         approved_plan = data.get('approvedPlan')
+        resume_state = data.get('resumeState')
         last_model_name = data.get('lastModelName', model)
 
-        extra_body = {k: v for k, v in data.items() if k not in ['messages', 'chatId', 'memoryMode', 'deepResearchMode', 'searchDepthMode', 'visionModel', 'stream', 'approvedPlan', 'lastModelName', 'hasVision']}
+        extra_body = {k: v for k, v in data.items() if k not in ['messages', 'chatId', 'memoryMode', 'deepResearchMode', 'searchDepthMode', 'visionModel', 'stream', 'approvedPlan', 'resumeState', 'lastModelName', 'hasVision']}
 
         if not chat_id or '..' in chat_id or '/' in chat_id or '\\' in chat_id:
              return jsonify({"error": "Invalid or missing chatId"}), 400
@@ -217,7 +218,7 @@ def chat_completions():
         if deep_research_mode:
             task_manager.start_research_task(
                 model, messages, approved_plan, chat_id, search_depth_mode, vision_model, generate_deep_research_response,
-                model_name=last_model_name
+                model_name=last_model_name, resume_state=resume_state
             )
         else:
             # Normal Chat Task

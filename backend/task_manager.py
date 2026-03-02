@@ -64,7 +64,7 @@ class TaskManager:
         }
 
         # Explicitly copy serializable fields we care about
-        for key in ['model', 'messages', 'approved_plan', 'search_depth_mode', 'vision_model', 'mode', 'memory_mode', 'has_vision']:
+        for key in ['model', 'messages', 'approved_plan', 'search_depth_mode', 'vision_model', 'mode', 'memory_mode', 'has_vision', 'resume_state', 'model_name']:
             if key in kwargs:
                 if key == 'messages':
                     persistent_info[key] = _strip_images_from_messages(kwargs[key])
@@ -116,6 +116,8 @@ class TaskManager:
             fn_kwargs["vision_model"] = task_info.get("vision_model")
             if "model_name" in task_info:
                 fn_kwargs["model_name"] = task_info["model_name"]
+            if "resume_state" in task_info:
+                fn_kwargs["resume_state"] = task_info["resume_state"]
 
         # Normal Chat params (extracted from kwargs in start_chat_task)
         if "rag" in task_info:

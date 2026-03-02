@@ -114,6 +114,11 @@ You MUST output ONLY a valid JSON object. No markdown, no explanation, no other 
 - If `needs_search` is `false`, `preliminary_search` MUST be `null`.
 - The `topic_type` classification will directly influence how the Planner structures its plan, so be accurate.
 - When in doubt, err on the side of searching — a small upfront search cost is worth a much better research plan.
+- **CRITICAL FOR REASONING MODELS**: If you generate a `<think>` block, it MUST strictly follow this exact structure and nothing else:
+  1. Identify if real-time data is needed (Yes/No & Why).
+  2. Identify the primary domain (News/Finance/Academic/General).
+  3. Formulate one exact query string for preliminary search (if any).
+  4. End thought block and generate JSON.
 """
 
 DEEP_RESEARCH_PLANNER_PROMPT = """
@@ -165,6 +170,11 @@ You MUST output ONLY the following structured XML sequence. No other text, no ma
 - Do NOT wrap in markdown code blocks (```xml).
 - Every `<step>` must be an actionable research task, not a vague instruction.
 - The `<topic>`, `<time_range>`, `<start_date>`, and `<end_date>` tags are OPTIONAL. Only include them when they genuinely improve the search for that step. Most steps will only need `<goal>`, `<description>`, and `<query>`.
+- **CRITICAL FOR REASONING MODELS**: If you generate a `<think>` block, it MUST strictly follow this exact structure and nothing else:
+  1. List 5-10 sub-questions derived from the main topic.
+  2. Convert each sub-question into a concise search query.
+  3. Map them into a logical sequence (broad to specific).
+  4. End thought block and generate XML.
 """
 
 DEEP_RESEARCH_REFLECTION_PROMPT = """# Research Step Analyst
@@ -216,6 +226,11 @@ If suggesting a plan modification (rare), use this format for plan_modification:
 - Each summary point should contain **specific facts, data, or insights**, not vague statements.
 - Only suggest `plan_modification` if findings genuinely necessitate changing a future step. Most of the time this should be `null`.
 - If the content fully covers the step goal with no gaps, return an empty `gaps` array.
+- **CRITICAL FOR REASONING MODELS**: If you generate a `<think>` block, it MUST strictly follow this exact structure and nothing else:
+  1. State the step goal.
+  2. List the 2 most critical answers clearly missing from the provided text.
+  3. Formulate 1-2 follow-up queries to find them.
+  4. End thought block and generate JSON.
 """
 
 DEEP_RESEARCH_RETRIEVAL_QUERY_PROMPT = """# Cross-Step Retrieval Strategist
@@ -251,8 +266,120 @@ Example:
 - Each query should be designed to retrieve content from MULTIPLE steps.
 - Do NOT duplicate the original step goals — those are already being used separately.
 - Generate at least 3 and at most 8 queries.
+- **CRITICAL FOR REASONING MODELS**: If you generate a `<think>` block, it MUST strictly follow this exact structure and nothing else:
+  1. Identify 3-4 major themes present in the research summaries.
+  2. Identify intersections or missing connections between these themes.
+  3. Draft 3-8 query strings designed to retrieve data spanning these intersections.
+  4. End thought block and generate JSON.
 """
 
+DEEP_RESEARCH_OUTLINE_PROMPT = """# Report Outline Architect
+
+You are a report planning specialist. Given research data collected across multiple steps, design a comprehensive report outline that maximizes information coverage and narrative flow.
+
+## Research Context
+Original Research Topic: {user_query}
+
+Approved Research Plan:
+{approved_plan}
+
+## Research Mode
+{mode_guidance}
+
+## Available Data (Previews)
+Below are truncated previews of all gathered data chunks, organized by research step. Use the chunk IDs to assign data to sections.
+
+{chunk_previews}
+
+## Your Task
+Design a detailed section outline for the final report. You MUST include the following mandatory sections in this exact order:
+
+1. **Executive Summary** (MANDATORY, first)
+2. **Body sections** (your creative control — design as many as the topic demands)
+3. **Comparative Analysis** (MANDATORY — compare differing perspectives, approaches, implementations, or viewpoints found in the data)
+4. **Nuances, Limitations & Counterpoints** (MANDATORY — surface contradictions, caveats, edge cases, minority viewpoints, and limitations of the gathered data)
+5. **Key Takeaways** (MANDATORY)
+6. **References** (MANDATORY, last — this will be auto-generated, just include it in the outline)
+
+## Output Format
+Output ONLY a valid JSON object. No markdown, no explanation.
+
+{{
+  "title": "Report Title",
+  "sections": [
+    {{"id": "exec_summary", "title": "Executive Summary", "type": "mandatory", "chunk_ids": [1, 5, 12], "description": "High-level overview of key findings"}},
+    {{"id": "body_1", "title": "Descriptive Topic Title", "type": "body", "chunk_ids": [1, 2, 3], "description": "What this section covers"}},
+    {{"id": "comparison", "title": "Comparative Analysis", "type": "comparison", "chunk_ids": [3, 5, 8], "description": "Compare perspectives X vs Y vs Z"}},
+    {{"id": "nuances", "title": "Nuances, Limitations & Counterpoints", "type": "nuances", "chunk_ids": [2, 7, 9], "description": "Contradictions, caveats, and limitations"}},
+    {{"id": "takeaways", "title": "Key Takeaways", "type": "takeaways", "chunk_ids": [], "description": "Synthesis of critical points"}},
+    {{"id": "references", "title": "References", "type": "references", "chunk_ids": [], "description": "Auto-generated citation map"}}
+  ]
+}}
+
+## Rules
+- Output ONLY the JSON object. No wrapping, no markdown code blocks.
+- Assign EVERY chunk ID to at least one section. No chunk should go unused.
+- A chunk can be assigned to multiple sections if relevant.
+- Body sections should have descriptive, topic-specific titles (not generic like "Section 1").
+- The "Comparative Analysis" section MUST compare differing viewpoints or approaches. Even for explanatory topics, compare implementations, expert opinions, or historical vs modern approaches.
+- The "Nuances" section MUST surface contradictions, caveats, minority viewpoints, and data limitations.
+- For REGULAR mode: aim for 4-8 body sections, 3000-6000 word final report.
+- For DEEP mode: aim for 10+ body sections with granular sub-topic coverage, 8000-20000 word final report.
+- The "Key Takeaways" section gets NO chunk IDs — it synthesizes from prior sections.
+- The "References" section gets NO chunk IDs — it will be auto-generated.
+- **CRITICAL FOR REASONING MODELS**: If you generate a `<think>` block, it MUST strictly follow this exact structure and nothing else:
+  1. List the titles of the 4-10 body sections you will create.
+  2. Mentally assign high-level topics to each section. ABSOLUTELY DO NOT write out or try to map individual chunk IDs in your thought block.
+  3. End thought block and begin generating the JSON structure (you will map chunks to sections on the fly while writing the JSON).
+"""
+
+DEEP_RESEARCH_SECTION_WRITER_PROMPT = """# Section Writer
+
+You are writing one section of a larger research report. Write ONLY the assigned section — do not write other sections or include any introductory/closing commentary.
+
+## Section Assignment
+- **Title**: {section_title}
+- **Description**: {section_description}
+- **Section Type**: {section_type}
+
+## Original Research Topic
+{user_query}
+
+## Mode Guidance
+{mode_guidance}
+
+---
+
+## CONTEXT ONLY — Prior Sections Already Written (DO NOT CITE)
+The following are summaries of sections already written in this report. Use them ONLY for continuity and to avoid redundancy. Do NOT cite any chunk IDs `[N]` that appear in these summaries — they belong to other sections.
+
+{running_summaries}
+
+---
+
+## CITABLE SOURCE DATA — Your Assigned Chunks
+The following chunks are your ONLY citable sources. Use inline numerical citations `[N]` that match the chunk `id` attributes below. Do NOT cite any ID not present in this section.
+
+{section_chunks}
+
+---
+
+## Instructions
+1. Write ONLY the content for the section titled "{section_title}".
+2. Start with `## {section_title}` as the heading.
+3. **Citation Scope**: You may ONLY cite chunk IDs from the "CITABLE SOURCE DATA" section above. Do NOT reference or re-use citation numbers from the prior section summaries.
+4. **Extreme Comprehensiveness**: Extract as much factual information as possible from the provided chunks. Do not summarize away important details. Bias toward MORE detail, sub-sections, and specifics.
+5. Use Markdown tables, blockquotes, bold text, and sub-headings (`###`, `####`) to maximize information density and readability.
+6. **Absolute Grounding**: Base content SOLELY on the provided chunks. Do NOT inject external knowledge or prior training data.
+7. **Conflicting Information**: If sources conflict, objectively present all perspectives with citations.
+8. **Visual Evidence**: If chunks contain `[IMAGE DETECTED]` blocks, embed relevant images using: `![AI Generated Caption](URL)`. Weave the Vision Model Description facts into the body text.
+9. **No Boilerplate**: Start immediately with the section heading. No meta-commentary like "In this section we will..." or "Here is the section...".
+10. Be aware of what prior sections have already covered — avoid redundancy but feel free to reference or build upon prior points.
+11. **ABSOLUTELY NO BIBLIOGRAPHIES**: Do NOT include a 'References', 'Sources', or 'Citations' list at the end of your section. This will be generated globally at the end of the report. Only use inline `[N]` tags.
+12. **CRITICAL FOR REASONING MODELS**: Your `<think>` block MUST be under 200 words. Do not analyze the source chunks in your thoughts. State 'Proceeding to generation' and close the thought block immediately. Your output budget is limited — excessive thinking will exhaust it and produce an empty section.
+
+{section_specific_instruction}
+"""
 
 DEEP_RESEARCH_REPORTER_PROMPT = """You are an elite Intelligence Analyst and Technical Writer.
 Your primary mission is to synthesize a massive vault of raw text gathered by scouting agents into a definitive, highly structured, and data-dense final report.
@@ -277,6 +404,7 @@ You MUST synthesize the raw data provided at the end of this message. The data v
 - **No Boilerplate:** Start the report instantly with `# Your Report Title` and then `## Executive Summary`. Absolutely NO conversational filler, meta-commentary, or generic introductions/outros (e.g., "Here is the comprehensive report...").
 - **Mode:** {research_mode_label}.
 - **Depth Instruction:** {research_instruction}
+- **CRITICAL FOR REASONING MODELS**: Your `<think>` block MUST be under 200 words. State 'Proceeding to generation' and close the thought block immediately. Your output budget is limited — excessive thinking will exhaust it and produce an empty report.
 
 # Research Context
 Original Research Topic: {user_query}

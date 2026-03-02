@@ -1944,7 +1944,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // 5. Chat Interaction Core (Backend API with RAG)
-    async function sendMessage(authOverride = null, approvedPlanPayload = null, isResume = false) {
+    async function sendMessage(authOverride = null, approvedPlanPayload = null, isResume = false, resumeState = null) {
         if (isGenerating || !serverLink || !selectedModel) return;
 
         // If approvedPlanPayload is present, we are approving. Content might be empty or "Plan Approved".
@@ -1961,7 +1961,7 @@ document.addEventListener('DOMContentLoaded', () => {
         currentAbortController = new AbortController();
         updateUIState(true);
 
-        if (!isResume) {
+        if (!isResume && !resumeState) {
             textArea.value = '';
             textArea.style.height = 'auto';
 
@@ -2067,12 +2067,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 lastModelName: selectedModelName,
                 hasVision: Array.isArray(availableModels) ? !!availableModels.find(m => m.key === selectedModel)?.capabilities?.vision : false,
                 messages: messages,
-                chatId: isTemporaryChat ? null : currentChatId,
                 memoryMode: isMemoryMode,
                 deepResearchMode: isDeepResearchMode,
                 searchDepthMode: isDeepResearchMode ? searchDepthMode : null,
-                visionModel: isDeepResearchMode ? selectedVisionModel : null,
-                approvedPlan: approvedPlanPayload || null,
+                visionModel: selectedVisionModel,
+                approvedPlan: approvedPlanPayload || undefined,
+                resumeState: resumeState || undefined,
+                chatId: currentChatId,
+                lastModelName: serverModels.find(m => m.id === selectedModel)?.name || selectedModel,
                 stream: true,
                 stream_options: { include_usage: true },
             };
@@ -3008,6 +3010,30 @@ document.addEventListener('DOMContentLoaded', () => {
                     detailEl.textContent = truncated;
                 }
             }
+            return;
+        }
+
+        if (type === 'needs_retry') {
+            item.className = 'research-retry-indicator';
+            item.innerHTML = `
+                <div style="display: flex; flex-direction: column; gap: 0.75rem; padding: 1rem; border: 1px solid rgba(255,100,100,0.3); border-radius: 8px; background: rgba(255,50,50,0.05); margin-top: 0.5rem;">
+                    <div style="display: flex; align-items: center; gap: 0.5rem; color: #ff6b6b; font-weight: 600;">
+                        <span>⚠️</span> <span>${escapeHtml(data.message)}</span>
+                    </div>
+                    <button class="btn-primary" style="align-self: flex-start; padding: 0.5rem 1rem; font-size: 0.875rem;" data-retry-state="${escapeHtml(data.state)}">
+                        Resume Research from Failed State
+                    </button>
+                </div>
+            `;
+            const retryBtn = item.querySelector('button');
+            retryBtn.addEventListener('click', () => {
+                const rs = retryBtn.getAttribute('data-retry-state');
+                retryBtn.disabled = true;
+                retryBtn.textContent = 'Resuming...';
+                // Trigger sendMessage with resumeState
+                sendMessage(null, null, false, rs);
+            });
+            feed.appendChild(item);
             return;
         }
 
