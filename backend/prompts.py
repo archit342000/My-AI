@@ -114,11 +114,11 @@ You MUST output ONLY a valid JSON object. No markdown, no explanation, no other 
 - If `needs_search` is `false`, `preliminary_search` MUST be `null`.
 - The `topic_type` classification will directly influence how the Planner structures its plan, so be accurate.
 - When in doubt, err on the side of searching — a small upfront search cost is worth a much better research plan.
-- **CRITICAL FOR REASONING MODELS**: Your `<think>` block MUST be under 200 words. State 'Proceeding to generation' and close the thought block immediately. Your output budget is limited — excessive thinking will exhaust it and produce an empty section.
-  1. Identify if real-time data is needed (Yes/No & Why).
-  2. Identify the primary domain (News/Finance/Academic/General).
-  3. Formulate one exact query string for preliminary search (if any).
-  4. End thought block and generate JSON.
+- **CRITICAL FOR REASONING MODELS**: Your `<think>` block MUST be extremely succinct to prevent meandering and token exhaustion. It must strictly follow this highly abbreviated format:
+  1. "Real-time data: [Yes/No] - [Brief reason]"
+  2. "Domain: [News/Finance/Academic/General]"
+  3. "Query: [Exact query string]"
+  4. Immediately conclude the thought block and output the final JSON exactly as formatted above.
 """
 
 DEEP_RESEARCH_PLANNER_PROMPT = """
@@ -170,11 +170,10 @@ You MUST output ONLY the following structured XML sequence. No other text, no ma
 - Do NOT wrap in markdown code blocks (```xml).
 - Every `<step>` must be an actionable research task, not a vague instruction.
 - The `<topic>`, `<time_range>`, `<start_date>`, and `<end_date>` tags are OPTIONAL. Only include them when they genuinely improve the search for that step. Most steps will only need `<goal>`, `<description>`, and `<query>`.
-- **CRITICAL FOR REASONING MODELS**: Your `<think>` block MUST be under 200 words. State 'Proceeding to generation' and close the thought block immediately. Your output budget is limited — excessive thinking will exhaust it and produce an empty section.
-  1. List 5-10 sub-questions derived from the main topic.
-  2. Convert each sub-question into a concise search query.
-  3. Map them into a logical sequence (broad to specific).
-  4. End thought block and generate XML.
+- **CRITICAL FOR REASONING MODELS**: Your `<think>` block MUST be extremely succinct to prevent meandering and token exhaustion. It must strictly follow this highly abbreviated format:
+  1. "Sub-questions / Queries: [List ultra-brief sub-topics]"
+  2. "Sequence: [Order broad to specific]"
+  3. Immediately conclude the thought block and output the final XML structure.
 """
 
 DEEP_RESEARCH_REFLECTION_PROMPT = """# Research Step Analyst
@@ -226,11 +225,10 @@ If suggesting a plan modification (rare), use this format for plan_modification:
 - Each summary point should contain **specific facts, data, or insights**, not vague statements.
 - Only suggest `plan_modification` if findings genuinely necessitate changing a future step. Most of the time this should be `null`.
 - If the content fully covers the step goal with no gaps, return an empty `gaps` array.
-- **CRITICAL FOR REASONING MODELS**: Your `<think>` block MUST be under 200 words. State 'Proceeding to generation' and close the thought block immediately. Your output budget is limited — excessive thinking will exhaust it and produce an empty section.
-  1. State the step goal.
-  2. List the 2 most critical answers clearly missing from the provided text.
-  3. Formulate 1-2 follow-up queries to find them.
-  4. End thought block and generate JSON.
+- **CRITICAL FOR REASONING MODELS**: Your `<think>` block MUST be extremely succinct to prevent meandering and token exhaustion. It must strictly follow this highly abbreviated format:
+  1. "Missing Info: [1-2 brief bullet points]"
+  2. "Follow-up Qs: [1-2 concise search queries]"
+  3. Immediately conclude the thought block and output the final JSON exactly as formatted above.
 """
 
 DEEP_RESEARCH_RETRIEVAL_QUERY_PROMPT = """# Cross-Step Retrieval Strategist
@@ -266,11 +264,10 @@ Example:
 - Each query should be designed to retrieve content from MULTIPLE steps.
 - Do NOT duplicate the original step goals — those are already being used separately.
 - Generate at least 3 and at most 8 queries.
-- **CRITICAL FOR REASONING MODELS**: Your `<think>` block MUST be under 200 words. State 'Proceeding to generation' and close the thought block immediately. Your output budget is limited — excessive thinking will exhaust it and produce an empty section.
-  1. Identify 3-4 major themes present in the research summaries.
-  2. Identify intersections or missing connections between these themes.
-  3. Draft 3-8 query strings designed to retrieve data spanning these intersections.
-  4. End thought block and generate JSON.
+- **CRITICAL FOR REASONING MODELS**: Your `<think>` block MUST be extremely succinct to prevent meandering and token exhaustion. It must strictly follow this highly abbreviated format:
+  1. "Themes & Intersections: [Very brief list of topics spanned across steps]"
+  2. "Draft Queries: [Brainstorm 3-8 queries to connect them]"
+  3. Immediately conclude the thought block and output the final JSON array.
 """
 
 DEEP_RESEARCH_OUTLINE_PROMPT = """# Report Outline Architect
@@ -327,10 +324,10 @@ Output ONLY a valid JSON object. No markdown, no explanation.
 - For DEEP mode: aim for 10+ body sections with granular sub-topic coverage, 8000-20000 word final report.
 - The "Key Takeaways" section gets NO chunk IDs — it synthesizes from prior sections.
 - The "References" section gets NO chunk IDs — it will be auto-generated.
-- **CRITICAL FOR REASONING MODELS**: Your `<think>` block MUST be under 200 words. State 'Proceeding to generation' and close the thought block immediately. Your output budget is limited — excessive thinking will exhaust it and produce an empty section.
-  1. List the titles of the 4-10 body sections you will create.
-  2. Mentally assign high-level topics to each section. ABSOLUTELY DO NOT write out or try to map individual chunk IDs in your thought block.
-  3. End thought block and begin generating the JSON structure (you will map chunks to sections on the fly while writing the JSON).
+- **CRITICAL FOR REASONING MODELS**: Your `<think>` block MUST be extremely succinct to prevent meandering and token exhaustion. It must strictly follow this highly abbreviated format:
+  1. "Body Sections: [List 4-10 section titles]"
+  2. "Note: Chunk mapping will occur dynamically during JSON generation. Do not plan chunks here."
+  3. Immediately conclude the thought block and output the final JSON exactly as formatted above.
 """
 
 DEEP_RESEARCH_SECTION_WRITER_PROMPT = """# Section Writer
@@ -376,7 +373,10 @@ The following chunks are your ONLY citable sources. Use inline numerical citatio
 9. **No Boilerplate**: Start immediately with the section heading. No meta-commentary like "In this section we will..." or "Here is the section...".
 10. Be aware of what prior sections have already covered — avoid redundancy but feel free to reference or build upon prior points.
 11. **ABSOLUTELY NO BIBLIOGRAPHIES**: Do NOT include a 'References', 'Sources', or 'Citations' list at the end of your section. This will be generated globally at the end of the report. Only use inline `[N]` tags.
-12. **CRITICAL FOR REASONING MODELS**: Your `<think>` block MUST be under 200 words. Do not analyze the source chunks in your thoughts. State 'Proceeding to generation' and close the thought block immediately. Your output budget is limited — excessive thinking will exhaust it and produce an empty section.
+12. **CRITICAL FOR REASONING MODELS**: Your `<think>` block MUST be extremely succinct to prevent meandering and token exhaustion. It must strictly follow this highly abbreviated format:
+  1. "Selected Chunks: [Brief list of chunk IDs that apply to this section]"
+  2. "Section Strategy: [1-2 sentences on how to structure the text]"
+  3. Immediately conclude the thought block and proceed to generate the markdown text.
 
 {section_specific_instruction}
 """
@@ -404,7 +404,10 @@ You MUST synthesize the raw data provided at the end of this message. The data v
 - **No Boilerplate:** Start the report instantly with `# Your Report Title` and then `## Executive Summary`. Absolutely NO conversational filler, meta-commentary, or generic introductions/outros (e.g., "Here is the comprehensive report...").
 - **Mode:** {research_mode_label}.
 - **Depth Instruction:** {research_instruction}
-- **CRITICAL FOR REASONING MODELS**: Your `<think>` block MUST be under 200 words. State 'Proceeding to generation' and close the thought block immediately. Your output budget is limited — excessive thinking will exhaust it and produce an empty report.
+- **CRITICAL FOR REASONING MODELS**: Your `<think>` block MUST be extremely succinct to prevent meandering and token exhaustion. It must strictly follow this highly abbreviated format:
+  1. "Report Outline: [List 4-10 brief section titles]"
+  2. "Key themes: [1-2 sentences]"
+  3. Immediately conclude the thought block and proceed to generate the markdown text.
 
 # Research Context
 Original Research Topic: {user_query}
