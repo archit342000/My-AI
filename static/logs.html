@@ -656,11 +656,41 @@
 
             const reqStr = JSON.stringify(req, null, 2);
             let resStr = "";
+            let isJson = false;
+
             if (typeof res === 'string') {
-                try { resStr = JSON.stringify(JSON.parse(res), null, 2); }
-                catch { resStr = res; }
+                let cleanRes = res.trim();
+                let thinkBlock = '';
+                
+                // Extract <think> block if present
+                const thinkMatch = cleanRes.match(/(<think>[\s\S]*?<\/think>)/);
+                if (thinkMatch) {
+                    thinkBlock = thinkMatch[1] + '\n\n';
+                    cleanRes = cleanRes.replace(/(<think>[\s\S]*?<\/think>)/, '').trim();
+                }
+
+                // Remove markdown code block if present
+                if (cleanRes.startsWith('```json')) {
+                    cleanRes = cleanRes.replace(/^```json\n?/, '').replace(/```$/, '').trim();
+                } else if (cleanRes.startsWith('```')) {
+                    cleanRes = cleanRes.replace(/^```\n?/, '').replace(/```$/, '').trim();
+                }
+
+                try { 
+                    resStr = JSON.stringify(JSON.parse(cleanRes), null, 2); 
+                    if (thinkBlock) resStr = thinkBlock + resStr;
+                    isJson = true;
+                } catch { 
+                    try {
+                        resStr = JSON.stringify(JSON.parse(res), null, 2);
+                        isJson = true;
+                    } catch {
+                        resStr = res;
+                    }
+                }
             } else {
                 resStr = JSON.stringify(res, null, 2);
+                isJson = true;
             }
 
             detailView.innerHTML = `
@@ -690,7 +720,7 @@
                             <button class="copy-btn" onclick="copyText('res-code')">Copy</button>
                         </div>
                         <div class="pane-content">
-                            <pre><code id="res-code" class="${typeof res === 'object' ? 'language-json' : 'language-markdown'}">${escapeHtml(resStr)}</code></pre>
+                            <pre><code id="res-code" class="${isJson ? 'language-json' : 'language-markdown'}">${escapeHtml(resStr)}</code></pre>
                         </div>
                     </section>
                 </div>
