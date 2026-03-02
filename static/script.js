@@ -2074,7 +2074,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 approvedPlan: approvedPlanPayload || undefined,
                 resumeState: resumeState || undefined,
                 chatId: currentChatId,
-                lastModelName: serverModels.find(m => m.id === selectedModel)?.name || selectedModel,
                 stream: true,
                 stream_options: { include_usage: true },
             };
