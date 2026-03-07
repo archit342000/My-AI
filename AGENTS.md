@@ -57,7 +57,14 @@ If you are an AI agent working on this codebase, you must strictly adhere to the
 *   **Prevent File Truncation (Use Diffs)**: Never overwrite entire large files using full-file write tools, as this frequently leads to accidental truncation or missing code blocks. You **must** use targeted search-and-replace or merge diff tools to modify existing files.
 *   **Exact Diffs**: When using search-and-replace or merge diff tools, ensure the `<SEARCH>` block exactly matches the existing file contents line-for-line, including all whitespace and indentation.
 
-### 3.5 Versioning & Releases (SemVer)
+### 3.5 AI Cognitive Strategies & Debugging
+If you are an AI agent, you must employ these advanced cognitive strategies to prevent hallucination loops and maintain a pristine codebase state:
+*   **The "Sandbox First" Rule**: Do not modify core files like `app.py` or `backend/research.py` to test complex new logic (e.g., parsing LM Studio streams or web extraction). You **MUST** write a standalone sandbox script (e.g., `test_feature.py`), prove your logic works independently, and then integrate it into the core architecture.
+*   **Echo The Scope**: Before issuing the `submit` tool, you must explicitly reiterate the original user request in your reasoning blocks and verify that your changes solve exactly that request—no more, no less. Do not submit "bonus features" unless explicitly asked.
+*   **State Restoration Directives**: If your code or tests fail consecutively and you realize you have corrupted multiple files, **do not attempt to manually rewrite them from memory**. Immediately execute `git checkout -- .` or use the `reset_all` tool to return to a clean slate before formulating a completely new plan.
+*   **Log-Injection Debugging**: If you encounter a silent failure in a Flask backend route, do not guess the cause by staring at the code. You are **required** to inject aggressive, temporary `log_event()` statements into every step of the failing function, execute the request, read the `network_index.jsonl` output, and then remove the temporary logs before submission.
+
+### 3.6 Versioning & Releases (SemVer)
 *   This project strictly follows [Semantic Versioning 2.0.0](https://semver.org/).
 *   **Mandatory Updates**: When a PR introduces a functionality change, bug fix, or UI modification, you **must** bump the version globally across the project.
     *   This includes updating:
@@ -65,7 +72,7 @@ If you are an AI agent working on this codebase, you must strictly adhere to the
         2.  `changelog.md` (Add a new detailed block at the top under the new version header)
         3.  `README.md` (Update the displayed version badge/text)
 
-### 3.6 When to Update `AGENTS.md` (Strict AI Protocol)
+### 3.7 When to Update `AGENTS.md` (Strict AI Protocol)
 This document is a living contract and the ultimate source of truth for AI agents operating on this repository.
 
 **CRITICAL RULE FOR AI AGENTS:**

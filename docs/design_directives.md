@@ -266,7 +266,8 @@ Features extreme granular component logic for Research Agent steps:
 5. **No un-animated state changes** — every visibility/position change requires transitions (`opacity + transform`).
 6. **No `display: none` for animated elements** — use `opacity + visibility + transform` overlays.
 7. **No hardcoded RGB in JS** — always apply classes to trigger CSS custom property shifts.
-8. **No structural delays in transitions** — fallback to `requestAnimationFrame` scaling if needed.
+8. **No static inline structural styles in JS** — do not use JS to manually manipulate inline CSS for static structure or pre-defined animations. Always apply or toggle CSS classes (e.g., `.dark`). **Exception**: Dynamic, calculated values (like drag-to-resize pixel widths or fluid heights calculated via JS listeners) may use inline styles.
+9. **No structural delays in transitions** — fallback to `requestAnimationFrame` scaling if needed.
 
 ---
 
