@@ -21,6 +21,7 @@ def _strip_images_from_messages(messages):
     Returns a deep copy of messages with base64 image data replaced by a placeholder.
     """
     cleaned = []
+    if not messages: return cleaned
     for msg in messages:
         msg_copy = dict(msg)
         content = msg_copy.get('content')
@@ -41,20 +42,37 @@ def _strip_images_from_messages(messages):
 class TaskManager:
     def __init__(self):
         self.interrupted_tasks = set()
+        self.active_tasks = {} # chat_id -> asyncio.Task
     
     def stop_task(self, chat_id):
         self.interrupted_tasks.add(chat_id)
+        
+        # Proper asyncio cancellation
+        task = self.active_tasks.get(chat_id)
+        if task:
+            try:
+                loop = task.get_loop()
+                loop.call_soon_threadsafe(task.cancel)
+                log_event("task_stop_signal_sent", {"chat_id": chat_id})
+            except Exception as e:
+                log_event("task_stop_error", {"chat_id": chat_id, "error": str(e)})
+
         task_path = os.path.join(TASKS_DIR, f"{chat_id}.json")
         if os.path.exists(task_path):
-            with open(task_path, "r") as f:
-                task = json.load(f)
-            task["status"] = "interrupted"
-            with open(task_path, "w") as f:
-                json.dump(task, f)
+            try:
+                with open(task_path, "r") as f:
+                    task_data = json.load(f)
+                task_data["status"] = "interrupted"
+                with open(task_path, "w") as f:
+                    json.dump(task_data, f)
+            except:
+                pass
 
     def start_chat_task(self, chat_id, execute_fn, **kwargs):
         """Generic starter for any chat task (normal or deep research)."""
         cache_system.initialize_chat(chat_id)
+        if chat_id in self.interrupted_tasks:
+            self.interrupted_tasks.remove(chat_id)
 
         # Filter kwargs for persistent JSON storage (exclude complex objects like 'rag')
         persistent_info = {
@@ -64,7 +82,7 @@ class TaskManager:
         }
 
         # Explicitly copy serializable fields we care about
-        for key in ['model', 'messages', 'approved_plan', 'search_depth_mode', 'vision_model', 'mode', 'memory_mode', 'has_vision', 'resume_state', 'model_name']:
+        for key in ['model', 'messages', 'approved_plan', 'search_depth_mode', 'vision_model', 'mode', 'memory_mode', 'has_vision', 'resume_state', 'model_name', 'api_url']:
             if key in kwargs:
                 if key == 'messages':
                     persistent_info[key] = _strip_images_from_messages(kwargs[key])
@@ -89,7 +107,7 @@ class TaskManager:
             approved_plan=approved_plan,
             search_depth_mode=search_depth_mode,
             vision_model=vision_model,
-            mode="deep_research",
+            mode="research",
             **kwargs
         )
         
@@ -103,130 +121,114 @@ class TaskManager:
         
         # Build kwargs for execution function
         fn_kwargs = {
-            "api_url": lm_studio_url,
+            "api_url": task_info.get("api_url", lm_studio_url),
             "model": task_info.get("model"),
             "messages": task_info.get("messages"),
             "chat_id": chat_id
         }
 
-        # Deep Research params
-        if "approved_plan" in task_info:
-            fn_kwargs["approved_plan"] = task_info["approved_plan"]
-            fn_kwargs["search_depth_mode"] = task_info.get("search_depth_mode")
-            fn_kwargs["vision_model"] = task_info.get("vision_model")
-            if "model_name" in task_info:
-                fn_kwargs["model_name"] = task_info["model_name"]
-            if "resume_state" in task_info:
-                fn_kwargs["resume_state"] = task_info["resume_state"]
+        import inspect
+        sig = inspect.signature(execute_fn)
+        valid_kwargs = [p for p in sig.parameters]
 
-        # Normal Chat params (extracted from kwargs in start_chat_task)
-        if "rag" in task_info:
-             # FIX: generate_chat_response expects 'extra_body', not 'body_params'
-             fn_kwargs["extra_body"] = task_info.get("body_params", {})
-             fn_kwargs["rag"] = task_info.get("rag")
-             fn_kwargs["memory_mode"] = task_info.get("memory_mode")
-             fn_kwargs["has_vision"] = task_info.get("has_vision")
+        # Handle all task_info keys that should be passed as kwargs
+        for key in ['approved_plan', 'search_depth_mode', 'vision_model', 'model_name', 'resume_state', 'rag_engine', 'extra_body', 'rag', 'memory_mode', 'has_vision']:
+            if key in task_info and key in valid_kwargs:
+                fn_kwargs[key] = task_info[key]
+
+        async def consume():
+            try:
+                # Execution function call (may be sync or async generator)
+                if inspect.iscoroutinefunction(execute_fn):
+                    generator = await execute_fn(**fn_kwargs)
+                else:
+                    generator = execute_fn(**fn_kwargs)
+                
+                # Handle both sync (standard chat) and async (deep research) generators
+                if inspect.isasyncgen(generator):
+                    async for chunk in generator:
+                        if chat_id in self.interrupted_tasks:
+                            raise InterruptedError("Task stopped")
+                        cache_system.append_chunk(chat_id, chunk)
+                else:
+                    for chunk in generator:
+                        if chat_id in self.interrupted_tasks:
+                            raise InterruptedError("Task stopped")
+                        cache_system.append_chunk(chat_id, chunk)
+                        await asyncio.sleep(0) # Allow cancellation check
+                    
+                task_info["status"] = "completed"
+                final_content = cache_system.mark_completed(chat_id, cleanup=False)
+                
+                if final_content:
+                     add_message(chat_id, 'assistant', final_content, model=task_info.get("model"))
+                     if task_info.get("mode") != "research" and task_info.get("memory_mode"):
+                        try:
+                            msgs = task_info.get("messages", [])
+                            user_content = ""
+                            for m in reversed(msgs):
+                                if m['role'] == 'user':
+                                    c = m.get('content', '')
+                                    if isinstance(c, str): user_content = c
+                                    elif isinstance(c, list):
+                                        user_content = next((p['text'] for p in c if p.get('type') == 'text'), "")
+                                    break
+
+                            if fn_kwargs.get("rag"):
+                                clean_content = final_content
+                                if "<think>" in final_content:
+                                    import re
+                                    clean_content = re.sub(r'<think>.*?</think>', '', final_content, flags=re.DOTALL).strip()
+                                if user_content and clean_content:
+                                    fn_kwargs["rag"].add_conversation_turn(user_content, clean_content, chat_id)
+                        except Exception as e:
+                            log_event("rag_update_error", {"error": str(e)})
+
+            except (InterruptedError, asyncio.CancelledError):
+                log_event("task_interrupted", {"chat_id": chat_id})
+                task_info["status"] = "interrupted"
+                task_info["error"] = "Task stopped by user."
+
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                err_msg = json.dumps({"error": str(e)})
+                cache_system.append_chunk(chat_id, f"data: {err_msg}\n\n")
+                cache_system.append_chunk(chat_id, "[[ERROR]]")
+                task_info["status"] = "failed"
+                task_info["error"] = str(e)
+                
+                # Try to recover partial content/reasoning to preserve activities
+                final_content = cache_system.mark_completed(chat_id, cleanup=False)
+                if final_content:
+                    add_message(chat_id, 'assistant', final_content + f"\n\n**Process interrupted by error:** {str(e)}", model=task_info.get("model"))
+                else:
+                    add_message(chat_id, 'assistant', f"Error: {str(e)}", model=task_info.get("model"))
+
+            finally:
+                cache_system.cleanup_chat(chat_id)
+                if fn_kwargs.get("rag") and hasattr(fn_kwargs["rag"], "cleanup_chat"):
+                    try: fn_kwargs["rag"].cleanup_chat(chat_id)
+                    except: pass
+                
+                # Persist final state
+                save_keys = ['chat_id', 'status', 'timestamp', 'model', 'messages', 'approved_plan', 
+                           'search_depth_mode', 'vision_model', 'mode', 'memory_mode', 'has_vision', 
+                           'resume_state', 'model_name', 'api_url', 'error']
+                persistent_info = {k: v for k, v in task_info.items() if k in save_keys}
+                try:
+                    with open(os.path.join(TASKS_DIR, f"{chat_id}.json"), "w") as f:
+                        json.dump(persistent_info, f)
+                except: pass
 
         try:
-            # Sync/Async Generator Handling
-            generator = execute_fn(**fn_kwargs)
-            
-            async def consume():
-                try:
-                    # Handle both sync (standard chat) and async (deep research) generators
-                    if inspect.isasyncgen(generator):
-                        async for chunk in generator:
-                            if chat_id in self.interrupted_tasks:
-                                raise InterruptedError("Task stopped")
-                            cache_system.append_chunk(chat_id, chunk)
-                    else:
-                        # Wrap synchronous generator in thread executor to avoid blocking loop
-                        # Or simpler: iterate synchronously since we are already in a thread dedicated to this task
-                        for chunk in generator:
-                            if chat_id in self.interrupted_tasks:
-                                raise InterruptedError("Task stopped")
-                            cache_system.append_chunk(chat_id, chunk)
-                            # Yield control briefly to allow event loop to process other things if needed
-                            # (though this is the only task in this loop/thread)
-                            await asyncio.sleep(0)
-                        
-                    task_info["status"] = "completed"
-                    
-                    # Mark completed returns content but keeps WAL until we are done
-                    final_content = cache_system.mark_completed(chat_id, cleanup=False)
-                    
-                    if final_content:
-                         add_message(chat_id, 'assistant', final_content, model=task_info.get("model"))
-
-                         if task_info.get("mode") != "deep_research" and task_info.get("memory_mode"):
-                            try:
-                                msgs = task_info.get("messages", [])
-                                user_content = ""
-                                for m in reversed(msgs):
-                                    if m['role'] == 'user':
-                                        c = m.get('content', '')
-                                        if isinstance(c, str): user_content = c
-                                        elif isinstance(c, list):
-                                            user_content = next((p['text'] for p in c if p.get('type') == 'text'), "")
-                                        break
-
-                                if fn_kwargs.get("rag"):
-                                    clean_content = final_content
-                                    if "<think>" in final_content:
-                                        import re
-                                        clean_content = re.sub(r'<think>.*?</think>', '', final_content, flags=re.DOTALL).strip()
-
-                                    if user_content and clean_content:
-                                        fn_kwargs["rag"].add_conversation_turn(user_content, clean_content, chat_id)
-                            except Exception as e:
-                                log_event("rag_update_error", {"error": str(e)})
-
-                    # Now clean up cache/WAL and RAG
-                    cache_system.cleanup_chat(chat_id)
-                    if fn_kwargs.get("rag") and hasattr(fn_kwargs["rag"], "cleanup_chat"):
-                        try: fn_kwargs["rag"].cleanup_chat(chat_id)
-                        except: pass
-
-                    # Update status on disk
-                    # Filter again to avoid saving runtime objects if task_info was modified
-                    persistent_info = {k: v for k, v in task_info.items() if k not in ['rag', 'body_params']}
-                    with open(os.path.join(TASKS_DIR, f"{chat_id}.json"), "w") as f:
-                        json.dump(persistent_info, f)
-
-                except Exception as e:
-                    import traceback
-                    traceback.print_exc()
-                    err_msg = json.dumps({"error": str(e)})
-                    cache_system.append_chunk(chat_id, f"data: {err_msg}\n\n")
-                    cache_system.append_chunk(chat_id, "[[ERROR]]")
-                    
-                    task_info["status"] = "failed"
-                    task_info["error"] = str(e)
-                    
-                    persistent_info = {k: v for k, v in task_info.items() if k not in ['rag', 'body_params']}
-                    with open(os.path.join(TASKS_DIR, f"{chat_id}.json"), "w") as f:
-                        json.dump(persistent_info, f)
-
-                    add_message(chat_id, 'assistant', f"Error: {str(e)}", model=task_info.get("model"))
-                    cache_system.cleanup_chat(chat_id)
-                    if fn_kwargs.get("rag") and hasattr(fn_kwargs["rag"], "cleanup_chat"):
-                        try: fn_kwargs["rag"].cleanup_chat(chat_id)
-                        except: pass
-
-                finally:
-                    if chat_id in self.interrupted_tasks:
-                        self.interrupted_tasks.remove(chat_id)
-
-            loop.run_until_complete(consume())
-        except Exception as e:
-             err_msg = json.dumps({"error": str(e)})
-             cache_system.append_chunk(chat_id, f"data: {err_msg}\n\n")
-             cache_system.append_chunk(chat_id, "[[ERROR]]")
-             cache_system.cleanup_chat(chat_id)
-             if fn_kwargs.get("rag") and hasattr(fn_kwargs["rag"], "cleanup_chat"):
-                 try: fn_kwargs["rag"].cleanup_chat(chat_id)
-                 except: pass
+            main_task = loop.create_task(consume())
+            self.active_tasks[chat_id] = main_task
+            loop.run_until_complete(main_task)
+        except Exception:
+            pass 
         finally:
+            self.active_tasks.pop(chat_id, None)
             loop.close()
 
     def is_task_running(self, chat_id):
@@ -234,12 +236,17 @@ class TaskManager:
             return True
         task_path = os.path.join(TASKS_DIR, f"{chat_id}.json")
         if os.path.exists(task_path):
-            with open(task_path, "r") as f:
-                task = json.load(f)
-            return task.get("status") == "running"
+            try:
+                with open(task_path, "r") as f:
+                    task = json.load(f)
+                return task.get("status") == "running"
+            except (json.JSONDecodeError, ValueError):
+                log_event("task_file_corrupted", {"chat_id": chat_id})
+                return False
         return False
 
-    def recover_tasks(self, execute_fn):
+    def recover_tasks(self):
+        if not os.path.exists(TASKS_DIR): return
         for filename in os.listdir(TASKS_DIR):
             if filename.endswith(".json"):
                 filepath = os.path.join(TASKS_DIR, filename)
@@ -248,12 +255,10 @@ class TaskManager:
                         task = json.load(f)
                     if task.get("status") == "running":
                         chat_id = task.get('chat_id', filename.replace('.json', ''))
-                        
                         task["status"] = "interrupted"
                         task["error"] = "Server restarted."
                         with open(filepath, "w") as f:
                             json.dump(task, f)
-                        
                         add_message(chat_id, 'assistant', "System: Task interrupted by server restart.")
                 except:
                     pass

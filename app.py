@@ -10,9 +10,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from backend import config
-from backend.rag import MemoryRAG, DeepResearchRAG
+from backend.rag import MemoryRAG, ResearchRAG
 from backend.storage import init_db, get_all_chats, get_chat, save_chat, add_message, clear_messages, delete_chat, delete_all_chats, rename_chat
-from backend.agents.deep_research import generate_deep_research_response
+from backend.agents.research import generate_research_response
 from backend.agents.chat import generate_chat_response
 from backend.task_manager import task_manager
 from backend.cache_system import cache_system
@@ -24,8 +24,8 @@ app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 # Initialize components with config
 init_db()
 rag = MemoryRAG(persist_path=config.CHROMA_PATH, api_url=config.LM_STUDIO_URL, embedding_model=config.EMBEDDING_MODEL)
-deep_research_rag = DeepResearchRAG(persist_path=config.CHROMA_PATH, api_url=config.LM_STUDIO_URL, embedding_model=config.EMBEDDING_MODEL)
-task_manager.recover_tasks(generate_deep_research_response)
+research_rag = ResearchRAG(persist_path=config.CHROMA_PATH, api_url=config.LM_STUDIO_URL, embedding_model=config.EMBEDDING_MODEL)
+task_manager.recover_tasks()
 
 @app.route('/')
 @app.route('/chat/<chat_id>')
@@ -47,7 +47,7 @@ def clear_all_chats():
     all_chats = get_all_chats()
     delete_all_chats()
     for chat in all_chats:
-        deep_research_rag.cleanup_chat(chat.get('id', ''))
+        research_rag.cleanup_chat(chat.get('id', ''))
     return jsonify({"success": True})
 
 @app.route('/api/chats/<chat_id>', methods=['GET'])
@@ -66,7 +66,7 @@ def save_chat_endpoint():
     title = data.get('title', 'New Chat')
     messages = data.get('messages')
     memory_mode = data.get('memory_mode', False)
-    deep_research_mode = data.get('deep_research_mode', False)
+    research_mode = data.get('research_mode', False)
     
     if not chat_id or '..' in chat_id or '/' in chat_id or '\\' in chat_id:
         return jsonify({"error": "Invalid or missing chat_id"}), 400
@@ -76,9 +76,10 @@ def save_chat_endpoint():
         title, 
         time.time(), 
         memory_mode, 
-        deep_research_mode, 
+        research_mode, 
         is_vision=data.get('is_vision', False),
-        last_model=data.get('last_model')
+        last_model=data.get('last_model'),
+        vision_model=data.get('vision_model')
     )
     
     if messages is not None:
@@ -93,14 +94,29 @@ def patch_chat_endpoint(chat_id):
     data = request.json
     new_title = data.get('title')
     last_model = data.get('last_model')
+    vision_model = data.get('vision_model')
     
+    existing_chat = get_chat(chat_id)
+    if not existing_chat:
+        return jsonify({"error": "Chat not found"}), 404
+        
+    # Block model changes in Research
+    if existing_chat.get('research_mode'):
+        if last_model and last_model != existing_chat.get('last_model'):
+             return jsonify({"error": "Model cannot be changed in Research"}), 400
+        if vision_model and vision_model != existing_chat.get('vision_model'):
+             return jsonify({"error": "Vision model cannot be changed in Research"}), 400
+             
     if new_title:
         rename_chat(chat_id, new_title)
     if last_model:
         from backend.storage import update_chat_model
         update_chat_model(chat_id, last_model)
+    if vision_model:
+        from backend.storage import update_chat_vision_model
+        update_chat_vision_model(chat_id, vision_model)
         
-    if not new_title and not last_model:
+    if not new_title and not last_model and not vision_model:
         return jsonify({"error": "Missing fields"}), 400
         
     return jsonify({"success": True})
@@ -108,7 +124,7 @@ def patch_chat_endpoint(chat_id):
 @app.route('/api/chats/<chat_id>', methods=['DELETE'])
 def remove_chat(chat_id):
     delete_chat(chat_id)
-    deep_research_rag.cleanup_chat(chat_id)
+    research_rag.cleanup_chat(chat_id)
     return jsonify({"success": True})
 
 @app.route('/api/chats/<chat_id>/stop', methods=['POST'])
@@ -118,9 +134,35 @@ def stop_chat_endpoint(chat_id):
     delete_last_turn(chat_id)
     return jsonify({"success": True})
 
+@app.route('/api/chats/<chat_id>/discard', methods=['POST'])
+def discard_research_endpoint(chat_id):
+    """
+    Killed a research task, wipe state files, clean RAG, 
+    and reset chat to just the first user message.
+    """
+    # 1. Stop the task if running
+    task_manager.stop_task(chat_id)
+    
+    # 2. Cleanup state files
+    import re
+    safe_chat_id = re.sub(r'[^a-zA-Z0-9_\-]', '', str(chat_id))
+    state_path = f"./backend/tasks/{safe_chat_id}_state.json"
+    task_path = f"./backend/tasks/{chat_id}.json"
+    if os.path.exists(state_path): os.remove(state_path)
+    if os.path.exists(task_path): os.remove(task_path)
+    
+    # 3. Cleanup RAG and active cache
+    research_rag.cleanup_chat(chat_id)
+    cache_system.cleanup_chat(chat_id)
+    
+    # 4. Cleanup messages: Wipe and allow restart
+    clear_messages(chat_id)
+        
+    return jsonify({"success": True})
+
 @app.route('/api/config', methods=['POST'])
 def update_config():
-    global rag, deep_research_rag
+    global rag, research_rag
     data = request.json
     
     updated = False
@@ -131,7 +173,7 @@ def update_config():
     if updated:
         # Re-initialize BOTH RAG engines with the new URL
         rag = MemoryRAG(persist_path=config.CHROMA_PATH, api_url=config.LM_STUDIO_URL, embedding_model=config.EMBEDDING_MODEL)
-        deep_research_rag = DeepResearchRAG(persist_path=config.CHROMA_PATH, api_url=config.LM_STUDIO_URL, embedding_model=config.EMBEDDING_MODEL)
+        research_rag = ResearchRAG(persist_path=config.CHROMA_PATH, api_url=config.LM_STUDIO_URL, embedding_model=config.EMBEDDING_MODEL)
         log_event("config_updated", {"url": config.LM_STUDIO_URL})
 
     return jsonify({"success": True, "url": config.LM_STUDIO_URL})
@@ -161,14 +203,15 @@ def chat_completions():
         model = data.get('model', 'local-model')
         chat_id = data.get('chatId')
         memory_mode = data.get('memoryMode', False)
-        deep_research_mode = data.get('deepResearchMode', False)
+        research_mode = data.get('researchMode', False)
         search_depth_mode = data.get('searchDepthMode', 'regular')
         vision_model = data.get('visionModel')
         approved_plan = data.get('approvedPlan')
         resume_state = data.get('resumeState')
         last_model_name = data.get('lastModelName', model)
+        api_url = data.get('apiUrl', config.LM_STUDIO_URL)
 
-        extra_body = {k: v for k, v in data.items() if k not in ['messages', 'chatId', 'memoryMode', 'deepResearchMode', 'searchDepthMode', 'visionModel', 'stream', 'approvedPlan', 'resumeState', 'lastModelName', 'hasVision']}
+        extra_body = {k: v for k, v in data.items() if k not in ['messages', 'chatId', 'memoryMode', 'researchMode', 'searchDepthMode', 'visionModel', 'stream', 'approvedPlan', 'resumeState', 'lastModelName', 'hasVision']}
 
         if not chat_id or '..' in chat_id or '/' in chat_id or '\\' in chat_id:
              return jsonify({"error": "Invalid or missing chatId"}), 400
@@ -186,14 +229,34 @@ def chat_completions():
             user_msg = messages[-1]
             title = user_msg['content']
             
-            # (Vision/Title logic kept same)
-            if not deep_research_mode:
+            existing_chat = get_chat(chat_id)
+            
+            # --- MODEL LOCKING FOR RESEARCH ---
+            # Once a Research conversation starts, the models should not be allowed to change.
+            if existing_chat and existing_chat.get('research_mode'):
+                prev_model = existing_chat.get('last_model')
+                prev_vision = existing_chat.get('vision_model')
+                
+                # Check main model
+                if prev_model and last_model_name != prev_model:
+                    return jsonify({
+                        "error": f"Model is locked for this Research conversation. (Locked: {prev_model}, Requested: {last_model_name})",
+                        "locked_model": prev_model
+                    }), 400
+                
+                # Check vision model
+                if prev_vision and vision_model != prev_vision:
+                    return jsonify({
+                        "error": f"Vision model is locked for this Research conversation. (Locked: {prev_vision}, Requested: {vision_model})",
+                        "locked_vision": prev_vision
+                    }), 400
+
+            if not research_mode:
                 has_image_in_messages = any(
                     isinstance(msg.get('content'), list) and any(
                         isinstance(part, dict) and part.get('type') == 'image_url' for part in msg['content']
                     ) for msg in messages
                 )
-                existing_chat = get_chat(chat_id)
                 current_is_vision = existing_chat.get('is_vision', 0) if existing_chat else 0
                 new_is_vision = 1 if (has_image_in_messages or current_is_vision) else 0
             else:
@@ -208,30 +271,38 @@ def chat_completions():
                 title,
                 time.time(),
                 memory_mode,
-                deep_research_mode,
+                research_mode,
                 is_vision=new_is_vision,
-                last_model=last_model_name
+                last_model=last_model_name,
+                vision_model=vision_model
             )
             add_message(chat_id, 'user', user_msg['content'])
 
         # === 3. Enqueue Background Task ===
-        if deep_research_mode:
+        if research_mode:
+            # Sync engineering URL with the request
+            if hasattr(research_rag.embedding_fn, 'api_url'):
+                research_rag.embedding_fn.api_url = api_url
+            
             task_manager.start_research_task(
-                model, messages, approved_plan, chat_id, search_depth_mode, vision_model, generate_deep_research_response,
-                model_name=last_model_name, resume_state=resume_state
+                model, messages, approved_plan, chat_id, search_depth_mode, vision_model, generate_research_response,
+                model_name=last_model_name, resume_state=resume_state, rag_engine=research_rag, rag=rag, api_url=api_url
             )
         else:
             # Normal Chat Task
+            if hasattr(rag.embedding_fn, 'api_url'):
+                rag.embedding_fn.api_url = api_url
             has_vision = data.get('hasVision', False)
             task_manager.start_chat_task(
                 chat_id,
                 generate_chat_response,
                 model=model,
                 messages=messages,
-                body_params=extra_body,
+                extra_body=extra_body,
                 rag=rag,
                 memory_mode=memory_mode,
-                has_vision=has_vision
+                has_vision=has_vision,
+                api_url=api_url
             )
 
         # === 4. Return Stream Subscription ===

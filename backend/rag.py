@@ -6,6 +6,7 @@ import requests
 import hashlib
 import time
 from backend.logger import log_event, log_llm_call
+from backend import config
 
 
 def _cosine_similarity(v1, v2):
@@ -54,7 +55,7 @@ class LMStudioEmbeddingFunction(embedding_functions.EmbeddingFunction):
                 url, 
                 json=payload, 
                 headers={"Content-Type": "application/json"},
-                timeout=60
+                timeout=config.TIMEOUT_LLM_BLOCKING or 60
             )
             
             if response.status_code != 200:
@@ -164,7 +165,7 @@ class MemoryRAG:
         clean = "".join(c for c in text.strip().lower() if c.isalnum() or c.isspace())
         return clean in self.TRIVIAL_MESSAGES or len(clean) < 5
 
-    def _chunk_text(self, text, max_chars=2200):
+    def _chunk_text(self, text, max_chars=config.RAG_CHUNK_MAX_CHARS):
         """Split long text into chunks of ~600-800 tokens (~2200 chars).
         Splits on paragraph boundaries first, then sentence boundaries."""
         if len(text) <= max_chars:
@@ -289,7 +290,7 @@ class MemoryRAG:
 
         # 4. Fetch Large Candidate Pool
         # We fetch 5x results to re-rank semantically and chronologically
-        FETCH_K = n_results * 5
+        FETCH_K = n_results * config.RAG_FETCH_MULTIPLIER
         
         # We request 'embeddings' to do manual cosine similarity
         results = self.collection.query(
@@ -311,13 +312,13 @@ class MemoryRAG:
         # 6. Scoring & Re-Ranking
         scored_results = []
         current_time = time.time()
-        DECAY_RATE = 0.10
+        DECAY_RATE = config.RAG_DECAY_RATE
         
         # Heuristic Threshold for Cosine Similarity (Range -1 to 1)
         # 1.0 = identical, 0.0 = orthogonal
         # With cosine distance metric properly set, Qwen model scores are well-
         # calibrated: >0.7 strong match, 0.5-0.7 moderate, <0.5 weak.
-        MIN_SEMANTIC_SCORE = 0.50
+        MIN_SEMANTIC_SCORE = config.RAG_MIN_SEMANTIC_SCORE
 
         for doc, meta, emb in zip(documents, metadatas, embeddings):
             # A. Semantic Score (High is Good)
@@ -333,7 +334,7 @@ class MemoryRAG:
             # Handle potential non-numeric timestamp
             if timestamp == 0: 
                  try: timestamp = float(meta.get('timestamp'))
-                 except: timestamp = 0
+                 except Exception: timestamp = 0
 
             age_seconds = current_time - timestamp
             age_hours = age_seconds / 3600
@@ -379,9 +380,9 @@ class MemoryRAG:
             print(f"Error resetting memory: {e}")
             return False
 
-class DeepResearchRAG:
-    """Ephemeral per-chat storage for Deep Research passes."""
-    def __init__(self, persist_path="./backend/chroma_db", api_url="http://localhost:1234", embedding_model="text-embedding-embeddinggemma-300m", dedup_threshold=0.90):
+class ResearchRAG:
+    """Ephemeral per-chat storage for Research passes."""
+    def __init__(self, persist_path="./backend/chroma_db", api_url="http://localhost:1234", embedding_model="text-embedding-embeddinggemma-300m", dedup_threshold=config.RAG_DEDUP_THRESHOLD):
         self.client = chromadb.PersistentClient(path=persist_path)
         self.embedding_fn = LMStudioEmbeddingFunction(
             api_url=api_url,
@@ -389,10 +390,10 @@ class DeepResearchRAG:
         )
         self.dedup_threshold = dedup_threshold
         self.collection = MemoryRAG._ensure_cosine_collection(
-            self.client, "deep_research_store", self.embedding_fn
+            self.client, "research_store", self.embedding_fn
         )
 
-    def _chunk_text(self, text, max_chars=2200):
+    def _chunk_text(self, text, max_chars=config.RAG_CHUNK_MAX_CHARS):
         """Split text into smaller chunks for more granular deduplication (~600 tokens)."""
         if len(text) <= max_chars:
             return [text]
@@ -421,7 +422,7 @@ class DeepResearchRAG:
             chunks.append(current_chunk.strip())
         return chunks if chunks else [text]
 
-    def store_chunk(self, chat_id, step_index, url, full_text):
+    def store_chunk(self, chat_id, step_index, url, full_text, published_date=None):
         if not full_text or len(full_text.strip()) < 10:
             return False, 0
             
@@ -484,7 +485,8 @@ class DeepResearchRAG:
                         "chat_id": chat_id,
                         "step_index": step_index,
                         "url": url,
-                        "timestamp": time.time()
+                        "timestamp": time.time(),
+                        "published_date": published_date or ""
                     }
                     self.collection.upsert(
                         documents=[chunk_text.strip()],
@@ -497,14 +499,18 @@ class DeepResearchRAG:
                     
             except Exception as e:
                 # Minimal logging for background errors
-                print(f"[DeepResearchRAG] Store error: {e}")
+                print(f"[ResearchRAG] Store error: {e}")
                 continue
 
         return any_success, total_tokens
             
-    def get_all_chunks(self, chat_id):
+    def get_all_chunks(self, chat_id, limit=config.RAG_RETRIEVAL_LIMIT):
+        """Retrieve all stored chunks for a session, capped at a safe limit."""
         try:
-            results = self.collection.get(where={"chat_id": chat_id})
+            results = self.collection.get(
+                where={"chat_id": chat_id},
+                limit=limit
+            )
             if not results or not results.get('documents'):
                 return []
             
@@ -513,11 +519,15 @@ class DeepResearchRAG:
                 chunks.append({
                     "text": doc,
                     "url": meta.get("url", ""),
-                    "step_index": meta.get("step_index", 0)
+                    "step_index": meta.get("step_index", 0),
+                    "timestamp": meta.get("timestamp", 0)
                 })
+            
+            # Sort by step_index then timestamp for logical narrative flow
+            chunks.sort(key=lambda x: (x['step_index'], x['timestamp']))
             return chunks
         except Exception as e:
-            print(f"[DeepResearchRAG] Retrieval error: {e}")
+            print(f"[ResearchRAG] Retrieval error: {e}")
             return []
 
     def get_step_chunks(self, chat_id, step_index):
@@ -539,10 +549,10 @@ class DeepResearchRAG:
                 })
             return chunks
         except Exception as e:
-            print(f"[DeepResearchRAG] Step retrieval error: {e}")
+            print(f"[ResearchRAG] Step retrieval error: {e}")
             return []
 
-    def retrieve_for_report(self, chat_id, queries, max_tokens=400000):
+    def retrieve_for_report(self, chat_id, queries, max_tokens=config.RESEARCH_MAX_TOKENS_RAG_CONTEXT):
         """Multi-query semantic retrieval with dynamic per-query token budgeting.
         
         Args:
@@ -619,14 +629,16 @@ class DeepResearchRAG:
                         "text": doc,
                         "url": meta.get("url", ""),
                         "step_index": meta.get("step_index", 0),
-                        "relevance": relevance
+                        "relevance": relevance,
+                        "timestamp": meta.get("timestamp", 0),
+                        "published_date": meta.get("published_date", "")
                     })
                     seen_doc_ids.add(doc_hash)
                     query_tokens += chunk_tokens
                     total_tokens += chunk_tokens
 
             except Exception as e:
-                print(f"[DeepResearchRAG] Retrieval error for query '{query_text[:50]}': {e}")
+                print(f"[ResearchRAG] Retrieval error for query '{query_text[:50]}': {e}")
                 continue
 
         # Sort by relevance descending for optimal reporter context ordering
@@ -639,8 +651,8 @@ class DeepResearchRAG:
             results = self.collection.get(where={"chat_id": chat_id})
             if results and results.get('ids'):
                 self.collection.delete(ids=results['ids'])
-                print(f"[DeepResearchRAG] Cleaned up {len(results['ids'])} chunks for chat {chat_id}")
+                print(f"[ResearchRAG] Cleaned up {len(results['ids'])} chunks for chat {chat_id}")
                 return True
         except Exception as e:
-            print(f"[DeepResearchRAG] Cleanup error: {e}")
+            print(f"[ResearchRAG] Cleanup error: {e}")
         return False

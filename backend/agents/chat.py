@@ -12,7 +12,7 @@ from backend.validation import (
 )
 
 
-def _stream_and_accumulate(api_url, model, payload):
+async def _stream_and_accumulate(api_url, model, payload):
     """
     Streams a chat completion call, yielding (sse_chunk_string, final_state) tuples.
     
@@ -24,7 +24,7 @@ def _stream_and_accumulate(api_url, model, payload):
     full_content = ""
     full_reasoning = ""
     
-    for chunk_str in stream_chat_completion(api_url, payload):
+    async for chunk_str in stream_chat_completion(api_url, payload):
         try:
             chunk = json.loads(chunk_str[6:])
             delta = chunk['choices'][0]['delta']
@@ -85,7 +85,7 @@ def _stream_corrected_content(model, fixed_content, fixed_reasoning=""):
         yield f"data: {create_chunk(model, content=chunk_text)}\n\n"
 
 
-def generate_chat_response(api_url, model, messages, extra_body, rag=None, memory_mode=False, chat_id=None, has_vision=False):
+async def generate_chat_response(api_url, model, messages, extra_body, rag=None, memory_mode=False, chat_id=None, has_vision=False):
     """
     Handles standard chat interaction with validation and self-healing.
     
@@ -147,7 +147,7 @@ def generate_chat_response(api_url, model, messages, extra_body, rag=None, memor
     tool_calls = []
     tool_flow_prefix = ""  # Preserved for redact reconstruction
 
-    for sse_chunk, final_state in _stream_and_accumulate(api_url, model, payload):
+    async for sse_chunk, final_state in _stream_and_accumulate(api_url, model, payload):
         if final_state is not None:
             current_content, current_reasoning, tool_calls = final_state
         elif sse_chunk is not None:
@@ -167,7 +167,7 @@ def generate_chat_response(api_url, model, messages, extra_body, rag=None, memor
         # Reconstruct full assistant message for history (with tags if reasoning exists)
         assistant_content_for_history = current_content
         if current_reasoning:
-            assistant_content_for_history = f"<think>{current_reasoning}</think>\n{current_content}"
+            assistant_content_for_history = f"<think>\n{current_reasoning}\n</think>\n{current_content}"
 
         # Build LLM history with the closed content
         messages_to_send.append({
@@ -298,18 +298,17 @@ def generate_chat_response(api_url, model, messages, extra_body, rag=None, memor
         tool_flow_prefix = full_content
         reasoning_flow_prefix = full_reasoning
 
-        # --- 4e. Second LLM call ---
+        # --- 4e. Send follow-up request ---
         if has_real_tools:
-            final_payload = {
-                "model": model,
-                "messages": list(messages_to_send),
-                "tools": tools if tools else None,
-                "tool_choice": "auto" if tools else None,
-                "stream": True, 
-                **extra_body
-            }
+            payload["messages"] = list(messages_to_send)
+            del payload["tools"]
+            del payload["tool_choice"]
+            
+            current_content = ""
+            current_reasoning = ""
+            tool_calls = []
 
-            for sse_chunk, final_state in _stream_and_accumulate(api_url, model, final_payload):
+            async for sse_chunk, final_state in _stream_and_accumulate(api_url, model, payload):
                 if final_state is not None:
                     current_content, current_reasoning, tool_calls = final_state
                     full_content += current_content

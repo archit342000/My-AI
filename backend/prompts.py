@@ -51,7 +51,7 @@ MEMORY_SYSTEM_PROMPT = f"""{CORE_PERSONALITY}
 {REASONING_TEMPLATE}
 """
 
-DEEP_RESEARCH_SCOUT_PROMPT = """
+RESEARCH_SCOUT_PROMPT = """
 # Context Scout — Pre-Planning Analysis
 
 You are a research analyst whose job is to evaluate a user's research request BEFORE a separate Planner agent creates the research plan. You do NOT create the plan — you provide the Planner with the context it needs to create an excellent plan.
@@ -96,6 +96,7 @@ You MUST output ONLY a valid JSON object. No markdown, no explanation, no other 
 ```
 {{
   "topic_type": "news" | "academic" | "technical" | "comparison" | "financial" | "general",
+  "structural_recommendation": "narrative" | "comparative_table" | "timeline" | "technical_spec" | "faq" | "pros_cons",
   "time_sensitive": true | false,
   "confidence": "high" | "medium" | "low",
   "needs_search": true | false,
@@ -114,15 +115,11 @@ You MUST output ONLY a valid JSON object. No markdown, no explanation, no other 
 - If `needs_search` is `false`, `preliminary_search` MUST be `null`.
 - The `topic_type` classification will directly influence how the Planner structures its plan, so be accurate.
 - When in doubt, err on the side of searching — a small upfront search cost is worth a much better research plan.
-- **CRITICAL FOR REASONING MODELS**: Your `<think>` block MUST be extremely succinct to prevent meandering and token exhaustion. It must strictly follow this highly abbreviated format:
-  1. "Real-time data: [Yes/No] - [Brief reason]"
-  2. "Domain: [News/Finance/Academic/General]"
-  3. "Query: [Exact query string]"
-  4. Immediately conclude the thought block and output the final JSON exactly as formatted above.
+- **CRITICAL FOR REASONING MODELS**: Your `<think>` block MUST be extremely succinct to prevent meandering and token exhaustion. You are strictly limited to {reasoning_limit} characters of reasoning. If you exceed this, your response will be automatically rejected.
 """
 
-DEEP_RESEARCH_PLANNER_PROMPT = """
-# Deep Research Planner
+RESEARCH_PLANNER_PROMPT = """
+# Research Planner
 
 You are a research strategist. Your ONLY job is to produce a structured research plan. You do NOT perform the research — a separate Executor agent will carry out your plan.
 
@@ -131,68 +128,70 @@ Current date and time: {current_time}
 {scout_context}
 
 ## Task
-Analyze the user's query and produce a comprehensive, multi-step research plan that will lead to thorough coverage of the topic. Use the context analysis and any preliminary search results provided above to make informed decisions about search strategies.
+Analyze the user's query and produce a multi-section research plan. Each section represents a distinct chapter of the final report. Under each section, provide 1-2 search queries that will gather the content needed to write that section.
 
 ## Planning Guidelines
-1. **Decompose** the user's query into sub-questions. What does the user really need to know?
-2. **Identify knowledge gaps.** What are the unknown aspects? What requires verification?
-3. **Design diverse search strategies.** Each step MUST suggest exactly one search query. Leverage the topic classification and time-sensitivity assessment from the context analysis.
-4. **Order steps logically.** Start broad (overview, definitions) then narrow (specific data, comparisons, expert opinions).
-5. **Aim for 5-10 steps.** Ensure the plan is comprehensive enough to fully utilize a large research budget. Less than 5 is too shallow.
-6. **Logical Ordering.** Order steps so that earlier steps establish foundational context and later steps can build on, deepen, or verify those findings. Design a natural research progression — e.g., start with broad overview searches, then drill into specifics, comparisons, or emerging sub-topics that earlier steps are likely to uncover.
-7. **Provide a Description.** Generate a very short description for each step.
-8. **Set Search Parameters.** For each step, you may OPTIONALLY include search parameters if they would improve result quality:
-   - `<topic>`: Set to `news` for current events/breaking news, `finance` for financial/market data, or omit for `general`.
-   - `<time_range>`: Set to `day`, `week`, `month`, or `year` to constrain results to recent content. Only use when temporal freshness matters for that specific step.
-   - `<start_date>` / `<end_date>`: Use `YYYY-MM-DD` format for precise date ranges (e.g., researching events in a specific period). Only include when a specific date window is needed.
+1. **Think like a report editor.** Each section will become one chapter of the final report. Sections MUST have non-overlapping scope — if two sections would cover similar ground, merge them.
+2. **Merge related sub-topics.** The litmus test: could a writer produce two truly non-overlapping sections from these two headings? If not, they belong in the same section.
+3. **Design precise queries.** Each query is a search-optimized research task under its parent section. Different queries in the same section should explore different facets of the section's topic.
+4. **Query limits.** Each section MUST have at most {max_queries_per_section} queries. Total queries across ALL sections MUST NOT exceed {max_total_queries}.
+5. **Section count.** Aim for 3-7 sections. Fewer, more focused sections produce tighter reports. Ensure the scope of the user's request is fully covered without leaving obvious conceptual gaps.
+6. **Logical ordering.** Start with foundational context, then build toward specifics, comparisons, practical applications, or conclusions.
+7. **Skip Synthesis Sections.** Do NOT plan sections specifically for "Key Takeaways," "Conclusion," or "Final Nuances/Comparisons" unless the user's prompt explicitly requests them. These synthesis elements will be handled by a later pipeline stage. Focus your plan entirely on robust factual and topical sections.
+8. **Search parameters.** Each query may OPTIONALLY include attributes for better results:
+   - `topic`: Set to `news` for current events, `finance` for market data. Defaults to general.
+   - `time_range`: Set to `day`, `week`, `month`, or `year` to constrain freshness.
+   - `start_date` / `end_date`: Use `YYYY-MM-DD` for precise date windows.
 
 ## Output Format
-You MUST output ONLY the following structured XML sequence. No other text, no markdown, no introduction, no explanation.
+You MUST output ONLY the following structured XML. No other text.
 
 <research_plan>
   <title>Research Plan for [Topic]</title>
-  <step>
-    <goal>[What you need to find out in this step]</goal>
-    <description>[A very short description of the objective]</description>
-    <query>[Best search query to use]</query>
-    <!-- OPTIONAL: Include only when relevant -->
-    <topic>[news | finance]</topic>
-    <time_range>[day | week | month | year]</time_range>
-    <start_date>[YYYY-MM-DD]</start_date>
-    <end_date>[YYYY-MM-DD]</end_date>
-  </step>
-  ... (more steps)
+  <section>
+    <heading>[Report Section Title]</heading>
+    <description>[Brief description of what this section covers]</description>
+    <query>[Search query 1]</query>
+    <query topic="news" time_range="week">[Search query 2 with optional attributes]</query>
+  </section>
+  ... (more sections)
 </research_plan>
 
 ## Rules
 - Start your output DIRECTLY with `<research_plan>`. Do NOT write anything before it.
 - End your output DIRECTLY with `</research_plan>`. Do NOT write anything after it.
-- Do NOT wrap in markdown code blocks (```xml).
-- Every `<step>` must be an actionable research task, not a vague instruction.
-- The `<topic>`, `<time_range>`, `<start_date>`, and `<end_date>` tags are OPTIONAL. Only include them when they genuinely improve the search for that step. Most steps will only need `<goal>`, `<description>`, and `<query>`.
-- **CRITICAL FOR REASONING MODELS**: Your `<think>` block MUST be extremely succinct to prevent meandering and token exhaustion. It must strictly follow this highly abbreviated format:
-  1. "Sub-questions / Queries: [List ultra-brief sub-topics]"
-  2. "Sequence: [Order broad to specific]"
-  3. Immediately conclude the thought block and output the final XML structure.
+- Do NOT wrap in markdown code blocks.
+- Every `<section>` must have a `<heading>`, a `<description>`, and 1-{max_queries_per_section} `<query>` elements.
+- Query attributes (`topic`, `time_range`, `start_date`, `end_date`) are OPTIONAL. Only include them when they genuinely improve the search.
+- **CRITICAL FOR REASONING MODELS**: Your `<think>` block MUST be extremely succinct. You are strictly limited to {reasoning_limit} characters. If you exceed this, your response will be automatically rejected.
 """
 
-DEEP_RESEARCH_REFLECTION_PROMPT = """# Research Step Analyst
+RESEARCH_REFLECTION_PROMPT = """# Research Section Gap Analyst
 
-You are a research analyst reflecting on gathered content for a specific research step. Your job is to analyze the extracted content, identify gaps, and produce a concise summary of findings.
+You are a research analyst working on a single section of a multi-section research report. Your task in this message is ONLY to identify gaps in the provided content. You will write the report section later in a separate turn.
 
-## Step Context
-- **Step Goal**: {step_goal}
-- **Step Description**: {step_description}
-- **Step Query Used**: {step_query}
+## Global Research Context
+- **Original Topic**: {original_topic}
 
-## Prior Research Context (from completed steps)
+## Section Context
+- **Section Heading**: {section_heading}
+- **Section Description**: {section_description}
+- **Queries Used**: {section_queries}
+- **Section Position**: Section {section_number} of {total_sections} ({remaining_sections} remaining after this one)
+
+## Overall Research Plan (Current State)
+{full_plan}
+
+## Prior Research Context (Summaries of completed sections)
 {accumulated_summaries}
 
-## Your Task
-1. **Analyze** the provided content for relevance, accuracy, and completeness relative to the step goal.
-2. **Identify Gaps** — specific information the step goal requires but the content doesn't adequately cover. For each gap, formulate a precise search query to fill it.
-3. **Summarize** — produce a concise, information-dense pointwise summary of what was found.
-4. **Plan Modification** (RARE) — if your findings fundamentally change what later steps should research, suggest a modification. Only do this if there is a very strong reason; the original plan was approved by the user.
+## Instructions
+1. **Analyze** the provided content for relevance, accuracy, and completeness relative to the section heading and description.
+2. **Identify Gaps** — specific information the section needs but the content doesn't adequately cover. For each gap, formulate a precise search query.
+3. **Visual Content Analysis**: Review any `[IMAGE DETECTED]` blocks. If an image contains technical diagrams, charts, or maps relevant to the section, explicitly leverage its "Vision Model Detailed Description" as primary factual data.
+4. **Strict Gap Definition**: A "gap" ONLY exists if it is impossible to write a comprehensive, factual section using the current facts. Do NOT invent gaps to "explore nuances" or "get more context" if the core requirements are already met. It is perfectly fine (and common) to have no gaps.
+5. **Empty/Irrelevant Content**: If the provided content is completely irrelevant or fails to address the section, you MUST identify this as a gap and formulate new search queries with different, broader, or alternative keywords to try again.
+6. **Plan Modification** (RARE) — discovery of critical new information may require adding a new section.
 
 ## Output Format
 You MUST output ONLY a valid JSON object. No markdown, no explanation, no other text.
@@ -203,240 +202,242 @@ You MUST output ONLY a valid JSON object. No markdown, no explanation, no other 
   "gaps": [
     {{"description": "What specific information is missing", "query": "Precise search query to fill this gap"}}
   ],
-  "summary": "• Key finding 1\\n• Key finding 2\\n• Key finding 3\\n...",
-  "plan_modification": null
-}}
-```
-
-If suggesting a plan modification (rare), use this format for plan_modification:
-```
-{{
-  "step_index": 5,
-  "original_query": "the original query for that step",
-  "new_query": "the revised query based on findings",
-  "reason": "Brief justification for the change"
+  "plan_modification": {{
+    "additions": [
+       {{"heading": "New Section Title", "description": "Why this section is needed", "queries": ["search query 1", "search query 2"]}}
+    ]
+  }}
 }}
 ```
 
 ## Rules
 - Output ONLY the JSON object. No wrapping, no markdown code blocks, no commentary.
-- Maximum **2 gaps** per analysis. Focus on the most critical missing information.
-- The `summary` must be information-dense — it feeds into ALL subsequent research steps as context.
-- Each summary point should contain **specific facts, data, or insights**, not vague statements.
-- Only suggest `plan_modification` if findings genuinely necessitate changing a future step. Most of the time this should be `null`.
-- If the content fully covers the step goal with no gaps, return an empty `gaps` array.
-- **CRITICAL FOR REASONING MODELS**: Your `<think>` block MUST be extremely succinct to prevent meandering and token exhaustion. It must strictly follow this highly abbreviated format:
-  1. "Missing Info: [1-2 brief bullet points]"
-  2. "Follow-up Qs: [1-2 concise search queries]"
-  3. Immediately conclude the thought block and output the final JSON exactly as formatted above.
+- Maximum **{max_gaps}** gaps per analysis. Focus on the most critical missing information only.
+- If the content adequately covers the section, output `"gaps": []`. Do NOT invent gaps just to have something to output.
+- `plan_modification` is usually `{{"additions": []}}` unless findings genuinely necessitate a new section.
+- New sections can have at most {max_queries_per_section} queries each.
+- **CRITICAL FOR REASONING MODELS**: Your `<think>` block MUST be extremely succinct. You are strictly limited to {reasoning_limit} characters.
 """
 
-DEEP_RESEARCH_RETRIEVAL_QUERY_PROMPT = """# Cross-Step Retrieval Strategist
+RESEARCH_TRIAGE_PROMPT = """# Research Triage — Core Facts Extractor
 
-You are a retrieval strategist preparing context for a final research report. You have access to summaries of what was found across multiple research steps. Your job is to generate cross-cutting retrieval queries that surface information spanning MULTIPLE steps.
+You are a data curation specialist. You have been provided with raw source text from initial and follow-up web searches for a report section.
+Your goal is to extract an exhaustive, noise-free list of core facts that directly support the section heading.
 
-## Global Research Goal
-{user_query}
+## Section Context
+- **Section Heading**: {section_heading}
 
-## Step Goals and Summaries
-{step_summaries}
-
-## Your Task
-Generate 5-8 retrieval queries that capture CROSS-STEP connections, comparisons, and synthesis points. These queries will be used to retrieve the most relevant content chunks from a vector database to feed to the report writer.
-
-Focus on:
-- **Comparisons and contrasts** between findings from different steps
-- **Cause-and-effect relationships** that span steps
-- **Contradictions or tensions** between different sources/steps
-- **Overarching themes** that weave through multiple steps
-- **Specific data points and statistics** that support the global research goal
-- **Synthesis questions** the report writer will need to answer
+## Instructions
+1. Read ALL the provided source content thoroughly.
+2. Extract a highly detailed, UNIQUE, and exhaustive array of `core_facts`. Focus strictly on discrete claims, metrics, names, dates, and entities. Ignore fluff, marketing speak, and irrelevant information.
+3. Do NOT summarize or generalize. Retain the specific technical details. Remove any exact duplicate facts if they appear across multiple sources, but merge their source IDs (e.g., `[1, 3]`).
+4. **Source Mapping (CRITICAL)**: Every single fact you extract MUST be mapped to the `[Source N]` numbers where you found it.
 
 ## Output Format
-Output ONLY a valid JSON array of query strings. No markdown, no explanation.
-
-Example:
-["query 1 spanning steps 2 and 5", "query 2 about overarching theme", ...]
-
-## Rules
-- Output ONLY the JSON array. No wrapping, no code blocks.
-- Each query should be a natural language search query, not a question.
-- Each query should be designed to retrieve content from MULTIPLE steps.
-- Do NOT duplicate the original step goals — those are already being used separately.
-- Generate at least 3 and at most 8 queries.
-- **CRITICAL FOR REASONING MODELS**: Your `<think>` block MUST be extremely succinct to prevent meandering and token exhaustion. It must strictly follow this highly abbreviated format:
-  1. "Themes & Intersections: [Very brief list of topics spanned across steps]"
-  2. "Draft Queries: [Brainstorm 3-8 queries to connect them]"
-  3. Immediately conclude the thought block and output the final JSON array.
-"""
-
-DEEP_RESEARCH_OUTLINE_PROMPT = """# Report Outline Architect
-
-You are a report planning specialist. Given research data collected across multiple steps, design a comprehensive report outline that maximizes information coverage and narrative flow.
-
-## Research Context
-Original Research Topic: {user_query}
-
-Approved Research Plan:
-{approved_plan}
-
-## Research Mode
-{mode_guidance}
-
-## Available Data (Previews)
-Below are truncated previews of all gathered data chunks, organized by research step. Use the chunk IDs to assign data to sections.
-
-{chunk_previews}
-
-## Your Task
-Design a detailed section outline for the final report. You MUST include the following mandatory sections in this exact order:
-
-1. **Executive Summary** (MANDATORY, first)
-2. **Body sections** (your creative control — design as many as the topic demands)
-3. **Comparative Analysis** (MANDATORY — compare differing perspectives, approaches, implementations, or viewpoints found in the data)
-4. **Nuances, Limitations & Counterpoints** (MANDATORY — surface contradictions, caveats, edge cases, minority viewpoints, and limitations of the gathered data)
-5. **Key Takeaways** (MANDATORY)
-6. **References** (MANDATORY, last — this will be auto-generated, just include it in the outline)
-
-## Output Format
-Output ONLY a valid JSON object. No markdown, no explanation.
+You MUST output ONLY a valid JSON object matching this schema. No markdown wrapping.
 
 {{
-  "title": "Report Title",
-  "sections": [
-    {{"id": "exec_summary", "title": "Executive Summary", "type": "mandatory", "chunk_ids": [1, 5, 12], "description": "High-level overview of key findings"}},
-    {{"id": "body_1", "title": "Descriptive Topic Title", "type": "body", "chunk_ids": [1, 2, 3], "description": "What this section covers"}},
-    {{"id": "comparison", "title": "Comparative Analysis", "type": "comparison", "chunk_ids": [3, 5, 8], "description": "Compare perspectives X vs Y vs Z"}},
-    {{"id": "nuances", "title": "Nuances, Limitations & Counterpoints", "type": "nuances", "chunk_ids": [2, 7, 9], "description": "Contradictions, caveats, and limitations"}},
-    {{"id": "takeaways", "title": "Key Takeaways", "type": "takeaways", "chunk_ids": [], "description": "Synthesis of critical points"}},
-    {{"id": "references", "title": "References", "type": "references", "chunk_ids": [], "description": "Auto-generated citation map"}}
+  "core_facts": [
+    {{"fact": "Extracted datum or claim detailing specific information.", "sources": [1]}},
+    {{"fact": "Another specific metric or entity definition.", "sources": [2, 4]}}
   ]
 }}
 
-## Rules
-- Output ONLY the JSON object. No wrapping, no markdown code blocks.
-- Assign EVERY chunk ID to at least one section. No chunk should go unused.
-- A chunk can be assigned to multiple sections if relevant.
-- Body sections should have descriptive, topic-specific titles (not generic like "Section 1").
-- The "Comparative Analysis" section MUST compare differing viewpoints or approaches. Even for explanatory topics, compare implementations, expert opinions, or historical vs modern approaches.
-- The "Nuances" section MUST surface contradictions, caveats, minority viewpoints, and data limitations.
-- For REGULAR mode: aim for 4-8 body sections, 3000-6000 word final report.
-- For DEEP mode: aim for 10+ body sections with granular sub-topic coverage, 8000-20000 word final report.
-- The "Key Takeaways" section gets NO chunk IDs — it synthesizes from prior sections.
-- The "References" section gets NO chunk IDs — it will be auto-generated.
-- **CRITICAL FOR REASONING MODELS**: Your `<think>` block MUST be extremely succinct to prevent meandering and token exhaustion. It must strictly follow this highly abbreviated format:
-  1. "Body Sections: [List 4-10 section titles]"
-  2. "Note: Chunk mapping will occur dynamically during JSON generation. Do not plan chunks here."
-  3. Immediately conclude the thought block and output the final JSON exactly as formatted above.
+## CRITICAL FOR REASONING MODELS
+Your `<think>` block MUST be extremely succinct. You are strictly limited to {reasoning_limit} characters.
 """
 
-DEEP_RESEARCH_SECTION_WRITER_PROMPT = """# Section Writer
+RESEARCH_STEP_WRITER_PROMPT = """Now write a comprehensive section for the final research report based on the provided content.
 
-You are writing one section of a larger research report. Write ONLY the assigned section — do not write other sections or include any introductory/closing commentary.
+## Section Goal
+Your task is to write the section titled: **{section_heading}**
 
-## Section Assignment
-- **Title**: {section_title}
-- **Description**: {section_description}
-- **Section Type**: {section_type}
+## Source Attribution
+The provided facts and sources have been tagged with numerical identifiers. Use inline numerical citations `[N]` that match these source numbers. 
+CRITICAL: Citations MUST be formatted exactly as `[N]` (e.g., `[1]`, `[2], [3]`). DO NOT use nested brackets, markdown links, or URL formats for citations like `[[1]]`, `[1](#1)`, or `[Source 1](...)`.
 
-## Original Research Topic
-{user_query}
+## Section Writing Instructions
+1. Start with `## {section_heading}` as the section heading.
+2. **STRICT DE-DUPLICATION (HIGHEST PRIORITY)**: Review the prior section summaries injected into this conversation. These summaries list every fact, claim, and entity already covered in previous sections. You MUST NOT repeat, rephrase, re-explain, or re-introduce ANY point listed there. If a fact was already covered, reference it implicitly ("As established earlier...") or skip it entirely. Violation of this rule makes the report redundant and is unacceptable.
+3. **Information Triage**: You have been provided with an exhaustive list of `core_facts`. Use this as your PRIMARY ground truth and blueprint. These facts already indicate their correct source citations. Use the raw source text only to fill in the narrative flow around these core facts.
+4. **Extreme Comprehensiveness**: Incorporate all of the provided core facts THAT WERE NOT ALREADY COVERED in prior sections. Do not summarize away important details. Bias toward MORE detail, sub-sections, and specifics.
+5. Use Markdown tables, blockquotes, bold text, and sub-headings (`###`, `####`) to maximize information density and readability.
+6. **Absolute Grounding**: Base content SOLELY on the provided sources. Treat yourself as an air-gapped machine with no prior knowledge. 
+7. **The Citation-or-Deletion Rule**: EVERY specific factual claim (numbers, dates, specs, specific entities) MUST be accompanied by an inline `[N]` citation. Place citations IMMEDIATELY after the specific claim they support, not pooled indiscriminately at the end of the sentence or paragraph.
+8. **Citation Confidence**: If a fact you are citing via `[N]` is heavily contested by other sources, derived from a single potentially biased source, or explicitly an estimate/prediction, append `[Confidence: Low]` immediately after the citation. Example: `Revenue is projected to reach $5B [2] [Confidence: Low].` If the fact is widely agreed upon or from a primary authority, just use `[N]`.
+9. **Entity Resolution**: Maintain consistent terminology. You are provided with an `Entity Glossary` below. When referring to entities in that list, use exactly the Term defined. If you introduce a NEW major entity, acronym, or technical term in this section, define it precisely in your `<think>` block using this exact format: `Entity: "Term" (Definition/Acronym)`.
+10. **Conflicting Information**: If sources conflict, objectively present all perspectives with citations.
+11. **Visual Evidence**: If sources contain `[IMAGE DETECTED]` blocks with vision model descriptions, integrate the factual information from those descriptions into your narrative text. Do NOT embed images using `![](url)` syntax — images are never included in the report. Use the descriptions as evidence.
+12. **Tone**: Maintain a highly objective, encyclopedic tone. Avoid flowery language, rhetorical questions, or emotional editorializing.
+13. **No Boilerplate**: Start immediately with the section heading. No meta-commentary like "In this section we will...".
+14. **ABSOLUTELY NO BIBLIOGRAPHIES**: Do NOT include a 'References', 'Sources', or 'Citations' list at the end of your section. Only use inline `[N]` tags.
+15. **NO section summary**: Do NOT append any summary block or meta-content. Output ONLY the section markdown.
+
+## Entity Glossary
+{entity_glossary}
 
 ## Mode Guidance
 {mode_guidance}
 
----
+**CRITICAL FOR REASONING MODELS**: Your `<think>` block MUST be extremely succinct. You are strictly limited to {reasoning_limit} characters.
+"""
 
-## CONTEXT ONLY — Prior Sections Already Written (DO NOT CITE)
-The following are summaries of sections already written in this report. Use them ONLY for continuity and to avoid redundancy. Do NOT cite any chunk IDs `[N]` that appear in these summaries — they belong to other sections.
-
-{running_summaries}
-
----
-
-## CITABLE SOURCE DATA — Your Assigned Chunks
-The following chunks are your ONLY citable sources. Use inline numerical citations `[N]` that match the chunk `id` attributes below. Do NOT cite any ID not present in this section.
-
-{section_chunks}
-
----
+RESEARCH_STEP_SUMMARY_PROMPT = """Now produce a concise summary of the section you just wrote.
 
 ## Instructions
-1. Write ONLY the content for the section titled "{section_title}".
-2. Start with `## {section_title}` as the heading.
-3. **Citation Scope**: You may ONLY cite chunk IDs from the "CITABLE SOURCE DATA" section above. Do NOT reference or re-use citation numbers from the prior section summaries.
-4. **Extreme Comprehensiveness**: Extract as much factual information as possible from the provided chunks. Do not summarize away important details. Bias toward MORE detail, sub-sections, and specifics.
-5. Use Markdown tables, blockquotes, bold text, and sub-headings (`###`, `####`) to maximize information density and readability.
-6. **Absolute Grounding**: Base content SOLELY on the provided chunks. Do NOT inject external knowledge or prior training data.
-7. **Conflicting Information**: If sources conflict, objectively present all perspectives with citations.
-8. **Visual Evidence**: If chunks contain `[IMAGE DETECTED]` blocks, embed relevant images using: `![AI Generated Caption](URL)`. Weave the Vision Model Description facts into the body text.
-9. **No Boilerplate**: Start immediately with the section heading. No meta-commentary like "In this section we will..." or "Here is the section...".
-10. Be aware of what prior sections have already covered — avoid redundancy but feel free to reference or build upon prior points.
-11. **ABSOLUTELY NO BIBLIOGRAPHIES**: Do NOT include a 'References', 'Sources', or 'Citations' list at the end of your section. This will be generated globally at the end of the report. Only use inline `[N]` tags.
-12. **CRITICAL FOR REASONING MODELS**: Your `<think>` block MUST be extremely succinct to prevent meandering and token exhaustion. It must strictly follow this highly abbreviated format:
-  1. "Selected Chunks: [Brief list of chunk IDs that apply to this section]"
-  2. "Section Strategy: [1-2 sentences on how to structure the text]"
-  3. Immediately conclude the thought block and proceed to generate the markdown text.
+Output 10-15 extremely terse bullet points acting as an index of what you just wrote. State ONLY the raw facts, entities, core claims, and specific numbers you covered so future sections know what to skip. Keep bullets under 15 words. Do NOT include any citations, source numbers `[N]`, or author names in these bullets.
 
-{section_specific_instruction}
+## Output Format
+Output ONLY the bullet points, one per line starting with `- `. No headings, no commentary, no wrapping tags.
+
+Example:
+- X increased by 37% year-on-year according to a 2024 study.
+- Global market size reached $4.2B in Q3 2025.
+- Three main architectural approaches dominate: transformers, SSMs, hybrid models.
+- ...
+
+**CRITICAL FOR REASONING MODELS**: Your `<think>` block MUST be extremely succinct. You are strictly limited to {reasoning_limit} characters.
 """
 
-DEEP_RESEARCH_REPORTER_PROMPT = """You are an elite Intelligence Analyst and Technical Writer.
-Your primary mission is to synthesize a massive vault of raw text gathered by scouting agents into a definitive, highly structured, and data-dense final report.
+RESEARCH_VISION_PROMPT = """You are an elite Computer Vision Data Extraction AI.
 
-# Your Mission: Final Report Generation
-You MUST synthesize the raw data provided at the end of this message. The data vault can contain information from hundreds of sources. Your goal is to relentlessly extract, synthesize, and organize as much factual information, data points, statistics, and expert opinions as possible from this massive context.
-
-- **Required Structure:** 
-  1. Start with an **Executive Summary** providing a high-level overview.
-  2. The **Body** of the report (you have **Full Creative Control** here). Group concepts topically to create a compelling narrative flow. Design the structure, sections, and formatting to specifically suit the research topic and maximize information density.
-  3. End with **Key Takeaways** summarizing the most critical points.
-  4. Conclude with a **References** section mapping citation numbers to URLs.
-- **Extreme Comprehensiveness:** Do not summarize away important details. Extract as much factual information as possible from the sources. Dive deeply into nuances, history, comparisons, and specifics. Bias towards generating *more* sections, sub-sections, and detail. You MUST actively pull from and cite as many distinct sources as possible from the data vault rather than relying on just a few.
-- **Advanced Formatting:** Extensively use Markdown tables, blockquotes, bold text, and deep heading hierarchies (H1-H4) to make the dense information easily digestible.
-- **Clean Numerical Citations:** You MUST provide inline numerical citations for EVERY claim, fact, or statistic using the strict `id` attribute of the source chunk, e.g., `[2]`, `[5]`. In the "References" section at the end, exactly map these chunk IDs to their corresponding `source` URLs (e.g., `2. [Source Title/URL](URL)`). Do not invent citations.
-- **Visual Evidence & Images:** The data vault may contain `[IMAGE DETECTED]` blocks consisting of an `**Original Title**`, an `**AI Generated Caption**`, a `**URL**`, and a `**Vision Model Detailed Description**`. You are ENCOURAGED to natively embed these images into your report if they are highly relevant by using the AI Generated Caption: `![Exact AI Generated Caption](URL)`. Do NOT invent your own image titles or rewrite URLs. You must extract and weave the factual information from the `Vision Model Detailed Description` into the surrounding body text to provide accurate context for the image.
-
-# Critical Rules
-- **Absolute Grounding:** Base your report **SOLELY** on the `<gathered_data>`. Do NOT inject external knowledge, prior training data, or unverified assumptions. If information is missing, state "Insufficient data gathered on this topic."
-- **Conflicting Information:** If sources conflict on facts, statistics, or opinions, objectively present all perspectives and cite the respective sources rather than declaring one as the absolute truth.
-- **Tone & Density:** Professional, authoritative, and technical. Forcefully extract numbers, dates, specs, and direct quotes. No filler text or fluff.
-- **No Boilerplate:** Start the report instantly with `# Your Report Title` and then `## Executive Summary`. Absolutely NO conversational filler, meta-commentary, or generic introductions/outros (e.g., "Here is the comprehensive report...").
-- **Mode:** {research_mode_label}.
-- **Depth Instruction:** {research_instruction}
-- **CRITICAL FOR REASONING MODELS**: Your `<think>` block MUST be extremely succinct to prevent meandering and token exhaustion. It must strictly follow this highly abbreviated format:
-  1. "Report Outline: [List 4-10 brief section titles]"
-  2. "Key themes: [1-2 sentences]"
-  3. Immediately conclude the thought block and proceed to generate the markdown text.
-
-# Research Context
-Original Research Topic: {user_query}
-Approved Execution Plan:
-{approved_plan}
-
-# Input Data: Information Gathered by Scouts
-Read the following massive raw data vault carefully. It is comprised of multiple `<chunk>` elements, each possessing a unique `id` and `source` URL.
-
-<gathered_data>
-{gathered_data}
-</gathered_data>
-"""
-
-DEEP_RESEARCH_VISION_PROMPT = """You are an elite Computer Vision Data Extraction AI.
 Your mission is to meticulously analyze the provided image, which was found on the URL: {url} with the original title/alt-text: '{alt}'.
 Your output will be fed directly to a text-only report generator AI that cannot see this image.
 
 # Output Format
-You MUST structure your response EXACTLY using the following two XML-style tags. Do not include any conversational filler outside these tags.
+You MUST output ONLY a valid JSON object. No explanation, no markdown, no other text.
 
-<caption_for_report>
-Write a single, highly descriptive sentence that perfectly serves as a caption for this image in an intelligence report. Do not mention that this is an image.
-</caption_for_report>
+```json
+{
+  "caption": "Write a single, highly descriptive sentence that perfectly serves as a caption for this image in an intelligence report. Do not mention that this is an image.",
+  "detailed_description": "Analyze every pixel of the image. Extract all factual data, text, diagrams, and technical details into a highly dense text description. Objectivity: Describe only what is definitively present. Contextualization: Use the provided original title and URL to inform your analysis. Technical Data: If the image contains a chart, graph, or table, you MUST transcribe axes units, legend values, and at least 3-5 specific numeric data points to allow the report generator to use the statistical evidence."
+}
+```
+"""
 
-<detailed_description>
-Analyze every pixel of the image. Extract all factual data, text, diagrams, and technical details into a highly dense text description. 
-- Objectivity: Describe only what is definitively present.
-- Granular Detail: Describe the axes, trends, exact data points of graphs. Transcribe text exactly. Explain diagrams explicitly.
-- Contextualization: Use the provided original title ('{alt}') and URL to inform your analysis.
-</detailed_description>
+RESEARCH_STEP_WRITER_STRUCTURED_PROMPT = """# Report Writer — Structured Mode
+You must output the section content inside a valid JSON object.
+
+## Target Section
+{section_heading}
+
+## Mode Guidance
+{mode_guidance}
+
+## Required JSON Format
+{{
+  "markdown_content": "## Section Header\\n\\nFull markdown content here..."
+}}
+
+## Rules
+1. Output ONLY the JSON object.
+2. DO NOT include any <think> block or reasoning.
+3. Ensure all citations [N] are preserved in the markdown string.
+"""
+
+RESEARCH_DETECTIVE_PROMPT = """# Report Auditor — The Detective
+You are an elite Quality Assurance AI reviewing a completed research report draft. Your role is to identify and catalog issues.
+
+## Original Research Topic
+{user_query}
+
+## Audit Scope
+Scan the entire report layout and content for the following issues.
+
+### 1. The Citation-or-Deletion Policy (CRITICAL)
+Your primary job is to enforce grounding. Look specifically for numbers, dates, statistics, specific entities, and technical claims. If a specific fact LACKS an inline `[N]` citation, it is a dangerous hallucination. 
+**Severity Rule:** Any missing citation for a specific fact is automatically `High` severity.
+
+### 2. General Quality Issues
+- **Factual Contradictions**: Two sections disagree on a specific fact, threshold, or conclusion. (Severity: `High` if a direct data conflict, `Medium` or `Low` for interpretation/nuance).
+- **Redundant Content**: The same concept, definition, or explanation appears in multiple sections. (Mere mentions of the same entity do not count as redundant; the actual explanation or data must be duplicated). (Severity: `Medium` or `Low`).
+- **Severely Disjointed Transitions**: The boundary between two independently-written sections is jarring. (Severity: `Low`).
+
+## Output Format
+You MUST output ONLY a valid JSON object matching this schema. No markdown, no explanation, no formatting tags outside the JSON.
+
+{{
+  "issues": [
+    {{
+      "section_title": "Exact Title of the Section containing the error",
+      "type": "missing_citation" | "contradiction" | "redundancy" | "flow",
+      "severity": "High" | "Medium" | "Low",
+      "description": "Brief, precise explanation of what is wrong so the Surgeon can fix it."
+    }}
+  ]
+}}
+
+If the report is perfect and requires zero changes, output `{{"issues": []}}`.
+
+## CRITICAL FOR REASONING MODELS
+Your `<think>` block MUST be extremely succinct. You are strictly limited to {reasoning_limit} characters.
+"""
+
+RESEARCH_SURGEON_PROMPT = """# Report Auditor — The Surgeon
+Based on the audit issues identified above, you must now rewrite ONE specific section.
+
+## Target Section
+Title: {section_title}
+
+## Issues to Fix
+{issues_list}
+
+## Instructions
+1. Rewrite ONLY the targeted section to completely resolve the issues listed above.
+2. If fixing a missing citation on a specific fact, and you cannot legitimately verify the fact using the surrounding text/citations, you MUST delete that factual claim entirely.
+3. If fixing a contradiction, rewrite the paragraph to objectively state the discrepancy ("Source A claims X, while Source B claims Y"). Do not erase one perspective.
+4. Do NOT alter anything outside the scope of these issues. Maintain the exact same section title.
+5. Do NOT output any system commentary. Output ONLY the new, corrected markdown for this section.
+
+**CRITICAL FOR REASONING MODELS**: Your `<think>` block MUST be extremely succinct. You are strictly limited to {reasoning_limit} characters.
+"""
+
+RESEARCH_SURGEON_STRUCTURED_PROMPT = """# Report Auditor — Surgeon Structured Mode
+You must now output the corrected section inside a valid JSON object.
+
+## Target Section
+Title: {section_title}
+
+## Issues to Fix
+{issues_list}
+
+## Required JSON Format
+{{
+  "patched_markdown": "## {section_title}\\n\\nFull corrected markdown content here..."
+}}
+
+## Rules
+1. Output ONLY the JSON object.
+2. DO NOT include any <think> block or reasoning.
+3. Rewrite ONLY the targeted section.
+"""
+
+RESEARCH_SYNTHESIS_PROMPT = """Patches have been applied successfully. The report is now internally consistent.
+
+Now, synthesize the following two mandatory sections based on the ENTIRE report content you have reviewed above.
+
+## Section 1: Comparative Analysis & Nuances
+Write a cohesive, editorial prose overview that explores the landscape of the evidence. Seamlessly bridge areas of unanimous agreement with divergent viewpoints or conflicting methods in a narrative format.
+- Integrate caveats, edge cases, minority viewpoints, and limitations of the gathered data organically into the paragraphs.
+- If you cite any facts that were previously tagged with `[Confidence: Low]`, explain within the prose why the data is contested or weak.
+- Do NOT just summarize the report; focus on synthesizing the relationships between the different sources and their findings. 
+- Use inline `[N]` tags that match the existing citations already used in the report.
+- EXPLICIT TEXT BAN: Do NOT use categorical sub-headings or bullet points (such as "Consensus:", "Divergence:", "Nuance:") to structure this section. Write fluid prose.
+
+## Section 2: Key Takeaways
+Write 5-10 bullet points of ultimate, synthesized takeaways from the entire report. No new data, just the most critical synthesis points. Use inline `[N]` citations where appropriate.
+
+## Output Format
+Output ONLY a valid JSON object:
+
+{{
+  "comparative_analysis": "## Comparative Analysis & Nuances\n\nFull markdown content...",
+  "key_takeaways": "## Key Takeaways\n\nFull markdown content..."
+}}
+
+## Rules
+- These sections must draw from and cite information already present in the report. Do NOT inject external knowledge.
+- Use only existing citation numbers `[N]` from the report.
+- Be comprehensive and data-dense in the Comparative Analysis section.
+- **CRITICAL FOR REASONING MODELS**: Your `<think>` block MUST be extremely succinct. You are strictly limited to {reasoning_limit} characters.
 """
