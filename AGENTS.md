@@ -37,7 +37,11 @@ When modifying the UI, you must strictly adhere to the project's **Luminous Mate
 *   **Migration Pattern**: Use `ALTER TABLE` queries inside `init_db()` and wrap them in `try-except sqlite3.OperationalError:` blocks to silently and safely upgrade existing `chats.db` files without causing startup crashes or data loss for existing users.
 *   **ChromaDB Sync**: The RAG system relies on ChromaDB. If you modify how chat data is structured or saved, ensure the vector embeddings stay perfectly synchronized. If a user deletes a chat or resets memory, ChromaDB must be purged accordingly. Never orphan vector data when metadata changes.
 
-### 3.2 Git & Branching Strategy
+### 3.2 Standardized Logging & Dependencies
+*   **Use `log_event`**: Do not use standard Python `print()` statements for backend logic tracing. Always import and use `log_event` from `backend.logger` (e.g., `log_event("action_name", {"key": "value"})`). This ensures the event is properly written to the `network_index.jsonl` file and can be debugged via the frontend's `/logs` UI.
+*   **Dependency Management**: If you introduce a new Python library to solve a task, you **must** immediately append it to `requirements.txt`. Do not assume the environment will permanently retain pip installs across container restarts or deployments.
+
+### 3.3 Git & Branching Strategy
 *   **Standardized Branch Naming**: Every branch name **MUST** start with the target version number you are bumping to, followed by a descriptive hyphenated name.
     *   **Valid Example**: `1.3.1-update-agents-md`
     *   **Valid Example**: `1.4.0-feature-deep-research`
@@ -45,7 +49,7 @@ When modifying the UI, you must strictly adhere to the project's **Luminous Mate
 *   **Commit Messages**: Keep commit messages concise, descriptive, and Git-agnostic. The first line should be an imperative summary under 50 characters, followed by an empty line and detailed reasoning if needed.
 *   **Verification Before Commit**: Always run the application locally to test functionality (both Light and Dark modes) before submitting code. If modifying the frontend, visually verify all structural and animation changes.
 
-### 3.3 Agent-Specific Operational Best Practices
+### 3.4 Agent-Specific Operational Best Practices
 If you are an AI agent working on this codebase, you must strictly adhere to these operational rules to prevent common execution failures:
 *   **Verify Before Marking Complete**: Never assume a file write or search-and-replace command succeeded flawlessly. **Always** use read tools (`read_file`, `list_files`, etc.) to inspect the file state and syntax *after* making a change.
 *   **Diagnose Before Modifying Environment**: If you encounter an error (e.g., ModuleNotFoundError), do not immediately attempt to install new packages or edit `requirements.txt`. Read the error logs carefully; prioritize fixing code imports, typos, or file path issues over attempting to alter the environment.
@@ -55,7 +59,7 @@ If you are an AI agent working on this codebase, you must strictly adhere to the
 *   **Prevent File Truncation (Use Diffs)**: Never overwrite entire large files using full-file write tools, as this frequently leads to accidental truncation or missing code blocks. You **must** use targeted search-and-replace or merge diff tools to modify existing files.
 *   **Exact Diffs**: When using search-and-replace or merge diff tools, ensure the `<SEARCH>` block exactly matches the existing file contents line-for-line, including all whitespace and indentation.
 
-### 3.4 Versioning & Releases (SemVer)
+### 3.5 Versioning & Releases (SemVer)
 *   This project strictly follows [Semantic Versioning 2.0.0](https://semver.org/).
 *   **Mandatory Updates**: When a PR introduces a functionality change, bug fix, or UI modification, you **must** bump the version globally across the project.
     *   This includes updating:
