@@ -67,6 +67,13 @@ If you are an AI agent working on this codebase, you must strictly adhere to the
         2.  `changelog.md` (Add a new detailed block at the top under the new version header)
         3.  `README.md` (Update the displayed version badge/text)
 
+### 3.6 When to Update `AGENTS.md`
+This document is a living contract for AI agents and human contributors. You **must** propose an update to this file if:
+*   A new core architectural dependency or framework is introduced (e.g., migrating from SQLite to PostgreSQL).
+*   A new "anti-pattern" or recurring agent failure is identified during development.
+*   A significant UI/UX constraint is added to `design_directives.md` that agents frequently ignore.
+*   The API payload structures from local LLMs change in future LM Studio releases.
+
 ---
 
 # LM Studio / Local LLM Integration Guide
