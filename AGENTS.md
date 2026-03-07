@@ -19,12 +19,12 @@ The application follows a clean separation between a vanilla web frontend and a 
 
 ---
 
-## 2. Design & UI Delegation (`design_directives.md`)
+## 2. Design & UI Delegation (`docs/design_directives.md`)
 
-When modifying the frontend, styling, or animations, this document (`AGENTS.md`) defers completely to **`design_directives.md`**.
+When modifying the frontend, styling, or animations, this document (`AGENTS.md`) defers completely to **`docs/design_directives.md`**.
 
-*   **Single Source of Truth**: The `design_directives.md` file is the absolute authority on all things related to the Luminous Material UI, CSS custom properties, responsive breakpoints, structural logic, and motion design.
-*   **Mandatory Reading**: If your task involves modifying HTML, CSS, or any DOM manipulation in `script.js`, you **must** parse and adhere to `design_directives.md` before writing code. Do not invent new styling conventions or introduce UI frameworks.
+*   **Single Source of Truth**: The `docs/design_directives.md` file is the absolute authority on all things related to the Luminous Material UI, CSS custom properties, responsive breakpoints, structural logic, and motion design.
+*   **Mandatory Reading**: If your task involves modifying HTML, CSS, or any DOM manipulation in `script.js`, you **must** parse and adhere to `docs/design_directives.md` before writing code. Do not invent new styling conventions or introduce UI frameworks.
 
 ---
 
@@ -61,7 +61,7 @@ If you are an AI agent working on this codebase, you must strictly adhere to the
 *   This project strictly follows [Semantic Versioning 2.0.0](https://semver.org/).
 *   **Mandatory Updates**: When a PR introduces a functionality change, bug fix, or UI modification, you **must** bump the version globally across the project.
     *   This includes updating:
-        1.  `versioning_directives.md`
+        1.  `docs/versioning_directives.md`
         2.  `changelog.md` (Add a new detailed block at the top under the new version header)
         3.  `README.md` (Update the displayed version badge/text)
 
@@ -83,9 +83,9 @@ You should proactively propose an update to this file if:
 
 ---
 
-## 4. LM Studio & Backend Integrations (`backend/lm_studio_integration.md`)
+## 4. LM Studio & Backend Integrations (`docs/lm_studio_integration.md`)
 
-When modifying backend logic related to LLM inference, chunk streaming, or the `/v1/chat/completions` API endpoints, you **must** refer to `backend/lm_studio_integration.md`.
+When modifying backend logic related to LLM inference, chunk streaming, or the `/v1/chat/completions` API endpoints, you **must** refer to `docs/lm_studio_integration.md`.
 
 *   **API Deviations**: Local models running through LM Studio do not behave identically to OpenAI. The integration guide explicitly details handling for `reasoning_content` streams, missing tags, and critical JSON schema deviations.
-*   **Mandatory Reading**: If your task involves editing `app.py`, `backend/llm.py`, or any agent logic that parses model output, read `backend/lm_studio_integration.md` to prevent stream-parsing failures.
+*   **Mandatory Reading**: If your task involves editing `app.py`, `backend/llm.py`, or any agent logic that parses model output, read `docs/lm_studio_integration.md` to prevent stream-parsing failures.

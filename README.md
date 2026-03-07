@@ -70,4 +70,4 @@ A premium, full-stack AI chat interface designed for local inference with [LM St
 ## 📄 License & Versioning
 
 This project follows [SemVer v2.0.0](https://semver.org/). Current version: `v1.3.1`.
-See [CHANGELOG.md](./changelog.md) for a detailed history of updates.
+See [CHANGELOG.md](./changelog.md) and [docs/versioning_directives.md](./docs/versioning_directives.md) for a detailed history of updates and versioning rules.
