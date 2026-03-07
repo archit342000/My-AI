@@ -80,7 +80,7 @@ class ResponseCache:
             if os.path.exists(self._get_wal_path(chat_id)):
                 self.recover_from_wal(chat_id)
             else:
-                return # Chat not active
+                return [] # Chat not active
 
         q = queue.Queue()
 
@@ -169,7 +169,7 @@ class ResponseCache:
 
         final_content = full_content
         if full_reasoning:
-            final_content = f"{full_content}\n<think>\n{full_reasoning}\n</think>"
+            final_content = f"<think>\n{full_reasoning}\n</think>\n{full_content}"
 
         if cleanup:
             self.cleanup_chat(chat_id)

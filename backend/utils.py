@@ -155,9 +155,9 @@ async def async_tavily_map(url_to_map, instruction):
         "api_key": config.TAVILY_API_KEY,
         "url": url_to_map,
         "instructions": instruction,
-        "max_depth": 3,
-        "max_breadth": 10,
-        "limit": 10,
+        "max_depth": config.TAVILY_MAP_MAX_DEPTH,
+        "max_breadth": config.TAVILY_MAP_MAX_BREADTH,
+        "limit": config.TAVILY_MAP_MAX_BREADTH,
         "allow_external": True,
         "exclude_paths": ["/login", "/signup", "/auth"],
         "exclude_domains": ["facebook.com", "twitter.com", "instagram.com"]
@@ -209,7 +209,7 @@ def check_url_safety(url):
     """
     try:
         data = {'url': url}
-        response = requests.post('https://urlhaus-api.abuse.ch/v1/url/', data=data, timeout=5)
+        response = requests.post('https://urlhaus-api.abuse.ch/v1/url/', data=data, timeout=config.TIMEOUT_URLHAUS)
         if response.status_code == 200:
             json_resp = response.json()
             if json_resp.get('query_status') == 'ok':
@@ -277,11 +277,39 @@ async def async_chat_completion(url, payload):
             data = resp.json()
             
             content = ""
+            reasoning = ""
             if "choices" in data and len(data["choices"]) > 0:
-                content = data["choices"][0]["message"]["content"]
+                msg = data["choices"][0]["message"]
+                content = msg.get("content", "")
+                reasoning = msg.get("reasoning_content", "")
+                
+            # AGENTS.md compliance: always prioritize gathering all emitted signals.
+            # However, for structured output (json_schema or json_object), 
+            # LM Studio quirks mean the JSON is often in reasoning_content.
+            # We don't wrap in <think> tags if it's the primary payload.
             
-            log_llm_call(payload, content, model, duration_s=time.time()-start_time, call_type="async_blocking")
-            return content
+            is_json_requested = "response_format" in payload
+            final_output = ""
+            
+            if is_json_requested:
+                # AGENTS.md: For structured output, LM Studio streams the JSON inside 'reasoning_content'.
+                # We prioritize it as the primary functional payload. No tags.
+                if reasoning and not content:
+                    final_output = reasoning
+                elif content:
+                    final_output = content
+                elif reasoning:
+                    final_output = reasoning
+            else:
+                # Standard chat: Preserving reasoning in history via <think> tags, 
+                # but functional logic in research.py will ignore it.
+                if reasoning:
+                    final_output += f"<think>\n{reasoning}\n</think>\n"
+                if content:
+                    final_output += content
+                
+            log_llm_call(payload, final_output, model, duration_s=time.time()-start_time, call_type="async_blocking")
+            return final_output
         except Exception as e:
             log_llm_call(payload, f"Error: {str(e)}", model, duration_s=time.time()-start_time, call_type="async_blocking_error")
             return ""
@@ -295,7 +323,7 @@ async def _async_visit_page(url, max_chars):
         async with httpx.AsyncClient(headers=headers, timeout=config.TIMEOUT_WEB_SCRAPE, follow_redirects=False) as client:
             current_url = url
             response = None
-            for _ in range(5):
+            for _ in range(config.URL_FETCH_RETRIES):
                 response = await client.get(current_url)
                 if response.status_code in (301, 302, 303, 307, 308):
                     next_url = response.headers.get('Location')
@@ -385,7 +413,7 @@ async def _async_visit_page(url, max_chars):
             md_text = markdownify.markdownify(
                 clean_html,
                 heading_style="ATX",
-                strip=['img', 'audio', 'video'],
+                strip=['audio', 'video'],
                 keep_inline_images_in=['a']
             )
             
@@ -419,7 +447,7 @@ async def _async_visit_page(url, max_chars):
     except Exception as e:
         return f"Error visiting page: {str(e)}"
 
-def visit_page(url, max_chars=8000):
+def visit_page(url, max_chars=config.MAX_CHARS_VISIT_PAGE):
     def run_coro(coro):
         try:
             loop = asyncio.get_running_loop()
@@ -472,10 +500,17 @@ def validate_research_plan(content):
     """
     Validates and extracts clean Research Plan XML from potentially noisy model output.
     
-    Handles:
-    - CoT reasoning before the XML (text or <think> blocks)
-    - Markdown code blocks wrapping the XML (```xml ... ```)
-    - Whitespace and formatting variations
+    Expected format (section-based):
+    <research_plan>
+      <title>...</title>
+      <section>
+        <heading>...</heading>
+        <description>...</description>
+        <query>...</query>
+        <query topic="news" time_range="week">...</query>
+      </section>
+      ...
+    </research_plan>
     
     Returns (clean_xml_string, error_message). One will always be None.
     """
@@ -487,14 +522,11 @@ def validate_research_plan(content):
     raw = content
     
     # 1. Strip CoT reasoning
-    # Handle implicit reasoning start (missing <think> tag) by stripping everything before the last </think>
     if '</think>' in raw:
         raw = raw.split('</think>')[-1].strip()
-    
-    # Also strip standard explicit <think> blocks if any remain
     raw = re.sub(r'<think>.*?</think>', '', raw, flags=re.DOTALL).strip()
     
-    # 2. Strip markdown code fences (```xml ... ``` or ``` ... ```)
+    # 2. Strip markdown code fences
     raw = re.sub(r'```(?:xml)?\s*\n?', '', raw).strip()
     
     # 3. Locate the XML block
@@ -503,11 +535,9 @@ def validate_research_plan(content):
     
     start_index = raw.find(start_tag)
     if start_index == -1:
-        # Check if it's in the original content (in case stripping removed it accidentally)
         start_index_orig = content.find(start_tag)
         if start_index_orig == -1:
             return None, "Missing <research_plan> opening tag."
-        # Use original content if stripping broke it
         raw = content
         start_index = start_index_orig
     
@@ -515,10 +545,9 @@ def validate_research_plan(content):
     if end_index == -1:
         return None, "Missing </research_plan> closing tag (XML may be truncated)."
     
-    # Extract just the XML block
     xml_candidate = raw[start_index : end_index + len(end_tag)]
     
-    # 4. Parse and validate structure using html.parser (always available, no lxml needed)
+    # 4. Parse and validate structure
     try:
         soup = BeautifulSoup(xml_candidate, 'html.parser')
     except Exception as e:
@@ -528,19 +557,44 @@ def validate_research_plan(content):
     if not plan_tag:
         return None, "Failed to parse <research_plan> structure."
     
-    # 5. Validate required elements
+    # 5. Validate title
     title_tag = plan_tag.find('title')
     if not title_tag or not title_tag.get_text(strip=True):
         return None, "Plan is missing a valid <title>."
     
-    steps = plan_tag.find_all('step')
-    if not steps:
-        return None, "Plan must have at least one <step>."
+    # 6. Validate sections
+    sections = plan_tag.find_all('section')
+    if not sections:
+        return None, "Plan must have at least one <section>."
     
-    # Validate steps have actual content
-    empty_steps = [i+1 for i, s in enumerate(steps) if not s.get_text(strip=True)]
-    if empty_steps:
-        return None, f"Step(s) {empty_steps} are empty."
+    total_queries = 0
+    max_per_section = config.RESEARCH_MAX_QUERIES_PER_SECTION
+    max_total = config.RESEARCH_MAX_TOTAL_QUERIES
     
-    # 6. Return the clean extracted XML (preserving original formatting)
+    for i, sec in enumerate(sections):
+        heading = sec.find('heading')
+        if not heading or not heading.get_text(strip=True):
+            return None, f"Section {i+1} is missing a valid <heading>."
+        
+        desc = sec.find('description')
+        if not desc or not desc.get_text(strip=True):
+            return None, f"Section {i+1} ('{heading.get_text(strip=True)}') is missing a <description>."
+        
+        queries = sec.find_all('query')
+        if not queries:
+            return None, f"Section {i+1} ('{heading.get_text(strip=True)}') has no <query> elements."
+        
+        if len(queries) > max_per_section:
+            return None, f"Section {i+1} has {len(queries)} queries (max {max_per_section})."
+        
+        for j, q in enumerate(queries):
+            if not q.get_text(strip=True):
+                return None, f"Section {i+1}, query {j+1} is empty."
+        
+        total_queries += len(queries)
+    
+    if total_queries > max_total:
+        return None, f"Plan has {total_queries} total queries (max {max_total})."
+    
+    # 7. Return the clean extracted XML
     return xml_candidate, None

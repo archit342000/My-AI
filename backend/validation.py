@@ -51,7 +51,7 @@ def validate_output_format(full_content, full_reasoning=""):
     # --- Check 2: Empty content after think block ---
     if think_count > 0 and close_think_count > 0:
         content_after_think = combined.split("</think>")[-1].strip()
-        if len(content_after_think) < 5:
+        if len(content_after_think) < 1:
             errors.append({
                 "code": "EMPTY_RESPONSE",
                 "message": (
@@ -59,7 +59,7 @@ def validate_output_format(full_content, full_reasoning=""):
                     "content after the </think> tag. Please provide substantive content."
                 ),
             })
-    elif full_reasoning and len(combined.strip()) < 5:
+    elif full_reasoning and len(combined.strip()) < 1:
         # Also check if we have separate reasoning but empty content
         errors.append({
             "code": "EMPTY_RESPONSE",

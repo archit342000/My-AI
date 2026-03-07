@@ -4,14 +4,16 @@ import time
 from backend.logger import log_llm_call, log_event
 from backend import config
 
-def stream_chat_completion(url, payload):
+import httpx
+
+async def stream_chat_completion(url, payload):
     """
-    Streams the chat completion from the LM Studio API.
+    Streams the chat completion from the LM Studio API (Async).
     Yields parsed chunks and logs the final result.
     """
     start_time = time.time()
     full_response = ""
-    stream_completed = False
+    full_reasoning = ""
     model = payload.get("model", "unknown")
     
     base_url = url.rstrip("/")
@@ -21,40 +23,46 @@ def stream_chat_completion(url, payload):
         endpoint = f"{base_url}/chat/completions"
 
     try:
-        response = requests.post(
-            endpoint,
-            json=payload,
-            stream=True,
-            timeout=(5, None) # Connect timeout 5s, read timeout None
-        )
-        
-        for line in response.iter_lines():
-            if not line: continue
-            decoded_line = line.decode('utf-8')
-            
-            if not decoded_line.startswith('data: '): continue
-            if decoded_line == 'data: [DONE]':
-                stream_completed = True
-                break
-            
-            try:
-                data_json = json.loads(decoded_line[6:])
-                choices = data_json.get('choices', [])
-                if choices:
-                    delta = choices[0].get('delta', {})
-                    if 'content' in delta: full_response += delta['content'] or ''
-                    if 'reasoning_content' in delta: full_reasoning = delta.get('reasoning_content', '')
-                    # We don't log reasoning separately in the summary for now, but it's in the log file
-            except:
-                pass
-                
-            yield decoded_line
+        async with httpx.AsyncClient(timeout=httpx.Timeout(config.TIMEOUT_LLM_ASYNC or 5.0, read=None)) as client:
+            async with client.stream("POST", endpoint, json=payload) as response:
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if not line: continue
+                    
+                    if not line.startswith('data: '): continue
+                    if line == 'data: [DONE]':
+                        break
+                    
+                    try:
+                        data_json = json.loads(line[6:])
+                        choices = data_json.get('choices', [])
+                        if choices:
+                            delta = choices[0].get('delta', {})
+                            if 'content' in delta: full_response += delta['content'] or ''
+                            if 'reasoning_content' in delta: full_reasoning += delta.get('reasoning_content', '')
+                    except:
+                        pass
+                        
+                    yield line
         
         # Log the full transaction
         duration = time.time() - start_time
-        log_llm_call(payload, full_response, model, duration_s=duration, call_type="stream")
+        is_json_requested = "response_format" in payload
+        final_log_text = ""
+        
+        if is_json_requested:
+            # For JSON, the 'full_response' should be empty, and 'full_reasoning' contains the JSON.
+            final_log_text = full_response or full_reasoning
+        else:
+            if full_reasoning:
+                final_log_text += f"<think>\n{full_reasoning}\n</think>\n"
+            final_log_text += (full_response or "")
+            
+        log_llm_call(payload, final_log_text, model, duration_s=duration, call_type="stream")
             
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         error_msg = f"Error in stream_chat_completion: {e}"
         log_event("llm_stream_error", {"error": str(e)})
         yield f"data: {json.dumps({'error': str(e)})}"
@@ -85,13 +93,40 @@ def chat_completion(url, payload):
         response.raise_for_status()
         
         data = response.json()
-        content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+        
+        msg = data.get("choices", [{}])[0].get("message", {})
+        content = msg.get("content", "")
+        reasoning = msg.get("reasoning_content", "")
+        
+        # AGENTS.md compliance: always prioritize gathering all emitted signals.
+        # However, for structured output (json_schema or json_object), 
+        # LM Studio quirks mean the JSON is often in reasoning_content.
+        
+        is_json_requested = "response_format" in payload
+        final_output = ""
+        
+        if is_json_requested:
+            # AGENTS.md: For structured output, LM Studio streams the JSON inside 'reasoning_content'.
+            # We prioritize it as the primary functional payload. No tags.
+            if reasoning and not content:
+                final_output = reasoning
+            elif content:
+                final_output = content
+            elif reasoning:
+                final_output = reasoning
+        else:
+            # Standard chat: Preserving reasoning in history via <think> tags,
+            # but functional logic in research.py will ignore it.
+            if reasoning:
+                final_output += f"<think>\n{reasoning}\n</think>\n"
+            if content:
+                final_output += content
         
         # Log the full transaction
         duration = time.time() - start_time
-        log_llm_call(payload, content, model, duration_s=duration, call_type="blocking")
+        log_llm_call(payload, final_output, model, duration_s=duration, call_type="blocking")
         
-        return content
+        return final_output
         
     except Exception as e:
         log_event("llm_blocking_error", {"error": str(e)})

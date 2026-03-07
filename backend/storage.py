@@ -14,15 +14,16 @@ def init_db():
             title TEXT,
             timestamp REAL,
             memory_mode INTEGER DEFAULT 0,
-            deep_research_mode INTEGER DEFAULT 0,
+            research_mode INTEGER DEFAULT 0,
             is_vision INTEGER DEFAULT 0,
-            last_model TEXT
+            last_model TEXT,
+            vision_model TEXT
         )
     ''')
     
-    # Try to add deep_research_mode in case the table already exists
+    # Try to add research_mode in case the table already exists
     try:
-        c.execute('ALTER TABLE chats ADD COLUMN deep_research_mode INTEGER DEFAULT 0')
+        c.execute('ALTER TABLE chats ADD COLUMN research_mode INTEGER DEFAULT 0')
     except sqlite3.OperationalError:
         pass  # Column already exists
 
@@ -33,6 +34,11 @@ def init_db():
 
     try:
         c.execute('ALTER TABLE chats ADD COLUMN last_model TEXT')
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        c.execute('ALTER TABLE chats ADD COLUMN vision_model TEXT')
     except sqlite3.OperationalError:
         pass
 
@@ -91,20 +97,21 @@ def get_chat(chat_id):
 
     return chat_dict
 
-def save_chat(chat_id, title, timestamp, memory_mode, deep_research_mode=False, is_vision=False, last_model=None):
+def save_chat(chat_id, title, timestamp, memory_mode, research_mode=False, is_vision=False, last_model=None, vision_model=None):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''
-        INSERT INTO chats (id, title, timestamp, memory_mode, deep_research_mode, is_vision, last_model)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO chats (id, title, timestamp, memory_mode, research_mode, is_vision, last_model, vision_model)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
             title=excluded.title,
             timestamp=excluded.timestamp,
             memory_mode=excluded.memory_mode,
-            deep_research_mode=excluded.deep_research_mode,
+            research_mode=excluded.research_mode,
             is_vision=excluded.is_vision,
-            last_model=excluded.last_model
-    ''', (chat_id, title, timestamp, 1 if memory_mode else 0, 1 if deep_research_mode else 0, 1 if is_vision else 0, last_model))
+            last_model=excluded.last_model,
+            vision_model=excluded.vision_model
+    ''', (chat_id, title, timestamp, 1 if memory_mode else 0, 1 if research_mode else 0, 1 if is_vision else 0, last_model, vision_model))
     conn.commit()
     conn.close()
 
@@ -148,6 +155,13 @@ def update_chat_model(chat_id, last_model):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("UPDATE chats SET last_model = ? WHERE id = ?", (last_model, chat_id))
+    conn.commit()
+    conn.close()
+
+def update_chat_vision_model(chat_id, vision_model):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("UPDATE chats SET vision_model = ? WHERE id = ?", (vision_model, chat_id))
     conn.commit()
     conn.close()
 

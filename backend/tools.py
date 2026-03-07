@@ -101,11 +101,11 @@ VISIT_PAGE_TOOL = {
     }
 }
 
-VISIT_PAGE_DEEP_RESEARCH_TOOL = {
+VISIT_PAGE_RESEARCH_TOOL = {
     "type": "function",
     "function": {
-        "name": "visit_page_deep_research",
-        "description": "Visits a specific URL, extracts its visible Markdown text, chunks it, and permanently stores deeply relevant information into the current Deep Research persistent memory database. Use this tool extensively during information gathering passes.",
+        "name": "visit_page_research",
+        "description": "Visits a specific URL, extracts its visible Markdown text, chunks it, and permanently stores deeply relevant information into the current Research persistent memory database. Use this tool extensively during information gathering passes.",
         "parameters": {
             "type": "object",
             "properties": {

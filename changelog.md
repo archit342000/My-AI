@@ -1,7 +1,22 @@
 # CHANGELOG
 
+## v1.3.0 (Research Architecture Overhaul)
+* **Complete Research Pipeline Rewrite**: Deprecated `deep_research.py` in favor of a rebuilt, highly-resilient `research.py` engine featuring strict token budgeting, semantic triage, and a multi-phase generation strategy.
+* **Phase 0 & 1 — Context Scout & Planning**: Integrated a pre-planning "Scout" phase that classifies the user's topic, evaluates time-sensitivity, and executes preliminary contextual searches *before* designing the sequential XML research plan.
+* **Phase 2 — Section-by-Section Synthesis**: Shifted from global context dumping to localized generation. The engine now fetches sources, reflects, triages information, and writes the report one section at a time, drastically reducing context bloat and hallucination.
+* **Phase 3 — Audit & "Surgeon" Patching**: Introduced an automated post-generation quality phase. A "Detective" agent scans the stitched report for contradictions and missing citations, followed by a "Surgeon" agent that surgically patches specific paragraphs rather than rewriting entire sections.
+* **Mechanical Citation Enforcement**: Implemented deterministic regex-based citation normalizers (`_normalize_citations`, `_strip_invalid_citations`) that aggressively strip out hallucinated `[N]` references that don't match the active `source_registry`.
+* **Meander Detection System**: Built an active stream monitor that strictly enforces reasoning limits (e.g., `RESEARCH_MEANDER_THOUGHT_LIMIT`) and automatically truncates `<think>` blocks if the local model falls into an infinite reasoning loop.
+* **Strict Reasoning Directives**: Updated prompts across all research agents (Scout, Planner, Executor, Detective, Surgeon) with highly specific system directives to tightly control and guide chain-of-thought pathways.
+* **System & UI Fixes**: 
+    *   Refactored the deep research resume state serialization to flawlessly recover `accumulated_summaries` across application reloads.
+    *   Fixed intelligence logs UI to cleanly parse and render markdown wrappers and unclosed `<think>` tags without JSON artifacting.
+    *   Resolved `undefined serverModels` reference in frontend payloads.
+* **Codebase Cleanup**: Purged legacy unit/integration test files (`test_*.py`), removed Playwright UI testing scripts, and erased debugging logs (`DEEP_RESEARCH_AUDIT.md`) to streamline the production repository.
+* **Version Bump**: Incremented version to 1.3.0.
+
 ## v1.2.0
-* **Sequential Deep Research Pipeline**: Rewrote the entire execution phase from parallel to sequential step processing. Each step now builds on accumulated context from prior steps, enabling progressive understanding.
+* **Sequential Research Pipeline**: Rewrote the entire execution phase from parallel to sequential step processing. Each step now builds on accumulated context from prior steps, enabling progressive understanding.
 * **Per-Step Reflection & Gap Filling**: Added an LLM-based reflection phase after each step that analyzes extracted content, identifies information gaps, and executes up to 2 targeted follow-up searches to fill them.
 * **Deterministic URL Selection**: Replaced the AI-based URL ranking LLM call with a deterministic heuristic (Tavily score + domain diversity), eliminating an entire LLM round-trip per step.
 * **Enhanced Content Extraction**: Implemented a multi-strategy extraction chain for deep mode — direct HTTP GET with markdownify, Tavily Extract fallback for JS-rendered pages, and PyMuPDF (`fitz`) fallback for PDF documents.
@@ -22,7 +37,7 @@
 * **Version Bump**: Incremented version to 1.1.5.
 
 ## v1.1.4
-* **Deep Research Resume Compatbility Fix**: Deep Research agent now resumes properly after user resumes the conversation.
+* **Research Resume Compatbility Fix**: Research agent now resumes properly after user resumes the conversation.
 * **Fix Embedding Model**: Fixed embedding model to use `text-embedding-qwen3-embedding-0.6b` instead of `text-embedding-jina-embeddings-v5-text-small-retrieval`.
 * **Version Bump**: Incremented version to 1.1.4.
 
@@ -40,14 +55,14 @@
 
 ## v1.1.2
 * **RAG & Infrastructure Fixes**:
-    * **Server Link Mapping**: Fixed a critical bug where Deep Research agents were ignoring the `LM_STUDIO_URL` setting and defaulting to localhost.
+    * **Server Link Mapping**: Fixed a critical bug where Research agents were ignoring the `LM_STUDIO_URL` setting and defaulting to localhost.
     * **Unified Configuration**: Centralized all backend connection parameters (`LM_STUDIO_URL`, `EMBEDDING_MODEL`, `CHROMA_PATH`) into a dedicated `backend/config.py` for system-wide consistency.
     * **Robust URL Suffixing**: Implemented automated detection and handling of the `/v1` suffix in inference URLs to prevent connection failures.
     * **Standardized Defaults**: Aligned global embedding defaults with Jina v5 architecture requirements.
 * **Version Bump**: Incremented version to 1.1.2.
 
 ## v1.1.1
-* **Deep Research Optimization**: Scaled down context parameters for better performance with local 512k context windows (originally built for 1M).
+* **Research Optimization**: Scaled down context parameters for better performance with local 512k context windows (originally built for 1M).
     * **Context Gathering**: Max tokens from web scraping reduced from 700k to 400k.
     * **Report Length**: Report limits halved from ~64k down to 32k (`max_tokens: 32768`).
 * **Version Bump**: Incremented version to 1.1.1.
@@ -80,7 +95,7 @@
 
 ## v1.0.2
 * **Temporary Chat Guardrails**: 
-    * The "Temporary Chat" button is now automatically greyed out and disabled during active Deep Research sessions or when a conversation has already started.
+    * The "Temporary Chat" button is now automatically greyed out and disabled during active Research sessions or when a conversation has already started.
     * Added informative tooltips to the temporary chat button to explain its disabled state.
 * **Transient Session Privacy**: 
     * Memory mode (RAG) is now explicitly forced OFF for all temporary chats.
@@ -96,7 +111,7 @@
 * **Unified Architectural Overhaul**: Successfully migrated from a frontend-only mock to a robust **Python Flask Backend**.
 * **Persistent Storage**: Integrated **SQLite** for reliable, long-term chat history and metadata storage.
 * **Intelligent Memory (RAG)**: Developed an ephemeral and persistent memory system using **ChromaDB** to provide context-aware responses via semantic retrieval.
-* **Deep Research Architecture**: Implemented a multi-pass ($n+1$) research agent with real-time web browsing, link discovery, and structured reporting capabilities.
+* **Research Architecture**: Implemented a multi-pass ($n+1$) research agent with real-time web browsing, link discovery, and structured reporting capabilities.
 * **Vision Integration**: Added support for multimodal inference, allowing the AI to "see" and describe attached images.
 * **Premium UI/UX (Luminous Material)**:
     * Fully responsive Glassmorphism design system built with Vanilla CSS.

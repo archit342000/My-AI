@@ -117,12 +117,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const saveTempChatBtn = document.getElementById('save-temp-chat-btn');
     // Memory toggle is now inside settings modal
     const memoryToggleSwitch = document.getElementById('memory-toggle-switch');
-    const deepResearchToggle = document.getElementById('deep-research-toggle');
+    const researchToggle = document.getElementById('deep-research-toggle');
     const chatTitleHeader = document.getElementById('chat-title-header');
     const chatTitleDisplay = document.getElementById('chat-title-display');
     const researchDepthSelector = document.querySelector('.research-depth-selector');
     const toggleRegularSearchBtn = document.getElementById('toggle-regular-search');
     const toggleDeepSearchBtn = document.getElementById('toggle-deep-search');
+    const researchActions = document.getElementById('research-actions');
+    const discardResearchBtn = document.getElementById('discard-research-btn');
 
     // 2. Application State - SELECTIVE PERSISTENCE
     let serverLink = localStorage.getItem('my_ai_server_link') || '';
@@ -138,7 +140,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentAbortController = null;
     let isTemporaryChat = false;
     let isMemoryMode = true;
-    let isDeepResearchMode = false;
+    let isResearchMode = false;
     let searchDepthMode = 'regular'; // 'regular' or 'deep'
     let wasMemoryMode = true; // Track previous memory state - default to true
     let currentResearchPlan = null; // Store current unapproved plan text
@@ -274,7 +276,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 title: titleText,
                 messages: chatHistory,
                 memory_mode: isMemoryMode,
-                deep_research_mode: isDeepResearchMode,
+                research_mode: isResearchMode,
                 is_vision: currentChatData ? currentChatData.is_vision : false,
                 last_model: currentChatData ? currentChatData.last_model : selectedModelName
             })
@@ -311,7 +313,7 @@ document.addEventListener('DOMContentLoaded', () => {
         chatHistory = [];
         currentResearchPlan = null;
         messagesContainer.innerHTML = '';
-        currentChatId = temporary ? null : generateId();
+        currentChatId = generateId(); // Always assign an ID for backend task routing (temporary chats are still prevented from persisting by the isTemporaryChat flag)
         currentChatData = null; // New chat has no vision restriction yet
         checkSendButtonCompatibility();
 
@@ -321,9 +323,9 @@ document.addEventListener('DOMContentLoaded', () => {
             memoryToggleSwitch.classList.toggle('active', isMemoryMode);
         }
 
-        isDeepResearchMode = false;
+        isResearchMode = false;
         searchDepthMode = 'regular';
-        updateDeepResearchUI();
+        updateResearchUI();
         updateSearchDepthUI();
 
         if (welcomeHero) {
@@ -378,8 +380,8 @@ document.addEventListener('DOMContentLoaded', () => {
             chatHistory = chat.messages || [];
             currentResearchPlan = null;
             isMemoryMode = !!chat.memory_mode;
-            isDeepResearchMode = !!chat.deep_research_mode;
-            updateDeepResearchUI();
+            isResearchMode = !!chat.research_mode;
+            updateResearchUI();
 
             // Update Header Display
             checkSendButtonCompatibility();
@@ -395,7 +397,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (chat.is_vision) {
                     headerHtml += ` <span style="font-size: 0.6rem; font-weight: 600; padding: 2px 6px; background: rgba(6, 182, 212, 0.1); color: var(--brand-accent-1); border-radius: 999px; border: 1px solid rgba(6, 182, 212, 0.2); margin-left: 6px; vertical-align: middle;">Vision</span>`;
                 }
-                if (chat.deep_research_mode) {
+                if (chat.research_mode) {
                     headerHtml += ` <span style="font-size: 0.6rem; font-weight: 600; padding: 2px 6px; background: rgba(168, 85, 247, 0.1); color: #a855f7; border-radius: 999px; border: 1px solid rgba(168, 85, 247, 0.2); margin-left: 6px; vertical-align: middle;">Research</span>`;
                 }
                 chatTitleDisplay.innerHTML = headerHtml;
@@ -415,7 +417,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         appendMessage('User', msg.content, 'user');
                     }
                 } else if (msg.role === 'assistant') {
-                    const { thoughts, cleaned, plan } = parseContent(msg.content);
+                    const { thoughts, cleaned, plan, report } = parseContent(msg.content);
 
                     // Persistence Fix: Check if this plan was already approved in the following turn
                     let isApproved = false;
@@ -429,7 +431,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     let isJsonActivities = false;
                     let activityObjs = [];
                     let activityStrs = [];
-                    if (isDeepResearchMode && thoughts && thoughts.includes('__deep_research_activity__')) {
+                    if (isResearchMode && thoughts && thoughts.includes('__research_activity__')) {
                         let str = thoughts;
                         let inString = false;
                         let escape = false;
@@ -452,7 +454,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                         try {
                                             let jsonStr = str.substring(start, i + 1);
                                             let parsed = JSON.parse(jsonStr);
-                                            if (parsed.__deep_research_activity__) {
+                                            if (parsed.__research_activity__) {
                                                 activityObjs.push(parsed);
                                                 activityStrs.push(jsonStr);
                                             }
@@ -470,7 +472,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
                     let contentHtml = '';
                     if (isJsonActivities) {
-                        contentHtml += `<div class="deep-research-activity-feed"></div>`;
+                        contentHtml += `
+                            <details class="research-activity-wrapper">
+                                <summary class="research-activity-summary">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><polyline points="12 16 16 12 12 8"></polyline><line x1="8" y1="12" x2="16" y2="12"></line></svg>
+                                    <span class="summary-text">Research Activity (Completed)</span>
+                                </summary>
+                                <div class="deep-research-activity-feed"></div>
+                            </details>
+                        `;
                     }
 
                     let plainThoughts = thoughts || '';
@@ -509,7 +519,31 @@ document.addEventListener('DOMContentLoaded', () => {
                                 </div>
                             </div>`;
                     }
-                    contentHtml += `<div class="actual-content-wrapper">${formatMarkdown(cleaned)}</div>`;
+                    const isRetryVisible = activityObjs.some(obj => obj.type === 'needs_retry');
+                    if (isResearchMode && report && !plan) {
+                        contentHtml += `
+                            <div class="research-report-card">
+                                <div class="report-card-icon">
+                                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                        <polyline points="14 2 14 8 20 8"></polyline>
+                                        <line x1="16" y1="13" x2="8" y2="13"></line>
+                                        <line x1="16" y1="17" x2="8" y2="17"></line>
+                                        <polyline points="10 9 9 9 8 9"></polyline>
+                                    </svg>
+                                </div>
+                                <div class="report-card-text">
+                                    <span class="report-card-title">Research Report Generated</span>
+                                    <span class="report-card-desc">The agent has finished compiling its findings.</span>
+                                </div>
+                                <button class="btn-primary view-report-btn" data-report-content="${encodeURIComponent(report)}">
+                                    Open Canvas
+                                </button>
+                            </div>
+                        `;
+                    } else {
+                        contentHtml += `<div class="actual-content-wrapper">${formatMarkdown(cleaned)}</div>`;
+                    }
                     contentDiv.innerHTML = contentHtml;
 
                     if (plan) {
@@ -528,6 +562,24 @@ document.addEventListener('DOMContentLoaded', () => {
                         if (contentBody) {
                             contentBody.innerHTML = formatMarkdown(plainThoughts);
                         }
+                    }
+                    // Catch for ungraceful backend halts (like silent process crashes)
+                    if (isResearchMode && index === chatHistory.length - 1 && !report && !plan && !isRetryVisible && !chat.is_research_running) {
+                        const fallbackResume = document.createElement('div');
+                        fallbackResume.innerHTML = `
+                            <div style="margin-top: 1rem; padding: 1rem; border: 1px solid rgba(255,100,100,0.3); border-radius: 8px; background: rgba(255,50,50,0.05);">
+                                <div style="display: flex; align-items: center; gap: 0.5rem; color: #ff6b6b; font-weight: 600; margin-bottom: 0.75rem;">
+                                    <span>⚠️</span> <span>Research halted unexpectedly mid-process.</span>
+                                </div>
+                                <button class="btn-primary" style="padding: 0.5rem 1rem; font-size: 0.875rem;" onclick="this.textContent = 'Resuming...'; this.disabled = true;">
+                                    Force Resume Research
+                                </button>
+                            </div>
+                        `;
+                        fallbackResume.querySelector('button').addEventListener('click', () => {
+                            sendMessage(null, null, false, 'section_execution');
+                        });
+                        contentDiv.appendChild(fallbackResume);
                     }
                 }
             });
@@ -662,7 +714,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="chat-list-item-title" style="display: flex; align-items: center; gap: 6px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;">
                     <span>${displayTitle}</span>
                     ${chat.is_vision ? `<span style="font-size: 0.6rem; font-weight: 500; letter-spacing: 0.02em; padding: 1px 4px; background: rgba(6, 182, 212, 0.1); color: var(--brand-accent-1); border-radius: 4px; border: 1px solid rgba(6, 182, 212, 0.2); flex-shrink: 0;">Vision</span>` : ''}
-                    ${chat.deep_research_mode ? `<span style="font-size: 0.6rem; font-weight: 500; letter-spacing: 0.02em; padding: 1px 4px; background: rgba(168, 85, 247, 0.1); color: #a855f7; border-radius: 4px; border: 1px solid rgba(168, 85, 247, 0.2); flex-shrink: 0;">Research</span>` : ''}
+                    ${chat.research_mode ? `<span style="font-size: 0.6rem; font-weight: 500; letter-spacing: 0.02em; padding: 1px 4px; background: rgba(168, 85, 247, 0.1); color: #a855f7; border-radius: 4px; border: 1px solid rgba(168, 85, 247, 0.2); flex-shrink: 0;">Research</span>` : ''}
                 </div>
                 <div class="chat-item-actions" style="display: flex; gap: 2px;"></div>
             `;
@@ -712,13 +764,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
             // Ensure wasMemoryMode stays in sync while in regular mode
-            if (!isDeepResearchMode) {
+            if (!isResearchMode) {
                 wasMemoryMode = isMemoryMode;
             }
         });
     }
 
-    // Deep Research Toggle Logic
+    // Research Toggle Logic
 
     /**
      * Shows a custom Luminous-styled dialog (Alert or Confirm)
@@ -813,29 +865,29 @@ document.addEventListener('DOMContentLoaded', () => {
         return await showModal(title, message, { type: 'alert' });
     }
 
-    function updateDeepResearchUI() {
+    function updateResearchUI() {
         // Toggle localized wrapper state
-        if (deepResearchToggle) {
-            deepResearchToggle.classList.toggle('active', isDeepResearchMode);
+        if (researchToggle) {
+            researchToggle.classList.toggle('active', isResearchMode);
 
             if (chatHistory.length > 0) {
-                deepResearchToggle.disabled = true;
-                deepResearchToggle.style.pointerEvents = 'auto'; // allow hover
-                deepResearchToggle.style.opacity = '0.4';
-                deepResearchToggle.style.cursor = 'not-allowed';
-                deepResearchToggle.title = "Deep Research mode cannot be toggled after a conversation has started.";
+                researchToggle.disabled = true;
+                researchToggle.style.pointerEvents = 'auto'; // allow hover
+                researchToggle.style.opacity = '0.4';
+                researchToggle.style.cursor = 'not-allowed';
+                researchToggle.title = "Research Agent mode cannot be toggled after a conversation has started.";
             } else {
-                deepResearchToggle.disabled = false;
-                deepResearchToggle.style.pointerEvents = 'auto';
-                deepResearchToggle.style.opacity = '1';
-                deepResearchToggle.style.cursor = 'pointer';
-                deepResearchToggle.title = isDeepResearchMode ? "Deep Research Mode On" : "Enable Deep Research Mode";
+                researchToggle.disabled = false;
+                researchToggle.style.pointerEvents = 'auto';
+                researchToggle.style.opacity = '1';
+                researchToggle.style.cursor = 'pointer';
+                researchToggle.title = isResearchMode ? "Research Agent Mode On" : "Enable Research Agent Mode";
             }
         }
 
-        // Disable Memory Toggle in Deep Research or Temporary Chat Mode
+        // Disable Memory Toggle in Research or Temporary Chat Mode
         if (memoryToggleSwitch) {
-            if (isDeepResearchMode || isTemporaryChat) {
+            if (isResearchMode || isTemporaryChat) {
                 // Save current state before disabling
                 wasMemoryMode = isMemoryMode;
                 isMemoryMode = false;
@@ -843,7 +895,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 memoryToggleSwitch.classList.remove('active');
                 memoryToggleSwitch.style.pointerEvents = 'none';
                 memoryToggleSwitch.style.opacity = '0.5';
-                memoryToggleSwitch.title = isDeepResearchMode ? "Memory mode is disabled in Deep Research." : "Memory mode is disabled for Temporary Chats.";
+                memoryToggleSwitch.title = isResearchMode ? "Memory mode is disabled in Research." : "Memory mode is disabled for Temporary Chats.";
             } else {
                 // Restore previous memory state if we were in a restricted mode formerly
                 // This prevents overwriting isMemoryMode with a stale wasMemoryMode on every call
@@ -859,11 +911,11 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        // Disable Model Selection if Deep Research has started
+        // Disable Model Selection if Research has started
         if (modelSelectDropdown) {
-            if (isDeepResearchMode && chatHistory.length > 0) {
+            if (isResearchMode && chatHistory.length > 0) {
                 modelSelectDropdown.disabled = true;
-                modelSelectDropdown.title = "Model is locked for started Deep Research conversations.";
+                modelSelectDropdown.title = "Model is locked for started Research conversations.";
                 modelSelectDropdown.style.opacity = '0.7';
                 modelSelectDropdown.style.cursor = 'not-allowed';
             } else {
@@ -876,11 +928,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Disable System Prompt Input
         if (promptInput) {
-            promptInput.disabled = isDeepResearchMode;
+            promptInput.disabled = isResearchMode;
             const promptContainer = promptInput.closest('.hardware-surface');
             if (promptContainer) {
-                promptContainer.style.opacity = isDeepResearchMode ? '0.5' : '1';
-                promptContainer.style.pointerEvents = isDeepResearchMode ? 'none' : 'auto';
+                promptContainer.style.opacity = isResearchMode ? '0.5' : '1';
+                promptContainer.style.pointerEvents = isResearchMode ? 'none' : 'auto';
             }
         }
 
@@ -888,11 +940,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const sliders = [tempSlider, topPSlider, maxTokensSlider, presencePenaltySlider, frequencyPenaltySlider, reasoningLevelSlider, minPSlider, topKSlider];
         sliders.forEach(slider => {
             if (slider) {
-                slider.disabled = isDeepResearchMode;
+                slider.disabled = isResearchMode;
                 const container = slider.closest('.hardware-surface');
                 if (container) {
-                    container.style.opacity = isDeepResearchMode ? '0.5' : '1';
-                    container.style.pointerEvents = isDeepResearchMode ? 'none' : 'auto';
+                    container.style.opacity = isResearchMode ? '0.5' : '1';
+                    container.style.pointerEvents = isResearchMode ? 'none' : 'auto';
                 }
             }
         });
@@ -902,8 +954,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const greetingSub = welcomeHero ? welcomeHero.querySelector('.greeting-sub') : null;
 
         if (greetingText && greetingSub) {
-            if (isDeepResearchMode) {
-                greetingText.textContent = "Deep Research Agent";
+            if (isResearchMode) {
+                greetingText.textContent = "Research Agent";
                 if (searchDepthMode === 'deep') {
                     greetingSub.textContent = "I'll recursively explore every source, mapping out websites and sub-pages to uncover hidden details.";
                 } else {
@@ -916,7 +968,38 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (researchDepthSelector) {
-            researchDepthSelector.style.display = isDeepResearchMode ? 'flex' : 'none';
+            researchDepthSelector.style.display = isResearchMode ? 'flex' : 'none';
+        }
+
+        // Chat Lockdown Logic
+        // Lock input ONLY if making a deep research run AND the plan is confirmed/executing.
+        // We know research is executing if we are beyond drafting (history has more than the draft plan response + approval message) or if we receive active generation.
+        const isCurrentlyGenerating = typeof isGenerating !== 'undefined' && isGenerating;
+        const indexApproval = chatHistory.findIndex(m => m.content === "Plan Approved. Proceed with research." || m.content === "Proceed with research.");
+        // A deep research run is considered "started" if there is an approval message inside the history OR we got no plan (just generating normally).
+        let hasApprovedResearch = false;
+        if (isResearchMode) {
+            hasApprovedResearch = isCurrentlyGenerating || (indexApproval > -1);
+            // Edge case: Maybe we had no plan? Just started immediately in research mode with some error?
+            if (!currentResearchPlan && chatHistory.length > 2) hasApprovedResearch = true;
+        }
+
+        if (textArea) {
+            textArea.disabled = hasApprovedResearch;
+            textArea.placeholder = hasApprovedResearch ? "Chat is locked during research. Use 'Discard' to restart." : "Start a conversation...";
+            textArea.style.opacity = hasApprovedResearch ? '0.6' : '1';
+        }
+
+        if (researchActions) {
+            researchActions.style.display = hasApprovedResearch ? 'flex' : 'none';
+        }
+
+        // Disable Image Attachment in Research
+        const attachBtn = document.getElementById('attach-btn');
+        if (attachBtn && isResearchMode) {
+            attachBtn.style.opacity = '0.3';
+            attachBtn.style.pointerEvents = 'none';
+            attachBtn.title = "Images are not supported in Research mode.";
         }
 
         // Update Temporary Chat Button State
@@ -927,14 +1010,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!tempChatBtn) return;
 
         const hasOngoingChat = chatHistory.length > 0;
-        const isDisabled = isDeepResearchMode || hasOngoingChat;
+        const isDisabled = isResearchMode || hasOngoingChat;
 
         tempChatBtn.disabled = isDisabled;
         if (isDisabled) {
             tempChatBtn.style.opacity = '0.4';
             tempChatBtn.style.cursor = 'not-allowed';
-            if (isDeepResearchMode) {
-                tempChatBtn.title = "Temporary chat is not available in Deep Research mode.";
+            if (isResearchMode) {
+                tempChatBtn.title = "Temporary chat is not available in Research mode.";
             } else {
                 tempChatBtn.title = "Temporary chat cannot be started during an ongoing conversation.";
             }
@@ -971,7 +1054,7 @@ document.addEventListener('DOMContentLoaded', () => {
         toggleRegularSearchBtn.addEventListener('click', () => {
             searchDepthMode = 'regular';
             updateSearchDepthUI();
-            updateDeepResearchUI();
+            updateResearchUI();
         });
     }
 
@@ -979,17 +1062,17 @@ document.addEventListener('DOMContentLoaded', () => {
         toggleDeepSearchBtn.addEventListener('click', () => {
             searchDepthMode = 'deep';
             updateSearchDepthUI();
-            updateDeepResearchUI();
+            updateResearchUI();
         });
     }
 
-    if (deepResearchToggle) {
+    if (researchToggle) {
         // Initialize state
-        updateDeepResearchUI();
+        updateResearchUI();
 
-        deepResearchToggle.addEventListener('click', () => {
-            isDeepResearchMode = !isDeepResearchMode;
-            updateDeepResearchUI();
+        researchToggle.addEventListener('click', () => {
+            isResearchMode = !isResearchMode;
+            updateResearchUI();
 
             // Sync vision compatibility when toggling mode
             checkSendButtonCompatibility();
@@ -1026,7 +1109,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (saveTempChatBtn) saveTempChatBtn.addEventListener('click', () => {
         if (isTemporaryChat) {
             isTemporaryChat = false;
-            currentChatId = generateId();
+            // We now maintain the originally generated currentChatId
             if (tempChatBanner) tempChatBanner.classList.add('hidden');
             if (tempChatBtn) tempChatBtn.classList.remove('active');
             if (chatHistory.length > 0) {
@@ -1035,12 +1118,54 @@ document.addEventListener('DOMContentLoaded', () => {
                 fetch('/api/chats/save', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ chat_id: currentChatId, title: titleText, messages: chatHistory, memory_mode: isMemoryMode, deep_research_mode: isDeepResearchMode })
+                    body: JSON.stringify({ chat_id: currentChatId, title: titleText, messages: chatHistory, memory_mode: isMemoryMode, research_mode: isResearchMode })
                 }).then(() => { loadChats(); renderChatList(); });
             }
-            updateDeepResearchUI();
+            updateResearchUI();
         }
     });
+
+    if (discardResearchBtn) {
+        discardResearchBtn.addEventListener('click', async () => {
+            if (!currentChatId) return;
+            if (await showConfirm('Discard Research', 'Are you sure you want to abandon the current research session and restart? All gathered data and state will be cleared.', true)) {
+                try {
+                    // 1. Stop local generation if active
+                    resetGenerationState();
+
+                    // 2. Capture current query to restore it for the user
+                    let lastQuery = "";
+                    if (chatHistory.length > 0 && chatHistory[0].role === 'user') {
+                        lastQuery = chatHistory[0].content;
+                        if (Array.isArray(lastQuery)) {
+                            const textPart = lastQuery.find(p => p.type === 'text');
+                            lastQuery = textPart ? textPart.text : "";
+                        }
+                    }
+
+                    const response = await fetch(`/api/chats/${currentChatId}/discard`, { method: 'POST' });
+                    if (response.ok) {
+                        // 3. Reload the chat
+                        await loadChat(currentChatId);
+
+                        // 4. Restore query to textarea so user can refine and resubmit
+                        if (textArea && lastQuery) {
+                            textArea.value = lastQuery;
+                            textArea.focus();
+                            // Trigger auto-resize
+                            textArea.style.height = 'auto';
+                            textArea.style.height = (textArea.scrollHeight) + 'px';
+                        }
+                    } else {
+                        showAlert('Error', 'Failed to discard research. Please check backend logs.');
+                    }
+                } catch (e) {
+                    console.error("Discard error:", e);
+                    showAlert('Error', 'An error occurred while discarding research.');
+                }
+            }
+        });
+    }
 
     async function fetchModels() {
         if (!serverLink) return;
@@ -1224,8 +1349,8 @@ document.addEventListener('DOMContentLoaded', () => {
     function checkSendButtonCompatibility() {
         if (!sendBtn || !sendBtnWrapper) return;
 
-        // NEW: This logic ONLY applies to regular chats, not Deep Research
-        if (isDeepResearchMode) {
+        // NEW: This logic ONLY applies to regular chats, not Research
+        if (isResearchMode) {
             sendBtn.disabled = false;
             sendBtn.title = "";
             sendBtnWrapper.title = "";
@@ -1374,9 +1499,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function selectModel(id, name, hasVision, isManual = true) {
         if (isManual) {
-            // New Requirement: Block model switch for Deep Research chats that have started
-            if (isDeepResearchMode && chatHistory.length > 0) {
-                await showAlert('Model Locked', 'Model cannot be changed once a Deep Research conversation has started to ensure research consistency.');
+            // New Requirement: Block model switch for Research chats that have started
+            if (isResearchMode && chatHistory.length > 0) {
+                await showAlert('Model Locked', 'Model cannot be changed once a Research conversation has started to ensure research consistency.');
                 if (modelSelectDropdown) modelSelectDropdown.value = selectedModel || "";
                 renderModelOptions();
                 return;
@@ -1384,7 +1509,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // New Requirement: Block non-vision model switch if chat is vision-restricted
             // ONLY applies to regular chats
-            if (!isDeepResearchMode && currentChatData?.is_vision && !hasVision) {
+            if (!isResearchMode && currentChatData?.is_vision && !hasVision) {
                 await showAlert('Incompatible Model', 'This conversation contains images. You must use a Vision-capable model to continue this chat.');
                 if (modelSelectDropdown) modelSelectDropdown.value = selectedModel || "";
                 renderModelOptions();
@@ -1498,7 +1623,7 @@ document.addEventListener('DOMContentLoaded', () => {
         updateVisionUI(hasVision);
         checkSendButtonCompatibility();
 
-        if (currentChatData && !isDeepResearchMode) {
+        if (currentChatData && !isResearchMode) {
             currentChatData.last_model = name;
             const lastModelDisplay = document.getElementById('last-model-display');
             if (lastModelDisplay) {
@@ -1950,7 +2075,15 @@ document.addEventListener('DOMContentLoaded', () => {
         // If approvedPlanPayload is present, we are approving. Content might be empty or "Plan Approved".
         const content = textArea.value.trim();
 
-        if (!isResume && !content && !currentImageBase64 && !approvedPlanPayload) return;
+        if (!isResume && !content && !currentImageBase64 && !approvedPlanPayload && !resumeState) return;
+
+        // Block follow-up messages in Research mode
+        // Block follow-up messages in Research mode if research has already started/confirmed
+        const hasExistingApproval = chatHistory.some(m => m.content === "Plan Approved. Proceed with research." || m.content === "Proceed with research.");
+        if (isResearchMode && hasExistingApproval && !isResume && !approvedPlanPayload && !resumeState) {
+            await showAlert('Research Completed', 'This Research session is finished. Please start a new chat for another research query.');
+            return;
+        }
 
         if (sendBtn && sendBtn.classList.contains('incompatible-model')) {
             await showAlert('Incompatible Model', 'This conversation contains images. You must select a model with vision capabilities in the settings dropdown to continue.');
@@ -1996,7 +2129,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         timestamp: Date.now(),
                         messages: [],
                         memory_mode: isMemoryMode,
-                        deep_research_mode: isDeepResearchMode ? 1 : 0,
+                        research_mode: isResearchMode ? 1 : 0,
                         is_vision: currentImageBase64 ? 1 : 0
                     };
                     savedChats.push(chat);
@@ -2012,22 +2145,28 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
         // Sync UI state (like model locking) as soon as chat starts
-        updateDeepResearchUI();
+        updateResearchUI();
 
         // Bot Message Row
         const botMsgDiv = appendMessage('Assistant', '', 'bot');
         const contentDiv = botMsgDiv.querySelector('.message-content');
 
         // Setup content wrappers — different layout for deep research vs standard chat
-        if (isDeepResearchMode) {
-            // Deep Research: use activity feed and thought container
+        if (isResearchMode) {
+            // Research: use activity feed and thought container
             contentDiv.innerHTML = `
-                <div class="research-activity-feed" style="display: flex; flex-direction: column;">
-                    <div class="research-live-indicator" style="order: 9999;">
-                        <span class="processing-spinner"></span>
-                        <span class="live-indicator-text">Agent is thinking...</span>
+                <details class="research-activity-wrapper" open>
+                    <summary class="research-activity-summary">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><polyline points="12 16 16 12 12 8"></polyline><line x1="8" y1="12" x2="16" y2="12"></line></svg>
+                        <span class="summary-text">Live Research Activity</span>
+                    </summary>
+                    <div class="research-activity-feed" style="display: flex; flex-direction: column;">
+                        <div class="research-live-indicator" style="order: 9999;">
+                            <span class="processing-spinner"></span>
+                            <span class="live-indicator-text">Agent is thinking...</span>
+                        </div>
                     </div>
-                </div>
+                </details>
                 <div class="thought-container-wrapper"></div>
                 <div class="actual-content-wrapper"></div>
             `;
@@ -2061,16 +2200,46 @@ document.addEventListener('DOMContentLoaded', () => {
         imagePreview.src = '';
         imagePreviewContainer.classList.add('hidden');
 
+        let reqModel = selectedModel;
+        let reqModelName = selectedModelName;
+        let reqVisionModel = selectedVisionModel;
+
+        if (isResearchMode && currentChatData) {
+            if (currentChatData.last_model) {
+                reqModelName = currentChatData.last_model;
+                // Attempt to resolve exact model key from display name
+                const matchedModel = availableModels.find(m => {
+                    const mName = m.display_name || m.key.split('/').pop();
+                    return mName === currentChatData.last_model;
+                });
+                if (matchedModel) {
+                    reqModel = matchedModel.key;
+                } else {
+                    // Fallback to searching chat history for exact model ID
+                    for (let i = chatHistory.length - 1; i >= 0; i--) {
+                        if (chatHistory[i].role === 'assistant' && chatHistory[i].model) {
+                            reqModel = chatHistory[i].model;
+                            break;
+                        }
+                    }
+                }
+            }
+            if (currentChatData.vision_model) {
+                reqVisionModel = currentChatData.vision_model;
+            }
+        }
+
         try {
             const requestBody = {
-                model: selectedModel,
-                lastModelName: selectedModelName,
-                hasVision: Array.isArray(availableModels) ? !!availableModels.find(m => m.key === selectedModel)?.capabilities?.vision : false,
+                apiUrl: serverLink,
+                model: reqModel,
+                lastModelName: reqModelName,
+                hasVision: Array.isArray(availableModels) ? !!availableModels.find(m => m.key === reqModel)?.capabilities?.vision : false,
                 messages: messages,
                 memoryMode: isMemoryMode,
-                deepResearchMode: isDeepResearchMode,
-                searchDepthMode: isDeepResearchMode ? searchDepthMode : null,
-                visionModel: selectedVisionModel,
+                researchMode: isResearchMode,
+                searchDepthMode: isResearchMode ? searchDepthMode : null,
+                visionModel: reqVisionModel,
                 approvedPlan: approvedPlanPayload || undefined,
                 resumeState: resumeState || undefined,
                 chatId: currentChatId,
@@ -2079,7 +2248,7 @@ document.addEventListener('DOMContentLoaded', () => {
             };
 
             // Only include sampling params for normal chat (deep research uses its own)
-            if (!isDeepResearchMode) {
+            if (!isResearchMode) {
                 requestBody.reasoning = samplingParams.reasoning_level === 'none' ? 'off' : samplingParams.reasoning_level;
                 requestBody.temperature = samplingParams.temperature;
                 requestBody.top_p = samplingParams.top_p;
@@ -2167,11 +2336,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
                         const delta = json.choices?.[0]?.delta;
                         if (delta) {
-                            // Check for structured Deep Research activity events
+                            // Check for structured Research activity events
                             if (delta.reasoning_content && activityFeed) {
                                 try {
                                     const parsed = JSON.parse(delta.reasoning_content);
-                                    if (parsed.__deep_research_activity__) {
+                                    if (parsed.__research_activity__) {
                                         renderResearchActivity(activityFeed, parsed.type, parsed.data);
                                         // Save raw JSON to accumulatedReasoning for DB persistence & reload
                                         accumulatedReasoning += delta.reasoning_content;
@@ -2179,7 +2348,6 @@ document.addEventListener('DOMContentLoaded', () => {
                                         if (parsed.data && parsed.data.message) {
                                             displayReasoning += parsed.data.message + '\n';
                                         }
-                                        botMsgDiv.classList.remove('thinking');
                                         continue; // skip rendering as standard text
                                     }
                                 } catch (ignored) { /* Not JSON activity, treat as normal reasoning */ }
@@ -2250,10 +2418,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 const hasRealContentBatch = accumulatedContent.trim().length > 0;
                 if (hasRealContentBatch) {
-                    mainWrapper.innerHTML = formatMarkdown(accumulatedContent);
+                    if (!isResearchMode) {
+                        mainWrapper.innerHTML = formatMarkdown(accumulatedContent);
+                    }
                 }
 
-                if (contentStarted || accumulatedReasoning) {
+                if ((contentStarted || accumulatedReasoning) && !isResearchMode) {
+                    scrollToBottom('auto', false);
+                } else if (isResearchMode) {
                     scrollToBottom('auto', false);
                 }
 
@@ -2273,13 +2445,53 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
 
+            // Collapse the activity wrapper once done, if present
+            const activityWrapper = contentDiv.querySelector('.research-activity-wrapper');
+            if (activityWrapper) {
+                activityWrapper.removeAttribute('open');
+                // Change summary text
+                const summaryText = activityWrapper.querySelector('.summary-text');
+                if (summaryText) summaryText.textContent = "Research Activity (Completed)";
+            }
+
             if (!accumulatedContent && !accumulatedReasoning) {
                 botMsgDiv.classList.remove('thinking');
                 mainWrapper.innerHTML = `<span style="color: var(--color-neutral-400); font-style: italic;">[No content received]</span>`;
             } else {
                 // Parse for plans in the content
-                const { cleaned, plan } = parseContent(accumulatedContent);
-                mainWrapper.innerHTML = formatMarkdown(cleaned);
+                const { cleaned, plan, report } = parseContent(accumulatedContent);
+                console.log("Stream Ended. Plan:", !!plan, "Report:", !!report);
+
+                if (isResearchMode && report && !plan) {
+                    mainWrapper.innerHTML = `
+                        <div class="research-report-card">
+                            <div class="report-card-icon">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                    <polyline points="14 2 14 8 20 8"></polyline>
+                                    <line x1="16" y1="13" x2="8" y2="13"></line>
+                                    <line x1="16" y1="17" x2="8" y2="17"></line>
+                                    <polyline points="10 9 9 9 8 9"></polyline>
+                                </svg>
+                            </div>
+                            <div class="report-card-text">
+                                <span class="report-card-title">Research Report Generated</span>
+                                <span class="report-card-desc">The agent has finished compiling its findings.</span>
+                            </div>
+                            <button class="btn-primary view-report-btn" data-report-content="${encodeURIComponent(report)}">
+                                Open Canvas
+                            </button>
+                        </div>
+                    `;
+                    // Auto-open canvas on fresh generation
+                    setTimeout(() => {
+                        if (typeof openReportCanvas === 'function') {
+                            openReportCanvas(report);
+                        }
+                    }, 300);
+                } else {
+                    mainWrapper.innerHTML = formatMarkdown(cleaned);
+                }
 
                 // If a plan was found, render the interactive plan card
                 if (plan) {
@@ -2306,7 +2518,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // Update the global "Last Model Used" display immediately
             const lastModelDisplay = document.getElementById('last-model-display');
             if (lastModelDisplay) {
-                if (!isDeepResearchMode) {
+                if (!isResearchMode) {
                     lastModelDisplay.textContent = `Last model used: ${selectedModelName}`;
                     lastModelDisplay.style.display = 'block';
                 } else {
@@ -2356,6 +2568,7 @@ document.addEventListener('DOMContentLoaded', () => {
             isGenerating = false;
             currentAbortController = null;
             updateUIState(false);
+            if (isResearchMode) updateResearchUI();
             if (activityFeed) {
                 const liveInd = activityFeed.querySelector('.research-live-indicator');
                 if (liveInd) liveInd.remove();
@@ -2374,6 +2587,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (isGenerating) return;
+
+        const viewReportBtn = e.target.closest('.view-report-btn');
+        if (viewReportBtn) {
+            const rawContent = decodeURIComponent(viewReportBtn.dataset.reportContent);
+            openReportCanvas(rawContent);
+            return;
+        }
 
         const copyBtn = e.target.closest('.copy-msg-btn');
         if (copyBtn) {
@@ -2703,12 +2923,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
         userRows.forEach((r, i) => {
             const editBtn = r.querySelector('.edit-msg-btn');
-            if (editBtn) editBtn.style.display = (i === userRows.length - 1) ? 'flex' : 'none';
+            const deleteBtn = r.querySelector('.delete-msg-btn');
+            if (isResearchMode) {
+                if (editBtn) editBtn.style.display = 'none';
+                if (deleteBtn) deleteBtn.style.display = 'none';
+            } else {
+                if (editBtn) editBtn.style.display = (i === userRows.length - 1) ? 'flex' : 'none';
+                if (deleteBtn) deleteBtn.style.display = 'flex';
+            }
         });
 
         botRows.forEach((r, i) => {
             const retryBtn = r.querySelector('.retry-msg-btn');
-            if (retryBtn) retryBtn.style.display = (i === botRows.length - 1) ? 'flex' : 'none';
+            if (isResearchMode) {
+                if (retryBtn) retryBtn.style.display = 'none'; // Research has its own retry activity
+            } else {
+                if (retryBtn) retryBtn.style.display = (i === botRows.length - 1) ? 'flex' : 'none';
+            }
         });
 
         updateTempChatBtnState();
@@ -2850,35 +3081,81 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        return { thoughts: thoughts.trim(), cleaned: cleaned, plan: plan };
+        // Extract Final Report (<final_report>)
+        let report = null;
+        let reportStart = cleaned.indexOf('<final_report>');
+        if (reportStart !== -1) {
+            let reportEnd = cleaned.indexOf('</final_report>');
+            if (reportEnd !== -1) {
+                report = cleaned.substring(reportStart + 14, reportEnd);
+                cleaned = cleaned.substring(0, reportStart) + cleaned.substring(reportEnd + 15).trim();
+            } else {
+                report = cleaned.substring(reportStart + 14);
+                cleaned = cleaned.substring(0, reportStart);
+            }
+        }
+
+        return { thoughts: thoughts.trim(), cleaned: cleaned, plan: plan, report: report };
     }
 
-    function renderResearchPlan(planXml, container, isApproved = false) {
+    function parseResearchPlan(planXml) {
         const parser = new DOMParser();
         // Use text/html to avoid violent XML DTD failures on unescaped text generated by the LLM (like '&' signs)
         const xmlDoc = parser.parseFromString(`<root>${planXml}</root>`, "text/html");
-
-        const title = xmlDoc.querySelector('title')?.textContent?.trim() || "Research Plan";
-
+        const title = xmlDoc.querySelector('title')?.textContent?.trim() || "Research Strategy";
         let planMarkdown = `## ${title}\n\n`;
-        const stepsElements = xmlDoc.querySelectorAll('step');
 
-        stepsElements.forEach((s, index) => {
-            const goal = s.querySelector('goal')?.textContent?.trim() || '';
-            const desc = s.querySelector('description')?.textContent?.trim() || '';
-            const query = s.querySelector('query')?.textContent?.trim() || '';
+        // New section-based format: <section> with <heading>, <description>, <query> (1-N)
+        const sectionElements = xmlDoc.querySelectorAll('section');
 
-            if (!goal && !desc && !query) {
-                planMarkdown += `### Step ${index + 1}\n${s.textContent.trim()}\n\n`;
-            } else {
-                planMarkdown += `### Step ${index + 1}: ${goal}\n`;
-                if (desc) planMarkdown += `> ${desc}\n\n`;
-                if (query) planMarkdown += `- **Search Query:** \`${query}\`\n`;
-                planMarkdown += `\n`;
-            }
-        });
+        if (sectionElements.length > 0) {
+            sectionElements.forEach((s, index) => {
+                const heading = s.querySelector('heading')?.textContent?.trim() || '';
+                const desc = s.querySelector('description')?.textContent?.trim() || '';
+                const queries = s.querySelectorAll('query');
 
-        currentResearchPlan = planMarkdown.trim();
+                if (!heading && !desc && queries.length === 0) {
+                    planMarkdown += `### Section ${index + 1}\n${s.textContent.trim()}\n\n`;
+                } else {
+                    planMarkdown += `### Section ${index + 1}: ${heading}\n`;
+                    if (desc) planMarkdown += `> ${desc}\n\n`;
+                    if (queries.length > 0) {
+                        queries.forEach((q, qi) => {
+                            const qText = q.textContent?.trim() || '';
+                            if (qText) {
+                                planMarkdown += `- **Query ${qi + 1}:** \`${qText}\`\n`;
+                            }
+                        });
+                    }
+                    planMarkdown += `\n`;
+                }
+            });
+        } else {
+            // Legacy fallback: <step> format (for old saved plans)
+            const stepsElements = xmlDoc.querySelectorAll('step');
+            stepsElements.forEach((s, index) => {
+                const goal = s.querySelector('goal')?.textContent?.trim() || '';
+                const desc = s.querySelector('description')?.textContent?.trim() || '';
+                const query = s.querySelector('query')?.textContent?.trim() || '';
+
+                if (!goal && !desc && !query) {
+                    planMarkdown += `### Step ${index + 1}\n${s.textContent.trim()}\n\n`;
+                } else {
+                    planMarkdown += `### Step ${index + 1}: ${goal}\n`;
+                    if (desc) planMarkdown += `> ${desc}\n\n`;
+                    if (query) planMarkdown += `- **Search Query:** \`${query}\`\n`;
+                    planMarkdown += `\n`;
+                }
+            });
+        }
+
+        return { markdown: planMarkdown.trim(), title };
+    }
+
+    function renderResearchPlan(planXml, container, isApproved = false) {
+        let currentPlanXml = planXml;
+        const { markdown } = parseResearchPlan(planXml);
+        currentResearchPlan = markdown;
 
         const card = document.createElement('div');
         card.className = 'research-plan-card';
@@ -2888,15 +3165,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="plan-title" style="color: white; font-size: 1.15rem;">Strategizing Complete</div>
             </div>
             <div class="plan-body">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.85rem;">
-                    <p style="font-size: 0.95rem; font-weight: 500; color: var(--content-primary); margin: 0;">Here is the suggested execution plan. Review it before proceeding:</p>
-                    <button class="btn-edit-toggle" style="background: none; border: none; color: var(--color-primary-600); font-weight: 600; cursor: pointer; text-decoration: underline; font-size: 0.85rem; ${isApproved ? 'opacity: 0.5; pointer-events: none; filter: grayscale(1);' : ''}">${isApproved ? 'Plan Finalized' : 'Edit Plan'}</button>
+                <div style="display: flex; gap: 0.75rem; align-items: center; margin-bottom: 0.85rem;">
+                    <p style="font-size: 0.95rem; font-weight: 500; color: var(--content-primary); margin: 0; flex: 1;">Suggested execution plan:</p>
+                    <button class="btn-canvas-toggle" style="background: var(--color-primary-50); border: 1px solid var(--color-primary-200); color: var(--color-primary-700); font-weight: 600; cursor: pointer; font-size: 0.8rem; padding: 4px 10px; border-radius: 8px; display: flex; align-items: center; gap: 6px;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+                        Expand Plan
+                    </button>
                 </div>
                 <div style="position: relative;">
                     <div class="plan-preview markdown-body" style="background: var(--surface-primary); border: 2px solid var(--border-subtle); border-radius: var(--radius-xl); padding: 1.25rem; font-size: 0.9rem; line-height: 1.6; color: var(--content-primary); max-height: 400px; overflow-y: auto;">
                         ${formatMarkdown(currentResearchPlan)}
                     </div>
-                    <textarea class="plan-editor" style="display: none; background: var(--surface-primary); border: 2px solid var(--border-subtle); border-radius: var(--radius-xl); padding: 1.25rem; font-family: var(--font-mono); font-size: 0.85rem; line-height: 1.6; color: var(--content-primary); width: 100%; min-height: 280px; resize: vertical; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02); transition: border-color 0.2s;">${currentResearchPlan}</textarea>
                 </div>
             </div>
             <div class="plan-actions" style="margin-top: 1.25rem; border-top: 1px dashed var(--border-subtle); padding-top: 1.25rem;">
@@ -2907,41 +3186,25 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
         `;
 
-        const editor = card.querySelector('.plan-editor');
-        const preview = card.querySelector('.plan-preview');
-        const editToggle = card.querySelector('.btn-edit-toggle');
+        const canvasToggle = card.querySelector('.btn-canvas-toggle');
         const approveBtn = card.querySelector('.btn-approve');
 
-        editToggle.addEventListener('click', () => {
-            if (editor.style.display === 'none') {
-                editor.style.display = 'block';
-                preview.style.display = 'none';
-                editToggle.textContent = 'Preview';
-            } else {
-                editor.style.display = 'none';
-                preview.innerHTML = formatMarkdown(currentResearchPlan);
-                preview.style.display = 'block';
-                editToggle.textContent = 'Edit Plan';
-            }
+        canvasToggle.addEventListener('click', () => {
+            openReportCanvas(currentPlanXml, 'plan', isApproved);
         });
 
-        editor.addEventListener('input', (e) => {
-            currentResearchPlan = e.target.value;
-            e.target.style.height = 'auto';
-            e.target.style.height = e.target.scrollHeight + 'px';
-        });
-
-        editor.addEventListener('focus', (e) => {
-            e.target.style.borderColor = 'var(--color-primary-500)';
-            e.target.style.outline = 'none';
-        });
-
-        editor.addEventListener('blur', (e) => {
-            e.target.style.borderColor = 'var(--border-subtle)';
-        });
+        // Auto-open if it's a NEW plan being generated (not from history loading)
+        // We detect this by checking if the container is the actual messagesContainer 
+        // and if it's the very last message being appended.
+        if (!isApproved && container === messagesContainer) {
+            // Delay slightly to ensure formatting is done
+            setTimeout(() => {
+                openReportCanvas(currentPlanXml, 'plan', isApproved);
+            }, 500);
+        }
 
         approveBtn.addEventListener('click', () => {
-            const planToSend = planXml;
+            const planToSend = currentPlanXml;
 
             // UI state change: Disable immediately
             approveBtn.disabled = true;
@@ -2954,11 +3217,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 Plan Approved & Executing
             `;
 
-            editToggle.style.opacity = '0.5';
-            editToggle.style.pointerEvents = 'none';
-            editToggle.textContent = 'Plan Finalized';
+            if (canvasToggle) {
+                canvasToggle.style.opacity = '0.5';
+                canvasToggle.textContent = 'Finalized';
+            }
 
-            sendMessage(null, planToSend);
+            sendMessage("Plan Approved. Proceed with research.", planToSend);
         });
 
         container.appendChild(card);
@@ -3267,6 +3531,64 @@ document.addEventListener('DOMContentLoaded', () => {
 
         window.visualViewport.addEventListener('resize', syncViewport);
         window.visualViewport.addEventListener('scroll', syncViewport);
+    }
+
+    // Report Canvas Logic
+    const reportCanvasOverlay = document.getElementById('report-canvas-overlay');
+    const closeCanvasBtn = document.getElementById('close-canvas-btn');
+    const canvasCopyBtn = document.getElementById('canvas-copy-btn');
+    const canvasApproveBtn = document.getElementById('canvas-approve-btn');
+    const canvasEditBtn = document.getElementById('canvas-edit-btn');
+    const reportCanvasContent = document.getElementById('report-canvas-content');
+    const reportCanvasEditor = document.getElementById('report-canvas-editor');
+    const canvasTitle = document.querySelector('.canvas-title');
+    let currentCanvasContentRaw = '';
+
+    window.openReportCanvas = function (content, mode = 'report', isFinalized = false) {
+        if (!reportCanvasOverlay || !reportCanvasContent) return;
+        currentCanvasContentRaw = content;
+
+        if (mode === 'plan') {
+            if (canvasTitle) canvasTitle.textContent = 'Stage 1: Research Strategy' + (isFinalized ? ' (Finalized)' : '');
+            if (canvasApproveBtn) canvasApproveBtn.classList.add('hidden');
+            if (canvasEditBtn) canvasEditBtn.classList.add('hidden');
+            if (reportCanvasEditor) reportCanvasEditor.classList.add('hidden');
+            reportCanvasContent.innerHTML = formatMarkdown(currentResearchPlan || '');
+        } else {
+            if (canvasTitle) canvasTitle.textContent = 'Research Report';
+            if (canvasApproveBtn) canvasApproveBtn.classList.add('hidden');
+            if (canvasEditBtn) canvasEditBtn.classList.add('hidden');
+            if (reportCanvasEditor) reportCanvasEditor.classList.add('hidden');
+            reportCanvasContent.innerHTML = formatMarkdown(content);
+        }
+
+        // Re-run highlighting for code blocks in canvas
+        reportCanvasContent.querySelectorAll('pre code').forEach((block) => {
+            if (window.hljs) hljs.highlightElement(block);
+        });
+
+        reportCanvasContent.classList.remove('hidden');
+        reportCanvasOverlay.classList.remove('hidden');
+        setTimeout(() => reportCanvasOverlay.classList.add('open'), 10);
+    };
+
+    if (closeCanvasBtn) {
+        closeCanvasBtn.addEventListener('click', () => {
+            reportCanvasOverlay.classList.remove('open');
+            setTimeout(() => reportCanvasOverlay.classList.add('hidden'), 300);
+        });
+    }
+
+    if (canvasCopyBtn) {
+        canvasCopyBtn.addEventListener('click', () => {
+            if (currentCanvasContentRaw) {
+                navigator.clipboard.writeText(currentCanvasContentRaw).then(() => {
+                    const originalHTML = canvasCopyBtn.innerHTML;
+                    canvasCopyBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg> <span>Copied</span>`;
+                    setTimeout(() => canvasCopyBtn.innerHTML = originalHTML, 2000);
+                });
+            }
+        });
     }
 
     window.addEventListener('popstate', (event) => {
