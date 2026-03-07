@@ -67,11 +67,20 @@ If you are an AI agent working on this codebase, you must strictly adhere to the
         2.  `changelog.md` (Add a new detailed block at the top under the new version header)
         3.  `README.md` (Update the displayed version badge/text)
 
-### 3.6 When to Update `AGENTS.md`
-This document is a living contract for AI agents and human contributors. You **must** propose an update to this file if:
-*   A new core architectural dependency or framework is introduced (e.g., migrating from SQLite to PostgreSQL).
-*   A new "anti-pattern" or recurring agent failure is identified during development.
-*   A significant UI/UX constraint is added to `design_directives.md` that agents frequently ignore.
+### 3.6 When to Update `AGENTS.md` (Strict AI Protocol)
+This document is a living contract and the ultimate source of truth for AI agents operating on this repository.
+
+**CRITICAL RULE FOR AI AGENTS:**
+If any proposed codebase update, feature request, or architectural shift contradicts a rule in this `AGENTS.md` document, or falls completely outside its established scope (e.g., introducing a frontend framework like React), **YOU MUST HALT**.
+You are strictly forbidden from executing the change autonomously. You must first:
+1.  Explain to the human user exactly how the request violates or exceeds `AGENTS.md`.
+2.  Ask for explicit permission to proceed with the codebase change.
+3.  Ask for explicit permission to permanently update `AGENTS.md` to reflect this new paradigm.
+**ONLY after receiving human approval for both may you proceed.**
+
+You should proactively propose an update to this file if:
+*   A new core architectural dependency or framework is authorized.
+*   A new "anti-pattern" or recurring agent execution failure is identified.
 *   The API payload structures from local LLMs change in future LM Studio releases.
 
 ---
