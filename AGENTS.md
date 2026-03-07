@@ -89,3 +89,11 @@ When modifying backend logic related to LLM inference, chunk streaming, or the `
 
 *   **API Deviations**: Local models running through LM Studio do not behave identically to OpenAI. The integration guide explicitly details handling for `reasoning_content` streams, missing tags, and critical JSON schema deviations.
 *   **Mandatory Reading**: If your task involves editing `app.py`, `backend/llm.py`, or any agent logic that parses model output, read `docs/lm_studio_integration.md` to prevent stream-parsing failures.
+
+## 5. Historical Agent Pitfalls (Lessons Learned)
+
+*AI Agents: If you make a significant mistake during development that is specific to this codebase's architecture and requires multiple turns to fix, you MUST append a concise warning to this list before completing your task.*
+
+*   **Missing Tags (LM Studio)**: Local models emitting `reasoning_content` via LM Studio do NOT include `<think>` tags. Do not assume they are present in the stream. You must wrap them manually before SQLite DB insertion.
+*   **Empty Content Bug (LM Studio)**: When a JSON schema is enforced via `response_format`, the `"content"` key may literally be `None` or `""`. Do not write while-loops waiting for it to populate; pull the JSON string directly from `"reasoning_content"`.
+*   **File Truncation on Edits**: Do not use full-file write tools on large files like `app.py` or `static/script.js`. It frequently results in missing code blocks or severe truncation. Always use targeted diff or search-and-replace tools.
