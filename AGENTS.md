@@ -32,12 +32,16 @@ When modifying the UI, you must strictly adhere to the project's **Luminous Mate
 
 ## 3. Best Practices for Development & Contribution
 
-### 3.1 Handling Database & Schema Changes
-*   **SQLite Migrations**: The `backend/storage.py` file initializes the database. If adding new columns or tables, you must ensure backwards compatibility. Use `ALTER TABLE` queries in `init_db()` wrapped in `try-except` blocks to smoothly migrate existing local databases (`chats.db`) for current users.
-*   **ChromaDB Sync**: The RAG system relies on ChromaDB. If you modify how chat data is structured or saved, ensure the vector embeddings stay perfectly synchronized. If a user deletes a chat or resets memory, ChromaDB must be purged accordingly.
+### 3.1 Handling Database Schema Changes & Migration (CRITICAL)
+*   **Never Break Existing Data**: The overarching rule for `backend/storage.py` is backward compatibility. Any change to the SQLite schema (adding columns, creating new tables) **MUST** include migration logic.
+*   **Migration Pattern**: Use `ALTER TABLE` queries inside `init_db()` and wrap them in `try-except sqlite3.OperationalError:` blocks to silently and safely upgrade existing `chats.db` files without causing startup crashes or data loss for existing users.
+*   **ChromaDB Sync**: The RAG system relies on ChromaDB. If you modify how chat data is structured or saved, ensure the vector embeddings stay perfectly synchronized. If a user deletes a chat or resets memory, ChromaDB must be purged accordingly. Never orphan vector data when metadata changes.
 
 ### 3.2 Git & Branching Strategy
-*   **Branch Naming**: Feature and bugfix branches should strictly lead with the target version they aim to bump, or a descriptive prefix, e.g., `1.3.1-fix-streaming-bug` or `feature/vision-improvements`.
+*   **Standardized Branch Naming**: Every branch name **MUST** start with the target version number you are bumping to, followed by a descriptive hyphenated name.
+    *   **Valid Example**: `1.3.1-update-agents-md`
+    *   **Valid Example**: `1.4.0-feature-deep-research`
+    *   **Invalid Example**: `feature/vision-improvements` (Missing version prefix).
 *   **Commit Messages**: Keep commit messages concise, descriptive, and Git-agnostic. The first line should be an imperative summary under 50 characters, followed by an empty line and detailed reasoning if needed.
 *   **Verification Before Commit**: Always run the application locally to test functionality (both Light and Dark modes) before submitting code. If modifying the frontend, visually verify all structural and animation changes.
 
