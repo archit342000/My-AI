@@ -1,6 +1,6 @@
 # My-AI Developer & Agents Guide
 
-This document provides essential context, architectural constraints, and operational rules for AI agents and human developers working on the `My-AI` repository.
+This document provides essential context, architectural constraints, operational rules, and best practices for AI agents and human developers working on the `My-AI` repository.
 
 ## 1. System Architecture & File Organization
 
@@ -12,10 +12,12 @@ The application follows a clean separation between a vanilla web frontend and a 
     *   Styling is managed via `static/styles.css` using CSS Custom Properties.
 *   **Backend**: A **Flask** (Python) service orchestrating chat loops, RAG, and deep research agents.
     *   **Task Management**: Uses an asynchronous producer-consumer architecture (`task_manager.py` and `cache_system.py`) to handle chat streaming without blocking the main Flask thread.
-    *   **Persistence**: Metadata and chat histories are stored in **SQLite** (`storage.py`), while vector embeddings for RAG are managed via **ChromaDB** (`rag.py`).
+    *   **Persistence**: Metadata and chat histories are stored in a local **SQLite** database (`storage.py`), while vector embeddings for RAG are managed via **ChromaDB** (`rag.py`).
 *   **Operating Modes**:
     *   **Standard Chat**: Fast, direct inference streams.
     *   **Deep Research**: A multi-pass, asynchronous autonomous engine (`research.py`) that executes web searches, analyzes content, and synthesizes reports without locking the UI.
+
+---
 
 ## 2. Design & UI Constraints (`design_directives.md`)
 
@@ -26,29 +28,49 @@ When modifying the UI, you must strictly adhere to the project's **Luminous Mate
 *   **Color-Injected Shadows**: Never use pure black shadows on colored elements. Always inject the brand primary color (e.g., `rgba(37, 99, 235, 0.15)`).
 *   **Markdown & Code**: Content rendering must use `marked.js` and `highlight.js` (loaded via CDN) directly onto the DOM without intermediate VDOM layers.
 
-## 3. Backend Operational Rules
+---
 
-*   **Database Interactions**: Use the provided helper functions in `backend/storage.py` for SQLite. Do not write raw SQL queries in the API routes.
-*   **Asynchronous Tasks**: Any operation that takes longer than a few milliseconds (like LLM inference or web scraping) MUST be enqueued via `task_manager` to prevent blocking the Flask server.
-*   **RAG Synchronization**: Ensure `ChromaDB` remains synchronized with `SQLite`. When a chat is deleted, its corresponding vectors must also be wiped.
+## 3. Best Practices for Development & Contribution
+
+### 3.1 Handling Database & Schema Changes
+*   **SQLite Migrations**: The `backend/storage.py` file initializes the database. If adding new columns or tables, you must ensure backwards compatibility. Use `ALTER TABLE` queries in `init_db()` wrapped in `try-except` blocks to smoothly migrate existing local databases (`chats.db`) for current users.
+*   **ChromaDB Sync**: The RAG system relies on ChromaDB. If you modify how chat data is structured or saved, ensure the vector embeddings stay perfectly synchronized. If a user deletes a chat or resets memory, ChromaDB must be purged accordingly.
+
+### 3.2 Git & Branching Strategy
+*   **Branch Naming**: Feature and bugfix branches should strictly lead with the target version they aim to bump, or a descriptive prefix, e.g., `1.3.1-fix-streaming-bug` or `feature/vision-improvements`.
+*   **Commit Messages**: Keep commit messages concise, descriptive, and Git-agnostic. The first line should be an imperative summary under 50 characters, followed by an empty line and detailed reasoning if needed.
+*   **Verification Before Commit**: Always run the application locally to test functionality (both Light and Dark modes) before submitting code. If modifying the frontend, visually verify all structural and animation changes.
+
+### 3.3 Versioning & Releases (SemVer)
+*   This project strictly follows [Semantic Versioning 2.0.0](https://semver.org/).
+*   **Mandatory Updates**: When a PR introduces a functionality change, bug fix, or UI modification, you **must** bump the version globally across the project.
+    *   This includes updating:
+        1.  `versioning_directives.md`
+        2.  `changelog.md` (Add a new detailed block at the top under the new version header)
+        3.  `README.md` (Update the displayed version badge/text)
 
 ---
 
-## 4. LM Studio / Local LLM Integration Guide
+# LM Studio / Local LLM Integration Guide
 
-This section details the exact streaming behavior, payload structures, and known quirks of local LLMs running through LM Studio's OpenAI-compatible `/v1/chat/completions` endpoint. Local reasoning models (like `nvidia/nemotron-3-nano`, `DeepSeek-R1`, etc.) often exhibit non-standard behaviors compared to OpenAI's official API. Understanding these differences is critical for writing robust backend parsing logic.
+This section details the exact streaming behavior, payload structures, and known quirks of local LLMs running through LM Studio's OpenAI-compatible `/v1/chat/completions` endpoint.
 
-### 4.1 Standard Chat Completion (Streaming)
+Local reasoning models (like `nvidia/nemotron-3-nano`, `DeepSeek-R1`, etc.) often exhibit non-standard behaviors compared to OpenAI's official API. Understanding these differences is critical for writing robust backend parsing logic.
+
+## 1. Standard Chat Completion (Streaming)
 
 When processing standard text generation requests with `stream: true`, the model splits its output into two distinct phases: a "thinking" phase and an "answering" phase.
 
+### Sequential Flow:
 1. **The Reasoning Phase (`reasoning_content`)**: 
    The stream begins by emitting chunks where the delta object contains a `"reasoning_content"` key, but *not* a `"content"` key.
    ```json
    data: {"choices":[{"delta":{"role":"assistant","reasoning_content":"Thinking..."}}]}
    ```
+
 2. **The Transition Phase**: 
    Usually marked by a switch from `reasoning_content` to the standard `content` key, often providing a newline whitespace first.
+
 3. **The Content Phase (`content`)**: 
    The model streams the final, user-facing answer using the standard `"content"` key.
 
@@ -58,10 +80,11 @@ Local models emitting `reasoning_content` **do not** include `<think>` or `</thi
 4. **The Completion Signal**: 
    A final chunk containing `"finish_reason": "stop"`, followed by `[DONE]`.
 
-### 4.2 Tool Call Execution (Streaming)
+## 2. Tool Call Execution (Streaming)
 
 When `tools` are provided and `stream: true`, the model accumulates tool arguments after a reasoning phase.
 
+### Sequential Flow:
 1. **The Reasoning Phase (`reasoning_content`)**: Identical to standard chat.
 2. **Transition**: Empty/newline `content` block.
 3. **Tool Call Initialization Phase (`tool_calls`)**: 
@@ -69,14 +92,20 @@ When `tools` are provided and `stream: true`, the model accumulates tool argumen
    ```json
    data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"...","type":"function","function":{"name":"...","arguments":""}}]}}]}
    ```
-4. **The Argument Streaming Phase**: Subsequent chunks append JSON strings to the `arguments` key.
-5. **The Completion Signal**: `"finish_reason": "tool_calls"`, then `[DONE]`.
+4. **The Argument Streaming Phase**:
+   Subsequent chunks append JSON strings to the `arguments` key.
+5. **The Completion Signal**:
+   `"finish_reason": "tool_calls"`, then `[DONE]`.
 
-### 4.3 Structured JSON Output (Streaming: `stream: true`)
+## 3. Structured JSON Output (Streaming: `stream: true`)
 
 **🚨 CRITICAL QUIRK IDENTIFIED 🚨**
-When a strict JSON schema is enforced using OpenAI's structured output parameter (`response_format`), local integrations via LM Studio exhibit a major deviation from standard behavior. **Instead of returning the structured JSON in the `"content"` key, it streams the entire generated JSON object inside the `"reasoning_content"` key.**
 
+When a strict JSON schema is enforced using OpenAI's structured output parameter (`response_format`), local integrations via LM Studio exhibit a major deviation from standard behavior.
+
+**Instead of returning the structured JSON in the `"content"` key, it streams the entire generated JSON object inside the `"reasoning_content"` key.**
+
+### Sequential Flow:
 1. **JSON Generation Phase (`reasoning_content`)**: 
    The model streams the entire valid JSON object strictly adhering to the requested schema. **The standard `"content"` key is completely missing or empty.**
    ```json
@@ -84,10 +113,11 @@ When a strict JSON schema is enforced using OpenAI's structured output parameter
    ```
 2. **Completion**: `"finish_reason": "stop"`.
 
-### 4.4 Structured JSON Output (Non-Streaming: `stream: false`)
+## 4. Structured JSON Output (Non-Streaming: `stream: false`)
 
 Even without streaming, the quirk persists. When `response_format` is provided, the primary output location is swapped.
 
+### Response Structure:
 1. **`choices[0].message.content`**: Set to an empty string (`""`).
 2. **`choices[0].message.reasoning_content`**: Contains the **entire valid JSON payload**.
    ```json
@@ -107,7 +137,7 @@ Even without streaming, the quirk persists. When `response_format` is provided, 
    ```
 3. **`finish_reason`**: Remains `"stop"`.
 
-### 4.5 Summary for Backend Implementation
+## 5. Summary for Backend Implementation
 
 Any backend client or utility function designed to handle LM Studio MUST account for these deviations:
 
@@ -122,15 +152,3 @@ final_result = response.content or response.reasoning_content
 if is_json_requested:
     return json.loads(final_result)
 ```
-
----
-
-## 5. Testing & Contribution Directives
-
-*   **Local Testing**: Developers must test features against both Light and Dark themes. The Flask server (`python3 app.py`) must be run locally to test the streaming backend and async event loops.
-*   **Versioning**: This project strictly follows [Semantic Versioning 2.0.0](https://semver.org/).
-*   **Documentation Updates**: Any changes to functionality must be reflected by incrementing the version across the following files:
-    1.  `versioning_directives.md`
-    2.  `changelog.md`
-    3.  `README.md`
-*   **Commit Requirements**: Always ensure pre-commit verifications (`pre_commit_instructions`) are executed prior to final submission.
