@@ -45,7 +45,16 @@ When modifying the UI, you must strictly adhere to the project's **Luminous Mate
 *   **Commit Messages**: Keep commit messages concise, descriptive, and Git-agnostic. The first line should be an imperative summary under 50 characters, followed by an empty line and detailed reasoning if needed.
 *   **Verification Before Commit**: Always run the application locally to test functionality (both Light and Dark modes) before submitting code. If modifying the frontend, visually verify all structural and animation changes.
 
-### 3.3 Versioning & Releases (SemVer)
+### 3.3 Agent-Specific Operational Best Practices
+If you are an AI agent working on this codebase, you must strictly adhere to these operational rules to prevent common execution failures:
+*   **Verify Before Marking Complete**: Never assume a file write or search-and-replace command succeeded flawlessly. **Always** use read tools (`read_file`, `list_files`, etc.) to inspect the file state and syntax *after* making a change.
+*   **Diagnose Before Modifying Environment**: If you encounter an error (e.g., ModuleNotFoundError), do not immediately attempt to install new packages or edit `requirements.txt`. Read the error logs carefully; prioritize fixing code imports, typos, or file path issues over attempting to alter the environment.
+*   **Background Processes & Port Conflicts**: When testing the Flask app, run it in the background (`python3 app.py &`) so your terminal is not blocked. If you need to restart it, you **must** kill the existing process occupying port 5000 first (`kill -9 $(lsof -t -i:5000) 2>/dev/null || true`).
+*   **Vanilla DOM Mutations**: Avoid destructive `innerHTML` assignments when updating complex UI components, as this destroys existing event listeners. Prefer `document.createElement()` and `appendChild()`, or ensure the application's global event delegation system in `script.js` catches the new elements.
+*   **Edit Source, Not Artifacts**: Never modify files inside `.git/`, `__pycache__/`, or `chroma_db/` directly via text editors. Only interact with the database via Python scripts and only touch the source code files.
+*   **Exact Diffs**: When using search-and-replace or merge diff tools, ensure the `<SEARCH>` block exactly matches the existing file contents line-for-line, including all whitespace and indentation.
+
+### 3.4 Versioning & Releases (SemVer)
 *   This project strictly follows [Semantic Versioning 2.0.0](https://semver.org/).
 *   **Mandatory Updates**: When a PR introduces a functionality change, bug fix, or UI modification, you **must** bump the version globally across the project.
     *   This includes updating:
