@@ -19,14 +19,12 @@ The application follows a clean separation between a vanilla web frontend and a 
 
 ---
 
-## 2. Design & UI Constraints (`design_directives.md`)
+## 2. Design & UI Delegation (`design_directives.md`)
 
-When modifying the UI, you must strictly adhere to the project's **Luminous Material** design philosophy:
+When modifying the frontend, styling, or animations, this document (`AGENTS.md`) defers completely to **`design_directives.md`**.
 
-*   **No Inline Structural Styles**: Do not use JS to manually manipulate inline CSS for structure or animations. Always apply or toggle CSS classes (e.g., using the `.dark` class for Dark Mode).
-*   **Motion-First DOM**: Every visibility or position change requires transitions (typically using `opacity` and `transform`). Avoid `display: none` for animated elements; use `visibility: hidden` with opacity instead.
-*   **Color-Injected Shadows**: Never use pure black shadows on colored elements. Always inject the brand primary color (e.g., `rgba(37, 99, 235, 0.15)`).
-*   **Markdown & Code**: Content rendering must use `marked.js` and `highlight.js` (loaded via CDN) directly onto the DOM without intermediate VDOM layers.
+*   **Single Source of Truth**: The `design_directives.md` file is the absolute authority on all things related to the Luminous Material UI, CSS custom properties, responsive breakpoints, structural logic, and motion design.
+*   **Mandatory Reading**: If your task involves modifying HTML, CSS, or any DOM manipulation in `script.js`, you **must** parse and adhere to `design_directives.md` before writing code. Do not invent new styling conventions or introduce UI frameworks.
 
 ---
 
