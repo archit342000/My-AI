@@ -52,6 +52,7 @@ If you are an AI agent working on this codebase, you must strictly adhere to the
 *   **Background Processes & Port Conflicts**: When testing the Flask app, run it in the background (`python3 app.py &`) so your terminal is not blocked. If you need to restart it, you **must** kill the existing process occupying port 5000 first (`kill -9 $(lsof -t -i:5000) 2>/dev/null || true`).
 *   **Vanilla DOM Mutations**: Avoid destructive `innerHTML` assignments when updating complex UI components, as this destroys existing event listeners. Prefer `document.createElement()` and `appendChild()`, or ensure the application's global event delegation system in `script.js` catches the new elements.
 *   **Edit Source, Not Artifacts**: Never modify files inside `.git/`, `__pycache__/`, or `chroma_db/` directly via text editors. Only interact with the database via Python scripts and only touch the source code files.
+*   **Prevent File Truncation (Use Diffs)**: Never overwrite entire large files using full-file write tools, as this frequently leads to accidental truncation or missing code blocks. You **must** use targeted search-and-replace or merge diff tools to modify existing files.
 *   **Exact Diffs**: When using search-and-replace or merge diff tools, ensure the `<SEARCH>` block exactly matches the existing file contents line-for-line, including all whitespace and indentation.
 
 ### 3.4 Versioning & Releases (SemVer)
