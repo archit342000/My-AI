@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## v1.3.1
+* **Developer Guide Expansion**: Significantly expanded `AGENTS.md` to include comprehensive architectural guidelines, UI constraints (Luminous Material), and backend operational rules for AI agents and human contributors.
+* **Version Bump**: Incremented version to 1.3.1.
+
 ## v1.3.0 (Research Architecture Overhaul)
 * **Complete Research Pipeline Rewrite**: Deprecated `deep_research.py` in favor of a rebuilt, highly-resilient `research.py` engine featuring strict token budgeting, semantic triage, and a multi-phase generation strategy.
 * **Phase 0 & 1 — Context Scout & Planning**: Integrated a pre-planning "Scout" phase that classifies the user's topic, evaluates time-sensitivity, and executes preliminary contextual searches *before* designing the sequential XML research plan.
