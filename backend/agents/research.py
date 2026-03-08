@@ -640,6 +640,7 @@ async def _execute_section_reflection_and_write(
     the section writing turn directly to the frontend.
     """
     follow_up_buffer = []
+    follow_up_content = ""
 
     def _get_or_create_source_id(url, title=None):
         nonlocal next_source_id
