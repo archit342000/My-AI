@@ -1,4 +1,4 @@
-# 🌌 My-AI v1.4.0
+# 🌌 My-AI v1.5.0
 
 A premium, full-stack AI chat interface designed for local inference with [LM Studio](https://lmstudio.ai/). This application provides a high-fidelity Luminous Material interface for interacting with local LLMs, featuring persistent state, long-term memory, and an advanced deep research agent.
 
@@ -35,14 +35,15 @@ This application is fully containerized and runs with user-level permissions for
     ```
 
 2.  **Configure Environment (Docker Secrets)**:
-    Create a `./secrets/` directory and map your configuration files.
+    Create a `./secrets/` directory and map your configuration files. You will also need to add your SSH public key to authenticate with the containerized Bastion Host.
     ```bash
     mkdir -p secrets
-    echo "http://localhost:1234" > secrets/LM_STUDIO_URL
+    echo "http://host.docker.internal:1234" > secrets/LM_STUDIO_URL
     echo "your_tavily_api_key_here" > secrets/TAVILY_API_KEY
     echo "your_lm_studio_api_key_here" > secrets/LM_STUDIO_API_KEY  # Optional
     echo "/app/backend/data" > secrets/DATA_DIR                     # Default container mapped volume
     echo "your_secret_password" > secrets/APP_PASSWORD              # Optional, enables HTTP Basic Auth
+    cat ~/.ssh/id_rsa.pub > secrets/authorized_keys                 # Add your public key for the Bastion Host
     ```
     
     *Optional Settings via `.env` file (Not Secrets)*
@@ -59,7 +60,11 @@ This application is fully containerized and runs with user-level permissions for
     ```bash
     docker compose up --build -d
     ```
-3.  **Explore**: Access the dashboard at `http://localhost:5000`. Stop the container using `docker compose down`.
+3.  **Connect Securely**: The application does not expose ports directly. SSH into the Bastion container from your local machine to establish a secure tunnel and explore at `http://localhost:5000`:
+    ```bash
+    ssh -N -L 5000:app:5000 -p 2222 appuser@YOUR_SERVER_IP
+    ```
+    To stop the container, use `docker compose down`.
 
 ## 🏗️ Architecture
 
@@ -70,5 +75,5 @@ This application is fully containerized and runs with user-level permissions for
 
 ## 📄 License & Versioning
 
-This project follows [SemVer v2.0.0](https://semver.org/). Current version: `v1.4.0`.
+This project follows [SemVer v2.0.0](https://semver.org/). Current version: `v1.5.0`.
 See [CHANGELOG.md](./changelog.md) and [docs/versioning_directives.md](./docs/versioning_directives.md) for a detailed history of updates and versioning rules.

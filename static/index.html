@@ -264,46 +264,7 @@
         </main>
     </div>
 
-    <!-- Authorization Overlay (Renamed to Backend Settings) -->
-    <div id="api-modal" class="modal-backdrop open">
-        <div class="modal-content" style="text-align: center;">
-            <div class="modal-body" style="padding: 32px;">
-                <div class="hardware-surface"
-                    style="width: 4rem; height: 4rem; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 1.5rem auto; color: var(--color-primary-600); padding: 0;">
-                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                        stroke-width="2.5">
-                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                        <path d="M7 11V7a5 5 0 0110 0v4" />
-                    </svg>
-                </div>
-                <h2 class="font-heading"
-                    style="font-size: 1.75rem; font-weight: 800; color: var(--content-primary); margin-bottom: 0.75rem; letter-spacing: -0.02em;">
-                    Backend Settings</h2>
-                <p style="color: var(--content-muted); font-size: 0.875rem; line-height: 1.6; margin-bottom: 2rem;">
-                    Configure where the backend connects to LM Studio. If no API token is required, leave it blank.</p>
 
-                <div style="text-align: left; margin-bottom: 1.25rem;">
-                    <label class="text-xs"
-                        style="color: var(--content-muted); font-weight: 700; margin-bottom: 0.5rem; display: block; letter-spacing: 0.1em;">SERVER
-                        LINK</label>
-                    <input type="text" id="server-link-input" class="input-luminous" placeholder="http://localhost:1234"
-                        autofocus style="width: 100%; height: 3rem;">
-                </div>
-
-                <div style="text-align: left; margin-bottom: 2rem;">
-                    <label class="text-xs"
-                        style="color: var(--content-muted); font-weight: 700; margin-bottom: 0.5rem; display: block; letter-spacing: 0.1em;">API
-                        TOKEN (OPTIONAL)</label>
-                    <input type="password" id="api-token-input" class="input-luminous" placeholder="lm-studio"
-                        style="width: 100%; height: 3rem;">
-                </div>
-
-                <button id="save-api-key" class="btn-primary"
-                    style="width: 100%; height: 3.5rem; font-size: 1rem; border: none; border-radius: 12px; font-weight: 600; cursor: pointer;">Connect
-                    & Initialize</button>
-            </div>
-        </div>
-    </div>
 
     <!-- System Settings Modal -->
     <div id="system-settings-modal" class="modal-backdrop">
@@ -344,24 +305,7 @@
                     </div>
                 </div>
 
-                <!-- Connection Settings -->
-                <div class="hardware-surface" style="padding: 1.5rem; margin-bottom: 1rem;">
-                    <h3 class="text-h2" style="font-size: 1.1rem; margin-bottom: 1rem;">Connection</h3>
-                    <div style="margin-bottom: 1rem;">
-                        <label class="text-xs"
-                            style="color: var(--content-muted); font-weight: 700; display: block; margin-bottom: 0.5rem;">SERVER
-                            LINK</label>
-                        <input type="text" id="sys-server-link" class="input-luminous"
-                            placeholder="http://localhost:1234">
-                    </div>
-                    <div style="margin-bottom: 1rem;">
-                        <label class="text-xs"
-                            style="color: var(--content-muted); font-weight: 700; display: block; margin-bottom: 0.5rem;">API
-                            TOKEN</label>
-                        <input type="password" id="sys-api-token" class="input-luminous" placeholder="lm-studio">
-                    </div>
-                    <button id="sys-save-connection" class="btn-primary" style="width: 100%;">Update Connection</button>
-                </div>
+
 
                 <!-- Reset -->
                 <div class="hardware-surface" style="padding: 1.5rem; border-color: var(--color-rose-500);">
@@ -636,7 +580,7 @@
         </div>
     </div>
 
-    <script src="/script.js?v=2"></script>
+    <script src="/script.js?v=3"></script>
 </body>
 
 </html>

@@ -2,7 +2,10 @@
 services:
   app:
     build: .
-    network_mode: "host"
+    networks:
+      - secure-internal
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - /home/archit-anand/My-AI-data:/app/backend/data
     secrets:
@@ -11,6 +14,23 @@ services:
       - LM_STUDIO_URL
       - LM_STUDIO_API_KEY
       - TAVILY_API_KEY
+
+  bastion_ssh:
+    build:
+      context: .
+      dockerfile: Dockerfile.bastion
+    container_name: bastion_ssh
+    volumes:
+      - ./secrets/authorized_keys:/home/appuser/.ssh/authorized_keys:ro
+    ports:
+      - 2222:2222
+    networks:
+      - secure-internal
+    restart: unless-stopped
+
+networks:
+  secure-internal:
+    driver: bridge
 
 secrets:
   # Defining secrets mapped to files in the ./secrets directory

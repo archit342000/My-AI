@@ -1,0 +1,29 @@
+FROM alpine:latest
+
+# Install OpenSSH
+RUN apk add --no-cache openssh-server bash
+
+# Setup the matching non-root user and unlock it
+RUN adduser -D -u 1000 appuser && \
+    sed -i 's/^appuser:!/appuser:*/' /etc/shadow && \
+    mkdir -p /home/appuser/.ssh && \
+    chown -R appuser:appuser /home/appuser && \
+    chmod 700 /home/appuser/.ssh
+
+# Generate host keys for the SSH daemon
+RUN ssh-keygen -A
+
+# Configure SSH daemon for secure tunneling (Overwriting default conflicts)
+RUN sed -i 's/^#* *AllowTcpForwarding.*/AllowTcpForwarding yes/' /etc/ssh/sshd_config && \
+    sed -i 's/^#* *GatewayPorts.*/GatewayPorts clientspecified/' /etc/ssh/sshd_config && \
+    echo "Port 2222" >> /etc/ssh/sshd_config && \
+    echo "PasswordAuthentication no" >> /etc/ssh/sshd_config && \
+    echo "PubkeyAuthentication yes" >> /etc/ssh/sshd_config && \
+    echo "PermitRootLogin no" >> /etc/ssh/sshd_config && \
+    echo "StrictModes no" >> /etc/ssh/sshd_config && \
+    echo "MaxAuthTries 20" >> /etc/ssh/sshd_config && \
+    echo "AuthorizedKeysFile %h/.ssh/authorized_keys" >> /etc/ssh/sshd_config
+
+EXPOSE 2222
+
+CMD ["/usr/sbin/sshd", "-D", "-e"]
