@@ -167,29 +167,7 @@ def discard_research_endpoint(chat_id):
     
     # 4. Cleanup messages: Wipe and allow restart
     clear_messages(chat_id)
-        
     return jsonify({"success": True})
-
-@app.route('/api/config', methods=['POST'])
-def update_config():
-    global rag, research_rag
-    data = request.json
-    
-    updated = False
-    if 'url' in data:
-        config.LM_STUDIO_URL = data['url']
-        updated = True
-    if 'apiKey' in data:
-        config.LM_STUDIO_API_KEY = data['apiKey']
-        updated = True
-
-    if updated:
-        # Re-initialize BOTH RAG engines with the new URL and Key
-        rag = MemoryRAG(persist_path=config.CHROMA_PATH, api_url=config.LM_STUDIO_URL, api_key=config.LM_STUDIO_API_KEY, embedding_model=config.EMBEDDING_MODEL)
-        research_rag = ResearchRAG(persist_path=config.CHROMA_PATH, api_url=config.LM_STUDIO_URL, api_key=config.LM_STUDIO_API_KEY, embedding_model=config.EMBEDDING_MODEL)
-        log_event("config_updated", {"url": config.LM_STUDIO_URL, "has_key": bool(config.LM_STUDIO_API_KEY)})
-
-    return jsonify({"success": True, "url": config.LM_STUDIO_URL})
 
 @app.route('/api/memory/reset', methods=['POST'])
 def reset_memory():
@@ -214,7 +192,7 @@ import httpx
 @app.route('/v1/models', methods=['GET'])
 def proxy_get_models():
     """Proxy GET models endpoints to LM Studio, injecting the API key."""
-    api_url = request.args.get('url', config.LM_STUDIO_URL).rstrip("/")
+    api_url = config.LM_STUDIO_URL.rstrip("/")
     
     base_url = api_url[:-3] if api_url.endswith('/v1') else api_url
     endpoint = f"{base_url}{request.path}"
@@ -232,7 +210,7 @@ def proxy_get_models():
 def proxy_load_model():
     """Proxy POST /api/v1/models/load to LM Studio."""
     data = request.json or {}
-    api_url = data.get('url', config.LM_STUDIO_URL).rstrip("/")
+    api_url = config.LM_STUDIO_URL.rstrip("/")
     
     base_url = api_url[:-3] if api_url.endswith('/v1') else api_url
     endpoint = f"{base_url}{request.path}"
@@ -251,7 +229,7 @@ def proxy_load_model():
 def proxy_unload_model():
     """Proxy POST /api/v1/models/unload to LM Studio."""
     data = request.json or {}
-    api_url = data.get('url', config.LM_STUDIO_URL).rstrip("/")
+    api_url = config.LM_STUDIO_URL.rstrip("/")
     
     base_url = api_url[:-3] if api_url.endswith('/v1') else api_url
     endpoint = f"{base_url}{request.path}"
@@ -280,10 +258,17 @@ def chat_completions():
         approved_plan = data.get('approvedPlan')
         resume_state = data.get('resumeState')
         last_model_name = data.get('lastModelName', model)
-        api_url = data.get('apiUrl', config.LM_STUDIO_URL)
-        api_key = data.get('apiKey', config.LM_STUDIO_API_KEY)
+        # Enforce secrets for security and to prevent empty frontend overrides
+        api_url = config.LM_STUDIO_URL
+        api_key = config.LM_STUDIO_API_KEY
 
-        extra_body = {k: v for k, v in data.items() if k not in ['messages', 'chatId', 'memoryMode', 'researchMode', 'searchDepthMode', 'visionModel', 'stream', 'approvedPlan', 'resumeState', 'lastModelName', 'hasVision', 'apiKey']}
+        # Blacklist keys that should never be forwarded or overridden by client
+        blacklist = [
+            'messages', 'chatId', 'memoryMode', 'researchMode', 
+            'searchDepthMode', 'visionModel', 'stream', 'approvedPlan', 
+            'resumeState', 'lastModelName', 'hasVision', 'apiKey', 'apiUrl'
+        ]
+        extra_body = {k: v for k, v in data.items() if k not in blacklist}
 
         if not chat_id or '..' in chat_id or '/' in chat_id or '\\' in chat_id:
              return jsonify({"error": "Invalid or missing chatId"}), 400

@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## v1.5.0 (Secure Remote Architecture & Connection Hardening)
+* **Secure Remote Access (Bastion SSH)**: Introduced a hardened OpenSSH bastion container (`bastion_ssh`) on an isolated bridge network, enabling secure remote access via encrypted SSH tunnels without exposing the application port (5000) directly to the host or internet.
+* **Unified Connection Management**: Purged all frontend input fields and client-side logic for LLM server URLs and API keys. Connection details are now strictly managed as backend secrets (Docker Secrets/Env), preventing misconfiguration and protecting sensitive credentials.
+* **Network Isolation & Resolution**: Migrated the application to a strictly isolated `secure-internal` Docker network. Implemented `host.docker.internal` gateway resolution to allow the containerized backend to communicate with host-resident LM Studio instances natively.
+* **Automated Port Tunneling**: Reconfigured the networking stack to support seamless "Local Forwarding" strategies, allowing mobile and remote devices to browse the interface securely via Tailscale through the Bastion.
+* **Backend Robustness**: Hardened the Flask `/v1/chat/completions` proxy and model routes to enforce backend configuration and prevent empty-string overrides from legacy frontend artifacts.
+* **Version Bump**: Incremented version to v1.5.0.
+
 ## v1.4.0 (Dockerization & Security Hardening)
 * **Containerization**: Added `Dockerfile` using Python 3.12-slim and `docker-compose.yml` to isolate the backend application.
 * **Non-Root Execution**: Hardened the Docker container to execute entirely under a restricted `appuser`.

@@ -44,10 +44,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const welcomeHero = document.getElementById('welcome-hero');
     const mainElement = document.querySelector('main');
     const chatInputArea = document.getElementById('chat-input-area');
-    const apiModal = document.getElementById('api-modal');
-    const serverLinkInput = document.getElementById('server-link-input');
-    const apiTokenInput = document.getElementById('api-token-input');
-    const saveApiKeyBtn = document.getElementById('save-api-key');
 
     // Theme Selector
     const themeToggle = document.getElementById('theme-toggle');
@@ -57,9 +53,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const systemSettingsTrigger = document.getElementById('system-settings-trigger');
     const systemSettingsModal = document.getElementById('system-settings-modal');
     const closeSystemSettingsBtn = document.getElementById('close-system-settings');
-    const sysServerLink = document.getElementById('sys-server-link');
-    const sysApiToken = document.getElementById('sys-api-token');
-    const sysSaveConnectionBtn = document.getElementById('sys-save-connection');
     const sysClearAllChatsBtn = document.getElementById('sys-clear-all-chats');
     const sysResetAppBtn = document.getElementById('sys-reset-app');
     const themeRadios = document.querySelectorAll('input[name="theme"]');
@@ -105,7 +98,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const carouselNext = document.getElementById('carousel-next');
     const carouselDots = document.querySelectorAll('.carousel-dots .dot');
 
-    const clearApiTrigger = document.getElementById('clear-api-trigger');
     const clearChatBtn = document.getElementById('clear-chat-btn');
     const mobileToggle = document.getElementById('mobile-toggle');
 
@@ -127,9 +119,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const discardResearchBtn = document.getElementById('discard-research-btn');
 
     // 2. Application State - SELECTIVE PERSISTENCE
-    let serverLink = localStorage.getItem('my_ai_server_link') || '';
-    let encryptedToken = localStorage.getItem('my_ai_api_token_secure');
-    let apiToken = encryptedToken ? d(encryptedToken) : '';
+    // Connection handling is strictly backend-only via Docker secrets
 
     let chatHistory = [];
     let systemPrompt = '';
@@ -170,11 +160,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let isGenerating = false;
 
     // Load session
-    if (serverLink) {
-        apiModal.classList.remove('open');
-        setTimeout(() => apiModal.style.display = 'none', 300);
-        fetchModels();
-    }
+    fetchModels();
 
     loadChats();
 
@@ -1168,7 +1154,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function fetchModels() {
-        if (!serverLink) return;
 
         if (modelSelectDropdown) {
             modelSelectDropdown.innerHTML = '<option value="" disabled selected>Fetching models...</option>';
@@ -1178,13 +1163,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const headers = {};
-        if (apiToken) {
-            headers["Authorization"] = `Bearer ${apiToken}`;
-        }
+
 
         try {
             // Try native LM Studio v1 API first via backend proxy
-            let response = await fetch(`/api/v1/models?url=${encodeURIComponent(serverLink || '')}`, {
+            let response = await fetch(`/api/v1/models`, {
                 method: 'GET',
                 headers: headers
             }).catch(() => null);
@@ -1206,7 +1189,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Fallback to OpenAI compatible endpoint if native fails or returns nothing
             if (!availableModels || availableModels.length === 0) {
-                response = await fetch(`/v1/models?url=${encodeURIComponent(serverLink || '')}`, {
+                response = await fetch(`/v1/models`, {
                     method: 'GET',
                     headers: headers
                 });
@@ -1401,18 +1384,13 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function unloadAllModels(excludeId = null, cachedModels = null) {
-        if (!serverLink) return;
-
         const headers = {};
-        if (apiToken) {
-            headers["Authorization"] = `Bearer ${apiToken}`;
-        }
 
         try {
             let allModels = cachedModels;
             if (!allModels) {
                 // First, get all models to check their state
-                const response = await fetch(`/api/v1/models?url=${encodeURIComponent(serverLink || '')}`, { method: 'GET', headers: headers });
+                const response = await fetch(`/api/v1/models`, { method: 'GET', headers: headers });
 
                 if (response.ok) {
                     const data = await response.json();
@@ -1449,7 +1427,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     await fetch(`/api/v1/models/unload`, {
                         method: 'POST',
                         headers: { ...headers, "Content-Type": "application/json" },
-                        body: JSON.stringify({ instance_id: instance.id, url: serverLink }) // Documentation requires 'instance_id'
+                        body: JSON.stringify({ instance_id: instance.id }) // Documentation requires 'instance_id'
                     }).catch(err => console.error(`Failed to unload instance ${instance.id}:`, err));
                 }
             }
@@ -1459,12 +1437,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function loadModel(modelKey) {
-        if (!serverLink) return;
-
         const headers = { "Content-Type": "application/json" };
-        if (apiToken) {
-            headers["Authorization"] = `Bearer ${apiToken}`;
-        }
 
         try {
             console.log(`Loading model: ${modelKey}`);
@@ -1476,8 +1449,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 method: 'POST',
                 headers: headers,
                 body: JSON.stringify({
-                    model: modelKey,
-                    url: serverLink
+                    model: modelKey
                     // We can add configurable parameters here later (context_length, etc.)
                 })
             });
@@ -1527,12 +1499,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (isManual) {
             // 0. Preliminary Check - Avoid reloading if already active in LM Studio
             const headers = {};
-            if (apiToken) headers["Authorization"] = `Bearer ${apiToken}`;
 
             let isLoadedInStudio = false;
             let currentModelsData = null;
             try {
-                const response = await fetch(`/api/v1/models?url=${encodeURIComponent(serverLink || '')}`, { method: 'GET', headers: headers });
+                const response = await fetch(`/api/v1/models`, { method: 'GET', headers: headers });
                 if (response.ok) {
                     const data = await response.json();
                     currentModelsData = data.models || [];
@@ -1787,51 +1758,13 @@ document.addEventListener('DOMContentLoaded', () => {
         reasoningLevelVal.textContent = reasoningLevels[idx].charAt(0).toUpperCase() + reasoningLevels[idx].slice(1);
     });
 
-    saveApiKeyBtn.addEventListener('click', async () => {
-        const link = serverLinkInput.value.trim();
-        const token = apiTokenInput.value.trim();
 
-        if (link) {
-            serverLink = link.endsWith('/') ? link.slice(0, -1) : link;
-            apiToken = token;
-
-            localStorage.setItem('my_ai_server_link', serverLink);
-            if (apiToken) {
-                localStorage.setItem('my_ai_api_token_secure', e(apiToken));
-            } else {
-                localStorage.removeItem('my_ai_api_token_secure');
-            }
-
-            // Send config to backend
-            try {
-                await fetch('/api/config', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ url: serverLink })
-                });
-            } catch (e) {
-                console.error("Failed to update backend config", e);
-            }
-
-            apiModal.classList.remove('open');
-            setTimeout(() => apiModal.style.display = 'none', 300);
-
-            fetchModels();
-            await showAlert('Success', 'Backend settings initialized successfully!');
-        } else {
-            await showAlert('Invalid Link', 'Please provide a server link (e.g., http://localhost:1234)');
-        }
-    });
 
     // System Settings Logic
     const openSystemSettings = () => {
         if (systemSettingsModal) {
             systemSettingsModal.style.display = 'flex';
             setTimeout(() => systemSettingsModal.classList.add('open'), 10);
-
-            // Populate config fields
-            if (serverLink) sysServerLink.value = serverLink;
-            if (apiToken) sysApiToken.value = apiToken;
         }
     };
 
@@ -1860,42 +1793,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // Save Connection (Moved from old modal)
-    if (sysSaveConnectionBtn) {
-        sysSaveConnectionBtn.addEventListener('click', async () => {
-            const link = sysServerLink.value.trim();
-            const token = sysApiToken.value.trim();
 
-            if (link) {
-                serverLink = link.endsWith('/') ? link.slice(0, -1) : link;
-                apiToken = token;
-
-                localStorage.setItem('my_ai_server_link', serverLink);
-                if (apiToken) {
-                    localStorage.setItem('my_ai_api_token_secure', e(apiToken));
-                } else {
-                    localStorage.removeItem('my_ai_api_token_secure');
-                }
-
-                // Send config to backend
-                try {
-                    await fetch('/api/config', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ url: serverLink })
-                    });
-                } catch (e) {
-                    console.error("Failed to update backend config", e);
-                }
-
-                closeSystemSettings();
-                fetchModels();
-                await showAlert('Success', 'Connection settings updated successfully!');
-            } else {
-                await showAlert('Invalid Link', 'Please provide a server link (e.g., http://localhost:1234)');
-            }
-        });
-    }
 
     if (sysClearAllChatsBtn) {
         sysClearAllChatsBtn.addEventListener('click', async (e) => {
@@ -1926,8 +1824,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 localStorage.removeItem('my_ai_selected_model');
                 localStorage.removeItem('my_ai_selected_model_name');
                 localStorage.removeItem('my_ai_theme_mode');
-                serverLink = '';
-                apiToken = '';
                 location.reload();
             }
         });
@@ -1944,18 +1840,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // 4.2 Cleanup Actions
-    clearApiTrigger?.addEventListener('click', async (e) => {
-        e.preventDefault();
-        if (await showConfirm('Reset Connection', 'Are you sure you want to clear your connection settings? This will require a re-authorization.', true)) {
-            localStorage.removeItem('my_ai_server_link');
-            localStorage.removeItem('my_ai_api_token_secure');
-            localStorage.removeItem('my_ai_selected_model');
-            localStorage.removeItem('my_ai_selected_model_name');
-            serverLink = '';
-            apiToken = '';
-            location.reload();
-        }
-    });
+
 
     clearChatBtn?.addEventListener('click', async () => {
         if (await showConfirm('Clear Chat', 'Are you sure you want to clear the current conversation?')) {
@@ -2025,10 +1910,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (e.target === settingsModal) {
             closeSettings();
         }
-        if (e.target === apiModal && serverLink) {
-            apiModal.classList.remove('open');
-            setTimeout(() => apiModal.style.display = 'none', 300);
-        }
     });
 
     // Image Input Selectors
@@ -2071,7 +1952,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 5. Chat Interaction Core (Backend API with RAG)
     async function sendMessage(authOverride = null, approvedPlanPayload = null, isResume = false, resumeState = null) {
-        if (isGenerating || !serverLink || !selectedModel) return;
+        if (isGenerating || !selectedModel) return;
 
         // If approvedPlanPayload is present, we are approving. Content might be empty or "Plan Approved".
         const content = textArea.value.trim();
@@ -2232,7 +2113,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         try {
             const requestBody = {
-                apiUrl: serverLink,
                 model: reqModel,
                 lastModelName: reqModelName,
                 hasVision: Array.isArray(availableModels) ? !!availableModels.find(m => m.key === reqModel)?.capabilities?.vision : false,
