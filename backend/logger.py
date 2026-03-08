@@ -2,10 +2,10 @@ import os
 import json
 import datetime
 import uuid
+from backend.config import DATA_DIR
 
 # Define log paths
-BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
-LOG_BASE_DIR = os.path.join(BACKEND_DIR, "logs")
+LOG_BASE_DIR = os.path.join(DATA_DIR, "logs")
 LLM_LOG_DIR = os.path.join(LOG_BASE_DIR, "llm_calls")
 TOOL_LOG_DIR = os.path.join(LOG_BASE_DIR, "tool_calls")
 GENERAL_LOG_DIR = os.path.join(LOG_BASE_DIR, "general")

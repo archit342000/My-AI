@@ -22,9 +22,19 @@ async def stream_chat_completion(url, payload):
     else:
         endpoint = f"{base_url}/chat/completions"
 
+    headers = {
+        "Content-Type": "application/json"
+    }
+    
+    request_payload = dict(payload)
+    if "api_key" in request_payload:
+        headers["Authorization"] = f"Bearer {request_payload.pop('api_key')}"
+    elif config.LM_STUDIO_API_KEY:
+        headers["Authorization"] = f"Bearer {config.LM_STUDIO_API_KEY}"
+
     try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(config.TIMEOUT_LLM_ASYNC or 5.0, read=None)) as client:
-            async with client.stream("POST", endpoint, json=payload) as response:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(config.TIMEOUT_LLM_ASYNC or 5.0, read=None), headers=headers) as client:
+            async with client.stream("POST", endpoint, json=request_payload) as response:
                 response.raise_for_status()
                 async for line in response.aiter_lines():
                     if not line: continue
@@ -74,10 +84,10 @@ def chat_completion(url, payload):
     """
     start_time = time.time()
     try:
-        # Ensure non-streaming
-        payload = dict(payload)
-        payload["stream"] = False
-        model = payload.get("model", "unknown")
+        # Ensure non-streaming and create local copy
+        request_payload = dict(payload)
+        request_payload["stream"] = False
+        model = request_payload.get("model", "unknown")
         
         base_url = url.rstrip("/")
         if not base_url.endswith("/v1"):
@@ -85,9 +95,18 @@ def chat_completion(url, payload):
         else:
             endpoint = f"{base_url}/chat/completions"
             
+        headers = {
+            "Content-Type": "application/json"
+        }
+        if "api_key" in request_payload:
+            headers["Authorization"] = f"Bearer {request_payload.pop('api_key')}"
+        elif config.LM_STUDIO_API_KEY:
+            headers["Authorization"] = f"Bearer {config.LM_STUDIO_API_KEY}"
+
         response = requests.post(
             endpoint,
-            json=payload,
+            json=request_payload,
+            headers=headers,
             timeout=config.TIMEOUT_LLM_BLOCKING or (5, 60)
         )
         response.raise_for_status()

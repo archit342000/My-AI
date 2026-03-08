@@ -9,8 +9,8 @@ from backend.logger import log_event
 from backend import config
 from backend.cache_system import cache_system
 
-TASKS_DIR = "./backend/tasks"
-LOGS_DIR = "./backend/task_logs"
+TASKS_DIR = os.path.join(config.DATA_DIR, "tasks")
+LOGS_DIR = os.path.join(config.DATA_DIR, "task_logs")
 
 os.makedirs(TASKS_DIR, exist_ok=True)
 os.makedirs(LOGS_DIR, exist_ok=True)
@@ -82,7 +82,7 @@ class TaskManager:
         }
 
         # Explicitly copy serializable fields we care about
-        for key in ['model', 'messages', 'approved_plan', 'search_depth_mode', 'vision_model', 'mode', 'memory_mode', 'has_vision', 'resume_state', 'model_name', 'api_url']:
+        for key in ['model', 'messages', 'approved_plan', 'search_depth_mode', 'vision_model', 'mode', 'memory_mode', 'has_vision', 'resume_state', 'model_name', 'api_url', 'api_key']:
             if key in kwargs:
                 if key == 'messages':
                     persistent_info[key] = _strip_images_from_messages(kwargs[key])
@@ -126,13 +126,16 @@ class TaskManager:
             "messages": task_info.get("messages"),
             "chat_id": chat_id
         }
+        
+        if "api_key" in task_info:
+            fn_kwargs["api_key"] = task_info["api_key"]
 
         import inspect
         sig = inspect.signature(execute_fn)
         valid_kwargs = [p for p in sig.parameters]
 
         # Handle all task_info keys that should be passed as kwargs
-        for key in ['approved_plan', 'search_depth_mode', 'vision_model', 'model_name', 'resume_state', 'rag_engine', 'extra_body', 'rag', 'memory_mode', 'has_vision']:
+        for key in ['approved_plan', 'search_depth_mode', 'vision_model', 'model_name', 'resume_state', 'rag_engine', 'extra_body', 'rag', 'memory_mode', 'has_vision', 'api_key']:
             if key in task_info and key in valid_kwargs:
                 fn_kwargs[key] = task_info[key]
 

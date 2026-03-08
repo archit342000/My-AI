@@ -1183,8 +1183,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         try {
-            // Try native LM Studio v1 API first
-            let response = await fetch(`${serverLink}/api/v1/models`, {
+            // Try native LM Studio v1 API first via backend proxy
+            let response = await fetch(`/api/v1/models?url=${encodeURIComponent(serverLink || '')}`, {
                 method: 'GET',
                 headers: headers
             }).catch(() => null);
@@ -1206,7 +1206,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Fallback to OpenAI compatible endpoint if native fails or returns nothing
             if (!availableModels || availableModels.length === 0) {
-                response = await fetch(`${serverLink}/v1/models`, {
+                response = await fetch(`/v1/models?url=${encodeURIComponent(serverLink || '')}`, {
                     method: 'GET',
                     headers: headers
                 });
@@ -1412,7 +1412,7 @@ document.addEventListener('DOMContentLoaded', () => {
             let allModels = cachedModels;
             if (!allModels) {
                 // First, get all models to check their state
-                const response = await fetch(`${serverLink}/api/v1/models`, { method: 'GET', headers: headers });
+                const response = await fetch(`/api/v1/models?url=${encodeURIComponent(serverLink || '')}`, { method: 'GET', headers: headers });
 
                 if (response.ok) {
                     const data = await response.json();
@@ -1446,10 +1446,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
 
                     console.log(`Unloading LLM Instance: ${instance.id}`);
-                    await fetch(`${serverLink}/api/v1/models/unload`, {
+                    await fetch(`/api/v1/models/unload`, {
                         method: 'POST',
                         headers: { ...headers, "Content-Type": "application/json" },
-                        body: JSON.stringify({ instance_id: instance.id }) // Documentation requires 'instance_id'
+                        body: JSON.stringify({ instance_id: instance.id, url: serverLink }) // Documentation requires 'instance_id'
                     }).catch(err => console.error(`Failed to unload instance ${instance.id}:`, err));
                 }
             }
@@ -1472,11 +1472,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const overlayText = document.getElementById('model-switch-text');
             if (overlayText) overlayText.textContent = "Loading Model...";
 
-            const response = await fetch(`${serverLink}/api/v1/models/load`, {
+            const response = await fetch(`/api/v1/models/load`, {
                 method: 'POST',
                 headers: headers,
                 body: JSON.stringify({
-                    model: modelKey
+                    model: modelKey,
+                    url: serverLink
                     // We can add configurable parameters here later (context_length, etc.)
                 })
             });
@@ -1531,7 +1532,7 @@ document.addEventListener('DOMContentLoaded', () => {
             let isLoadedInStudio = false;
             let currentModelsData = null;
             try {
-                const response = await fetch(`${serverLink}/api/v1/models`, { method: 'GET', headers: headers });
+                const response = await fetch(`/api/v1/models?url=${encodeURIComponent(serverLink || '')}`, { method: 'GET', headers: headers });
                 if (response.ok) {
                     const data = await response.json();
                     currentModelsData = data.models || [];

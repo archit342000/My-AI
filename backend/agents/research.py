@@ -82,7 +82,7 @@ def _extract_json_from_text(text):
 
 async def _stream_research_call(api_url, payload, display_model, activity_type, 
                                  thought_limit=None, content_threshold=None, 
-                                 step_id=None, is_background=True):
+                                 step_id=None, is_background=True, api_key=None):
     """
     Unified streaming wrapper for all research LLM calls.
     Implements active meander detection and AGENTS.md compliance.
@@ -98,6 +98,8 @@ async def _stream_research_call(api_url, payload, display_model, activity_type,
     # Ensure stream is enabled
     payload = dict(payload)
     payload["stream"] = True
+    if api_key:
+        payload["api_key"] = api_key
 
     was_meandered = False
     
@@ -311,7 +313,7 @@ async def _extract_pdf_content(pdf_bytes):
         return None
 
 
-async def _process_images_in_content(content, url, vision_model, api_url, vlm_lock, display_model=None, step_id=None):
+async def _process_images_in_content(content, url, vision_model, api_url, vlm_lock, display_model=None, step_id=None, api_key=None):
     """Extract and describe images found in markdown content using a vision model.
     Yields activity packets and finally the modified content string."""
     if not vision_model or not content:
@@ -398,12 +400,12 @@ async def _process_images_in_content(content, url, vision_model, api_url, vlm_lo
                 try:
                     if vlm_lock:
                         async with vlm_lock:
-                            gen = _stream_research_call(api_url, payload, None, "vision", is_background=False)
+                            gen = _stream_research_call(api_url, payload, None, "vision", is_background=False, api_key=api_key)
                             async for packet in gen:
                                 if packet["type"] == "result":
                                     img_desc = packet["data"]
                     else:
-                        gen = _stream_research_call(api_url, payload, None, "vision", is_background=False)
+                        gen = _stream_research_call(api_url, payload, None, "vision", is_background=False, api_key=api_key)
                         async for packet in gen:
                             if packet["type"] == "result":
                                 img_desc = packet["data"]
@@ -443,7 +445,7 @@ async def _process_images_in_content(content, url, vision_model, api_url, vlm_lo
     yield {"type": "result", "data": content}
 
 
-async def _extract_content_for_url(url, search_depth_mode, vision_model, api_url, vlm_lock, display_model=None, step_id=None, raw_content_from_search=None):
+async def _extract_content_for_url(url, search_depth_mode, vision_model, api_url, vlm_lock, display_model=None, step_id=None, raw_content_from_search=None, api_key=None):
     """Extract content from a single URL based on the search depth mode.
     
     Regular mode: Uses raw_content from Tavily search results directly.
@@ -458,7 +460,7 @@ async def _extract_content_for_url(url, search_depth_mode, vision_model, api_url
             content = raw_content_from_search
             # Vision processing for inline images (now enabled in regular mode too)
             if vision_model:
-                async for packet in _process_images_in_content(content, url, vision_model, api_url, vlm_lock, display_model, step_id):
+                async for packet in _process_images_in_content(content, url, vision_model, api_url, vlm_lock, display_model, step_id, api_key=api_key):
                     if packet["type"] == "activity":
                         yield packet
                     else:
@@ -493,7 +495,7 @@ async def _extract_content_for_url(url, search_depth_mode, vision_model, api_url
                     if md and len(md.strip()) > (config.RESEARCH_CONTENT_MIN_LENGTH_DEEP if search_depth_mode == 'deep' else config.RESEARCH_CONTENT_MIN_LENGTH_REGULAR):
                         # Vision processing for inline images (deep mode only)
                         if vision_model:
-                            async for packet in _process_images_in_content(md, url, vision_model, api_url, vlm_lock, display_model, step_id):
+                            async for packet in _process_images_in_content(md, url, vision_model, api_url, vlm_lock, display_model, step_id, api_key=api_key):
                                 if packet["type"] == "activity":
                                     yield packet
                                 else:
@@ -516,7 +518,7 @@ async def _extract_content_for_url(url, search_depth_mode, vision_model, api_url
     yield {"type": "result", "data": (url, None)}
 
 
-async def _process_tavily_search_images(images, section_index, vision_model, api_url, vlm_lock, display_model=None):
+async def _process_tavily_search_images(images, section_index, vision_model, api_url, vlm_lock, display_model=None, api_key=None):
     """Process images from Tavily search results using vision model.
     Yields activity packets and finally the list of (triplet_block_text, img_url, section_index) tuples."""
     if not vision_model or not images:
@@ -583,12 +585,12 @@ async def _process_tavily_search_images(images, section_index, vision_model, api
                 try:
                     if vlm_lock:
                         async with vlm_lock:
-                            gen = _stream_research_call(api_url, payload, None, "vision", is_background=False)
+                            gen = _stream_research_call(api_url, payload, None, "vision", is_background=False, api_key=api_key)
                             async for packet in gen:
                                 if packet["type"] == "result":
                                     img_desc = packet["data"]
                     else:
-                        gen = _stream_research_call(api_url, payload, None, "vision", is_background=False)
+                        gen = _stream_research_call(api_url, payload, None, "vision", is_background=False, api_key=api_key)
                         async for packet in gen:
                             if packet["type"] == "result":
                                 img_desc = packet["data"]
@@ -631,7 +633,7 @@ async def _execute_section_reflection_and_write(
         n_sections, original_topic, full_plan_text,
         search_depth_mode, vision_model, vlm_lock, chat_id,
         display_model, source_registry, next_source_id, mode_guidance, entity_glossary,
-        image_results=None):
+        image_results=None, api_key=None):
     """Multi-turn conversation for a single research section (KV cache reuse).
     
     Acts as an async generator, yielding UI chunks in real-time and streaming 
@@ -721,7 +723,8 @@ async def _execute_section_reflection_and_write(
         api_url, reflection_payload, display_model, "reflection",
         thought_limit=config.RESEARCH_MEANDER_THOUGHT_LIMIT_REFLECTION,
         content_threshold=config.RESEARCH_MEANDER_CONTENT_THRESHOLD,
-        step_id=section_index
+        step_id=section_index,
+        api_key=api_key
     )
     async for packet in gen:
         if packet["type"] == "activity":
@@ -762,7 +765,7 @@ async def _execute_section_reflection_and_write(
                         else:
                             async for fu_packet in _extract_content_for_url(
                                 fu_url, search_depth_mode, vision_model, api_url, vlm_lock,
-                                raw_content_from_search=fu_r.get('raw_content')
+                                raw_content_from_search=fu_r.get('raw_content'), api_key=api_key
                             ):
                                 if fu_packet["type"] == "activity":
                                     yield fu_packet
@@ -833,7 +836,8 @@ async def _execute_section_reflection_and_write(
         gen = _stream_research_call(
             api_url, triage_payload, display_model, "status",
             thought_limit=config.RESEARCH_MEANDER_THOUGHT_LIMIT_REFLECTION,
-            content_threshold=config.RESEARCH_MEANDER_CONTENT_THRESHOLD
+            content_threshold=config.RESEARCH_MEANDER_CONTENT_THRESHOLD,
+            api_key=api_key
         )
         async for packet in gen:
             if packet["type"] == "activity":
@@ -891,7 +895,8 @@ async def _execute_section_reflection_and_write(
         gen = _stream_research_call(
             api_url, structured_payload, display_model, "status",
             thought_limit=config.RESEARCH_MEANDER_THOUGHT_LIMIT_REFLECTION,
-            content_threshold=config.RESEARCH_MEANDER_CONTENT_THRESHOLD
+            content_threshold=config.RESEARCH_MEANDER_CONTENT_THRESHOLD,
+            api_key=api_key
         )
         async for packet in gen:
             if packet["type"] == "activity":
@@ -967,7 +972,8 @@ async def _execute_section_reflection_and_write(
             api_url, writer_payload, display_model, "status",
             thought_limit=config.RESEARCH_MEANDER_THOUGHT_LIMIT_STEP_WRITER,
             content_threshold=config.RESEARCH_MEANDER_CONTENT_THRESHOLD,
-            step_id=section_index
+            step_id=section_index,
+            api_key=api_key
         )
         async for packet in gen:
             if packet["type"] == "activity":
@@ -1020,7 +1026,8 @@ async def _execute_section_reflection_and_write(
         gen = _stream_research_call(
             api_url, structured_payload, display_model, "status",
             thought_limit=config.RESEARCH_MEANDER_THOUGHT_LIMIT_STEP_WRITER,
-            content_threshold=config.RESEARCH_MEANDER_CONTENT_THRESHOLD
+            content_threshold=config.RESEARCH_MEANDER_CONTENT_THRESHOLD,
+            api_key=api_key
         )
         async for packet in gen:
             if packet["type"] == "activity":
@@ -1077,7 +1084,8 @@ async def _execute_section_reflection_and_write(
         gen = _stream_research_call(
             api_url, summary_payload, display_model, "status",
             thought_limit=config.RESEARCH_MEANDER_THOUGHT_LIMIT_SUMMARY,
-            content_threshold=config.RESEARCH_MEANDER_CONTENT_THRESHOLD
+            content_threshold=config.RESEARCH_MEANDER_CONTENT_THRESHOLD,
+            api_key=api_key
         )
         async for packet in gen:
             if packet["type"] == "activity":
@@ -1099,7 +1107,7 @@ async def _execute_section_reflection_and_write(
 
     yield {"type": "activity", "data": f"data: {_create_activity_chunk(display_model, 'reflection', {'message': f'Section complete: {section_heading}', 'step_id': section_index})}\n\n"}
 
-    yield {"type": "result", "data": (section_text, summary_points, plan_mod, follow_up_buffer, next_source_id)}
+    yield {"type": "result", "data": (section_text, summary_points, plan_mod, follow_up_content, next_source_id)}
 
 
 # =====================================================================
@@ -1199,7 +1207,7 @@ def _strip_invalid_citations(report_text, valid_source_ids):
     return re.sub(r'\[(\d+)\]', check_citation, report_text)
 
 
-async def generate_research_response(api_url, model, messages, approved_plan=None, chat_id=None, search_depth_mode='regular', vision_model=None, model_name=None, resume_state=None):
+async def generate_research_response(api_url, model, messages, approved_plan=None, chat_id=None, search_depth_mode='regular', vision_model=None, model_name=None, resume_state=None, api_key=None):
     """
     Main Research Pipeline
     
@@ -1304,7 +1312,8 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
                 gen = _stream_research_call(
                     api_url, scout_payload, display_model, "planning",
                     thought_limit=config.RESEARCH_MEANDER_THOUGHT_LIMIT_SCOUT,
-                    content_threshold=config.RESEARCH_MEANDER_CONTENT_THRESHOLD
+                    content_threshold=config.RESEARCH_MEANDER_CONTENT_THRESHOLD,
+                    api_key=api_key
                 )
                 async for packet in gen:
                     if packet["type"] == "activity":
@@ -1413,7 +1422,8 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
                 gen = _stream_research_call(
                     api_url, payload, display_model, "planning",
                     thought_limit=config.RESEARCH_MEANDER_THOUGHT_LIMIT_PLANNING,
-                    content_threshold=config.RESEARCH_MEANDER_CONTENT_THRESHOLD
+                    content_threshold=config.RESEARCH_MEANDER_CONTENT_THRESHOLD,
+                    api_key=api_key
                 )
                 async for packet in gen:
                     if packet["type"] == "activity":
@@ -1545,7 +1555,7 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
                         async for packet in _extract_content_for_url(
                             sel_url, search_depth_mode, vision_model, api_url, vlm_lock,
                             display_model=display_model, step_id=section_idx,
-                            raw_content_from_search=sel_result.get('raw_content')
+                            raw_content_from_search=sel_result.get('raw_content'), api_key=api_key
                         ):
                             if packet["type"] == "activity":
                                 yield packet["data"]
@@ -1570,7 +1580,7 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
 
                     # --- PROCESS SEARCH IMAGES (VLM) ---
                     if vision_model and search_images:
-                        async for packet in _process_tavily_search_images(search_images, section_idx, vision_model, api_url, vlm_lock, display_model=display_model):
+                        async for packet in _process_tavily_search_images(search_images, section_idx, vision_model, api_url, vlm_lock, display_model=display_model, api_key=api_key):
                             if packet["type"] == "activity":
                                 yield packet["data"]
                             else:
@@ -1599,7 +1609,7 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
                                     deep_extracted = None
                                     async for packet in _extract_content_for_url(
                                         mapped_url, search_depth_mode, vision_model, api_url, vlm_lock,
-                                        display_model=display_model, step_id=section_idx
+                                        display_model=display_model, step_id=section_idx, api_key=api_key
                                     ):
                                         if packet["type"] == "activity":
                                             yield packet["data"]
@@ -1643,7 +1653,7 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
                         n_sections, original_query, approved_plan,
                         search_depth_mode, vision_model, vlm_lock, chat_id,
                         display_model, source_registry, global_source_id, mode_guidance, entity_glossary,
-                        image_results=vlm_image_results
+                        image_results=vlm_image_results, api_key=api_key
                     ):
                     
                     if packet["type"] in ("activity", "stream", "stream_chunk"):
@@ -1782,7 +1792,8 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
             gen = _stream_research_call(
                 api_url, detective_payload, display_model, "status",
                 thought_limit=config.RESEARCH_MEANDER_THOUGHT_LIMIT_AUDIT,
-                content_threshold=config.RESEARCH_MEANDER_CONTENT_THRESHOLD
+                content_threshold=config.RESEARCH_MEANDER_CONTENT_THRESHOLD,
+                api_key=api_key
             )
             async for packet in gen:
                 if packet["type"] == "activity":
@@ -1894,7 +1905,8 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
                                 gen = _stream_research_call(
                                     api_url, surgeon_payload, display_model, "status",
                                     thought_limit=config.RESEARCH_MEANDER_THOUGHT_LIMIT_AUDIT,
-                                    content_threshold=config.RESEARCH_MEANDER_CONTENT_THRESHOLD
+                                    content_threshold=config.RESEARCH_MEANDER_CONTENT_THRESHOLD,
+                                    api_key=api_key
                                 )
                                 async for packet in gen:
                                     if packet["type"] == "activity":
@@ -1946,7 +1958,8 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
                                 gen = _stream_research_call(
                                     api_url, structured_payload, display_model, "status",
                                     thought_limit=config.RESEARCH_MEANDER_THOUGHT_LIMIT_AUDIT,
-                                    content_threshold=config.RESEARCH_MEANDER_CONTENT_THRESHOLD
+                                    content_threshold=config.RESEARCH_MEANDER_CONTENT_THRESHOLD,
+                                    api_key=api_key
                                 )
                                 async for packet in gen:
                                     if packet["type"] == "activity":
@@ -2009,7 +2022,8 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
             gen = _stream_research_call(
                 api_url, synthesis_payload, display_model, "status",
                 thought_limit=config.RESEARCH_MEANDER_THOUGHT_LIMIT_SYNTHESIS,
-                content_threshold=config.RESEARCH_MEANDER_CONTENT_THRESHOLD
+                content_threshold=config.RESEARCH_MEANDER_CONTENT_THRESHOLD,
+                api_key=api_key
             )
             async for packet in gen:
                 if packet["type"] == "activity":

@@ -23,14 +23,24 @@ app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 
 # Initialize components with config
 init_db()
-rag = MemoryRAG(persist_path=config.CHROMA_PATH, api_url=config.LM_STUDIO_URL, embedding_model=config.EMBEDDING_MODEL)
-research_rag = ResearchRAG(persist_path=config.CHROMA_PATH, api_url=config.LM_STUDIO_URL, embedding_model=config.EMBEDDING_MODEL)
+rag = MemoryRAG(persist_path=config.CHROMA_PATH, api_url=config.LM_STUDIO_URL, api_key=config.LM_STUDIO_API_KEY, embedding_model=config.EMBEDDING_MODEL)
+research_rag = ResearchRAG(persist_path=config.CHROMA_PATH, api_url=config.LM_STUDIO_URL, api_key=config.LM_STUDIO_API_KEY, embedding_model=config.EMBEDDING_MODEL)
 task_manager.recover_tasks()
 
 @app.route('/')
 @app.route('/chat/<chat_id>')
 def index(chat_id=None):
     return send_from_directory('static', 'index.html')
+
+@app.before_request
+def require_auth():
+    if not config.APP_PASSWORD:
+        return
+    auth = request.authorization
+    if not auth or auth.password != config.APP_PASSWORD:
+        return Response('Could not verify your access level for that URL.\n'
+                        'You have to login with proper credentials', 401,
+                        {'WWW-Authenticate': 'Basic realm="Login Required"'})
 
 @app.route('/<path:path>')
 def serve_static(path):
@@ -146,8 +156,8 @@ def discard_research_endpoint(chat_id):
     # 2. Cleanup state files
     import re
     safe_chat_id = re.sub(r'[^a-zA-Z0-9_\-]', '', str(chat_id))
-    state_path = f"./backend/tasks/{safe_chat_id}_state.json"
-    task_path = f"./backend/tasks/{chat_id}.json"
+    state_path = os.path.join(config.DATA_DIR, "tasks", f"{safe_chat_id}_state.json")
+    task_path = os.path.join(config.DATA_DIR, "tasks", f"{chat_id}.json")
     if os.path.exists(state_path): os.remove(state_path)
     if os.path.exists(task_path): os.remove(task_path)
     
@@ -169,12 +179,15 @@ def update_config():
     if 'url' in data:
         config.LM_STUDIO_URL = data['url']
         updated = True
+    if 'apiKey' in data:
+        config.LM_STUDIO_API_KEY = data['apiKey']
+        updated = True
 
     if updated:
-        # Re-initialize BOTH RAG engines with the new URL
-        rag = MemoryRAG(persist_path=config.CHROMA_PATH, api_url=config.LM_STUDIO_URL, embedding_model=config.EMBEDDING_MODEL)
-        research_rag = ResearchRAG(persist_path=config.CHROMA_PATH, api_url=config.LM_STUDIO_URL, embedding_model=config.EMBEDDING_MODEL)
-        log_event("config_updated", {"url": config.LM_STUDIO_URL})
+        # Re-initialize BOTH RAG engines with the new URL and Key
+        rag = MemoryRAG(persist_path=config.CHROMA_PATH, api_url=config.LM_STUDIO_URL, api_key=config.LM_STUDIO_API_KEY, embedding_model=config.EMBEDDING_MODEL)
+        research_rag = ResearchRAG(persist_path=config.CHROMA_PATH, api_url=config.LM_STUDIO_URL, api_key=config.LM_STUDIO_API_KEY, embedding_model=config.EMBEDDING_MODEL)
+        log_event("config_updated", {"url": config.LM_STUDIO_URL, "has_key": bool(config.LM_STUDIO_API_KEY)})
 
     return jsonify({"success": True, "url": config.LM_STUDIO_URL})
 
@@ -195,6 +208,64 @@ def debug_memory():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+import httpx
+
+@app.route('/api/v1/models', methods=['GET'])
+@app.route('/v1/models', methods=['GET'])
+def proxy_get_models():
+    """Proxy GET models endpoints to LM Studio, injecting the API key."""
+    api_url = request.args.get('url', config.LM_STUDIO_URL).rstrip("/")
+    
+    base_url = api_url[:-3] if api_url.endswith('/v1') else api_url
+    endpoint = f"{base_url}{request.path}"
+    headers = {"Content-Type": "application/json"}
+    if config.LM_STUDIO_API_KEY:
+        headers["Authorization"] = f"Bearer {config.LM_STUDIO_API_KEY}"
+        
+    try:
+        response = requests.get(endpoint, headers=headers, timeout=10)
+        return Response(response.content, status=response.status_code, content_type=response.headers.get('content-type', 'application/json'))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/v1/models/load', methods=['POST'])
+def proxy_load_model():
+    """Proxy POST /api/v1/models/load to LM Studio."""
+    data = request.json or {}
+    api_url = data.get('url', config.LM_STUDIO_URL).rstrip("/")
+    
+    base_url = api_url[:-3] if api_url.endswith('/v1') else api_url
+    endpoint = f"{base_url}{request.path}"
+        
+    headers = {"Content-Type": "application/json"}
+    if config.LM_STUDIO_API_KEY:
+        headers["Authorization"] = f"Bearer {config.LM_STUDIO_API_KEY}"
+        
+    try:
+        response = requests.post(endpoint, json=data, headers=headers, timeout=60)
+        return Response(response.content, status=response.status_code, content_type=response.headers.get('content-type', 'application/json'))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/v1/models/unload', methods=['POST'])
+def proxy_unload_model():
+    """Proxy POST /api/v1/models/unload to LM Studio."""
+    data = request.json or {}
+    api_url = data.get('url', config.LM_STUDIO_URL).rstrip("/")
+    
+    base_url = api_url[:-3] if api_url.endswith('/v1') else api_url
+    endpoint = f"{base_url}{request.path}"
+        
+    headers = {"Content-Type": "application/json"}
+    if config.LM_STUDIO_API_KEY:
+        headers["Authorization"] = f"Bearer {config.LM_STUDIO_API_KEY}"
+        
+    try:
+        response = requests.post(endpoint, json=data, headers=headers, timeout=60)
+        return Response(response.content, status=response.status_code, content_type=response.headers.get('content-type', 'application/json'))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/v1/chat/completions', methods=['POST'])
 def chat_completions():
     try:
@@ -210,8 +281,9 @@ def chat_completions():
         resume_state = data.get('resumeState')
         last_model_name = data.get('lastModelName', model)
         api_url = data.get('apiUrl', config.LM_STUDIO_URL)
+        api_key = data.get('apiKey', config.LM_STUDIO_API_KEY)
 
-        extra_body = {k: v for k, v in data.items() if k not in ['messages', 'chatId', 'memoryMode', 'researchMode', 'searchDepthMode', 'visionModel', 'stream', 'approvedPlan', 'resumeState', 'lastModelName', 'hasVision']}
+        extra_body = {k: v for k, v in data.items() if k not in ['messages', 'chatId', 'memoryMode', 'researchMode', 'searchDepthMode', 'visionModel', 'stream', 'approvedPlan', 'resumeState', 'lastModelName', 'hasVision', 'apiKey']}
 
         if not chat_id or '..' in chat_id or '/' in chat_id or '\\' in chat_id:
              return jsonify({"error": "Invalid or missing chatId"}), 400
@@ -280,18 +352,22 @@ def chat_completions():
 
         # === 3. Enqueue Background Task ===
         if research_mode:
-            # Sync engineering URL with the request
+            # Sync engineering URL and Key with the request
             if hasattr(research_rag.embedding_fn, 'api_url'):
                 research_rag.embedding_fn.api_url = api_url
+            if hasattr(research_rag.embedding_fn, 'api_key'):
+                research_rag.embedding_fn.api_key = api_key
             
             task_manager.start_research_task(
                 model, messages, approved_plan, chat_id, search_depth_mode, vision_model, generate_research_response,
-                model_name=last_model_name, resume_state=resume_state, rag_engine=research_rag, rag=rag, api_url=api_url
+                model_name=last_model_name, resume_state=resume_state, rag_engine=research_rag, rag=rag, api_url=api_url, api_key=api_key
             )
         else:
             # Normal Chat Task
             if hasattr(rag.embedding_fn, 'api_url'):
                 rag.embedding_fn.api_url = api_url
+            if hasattr(rag.embedding_fn, 'api_key'):
+                rag.embedding_fn.api_key = api_key
             has_vision = data.get('hasVision', False)
             task_manager.start_chat_task(
                 chat_id,
@@ -302,7 +378,8 @@ def chat_completions():
                 rag=rag,
                 memory_mode=memory_mode,
                 has_vision=has_vision,
-                api_url=api_url
+                api_url=api_url,
+                api_key=api_key
             )
 
         # === 4. Return Stream Subscription ===
@@ -327,7 +404,7 @@ def logs_page():
 
 @app.route('/api/logs', methods=['GET'])
 def get_log_index():
-    index_path = os.path.join("backend", "logs", "network_index.jsonl")
+    index_path = os.path.join(config.DATA_DIR, "logs", "network_index.jsonl")
     logs = []
     if os.path.exists(index_path):
         with open(index_path, "r", encoding="utf-8") as f:
@@ -345,7 +422,7 @@ def get_log_detail():
         return jsonify({"error": "Missing path"}), 400
         
     # Security: Ensure path is within the logs directory
-    base_logs = os.path.abspath(os.path.join("backend", "logs"))
+    base_logs = os.path.abspath(os.path.join(config.DATA_DIR, "logs"))
     target_path = os.path.abspath(os.path.join(base_logs, rel_path))
     
     if not target_path.startswith(base_logs + os.sep) and target_path != base_logs:
@@ -363,7 +440,7 @@ def get_log_detail():
 
 @app.route('/api/logs/events', methods=['GET'])
 def get_event_logs():
-    event_dir = os.path.join("backend", "logs", "general")
+    event_dir = os.path.join(config.DATA_DIR, "logs", "general")
     events = []
     if os.path.exists(event_dir):
         # Get latest event file

@@ -2,8 +2,9 @@ import sqlite3
 import json
 import os
 import time
+from backend.config import DATA_DIR
 
-DB_PATH = "./backend/chats.db"
+DB_PATH = os.path.join(DATA_DIR, "chats.db")
 
 def init_db():
     conn = sqlite3.connect(DB_PATH)

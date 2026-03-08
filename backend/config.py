@@ -3,17 +3,33 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+def get_secret(secret_name, default=None):
+    try:
+        with open(f"/run/secrets/{secret_name}", "r") as f:
+            return f.read().strip()
+    except IOError:
+        return os.getenv(secret_name, default)
+
+DATA_DIR = get_secret("DATA_DIR", "./backend/data")
+os.makedirs(DATA_DIR, exist_ok=True)
+
+# =============================================================================
+# APP LEVEL AUTH
+# =============================================================================
+APP_PASSWORD = get_secret("APP_PASSWORD", None)
+
 # =============================================================================
 # LM STUDIO & INFRASTRUCTURE
 # =============================================================================
-LM_STUDIO_URL = os.getenv("LM_STUDIO_URL", "http://localhost:1234")
+LM_STUDIO_URL = get_secret("LM_STUDIO_URL", "http://localhost:1234")
+LM_STUDIO_API_KEY = get_secret("LM_STUDIO_API_KEY", "")
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-embeddinggemma-300m")
-CHROMA_PATH = os.getenv("CHROMA_PATH", "./backend/chroma_db")
+CHROMA_PATH = get_secret("CHROMA_PATH", os.path.join(DATA_DIR, "chroma_db"))
 
 # =============================================================================
 # SEARCH (Tavily API)
 # =============================================================================
-TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")
+TAVILY_API_KEY = get_secret("TAVILY_API_KEY", "")
 TAVILY_BASE_URL = os.getenv("TAVILY_BASE_URL", "https://api.tavily.com")
 
 SEARCH_DEPTH = "basic"

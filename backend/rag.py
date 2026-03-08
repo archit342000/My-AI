@@ -19,10 +19,11 @@ def _cosine_similarity(v1, v2):
     return dot_product / (norm_a * norm_b)
 
 class LMStudioEmbeddingFunction(embedding_functions.EmbeddingFunction):
-    def __init__(self, api_url="http://localhost:1234", model_name="text-embedding-embeddinggemma-300m", default_task="document"):
+    def __init__(self, api_url="http://localhost:1234", model_name="text-embedding-embeddinggemma-300m", default_task="document", api_key=None):
         self.api_url = api_url
         self.model_name = model_name
         self.default_task = default_task
+        self.api_key = api_key
 
     def __call__(self, input):
         # Standard fallback for ChromaDB internal loops
@@ -49,12 +50,18 @@ class LMStudioEmbeddingFunction(embedding_functions.EmbeddingFunction):
             "input": processed_input
         }
 
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        elif config.LM_STUDIO_API_KEY:
+            headers["Authorization"] = f"Bearer {config.LM_STUDIO_API_KEY}"
+
         try:
             start_time = time.time()
             response = requests.post(
                 url, 
                 json=payload, 
-                headers={"Content-Type": "application/json"},
+                headers=headers,
                 timeout=config.TIMEOUT_LLM_BLOCKING or 60
             )
             
@@ -107,13 +114,14 @@ class MemoryRAG:
             metadata=MemoryRAG.COSINE_METADATA
         )
 
-    def __init__(self, persist_path="./backend/chroma_db", api_url="http://localhost:1234", embedding_model="text-embedding-embeddinggemma-300m"):
+    def __init__(self, persist_path="./backend/chroma_db", api_url="http://localhost:1234", embedding_model="text-embedding-embeddinggemma-300m", api_key=None):
         self.client = chromadb.PersistentClient(path=persist_path)
 
         # Initialize custom embedding function
         self.embedding_fn = LMStudioEmbeddingFunction(
             api_url=api_url,
-            model_name=embedding_model
+            model_name=embedding_model,
+            api_key=api_key or config.LM_STUDIO_API_KEY
         )
 
         self.collection = self._ensure_cosine_collection(
@@ -382,11 +390,12 @@ class MemoryRAG:
 
 class ResearchRAG:
     """Ephemeral per-chat storage for Research passes."""
-    def __init__(self, persist_path="./backend/chroma_db", api_url="http://localhost:1234", embedding_model="text-embedding-embeddinggemma-300m", dedup_threshold=config.RAG_DEDUP_THRESHOLD):
+    def __init__(self, persist_path="./backend/chroma_db", api_url="http://localhost:1234", embedding_model="text-embedding-embeddinggemma-300m", dedup_threshold=config.RAG_DEDUP_THRESHOLD, api_key=None):
         self.client = chromadb.PersistentClient(path=persist_path)
         self.embedding_fn = LMStudioEmbeddingFunction(
             api_url=api_url,
-            model_name=embedding_model
+            model_name=embedding_model,
+            api_key=api_key or config.LM_STUDIO_API_KEY
         )
         self.dedup_threshold = dedup_threshold
         self.collection = MemoryRAG._ensure_cosine_collection(
