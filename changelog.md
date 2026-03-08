@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## v1.4.0 (Dockerization & Security Hardening)
+* **Containerization**: Added `Dockerfile` using Python 3.12-slim and `docker-compose.yml` to isolate the backend application.
+* **Non-Root Execution**: Hardened the Docker container to execute entirely under a restricted `appuser`.
+* **Volume Mapping Strategy**: Centralized dynamic storage elements (SQLite DB, ChromaDB vectors, logs, and task manifests) into a configurable `DATA_DIR`, designed for volume mapping (`user_data`).
+* **Docker Secrets Implementation**: Replaced `os.getenv` configuration with `get_secret` to strictly enforce loading sensitive API keys and configuration values via Docker Compose Secrets.
+* **App-Level Hardening**: Introduced HTTP Basic Authentication middleware guarded by an `APP_PASSWORD` secret to prevent unauthorized UI and API access.
+* **Agent Operational Policy Update**: Updated `AGENTS.md` to strictly forbid autonomous operations targeting the main Docker stack (`docker compose up/down`). Isolated verification allowed only through strictly uniquely named, ephemeral containers.
+* **Authentication Proxy for Model Listings**: Rewrote frontend `/v1/models` fetching logic to route through a dedicated Flask backend proxy (`/api/v1/models`). This securely bridges requests to the configured `LM_STUDIO_URL` by injecting the localized authentication secret on the server side, resolving cross-origin and authentication errors triggered by the removal of frontend API key exposure.
+* **Version Bump**: Incremented version to 1.4.0.
+
 ## v1.3.1
 * **Developer Guide Expansion**: Significantly expanded `AGENTS.md` to include comprehensive architectural guidelines, UI constraints (Luminous Material), and backend operational rules for AI agents and human contributors.
 * **Version Bump**: Incremented version to 1.3.1.

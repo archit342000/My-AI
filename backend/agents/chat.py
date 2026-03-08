@@ -85,7 +85,7 @@ def _stream_corrected_content(model, fixed_content, fixed_reasoning=""):
         yield f"data: {create_chunk(model, content=chunk_text)}\n\n"
 
 
-async def generate_chat_response(api_url, model, messages, extra_body, rag=None, memory_mode=False, chat_id=None, has_vision=False):
+async def generate_chat_response(api_url, model, messages, extra_body, rag=None, memory_mode=False, chat_id=None, has_vision=False, api_key=None):
     """
     Handles standard chat interaction with validation and self-healing.
     
@@ -139,6 +139,8 @@ async def generate_chat_response(api_url, model, messages, extra_body, rag=None,
         "stream": True,
         **extra_body
     }
+    if api_key:
+        payload["api_key"] = api_key
 
     full_content = ""
     full_reasoning = ""
