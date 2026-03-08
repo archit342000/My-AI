@@ -18,7 +18,8 @@ def init_db():
             research_mode INTEGER DEFAULT 0,
             is_vision INTEGER DEFAULT 0,
             last_model TEXT,
-            vision_model TEXT
+            vision_model TEXT,
+            max_tokens INTEGER DEFAULT 16384
         )
     ''')
     
@@ -40,6 +41,11 @@ def init_db():
 
     try:
         c.execute('ALTER TABLE chats ADD COLUMN vision_model TEXT')
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        c.execute('ALTER TABLE chats ADD COLUMN max_tokens INTEGER DEFAULT 16384')
     except sqlite3.OperationalError:
         pass
 
@@ -98,12 +104,12 @@ def get_chat(chat_id):
 
     return chat_dict
 
-def save_chat(chat_id, title, timestamp, memory_mode, research_mode=False, is_vision=False, last_model=None, vision_model=None):
+def save_chat(chat_id, title, timestamp, memory_mode, research_mode=False, is_vision=False, last_model=None, vision_model=None, max_tokens=16384):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''
-        INSERT INTO chats (id, title, timestamp, memory_mode, research_mode, is_vision, last_model, vision_model)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO chats (id, title, timestamp, memory_mode, research_mode, is_vision, last_model, vision_model, max_tokens)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
             title=excluded.title,
             timestamp=excluded.timestamp,
@@ -111,8 +117,9 @@ def save_chat(chat_id, title, timestamp, memory_mode, research_mode=False, is_vi
             research_mode=excluded.research_mode,
             is_vision=excluded.is_vision,
             last_model=excluded.last_model,
-            vision_model=excluded.vision_model
-    ''', (chat_id, title, timestamp, 1 if memory_mode else 0, 1 if research_mode else 0, 1 if is_vision else 0, last_model, vision_model))
+            vision_model=excluded.vision_model,
+            max_tokens=excluded.max_tokens
+    ''', (chat_id, title, timestamp, 1 if memory_mode else 0, 1 if research_mode else 0, 1 if is_vision else 0, last_model, vision_model, max_tokens))
     conn.commit()
     conn.close()
 
@@ -163,6 +170,13 @@ def update_chat_vision_model(chat_id, vision_model):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("UPDATE chats SET vision_model = ? WHERE id = ?", (vision_model, chat_id))
+    conn.commit()
+    conn.close()
+
+def update_chat_max_tokens(chat_id, max_tokens):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("UPDATE chats SET max_tokens = ? WHERE id = ?", (max_tokens, chat_id))
     conn.commit()
     conn.close()
 
