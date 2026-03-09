@@ -304,8 +304,8 @@ async def generate_chat_response(api_url, model, messages, extra_body, rag=None,
         # --- 4e. Send follow-up request ---
         if has_real_tools:
             payload["messages"] = list(messages_to_send)
-            del payload["tools"]
-            del payload["tool_choice"]
+            payload.pop("tools", None)
+            payload.pop("tool_choice", None)
             
             current_content = ""
             current_reasoning = ""

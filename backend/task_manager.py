@@ -140,6 +140,7 @@ class TaskManager:
                 fn_kwargs[key] = task_info[key]
 
         async def consume():
+            generator = None
             try:
                 # Execution function call (may be sync or async generator)
                 if inspect.iscoroutinefunction(execute_fn):
@@ -209,6 +210,17 @@ class TaskManager:
                     add_message(chat_id, 'assistant', f"Error: {str(e)}", model=task_info.get("model"))
 
             finally:
+                if generator and hasattr(generator, 'aclose'):
+                    try:
+                        await generator.aclose()
+                    except:
+                        pass
+                elif generator and hasattr(generator, 'close'):
+                    try:
+                        generator.close()
+                    except:
+                        pass
+
                 cache_system.cleanup_chat(chat_id)
                 if fn_kwargs.get("rag") and hasattr(fn_kwargs["rag"], "cleanup_chat"):
                     try: fn_kwargs["rag"].cleanup_chat(chat_id)
