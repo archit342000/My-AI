@@ -1,5 +1,10 @@
 # CHANGELOG
 
+## v1.6.0
+* **Chat Folders**: Allow categorising chats into folders.
+* **Folder Sidebar UI**: Added a new UI section in the sidebar to organize chats by folder, separated from uncategorized chats.
+* **Version Bump**: Incremented version to v1.6.0.
+
 ## v1.5.0 (Secure Remote Architecture & Connection Hardening)
 * **Secure Remote Access (Bastion SSH)**: Introduced a hardened OpenSSH bastion container (`bastion_ssh`) on an isolated bridge network, enabling secure remote access via encrypted SSH tunnels without exposing the application port (5000) directly to the host or internet.
 * **Unified Connection Management**: Purged all frontend input fields and client-side logic for LLM server URLs and API keys. Connection details are now strictly managed as backend secrets (Docker Secrets/Env), preventing misconfiguration and protecting sensitive credentials.

@@ -104,6 +104,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // New Chat Selectors
     const newChatBtn = document.getElementById('new-chat-btn');
     const tempChatBtn = document.getElementById('temp-chat-btn');
+    const newFolderBtn = document.getElementById('new-folder-btn');
     const chatHistoryList = document.getElementById('chat-history-list');
     const tempChatBanner = document.getElementById('temp-chat-banner');
     const saveTempChatBtn = document.getElementById('save-temp-chat-btn');
@@ -134,6 +135,11 @@ document.addEventListener('DOMContentLoaded', () => {
     let searchDepthMode = 'regular'; // 'regular' or 'deep'
     let wasMemoryMode = true; // Track previous memory state - default to true
     let currentResearchPlan = null; // Store current unapproved plan text
+    let chatFolders = JSON.parse(localStorage.getItem('chatFolders') || '[]');
+
+    function saveFolders() {
+        localStorage.setItem('chatFolders', JSON.stringify(chatFolders));
+    }
 
 
     let selectedModel = localStorage.getItem('my_ai_selected_model') || '';
@@ -674,62 +680,180 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderChatList() {
         if (!chatHistoryList) return;
+        const folderListEl = document.getElementById('folder-list');
+        const folderDivider = document.getElementById('folder-divider');
+
         chatHistoryList.innerHTML = '';
+        if (folderListEl) folderListEl.innerHTML = '';
+
         const sorted = [...savedChats].sort((a, b) => b.timestamp - a.timestamp);
 
-        if (sorted.length === 0) {
+        if (sorted.length === 0 && chatFolders.length === 0) {
             chatHistoryList.innerHTML = `<div style="padding: 1rem; color: var(--content-muted); font-size: 0.8rem; text-align: center;">No saved chats</div>`;
+            if (folderDivider) folderDivider.classList.add('hidden');
             return;
         }
 
+        // Group chats
+        const grouped = { uncategorized: [] };
+        chatFolders.forEach(f => { grouped[f.name] = []; });
+
         sorted.forEach(chat => {
-            const item = document.createElement('a');
-            item.href = `/chat/${chat.id}`;
-            item.className = `chat-list-item ${chat.id === currentChatId ? 'active' : ''}`;
+            const folderName = chat.folder || 'uncategorized';
+            if (!grouped[folderName]) {
+                // If a chat has a folder that isn't in chatFolders (legacy or direct DB edit), add it to list
+                chatFolders.push({ name: folderName, expanded: false });
+                grouped[folderName] = [];
+                saveFolders();
+            }
+            grouped[folderName].push(chat);
+        });
 
-            item.onclick = (e) => {
-                if (e.ctrlKey || e.metaKey || e.shiftKey) return;
-                e.preventDefault();
-                loadChat(chat.id);
+        // Render folders
+        chatFolders.forEach(folder => {
+            const folderDiv = document.createElement('div');
+            folderDiv.className = `folder-item ${folder.expanded ? 'expanded' : ''}`;
+
+            const folderHeader = document.createElement('div');
+            folderHeader.className = 'folder-header';
+
+            // Avoid XSS by using textContent for user input
+            const chevronSvg = `<svg class="folder-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+
+            const nameSpan = document.createElement('span');
+            nameSpan.style.cssText = "flex:1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.8125rem; font-weight: 600;";
+            nameSpan.textContent = folder.name;
+
+            const countSpan = document.createElement('span');
+            countSpan.style.cssText = "font-size: 0.65rem; color: var(--content-muted);";
+            countSpan.textContent = grouped[folder.name].length;
+
+            folderHeader.innerHTML = chevronSvg;
+            folderHeader.appendChild(nameSpan);
+            folderHeader.appendChild(countSpan);
+
+            folderHeader.onclick = () => {
+                folder.expanded = !folder.expanded;
+                saveFolders();
+                renderChatList();
             };
 
-            let title = chat.title || 'Untitled Chat';
-            const displayTitle = title.length > 24 ? title.substring(0, 24) + '...' : title;
+            folderDiv.appendChild(folderHeader);
 
-            item.innerHTML = `
-                <div class="chat-list-item-title" style="display: flex; align-items: center; gap: 6px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;">
-                    <span>${displayTitle}</span>
-                    ${chat.is_vision ? `<span style="font-size: 0.6rem; font-weight: 500; letter-spacing: 0.02em; padding: 1px 4px; background: rgba(6, 182, 212, 0.1); color: var(--brand-accent-1); border-radius: 4px; border: 1px solid rgba(6, 182, 212, 0.2); flex-shrink: 0;">Vision</span>` : ''}
-                    ${chat.research_mode ? `<span style="font-size: 0.6rem; font-weight: 500; letter-spacing: 0.02em; padding: 1px 4px; background: rgba(168, 85, 247, 0.1); color: #a855f7; border-radius: 4px; border: 1px solid rgba(168, 85, 247, 0.2); flex-shrink: 0;">Research</span>` : ''}
-                </div>
-                <div class="chat-item-actions" style="display: flex; gap: 2px;"></div>
-            `;
+            const folderContent = document.createElement('div');
+            folderContent.className = 'folder-content';
 
-            const actionsContainer = item.querySelector('.chat-item-actions');
+            grouped[folder.name].forEach(chat => {
+                const item = createChatItemElement(chat);
+                folderContent.appendChild(item);
+            });
 
-            const renameBtn = document.createElement('button');
-            renameBtn.className = 'chat-rename-btn';
-            renameBtn.title = 'Rename';
-            renameBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-            renameBtn.onclick = (e) => {
-                e.preventDefault();
-                renameChat(chat.id, e);
-            };
+            folderDiv.appendChild(folderContent);
+            if (folderListEl) folderListEl.appendChild(folderDiv);
+        });
 
-            const delBtn = document.createElement('button');
-            delBtn.className = 'chat-delete-btn';
-            delBtn.title = 'Delete';
-            delBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-            delBtn.onclick = (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                deleteChat(chat.id, e);
-            };
-
-            actionsContainer.appendChild(renameBtn);
-            actionsContainer.appendChild(delBtn);
+        // Render uncategorized
+        grouped['uncategorized'].forEach(chat => {
+            const item = createChatItemElement(chat);
             chatHistoryList.appendChild(item);
         });
+
+        if (folderDivider) {
+            if (chatFolders.length > 0 && grouped['uncategorized'].length > 0) {
+                folderDivider.classList.remove('hidden');
+            } else {
+                folderDivider.classList.add('hidden');
+            }
+        }
+    }
+
+    function createChatItemElement(chat) {
+        const item = document.createElement('a');
+        item.href = `/chat/${chat.id}`;
+        item.className = `chat-list-item ${chat.id === currentChatId ? 'active' : ''}`;
+
+        item.onclick = (e) => {
+            if (e.ctrlKey || e.metaKey || e.shiftKey) return;
+            e.preventDefault();
+            loadChat(chat.id);
+        };
+
+        let title = chat.title || 'Untitled Chat';
+        const displayTitle = title.length > 24 ? title.substring(0, 24) + '...' : title;
+
+        // Prevent XSS from title
+        const escapeHTML = (str) => {
+            const temp = document.createElement('div');
+            temp.textContent = str;
+            return temp.innerHTML;
+        };
+
+        item.innerHTML = `
+            <div class="chat-list-item-title" style="display: flex; align-items: center; gap: 6px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;">
+                <span>${escapeHTML(displayTitle)}</span>
+                ${chat.is_vision ? `<span style="font-size: 0.6rem; font-weight: 500; letter-spacing: 0.02em; padding: 1px 4px; background: rgba(6, 182, 212, 0.1); color: var(--brand-accent-1); border-radius: 4px; border: 1px solid rgba(6, 182, 212, 0.2); flex-shrink: 0;">Vision</span>` : ''}
+                ${chat.research_mode ? `<span style="font-size: 0.6rem; font-weight: 500; letter-spacing: 0.02em; padding: 1px 4px; background: rgba(168, 85, 247, 0.1); color: #a855f7; border-radius: 4px; border: 1px solid rgba(168, 85, 247, 0.2); flex-shrink: 0;">Research</span>` : ''}
+            </div>
+            <div class="chat-item-actions" style="display: flex; gap: 2px;"></div>
+        `;
+
+        const actionsContainer = item.querySelector('.chat-item-actions');
+
+        const moveBtn = document.createElement('button');
+        moveBtn.className = 'chat-folder-btn';
+        moveBtn.title = 'Move to folder';
+        moveBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>`;
+        moveBtn.onclick = async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const folderName = prompt("Enter folder name to move chat to (leave empty to remove from folder):", chat.folder || "");
+            if (folderName !== null) {
+                const finalFolder = folderName.trim() === "" ? null : folderName.trim();
+                chat.folder = finalFolder;
+
+                // Add to chatFolders if new
+                if (finalFolder && !chatFolders.find(f => f.name === finalFolder)) {
+                    chatFolders.push({ name: finalFolder, expanded: true });
+                    saveFolders();
+                }
+
+                try {
+                    await fetch(`/api/chats/${chat.id}`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ folder: finalFolder })
+                    });
+                } catch (err) {
+                    console.error("Error updating folder", err);
+                }
+                renderChatList();
+            }
+        };
+
+        const renameBtn = document.createElement('button');
+        renameBtn.className = 'chat-rename-btn';
+        renameBtn.title = 'Rename';
+        renameBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+        renameBtn.onclick = (e) => {
+            e.preventDefault();
+            renameChat(chat.id, e);
+        };
+
+        const delBtn = document.createElement('button');
+        delBtn.className = 'chat-delete-btn';
+        delBtn.title = 'Delete';
+        delBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+        delBtn.onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            deleteChat(chat.id, e);
+        };
+
+        actionsContainer.appendChild(moveBtn);
+        actionsContainer.appendChild(renameBtn);
+        actionsContainer.appendChild(delBtn);
+
+        return item;
     }
 
     // Memory Toggle Logic
@@ -1085,6 +1209,21 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (newChatBtn) newChatBtn.addEventListener('click', () => startNewChat(false));
+    if (newFolderBtn) {
+        newFolderBtn.addEventListener('click', () => {
+            const folderName = prompt("Enter new folder name:");
+            if (folderName && folderName.trim() !== '') {
+                const name = folderName.trim();
+                if (!chatFolders.find(f => f.name === name)) {
+                    chatFolders.push({ name: name, expanded: true });
+                    saveFolders();
+                    renderChatList();
+                } else {
+                    alert("Folder already exists.");
+                }
+            }
+        });
+    }
     if (tempChatBtn) tempChatBtn.addEventListener('click', () => {
         if (isTemporaryChat) {
             startNewChat(false);

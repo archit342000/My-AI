@@ -89,7 +89,8 @@ def save_chat_endpoint():
         research_mode, 
         is_vision=data.get('is_vision', False),
         last_model=data.get('last_model'),
-        vision_model=data.get('vision_model')
+        vision_model=data.get('vision_model'),
+        folder=data.get('folder')
     )
     
     if messages is not None:
@@ -105,6 +106,7 @@ def patch_chat_endpoint(chat_id):
     new_title = data.get('title')
     last_model = data.get('last_model')
     vision_model = data.get('vision_model')
+    folder = data.get('folder')
     
     existing_chat = get_chat(chat_id)
     if not existing_chat:
@@ -125,8 +127,11 @@ def patch_chat_endpoint(chat_id):
     if vision_model:
         from backend.storage import update_chat_vision_model
         update_chat_vision_model(chat_id, vision_model)
+    if 'folder' in data:
+        from backend.storage import update_chat_folder
+        update_chat_folder(chat_id, data['folder'])
         
-    if not new_title and not last_model and not vision_model:
+    if not new_title and not last_model and not vision_model and 'folder' not in data:
         return jsonify({"error": "Missing fields"}), 400
         
     return jsonify({"success": True})

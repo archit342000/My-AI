@@ -2645,6 +2645,71 @@ html.dark .sidebar-logo-icon {
     user-select: none;
 }
 
+.folder-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.folder-divider {
+    border: none;
+    height: 1px;
+    background-color: var(--color-neutral-200);
+    margin: 8px 8px;
+}
+
+.dark .folder-divider {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+.folder-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0.5rem 0.75rem;
+    cursor: pointer;
+    border-radius: var(--radius-lg);
+    color: var(--content-primary);
+    transition: background-color 0.2s;
+    user-select: none;
+}
+
+.folder-header:hover {
+    background: var(--color-neutral-100);
+}
+
+.dark .folder-header:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.folder-chevron {
+    transition: transform 0.2s var(--ease-spring);
+    color: var(--content-muted);
+}
+
+.folder-item.expanded .folder-chevron {
+    transform: rotate(90deg);
+}
+
+.folder-content {
+    display: none;
+    flex-direction: column;
+    gap: 2px;
+    padding-left: 12px;
+    border-left: 1px solid var(--color-neutral-200);
+    margin-left: 14px;
+    margin-top: 2px;
+    margin-bottom: 4px;
+}
+
+.dark .folder-content {
+    border-left-color: rgba(255, 255, 255, 0.1);
+}
+
+.folder-item.expanded .folder-content {
+    display: flex;
+}
+
 .chat-history-scroll {
     flex: 1;
     overflow-y: auto;
@@ -3545,7 +3610,8 @@ a.chat-list-item:active {
 }
 
 .chat-delete-btn,
-.chat-rename-btn {
+.chat-rename-btn,
+.chat-folder-btn {
     opacity: 0;
     transition: opacity 150ms ease, color 150ms ease;
     background: transparent;
@@ -3561,19 +3627,22 @@ a.chat-list-item:active {
 }
 
 .chat-list-item:hover .chat-delete-btn,
-.chat-list-item:hover .chat-rename-btn {
+.chat-list-item:hover .chat-rename-btn,
+.chat-list-item:hover .chat-folder-btn {
     opacity: 0.8;
 }
 
 .chat-delete-btn:hover,
-.chat-rename-btn:hover {
+.chat-rename-btn:hover,
+.chat-folder-btn:hover {
     opacity: 1 !important;
     background: var(--color-neutral-200);
     color: var(--content-primary);
 }
 
 .dark .chat-delete-btn:hover,
-.dark .chat-rename-btn:hover {
+.dark .chat-rename-btn:hover,
+.dark .chat-folder-btn:hover {
     background: rgba(255, 255, 255, 0.1);
 }
 
