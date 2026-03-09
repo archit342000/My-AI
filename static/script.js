@@ -639,6 +639,29 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    async function deleteFolder(folderName, event) {
+        if (event) event.stopPropagation();
+        if (await showConfirm('Delete Folder', `Are you sure you want to delete the folder "${folderName}"? The chats inside will be moved to uncategorized.`, true)) {
+            try {
+                chatFolders = chatFolders.filter(f => f.name !== folderName);
+                saveFolders();
+
+                const chatsInFolder = savedChats.filter(c => c.folder === folderName);
+                for (const chat of chatsInFolder) {
+                    chat.folder = null;
+                    await fetch(`/api/chats/${chat.id}`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ folder: null })
+                    });
+                }
+                renderChatList();
+            } catch (e) {
+                console.error("Error deleting folder:", e);
+            }
+        }
+    }
+
     async function renameChat(id, event) {
         if (event) event.stopPropagation();
         const chatItem = document.querySelector(`.chat-list-item[href="/chat/${id}"]`);
@@ -742,9 +765,20 @@ document.addEventListener('DOMContentLoaded', () => {
             countSpan.style.cssText = "font-size: 0.65rem; color: var(--content-muted);";
             countSpan.textContent = grouped[folder.name].length;
 
+            const delBtn = document.createElement('button');
+            delBtn.className = 'folder-delete-btn';
+            delBtn.title = 'Delete Folder';
+            delBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>`;
+            delBtn.onclick = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                deleteFolder(folder.name, e);
+            };
+
             folderHeader.innerHTML = chevronSvg;
             folderHeader.appendChild(nameSpan);
             folderHeader.appendChild(countSpan);
+            folderHeader.appendChild(delBtn);
 
             folderHeader.onclick = () => {
                 folder.expanded = !folder.expanded;
