@@ -114,7 +114,7 @@ class MemoryRAG:
             metadata=MemoryRAG.COSINE_METADATA
         )
 
-    def __init__(self, persist_path="./backend/chroma_db", api_url="http://localhost:1234", embedding_model="text-embedding-embeddinggemma-300m", api_key=None):
+    def __init__(self, persist_path=config.CHROMA_PATH, api_url="http://localhost:1234", embedding_model="text-embedding-embeddinggemma-300m", api_key=None):
         self.client = chromadb.PersistentClient(path=persist_path)
 
         # Initialize custom embedding function
@@ -390,7 +390,7 @@ class MemoryRAG:
 
 class ResearchRAG:
     """Ephemeral per-chat storage for Research passes."""
-    def __init__(self, persist_path="./backend/chroma_db", api_url="http://localhost:1234", embedding_model="text-embedding-embeddinggemma-300m", dedup_threshold=config.RAG_DEDUP_THRESHOLD, api_key=None):
+    def __init__(self, persist_path=config.CHROMA_PATH, api_url="http://localhost:1234", embedding_model="text-embedding-embeddinggemma-300m", dedup_threshold=config.RAG_DEDUP_THRESHOLD, api_key=None):
         self.client = chromadb.PersistentClient(path=persist_path)
         self.embedding_fn = LMStudioEmbeddingFunction(
             api_url=api_url,

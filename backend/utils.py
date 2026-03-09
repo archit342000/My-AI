@@ -5,7 +5,7 @@ import time
 import datetime
 from urllib.parse import urlparse
 from backend import config
-from backend.logger import log_tool_call, log_llm_call
+from backend.logger import log_tool_call, log_llm_call, log_event
 
 _tavily_search_cache = {}
 
@@ -465,7 +465,7 @@ def visit_page(url, max_chars=config.MAX_CHARS_VISIT_PAGE):
             t = threading.Thread(target=runner)
             t.start()
             t.join()
-            if ex[0]: raise ex[0]
+            if ex[0] is not None: raise ex[0]
             return result[0]
         else:
             return asyncio.run(coro)
