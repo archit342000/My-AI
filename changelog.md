@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## v1.5.4
+* **Bug Fix**: Fixed a marked.js parsing error when rendering empty code blocks. By checking if `code.text === 'string'`, it prevents `.replace()` errors in Highlight.js, resolving a bug in the UI log where `e.replace is not a function` was occurring.
+* **Version Bump**: Incremented version to 1.5.4.
+
 ## v1.5.3 (Max Tokens Persistence & Defaults)
 * **Default Output Tokens Bump**: Increased the default max token output for standard and vision models from 2k (2048) to 16k (16384).
 * **Per-Chat Persistence (Storage Schema Update)**: Updated `backend/storage.py` and the SQLite `chats` schema via a safe `ALTER TABLE` migration to permanently store and recall `max_tokens` preferences per chat ID.
