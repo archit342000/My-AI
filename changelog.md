@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## v1.5.3 (Max Tokens Persistence & Defaults)
+* **Default Output Tokens Bump**: Increased the default max token output for standard and vision models from 2k (2048) to 16k (16384).
+* **Per-Chat Persistence (Storage Schema Update)**: Updated `backend/storage.py` and the SQLite `chats` schema via a safe `ALTER TABLE` migration to permanently store and recall `max_tokens` preferences per chat ID.
+* **Live Update API**: Bound a slider `change` listener to send an immediate `PATCH` request to the backend `/api/chats/<id>`, ensuring token settings are saved as the user drags without requiring a formal chat submission.
+* **Auto-Restoration Engine**: Updated `loadChat` in `script.js` to ingest `chat.max_tokens` from the backend upon reload and instantly snap the parameters interface back to the exact saved state.
+
 ## v1.5.0 (Secure Remote Architecture & Connection Hardening)
 * **Secure Remote Access (Bastion SSH)**: Introduced a hardened OpenSSH bastion container (`bastion_ssh`) on an isolated bridge network, enabling secure remote access via encrypted SSH tunnels without exposing the application port (5000) directly to the host or internet.
 * **Unified Connection Management**: Purged all frontend input fields and client-side logic for LLM server URLs and API keys. Connection details are now strictly managed as backend secrets (Docker Secrets/Env), preventing misconfiguration and protecting sensitive credentials.

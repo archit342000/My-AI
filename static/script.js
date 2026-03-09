@@ -370,7 +370,7 @@ document.addEventListener('DOMContentLoaded', () => {
             isResearchMode = !!chat.research_mode;
 
             // Restore max_tokens setting
-            if (chat.max_tokens) {
+            if (chat.max_tokens !== undefined && chat.max_tokens !== null) {
                 samplingParams.max_tokens = chat.max_tokens;
                 maxTokensSlider.value = chat.max_tokens;
                 maxTokensVal.textContent = chat.max_tokens;
