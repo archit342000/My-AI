@@ -5,6 +5,11 @@
 * **Stability Fix**: Added proper asyncio task teardown logic in `backend/task_manager.py`'s `consume` coroutine to prevent "Task was destroyed but it is pending!" warnings when generations are interrupted or fail.
 * **Version Bump**: Incremented version to 1.6.3.
 
+## v1.6.2
+* **Sidebar Layout Fix**: Chat names in the sidebar now dynamically span the full available width instead of truncating prematurely at 24 characters.
+* **Rename Chat Fix**: When renaming a chat, the input field now correctly populates with the full, actual chat name instead of the visually truncated version.
+* **Version Bump**: Incremented version to v1.6.2.
+
 ## v1.6.1
 * **Folder Deletion**: Added a delete button to chat folders allowing users to remove a folder. Chats inside the folder will be safely moved back to "uncategorized".
 * **Version Bump**: Incremented version to 1.6.1.

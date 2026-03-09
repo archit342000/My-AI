@@ -75,5 +75,9 @@ This application is fully containerized and runs with user-level permissions for
 
 ## 📄 License & Versioning
 
+<<<<<<< 1.6.3-fix-multiple-tool-call-loop-9550769335728434827
 This project follows [SemVer v2.0.0](https://semver.org/). Current version: `v1.6.3`.
+=======
+This project follows [SemVer v2.0.0](https://semver.org/). Current version: `v1.6.2`.
+>>>>>>> main
 See [CHANGELOG.md](./changelog.md) and [docs/versioning_directives.md](./docs/versioning_directives.md) for a detailed history of updates and versioning rules.
