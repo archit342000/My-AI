@@ -31,3 +31,21 @@ In the `run_coro` function block inside `visit_page`, an exception wrapper used 
 
 **Resolution:**
 The current code works practically since `ex[0]` will be an `Exception` object when it evaluates to truthy, but pylint highlighted it as a risk.
+
+
+## 4. Minor Linting and Code Quality Issues
+
+**File:** `backend/agents/research.py`
+
+**Issue:**
+A follow-up comprehensive `pylint` scan revealed a few code quality issues:
+- Unused variables: `all_section_texts` and `follow_up_content` were assigned but never explicitly used after the assignment in certain blocks.
+- Unused imports: Unused utility functions (`GET_TIME_TOOL`, `visit_page`, `estimate_tokens`, etc.) were imported but never used.
+- Bad Indentation: An assignment had 17 spaces instead of 16.
+- Encoding warnings: `open()` was used without explicitly specifying an encoding.
+
+**Resolution:**
+- Removed unused imports and variables.
+- Fixed indentation on the affected line.
+- Explicitly added `encoding="utf-8"` to all `open()` calls.
+- Replaced the unused unpacked `follow_up_content` variable with `_` in unpacking assignments.

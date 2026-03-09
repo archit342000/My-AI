@@ -23,10 +23,8 @@ from backend.prompts import (
     RESEARCH_SURGEON_STRUCTURED_PROMPT,
     RESEARCH_SYNTHESIS_PROMPT
 )
-from backend.tools import GET_TIME_TOOL
 from backend.utils import (
-    create_chunk, visit_page, estimate_tokens, validate_research_plan,
-    get_domain, check_url_safety, execute_tavily_search,
+    create_chunk, validate_research_plan,
     get_current_time, async_tavily_search, async_tavily_map,
     async_tavily_extract, is_safe_web_url
 )
@@ -338,7 +336,7 @@ async def _process_images_in_content(content, url, vision_model, api_url, vlm_lo
             # Attempt to find alt for this specific tag in the original content (simple heuristics)
             alt_match = re.search(f'<img [^>]*alt=["\']([^"\']+)["\'][^>]*src=["\']{re.escape(img_url)}["\']', content)
             if not alt_match:
-                 alt_match = re.search(f'<img [^>]*src=["\']{re.escape(img_url)}["\'][^>]*alt=["\']([^"\']+)["\']', content)
+                alt_match = re.search(f'<img [^>]*src=["\']{re.escape(img_url)}["\'][^>]*alt=["\']([^"\']+)["\']', content)
             alt = alt_match.group(1) if alt_match else ""
             all_candidates.append({"url": img_url, "alt": alt})
 
@@ -1221,7 +1219,6 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
     log_event("research_start", {"chat_id": chat_id, "mode": 'execution' if approved_plan else 'planning', "model": model, "vision_model": vision_model})
 
     accumulated_summaries = []
-    all_section_texts = []  # Kept for backward-compat resume logic
     source_registry = {}  # {global_source_id: {"url": str}}
     global_source_id = 1
     entity_glossary = {}
@@ -1477,7 +1474,7 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
         # Load resume state if available
         if resume_state and os.path.exists(state_path):
             try:
-                with open(state_path, "r") as sf:
+                with open(state_path, "r", encoding="utf-8") as sf:
                     saved = json.load(sf)
                 accumulated_summaries = saved.get("accumulated_summaries", [])
                 source_registry = {int(k): v for k, v in saved.get("source_registry", {}).items()}
@@ -1645,7 +1642,7 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
                 yield f"data: {_create_activity_chunk(display_model, 'status', {'message': f'Total: {len(section_content_buffer)} content items for section: {heading}', 'icon': '💾'})}\n\n"
 
                 # --- SECTION-LEVEL PROCESSING: Reflect + Triage + Write + Summary ---
-                section_text = summary_points = plan_mod = follow_up_content = None
+                section_text = summary_points = plan_mod = _ = None
                 
                 query_strings = [q["search"] for q in section_queries]
                 async for packet in _execute_section_reflection_and_write(
@@ -1660,7 +1657,7 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
                     if packet["type"] in ("activity", "stream", "stream_chunk"):
                         yield packet["data"]
                     elif packet["type"] == "result":
-                        section_text, summary_points, plan_mod, follow_up_content, global_source_id = packet["data"]
+                        section_text, summary_points, plan_mod, _, global_source_id = packet["data"]
 
                 yield f"data: {create_chunk(display_model, content=chr(10)*2)}\n\n"
 
@@ -1697,7 +1694,7 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
                     "structural_recommendation": structural_recommendation,
                     "entity_glossary": entity_glossary
                 }
-                with open(state_path, "w") as f:
+                with open(state_path, "w", encoding="utf-8") as f:
                     json.dump(state, f)
 
         except Exception as e:
@@ -1719,7 +1716,7 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
         if resume_state and not accumulated_summaries:
             state_path = f"./backend/tasks/{chat_id}_state.json"
             if os.path.exists(state_path):
-                with open(state_path, "r") as sf:
+                with open(state_path, "r", encoding="utf-8") as sf:
                     saved = json.load(sf)
                 accumulated_summaries = saved.get("accumulated_summaries", [])
                 
