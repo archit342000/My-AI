@@ -8,7 +8,7 @@ document.addEventListener('DOMContentLoaded', () => {
             let langVal = language;
 
             // Handle different marked versions signatures
-            if (typeof code === 'object' && code !== null && code.text) {
+            if (typeof code === 'object' && code !== null && typeof code.text === 'string') {
                 textVal = code.text;
                 langVal = code.lang;
             }
@@ -149,7 +149,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let samplingParams = {
         temperature: 1.0,
         top_p: 1.0,
-        max_tokens: 2048,
+        max_tokens: 16384,
         top_k: 40,
         min_p: 0.05,
         presence_penalty: 0.0,
@@ -264,7 +264,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 memory_mode: isMemoryMode,
                 research_mode: isResearchMode,
                 is_vision: currentChatData ? currentChatData.is_vision : false,
-                last_model: currentChatData ? currentChatData.last_model : selectedModelName
+                last_model: currentChatData ? currentChatData.last_model : selectedModelName,
+                max_tokens: samplingParams.max_tokens
             })
         }).catch(err => console.error('Failed to sync chat state:', err));
     }
@@ -367,6 +368,18 @@ document.addEventListener('DOMContentLoaded', () => {
             currentResearchPlan = null;
             isMemoryMode = !!chat.memory_mode;
             isResearchMode = !!chat.research_mode;
+
+            // Restore max_tokens setting
+            if (chat.max_tokens !== undefined && chat.max_tokens !== null) {
+                samplingParams.max_tokens = chat.max_tokens;
+                maxTokensSlider.value = chat.max_tokens;
+                maxTokensVal.textContent = chat.max_tokens;
+            } else {
+                samplingParams.max_tokens = 16384;
+                maxTokensSlider.value = 16384;
+                maxTokensVal.textContent = 16384;
+            }
+
             updateResearchUI();
 
             // Update Header Display
@@ -1104,7 +1117,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 fetch('/api/chats/save', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ chat_id: currentChatId, title: titleText, messages: chatHistory, memory_mode: isMemoryMode, research_mode: isResearchMode })
+                    body: JSON.stringify({ chat_id: currentChatId, title: titleText, messages: chatHistory, memory_mode: isMemoryMode, research_mode: isResearchMode, max_tokens: samplingParams.max_tokens })
                 }).then(() => { loadChats(); renderChatList(); });
             }
             updateResearchUI();
@@ -1729,6 +1742,16 @@ document.addEventListener('DOMContentLoaded', () => {
     maxTokensSlider.addEventListener('input', (e) => {
         samplingParams.max_tokens = parseInt(e.target.value);
         maxTokensVal.textContent = samplingParams.max_tokens;
+    });
+
+    maxTokensSlider.addEventListener('change', (e) => {
+        if (currentChatId && !isTemporaryChat) {
+            fetch(`/api/chats/${currentChatId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ max_tokens: samplingParams.max_tokens })
+            }).catch(e => console.error("Error updating max_tokens:", e));
+        }
     });
 
     presencePenaltySlider.addEventListener('input', (e) => {
