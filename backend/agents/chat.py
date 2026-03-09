@@ -148,6 +148,7 @@ async def generate_chat_response(api_url, model, messages, extra_body, rag=None,
     current_reasoning = ""
     tool_calls = []
     tool_flow_prefix = ""  # Preserved for redact reconstruction
+    reasoning_flow_prefix = ""
 
     async for sse_chunk, final_state in _stream_and_accumulate(api_url, model, payload):
         if final_state is not None:

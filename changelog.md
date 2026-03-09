@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## v1.5.5
+* **Bug Fix**: Fixed `UnboundLocalError` for `reasoning_flow_prefix` in `backend/agents/chat.py` occurring when chat responses encounter validation errors without prior tool calls.
+* **Version Bump**: Incremented version to 1.5.5.
+
 ## v1.5.0 (Secure Remote Architecture & Connection Hardening)
 * **Secure Remote Access (Bastion SSH)**: Introduced a hardened OpenSSH bastion container (`bastion_ssh`) on an isolated bridge network, enabling secure remote access via encrypted SSH tunnels without exposing the application port (5000) directly to the host or internet.
 * **Unified Connection Management**: Purged all frontend input fields and client-side logic for LLM server URLs and API keys. Connection details are now strictly managed as backend secrets (Docker Secrets/Env), preventing misconfiguration and protecting sensitive credentials.
