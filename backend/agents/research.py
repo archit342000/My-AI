@@ -1463,7 +1463,8 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
 
         yield f"data: {_create_activity_chunk(display_model, 'phase', {'message': 'Beginning sequential research execution...', 'icon': '🚀', 'collapsible': True})}\n\n"
 
-        state_path = f"./backend/tasks/{chat_id}_state.json"
+        state_path = os.path.join(config.DATA_DIR, "tasks", f"{chat_id}_state.json")
+        os.makedirs(os.path.dirname(state_path), exist_ok=True)
         
         content_budget = config.RESEARCH_CONTENT_BUDGET_DEEP if search_depth_mode == 'deep' else config.RESEARCH_CONTENT_BUDGET_REGULAR
         
@@ -1714,7 +1715,7 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
 
         # If resuming directly into Phase 3, reload state
         if resume_state and not accumulated_summaries:
-            state_path = f"./backend/tasks/{chat_id}_state.json"
+            state_path = os.path.join(config.DATA_DIR, "tasks", f"{chat_id}_state.json")
             if os.path.exists(state_path):
                 with open(state_path, "r", encoding="utf-8") as sf:
                     saved = json.load(sf)

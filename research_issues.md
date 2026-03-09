@@ -49,3 +49,14 @@ A follow-up comprehensive `pylint` scan revealed a few code quality issues:
 - Fixed indentation on the affected line.
 - Explicitly added `encoding="utf-8"` to all `open()` calls.
 - Replaced the unused unpacked `follow_up_content` variable with `_` in unpacking assignments.
+
+
+## 5. FileNotFoundError During Section Execution (`state.json`)
+
+**File:** `backend/agents/research.py`
+
+**Issue:**
+The research agent attempts to write checkpointing data after each completed section. It was trying to write to `./backend/tasks/{chat_id}_state.json`. When the application was containerized, this hardcoded static directory may not exist or the `appuser` may not have permission, resulting in a `[Errno 2] No such file or directory` crash.
+
+**Resolution:**
+Replaced the hardcoded path with a dynamic path utilizing the persistent volume configuration: `os.path.join(config.DATA_DIR, "tasks", f"{chat_id}_state.json")`. Additionally, added an `os.makedirs(os.path.dirname(state_path), exist_ok=True)` call right after the initialization to guarantee that the `tasks` directory is dynamically created inside the `DATA_DIR` before attempting to dump the JSON file.
