@@ -163,6 +163,7 @@ You MUST output ONLY the following structured XML. No other text.
 - Do NOT wrap in markdown code blocks.
 - Every `<section>` must have a `<heading>`, a `<description>`, and 1-{max_queries_per_section} `<query>` elements.
 - Query attributes (`topic`, `time_range`, `start_date`, `end_date`) are OPTIONAL. Only include them when they genuinely improve the search.
+- **CRITICAL**: The actual search text MUST go between `<query>` and `</query>`. Do NOT put your search text inside the opening tag as an attribute.
 - **CRITICAL FOR REASONING MODELS**: Your `<think>` block MUST be extremely succinct. You are strictly limited to {reasoning_limit} characters. If you exceed this, your response will be automatically rejected.
 """
 

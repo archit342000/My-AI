@@ -1,5 +1,10 @@
 # CHANGELOG
 
+## v1.6.5
+* **Bug Fix**: Fixed a validation parsing error where the AI incorrectly placed query text as a tag attribute, causing empty query errors in `utils.py`. The regex recovery logic and LLM instructions were updated to robustly handle malformed XML.
+* **UX Improvement**: Improved the error feedback mechanism in `backend/agents/research.py` to prevent the AI from repeatedly hallucinating missing tags when validation fails.
+* **Version Bump**: Incremented version to v1.6.5.
+
 ## v1.6.4
 * **Bug Fix**: Fixed a parameter mapping bug in `backend/storage.py`'s `save_chat` function where the `folder` value was being incorrectly assigned to the `is_custom_title` column and the `folder` column was receiving a hardcoded `0`.
 * **Version Bump**: Incremented version to v1.6.4.

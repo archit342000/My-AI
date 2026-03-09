@@ -529,7 +529,11 @@ def validate_research_plan(content):
     # 2. Strip markdown code fences
     raw = re.sub(r'```(?:xml)?\s*\n?', '', raw).strip()
     
-    # 3. Locate the XML block
+    # 3. Fix malformed <query ... </query> tags where the opening tag is missing the closing '>'
+    # This happens when the AI tries to put search text into the opening tag like an attribute.
+    raw = re.sub(r'<query([^>]*?)</query>', r'<query>\1</query>', raw)
+    
+    # 4. Locate the XML block
     start_tag = "<research_plan>"
     end_tag = "</research_plan>"
     

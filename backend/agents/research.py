@@ -1450,7 +1450,7 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
                         messages_to_send.append({"role": "assistant", "content": plan_source})
                         messages_to_send.append({
                             "role": "user",
-                            "content": f"Your output failed validation: {error}\nSpecifically, I could not find a complete and valid <research_plan> block. Please regenerate the research plan carefully."
+                            "content": f"Your output failed validation: {error}\nPlease correct the issue and regenerate the complete <research_plan> block carefully."
                         })
 
             yield f"data: {create_chunk(model, content='**I was unable to generate a valid research plan.** Please try rephrasing your research topic or simplifying the request.')}\n\n"
