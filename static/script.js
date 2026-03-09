@@ -645,7 +645,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!chatItem) return;
 
         const titleSpan = chatItem.querySelector('.chat-list-item-title span:first-child') || chatItem.querySelector('.chat-list-item-title');
-        const oldTitle = titleSpan.textContent;
+        const chat = savedChats.find(c => c.id === id);
+        const oldTitle = chat ? (chat.title || 'Untitled Chat') : titleSpan.textContent;
 
         // Create input field
         const input = document.createElement('input');
@@ -671,7 +672,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (response.ok) {
                         const chat = savedChats.find(c => c.id === id);
                         if (chat) chat.title = newTitle;
-                        titleSpan.textContent = newTitle.length > 24 ? newTitle.substring(0, 24) + '...' : newTitle;
+                        titleSpan.textContent = newTitle;
                         // Also update top header if this is the current chat
                         if (currentChatId === id && chatTitleDisplay) {
                             chatTitleDisplay.textContent = newTitle;
@@ -844,7 +845,7 @@ document.addEventListener('DOMContentLoaded', () => {
         };
 
         let title = chat.title || 'Untitled Chat';
-        const displayTitle = title.length > 24 ? title.substring(0, 24) + '...' : title;
+        const displayTitle = title;
 
         // Prevent XSS from title
         const escapeHTML = (str) => {
@@ -854,8 +855,8 @@ document.addEventListener('DOMContentLoaded', () => {
         };
 
         item.innerHTML = `
-            <div class="chat-list-item-title" style="display: flex; align-items: center; gap: 6px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;">
-                <span>${escapeHTML(displayTitle)}</span>
+            <div class="chat-list-item-title" style="display: flex; align-items: center; gap: 6px; overflow: hidden; white-space: nowrap; flex: 1; min-width: 0; width: 100%;">
+                <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; flex: 1; min-width: 0;">${escapeHTML(displayTitle)}</span>
                 ${chat.is_vision ? `<span style="font-size: 0.6rem; font-weight: 500; letter-spacing: 0.02em; padding: 1px 4px; background: rgba(6, 182, 212, 0.1); color: var(--brand-accent-1); border-radius: 4px; border: 1px solid rgba(6, 182, 212, 0.2); flex-shrink: 0;">Vision</span>` : ''}
                 ${chat.research_mode ? `<span style="font-size: 0.6rem; font-weight: 500; letter-spacing: 0.02em; padding: 1px 4px; background: rgba(168, 85, 247, 0.1); color: #a855f7; border-radius: 4px; border: 1px solid rgba(168, 85, 247, 0.2); flex-shrink: 0;">Research</span>` : ''}
             </div>
