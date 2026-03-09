@@ -131,7 +131,7 @@ def save_chat(chat_id, title, timestamp, memory_mode, research_mode=False, is_vi
     c = conn.cursor()
     c.execute('''
         INSERT INTO chats (id, title, timestamp, memory_mode, research_mode, is_vision, last_model, vision_model, max_tokens, is_custom_title, folder)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
         ON CONFLICT(id) DO UPDATE SET
             title=CASE WHEN chats.is_custom_title = 1 THEN chats.title ELSE excluded.title END,
             timestamp=excluded.timestamp,
