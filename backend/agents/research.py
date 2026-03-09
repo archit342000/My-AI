@@ -1457,255 +1457,255 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
             yield "data: [DONE]\n\n"
             return
 
-        # =====================================================================
-        # PHASE 2: SECTION EXECUTION (for each section → queries → reflect → write)
-        # =====================================================================
+    # =====================================================================
+    # PHASE 2: SECTION EXECUTION (for each section → queries → reflect → write)
+    # =====================================================================
 
-        yield f"data: {_create_activity_chunk(display_model, 'phase', {'message': 'Beginning sequential research execution...', 'icon': '🚀', 'collapsible': True})}\n\n"
+    yield f"data: {_create_activity_chunk(display_model, 'phase', {'message': 'Beginning sequential research execution...', 'icon': '🚀', 'collapsible': True})}\n\n"
 
-        state_path = os.path.join(config.DATA_DIR, "tasks", f"{chat_id}_state.json")
-        os.makedirs(os.path.dirname(state_path), exist_ok=True)
-        
-        content_budget = config.RESEARCH_CONTENT_BUDGET_DEEP if search_depth_mode == 'deep' else config.RESEARCH_CONTENT_BUDGET_REGULAR
-        
-        mode_guidance = "DEEP mode: Massive comprehensiveness required. Write extremely detailed, data-dense sections." if search_depth_mode == 'deep' else "REGULAR mode: Write comprehensive, well-structured sections with good detail."
-        if structural_recommendation and structural_recommendation != "narrative":
-            mode_guidance += f" Structural Recommendation: Use a '{structural_recommendation}' format for this section to best present the findings."
+    state_path = os.path.join(config.DATA_DIR, "tasks", f"{chat_id}_state.json")
+    os.makedirs(os.path.dirname(state_path), exist_ok=True)
 
-        # Load resume state if available
-        if resume_state and os.path.exists(state_path):
-            try:
-                with open(state_path, "r", encoding="utf-8") as sf:
-                    saved = json.load(sf)
-                accumulated_summaries = saved.get("accumulated_summaries", [])
-                source_registry = {int(k): v for k, v in saved.get("source_registry", {}).items()}
-                global_source_id = saved.get("global_source_id", 1)
-                structural_recommendation = saved.get("structural_recommendation", "narrative")
-                last_completed_section = saved.get("last_completed_section", -1)
-                yield f"data: {_create_activity_chunk(display_model, 'status', {'message': f'Resuming from section {last_completed_section + 2}...', 'icon': '🔄'})}\n\n"
-            except Exception:
-                last_completed_section = -1
-        else:
-            last_completed_section = -1
+    content_budget = config.RESEARCH_CONTENT_BUDGET_DEEP if search_depth_mode == 'deep' else config.RESEARCH_CONTENT_BUDGET_REGULAR
 
-        # Extract the plan title
-        plan_root_for_title = BeautifulSoup(approved_plan, 'html.parser')
-        title_tag = plan_root_for_title.find('title')
-        report_title = title_tag.get_text(strip=True) if title_tag else "Research Report"
+    mode_guidance = "DEEP mode: Massive comprehensiveness required. Write extremely detailed, data-dense sections." if search_depth_mode == 'deep' else "REGULAR mode: Write comprehensive, well-structured sections with good detail."
+    if structural_recommendation and structural_recommendation != "narrative":
+        mode_guidance += f" Structural Recommendation: Use a '{structural_recommendation}' format for this section to best present the findings."
 
+    # Load resume state if available
+    if resume_state and os.path.exists(state_path):
         try:
-            for section_idx, section in enumerate(sections):
-                # Skip already-completed sections on resume
-                if section_idx <= last_completed_section:
-                    yield f"data: {_create_activity_chunk(display_model, 'status', {'message': f'Skipping completed section {section_idx+1}.', 'icon': '⏭️'})}\n\n"
+            with open(state_path, "r", encoding="utf-8") as sf:
+                saved = json.load(sf)
+            accumulated_summaries = saved.get("accumulated_summaries", [])
+            source_registry = {int(k): v for k, v in saved.get("source_registry", {}).items()}
+            global_source_id = saved.get("global_source_id", 1)
+            structural_recommendation = saved.get("structural_recommendation", "narrative")
+            last_completed_section = saved.get("last_completed_section", -1)
+            yield f"data: {_create_activity_chunk(display_model, 'status', {'message': f'Resuming from section {last_completed_section + 2}...', 'icon': '🔄'})}\n\n"
+        except Exception:
+            last_completed_section = -1
+    else:
+        last_completed_section = -1
+
+    # Extract the plan title
+    plan_root_for_title = BeautifulSoup(approved_plan, 'html.parser')
+    title_tag = plan_root_for_title.find('title')
+    report_title = title_tag.get_text(strip=True) if title_tag else "Research Report"
+
+    try:
+        for section_idx, section in enumerate(sections):
+            # Skip already-completed sections on resume
+            if section_idx <= last_completed_section:
+                yield f"data: {_create_activity_chunk(display_model, 'status', {'message': f'Skipping completed section {section_idx+1}.', 'icon': '⏭️'})}\n\n"
+                continue
+
+            heading = section["heading"]
+            description = section["description"]
+            section_queries = section["queries"]
+
+            yield f"data: {_create_activity_chunk(display_model, 'phase', {'message': f'Section {section_idx+1}/{n_sections}: {heading}', 'icon': '📋', 'collapsible': True})}\n\n"
+
+            # --- INNER LOOP: Execute each query for this section ---
+            section_content_buffer = []
+            vlm_image_results = []
+
+            for q_idx, query_info in enumerate(section_queries):
+                query = query_info["search"]
+                q_topic = query_info.get("topic", "general")
+                q_time_range = query_info.get("time_range")
+                q_start_date = query_info.get("start_date")
+                q_end_date = query_info.get("end_date")
+
+                yield f"data: {_create_activity_chunk(display_model, 'search', {'query': query, 'step_id': section_idx, 'displayMessage': f'Query {q_idx+1}/{len(section_queries)}: Searching...'})}\n\n"
+
+                # --- SEARCH ---
+                results, search_images = await async_tavily_search(
+                    query, topic=q_topic, time_range=q_time_range,
+                    start_date=q_start_date, end_date=q_end_date,
+                    max_results=config.RESEARCH_TAVILY_MAX_RESULTS_INITIAL
+                )
+                results = [r for r in results if r.get('raw_content') or r.get('content')]
+
+                if not results:
+                    yield f"data: {_create_activity_chunk(display_model, 'status', {'message': f'No results for query: {query[:40]}...', 'icon': '⚠️'})}\n\n"
                     continue
 
-                heading = section["heading"]
-                description = section["description"]
-                section_queries = section["queries"]
+                filtered_results = [{'title': r.get('title'), 'url': r.get('url'), 'snippet': r.get('content')} for r in results]
+                yield f"data: {_create_activity_chunk(display_model, 'search_results', {'results': filtered_results, 'step_id': section_idx})}\n\n"
 
-                yield f"data: {_create_activity_chunk(display_model, 'phase', {'message': f'Section {section_idx+1}/{n_sections}: {heading}', 'icon': '📋', 'collapsible': True})}\n\n"
+                # --- SELECT ---
+                selected = _select_top_urls(results, n=config.RESEARCH_SELECT_TOP_URLS_COUNT)
+                yield f"data: {_create_activity_chunk(display_model, 'status', {'message': f'Selected {len(selected)} sources from {len(results)} results.', 'step_id': section_idx, 'icon': '🎯'})}\n\n"
 
-                # --- INNER LOOP: Execute each query for this section ---
-                section_content_buffer = []
-                vlm_image_results = []
+                # --- EXTRACT with content budget ---
+                query_content_buffer = []
+                accumulated_tokens = 0
 
-                for q_idx, query_info in enumerate(section_queries):
-                    query = query_info["search"]
-                    q_topic = query_info.get("topic", "general")
-                    q_time_range = query_info.get("time_range")
-                    q_start_date = query_info.get("start_date")
-                    q_end_date = query_info.get("end_date")
+                for sel_result in selected:
+                    if accumulated_tokens >= content_budget:
+                        yield f"data: {_create_activity_chunk(display_model, 'status', {'message': f'Content budget reached for this query ({content_budget} tokens).', 'icon': '📊'})}\n\n"
+                        break
 
-                    yield f"data: {_create_activity_chunk(display_model, 'search', {'query': query, 'step_id': section_idx, 'displayMessage': f'Query {q_idx+1}/{len(section_queries)}: Searching...'})}\n\n"
+                    sel_url = sel_result.get('url', '')
+                    yield f"data: {_create_activity_chunk(display_model, 'visit', {'url': sel_url})}\n\n"
 
-                    # --- SEARCH ---
-                    results, search_images = await async_tavily_search(
-                        query, topic=q_topic, time_range=q_time_range,
-                        start_date=q_start_date, end_date=q_end_date,
-                        max_results=config.RESEARCH_TAVILY_MAX_RESULTS_INITIAL
-                    )
-                    results = [r for r in results if r.get('raw_content') or r.get('content')]
+                    extracted = None
+                    async for packet in _extract_content_for_url(
+                        sel_url, search_depth_mode, vision_model, api_url, vlm_lock,
+                        display_model=display_model, step_id=section_idx,
+                        raw_content_from_search=sel_result.get('raw_content'), api_key=api_key
+                    ):
+                        if packet["type"] == "activity":
+                            yield packet["data"]
+                        else:
+                            _, extracted = packet["data"]
 
-                    if not results:
-                        yield f"data: {_create_activity_chunk(display_model, 'status', {'message': f'No results for query: {query[:40]}...', 'icon': '⚠️'})}\n\n"
-                        continue
+                    if extracted and len(extracted.strip()) > config.RESEARCH_EXTRACT_MIN_TAVILY_CONTENT:
+                        content_tokens = len(extracted) // 4
+                        # Trim if exceeding budget
+                        if accumulated_tokens + content_tokens > content_budget:
+                            remaining_chars = (content_budget - accumulated_tokens) * 4
+                            if remaining_chars > 0:
+                                extracted = extracted[:remaining_chars]
+                                content_tokens = len(extracted) // 4
+                            else:
+                                break
+                        query_content_buffer.append({"url": sel_url, "title": sel_result.get('title'), "content": extracted})
+                        accumulated_tokens += content_tokens
+                        yield f"data: {_create_activity_chunk(display_model, 'visit_complete', {'url': sel_url, 'chars': len(extracted)})}\n\n"
+                    else:
+                        yield f"data: {_create_activity_chunk(display_model, 'status', {'message': f'Failed to extract content from {sel_url[:40]}...', 'icon': '⚠️'})}\n\n"
 
-                    filtered_results = [{'title': r.get('title'), 'url': r.get('url'), 'snippet': r.get('content')} for r in results]
-                    yield f"data: {_create_activity_chunk(display_model, 'search_results', {'results': filtered_results, 'step_id': section_idx})}\n\n"
+                # --- PROCESS SEARCH IMAGES (VLM) ---
+                if vision_model and search_images:
+                    async for packet in _process_tavily_search_images(search_images, section_idx, vision_model, api_url, vlm_lock, display_model=display_model, api_key=api_key):
+                        if packet["type"] == "activity":
+                            yield packet["data"]
+                        else:
+                            vlm_image_results.extend(packet["data"])
 
-                    # --- SELECT ---
-                    selected = _select_top_urls(results, n=config.RESEARCH_SELECT_TOP_URLS_COUNT)
-                    yield f"data: {_create_activity_chunk(display_model, 'status', {'message': f'Selected {len(selected)} sources from {len(results)} results.', 'step_id': section_idx, 'icon': '🎯'})}\n\n"
-
-                    # --- EXTRACT with content budget ---
-                    query_content_buffer = []
-                    accumulated_tokens = 0
-
+                # --- DEEP MODE: Map top URLs for sub-pages ---
+                if search_depth_mode == 'deep':
                     for sel_result in selected:
                         if accumulated_tokens >= content_budget:
-                            yield f"data: {_create_activity_chunk(display_model, 'status', {'message': f'Content budget reached for this query ({content_budget} tokens).', 'icon': '📊'})}\n\n"
                             break
-
                         sel_url = sel_result.get('url', '')
-                        yield f"data: {_create_activity_chunk(display_model, 'visit', {'url': sel_url})}\n\n"
+                        yield f"data: {_create_activity_chunk(display_model, 'status', {'message': f'Deep mapping: {sel_url[:40]}...', 'step_id': section_idx, 'icon': '🗺️'})}\n\n"
 
-                        extracted = None
-                        async for packet in _extract_content_for_url(
-                            sel_url, search_depth_mode, vision_model, api_url, vlm_lock,
-                            display_model=display_model, step_id=section_idx,
-                            raw_content_from_search=sel_result.get('raw_content'), api_key=api_key
-                        ):
-                            if packet["type"] == "activity":
-                                yield packet["data"]
-                            else:
-                                _, extracted = packet["data"]
-
-                        if extracted and len(extracted.strip()) > config.RESEARCH_EXTRACT_MIN_TAVILY_CONTENT:
-                            content_tokens = len(extracted) // 4
-                            # Trim if exceeding budget
-                            if accumulated_tokens + content_tokens > content_budget:
-                                remaining_chars = (content_budget - accumulated_tokens) * 4
-                                if remaining_chars > 0:
-                                    extracted = extracted[:remaining_chars]
-                                    content_tokens = len(extracted) // 4
-                                else:
+                        sub_mapped = await async_tavily_map(sel_url, instruction=f"Researching: {heading}. Find deep data pages.")
+                        if sub_mapped:
+                            for mapped_url in sub_mapped[:config.RESEARCH_DEEP_MAP_MAX_URLS]:
+                                if accumulated_tokens >= content_budget:
                                     break
-                            query_content_buffer.append({"url": sel_url, "title": sel_result.get('title'), "content": extracted})
-                            accumulated_tokens += content_tokens
-                            yield f"data: {_create_activity_chunk(display_model, 'visit_complete', {'url': sel_url, 'chars': len(extracted)})}\n\n"
-                        else:
-                            yield f"data: {_create_activity_chunk(display_model, 'status', {'message': f'Failed to extract content from {sel_url[:40]}...', 'icon': '⚠️'})}\n\n"
+                                if isinstance(mapped_url, dict):
+                                    mapped_url = mapped_url.get('url', '')
+                                if not mapped_url or mapped_url in [item['url'] for item in query_content_buffer]:
+                                    continue
 
-                    # --- PROCESS SEARCH IMAGES (VLM) ---
-                    if vision_model and search_images:
-                        async for packet in _process_tavily_search_images(search_images, section_idx, vision_model, api_url, vlm_lock, display_model=display_model, api_key=api_key):
-                            if packet["type"] == "activity":
-                                yield packet["data"]
-                            else:
-                                vlm_image_results.extend(packet["data"])
+                                yield f"data: {_create_activity_chunk(display_model, 'visit', {'url': mapped_url})}\n\n"
 
-                    # --- DEEP MODE: Map top URLs for sub-pages ---
-                    if search_depth_mode == 'deep':
-                        for sel_result in selected:
-                            if accumulated_tokens >= content_budget:
-                                break
-                            sel_url = sel_result.get('url', '')
-                            yield f"data: {_create_activity_chunk(display_model, 'status', {'message': f'Deep mapping: {sel_url[:40]}...', 'step_id': section_idx, 'icon': '🗺️'})}\n\n"
+                                deep_extracted = None
+                                async for packet in _extract_content_for_url(
+                                    mapped_url, search_depth_mode, vision_model, api_url, vlm_lock,
+                                    display_model=display_model, step_id=section_idx, api_key=api_key
+                                ):
+                                    if packet["type"] == "activity":
+                                        yield packet["data"]
+                                    else:
+                                        _, deep_extracted = packet["data"]
 
-                            sub_mapped = await async_tavily_map(sel_url, instruction=f"Researching: {heading}. Find deep data pages.")
-                            if sub_mapped:
-                                for mapped_url in sub_mapped[:config.RESEARCH_DEEP_MAP_MAX_URLS]:
-                                    if accumulated_tokens >= content_budget:
-                                        break
-                                    if isinstance(mapped_url, dict):
-                                        mapped_url = mapped_url.get('url', '')
-                                    if not mapped_url or mapped_url in [item['url'] for item in query_content_buffer]:
-                                        continue
-
-                                    yield f"data: {_create_activity_chunk(display_model, 'visit', {'url': mapped_url})}\n\n"
-                                    
-                                    deep_extracted = None
-                                    async for packet in _extract_content_for_url(
-                                        mapped_url, search_depth_mode, vision_model, api_url, vlm_lock,
-                                        display_model=display_model, step_id=section_idx, api_key=api_key
-                                    ):
-                                        if packet["type"] == "activity":
-                                            yield packet["data"]
+                                if deep_extracted and len(deep_extracted.strip()) > config.RESEARCH_MAP_MIN_CONTENT:
+                                    content_tokens = len(deep_extracted) // 4
+                                    if accumulated_tokens + content_tokens > content_budget:
+                                        remaining_chars = (content_budget - accumulated_tokens) * 4
+                                        if remaining_chars > 0:
+                                            deep_extracted = deep_extracted[:remaining_chars]
+                                            content_tokens = len(deep_extracted) // 4
                                         else:
-                                            _, deep_extracted = packet["data"]
+                                            break
+                                    query_content_buffer.append({"url": mapped_url, "title": None, "content": deep_extracted})
+                                    accumulated_tokens += content_tokens
+                                    yield f"data: {_create_activity_chunk(display_model, 'visit_complete', {'url': mapped_url, 'chars': len(deep_extracted)})}\n\n"
 
-                                    if deep_extracted and len(deep_extracted.strip()) > config.RESEARCH_MAP_MIN_CONTENT:
-                                        content_tokens = len(deep_extracted) // 4
-                                        if accumulated_tokens + content_tokens > content_budget:
-                                            remaining_chars = (content_budget - accumulated_tokens) * 4
-                                            if remaining_chars > 0:
-                                                deep_extracted = deep_extracted[:remaining_chars]
-                                                content_tokens = len(deep_extracted) // 4
-                                            else:
-                                                break
-                                        query_content_buffer.append({"url": mapped_url, "title": None, "content": deep_extracted})
-                                        accumulated_tokens += content_tokens
-                                        yield f"data: {_create_activity_chunk(display_model, 'visit_complete', {'url': mapped_url, 'chars': len(deep_extracted)})}\n\n"
+                section_content_buffer.extend(query_content_buffer)
+                yield f"data: {_create_activity_chunk(display_model, 'status', {'message': f'Query {q_idx+1} gathered {len(query_content_buffer)} items (~{accumulated_tokens}k tokens).', 'icon': '💾'})}\n\n"
 
-                    section_content_buffer.extend(query_content_buffer)
-                    yield f"data: {_create_activity_chunk(display_model, 'status', {'message': f'Query {q_idx+1} gathered {len(query_content_buffer)} items (~{accumulated_tokens}k tokens).', 'icon': '💾'})}\n\n"
-
-                # --- Check if we got any content for this section ---
-                if not section_content_buffer:
-                    yield f"data: {_create_activity_chunk(display_model, 'status', {'message': f'No content gathered for section: {heading}. Skipping.', 'icon': '⚠️'})}\n\n"
-                    accumulated_summaries.append({
-                        "section": section_idx, "heading": heading,
-                        "summary_points": ["No search results found for this section."]
-                    })
-                    continue
-
-                yield f"data: {_create_activity_chunk(display_model, 'status', {'message': f'Total: {len(section_content_buffer)} content items for section: {heading}', 'icon': '💾'})}\n\n"
-
-                # --- SECTION-LEVEL PROCESSING: Reflect + Triage + Write + Summary ---
-                section_text = summary_points = plan_mod = _ = None
-                
-                query_strings = [q["search"] for q in section_queries]
-                async for packet in _execute_section_reflection_and_write(
-                        api_url, model, heading, description, query_strings,
-                        section_content_buffer, accumulated_summaries, section_idx,
-                        n_sections, original_query, approved_plan,
-                        search_depth_mode, vision_model, vlm_lock, chat_id,
-                        display_model, source_registry, global_source_id, mode_guidance, entity_glossary,
-                        image_results=vlm_image_results, api_key=api_key
-                    ):
-                    
-                    if packet["type"] in ("activity", "stream", "stream_chunk"):
-                        yield packet["data"]
-                    elif packet["type"] == "result":
-                        section_text, summary_points, plan_mod, _, global_source_id = packet["data"]
-
-                yield f"data: {create_chunk(display_model, content=chr(10)*2)}\n\n"
-
-                # Pair the section text directly with its summary object
+            # --- Check if we got any content for this section ---
+            if not section_content_buffer:
+                yield f"data: {_create_activity_chunk(display_model, 'status', {'message': f'No content gathered for section: {heading}. Skipping.', 'icon': '⚠️'})}\n\n"
                 accumulated_summaries.append({
                     "section": section_idx, "heading": heading,
-                    "summary_points": summary_points,
-                    "plan_modification": plan_mod,
-                    "section_text": section_text
+                    "summary_points": ["No search results found for this section."]
                 })
+                continue
 
-                # Handle plan modifications (adding new sections)
-                if plan_mod and isinstance(plan_mod, dict):
-                    for addition in plan_mod.get('additions', []):
-                        new_heading = addition.get('heading', '')
-                        new_desc = addition.get('description', '')
-                        new_queries_raw = addition.get('queries', [])
-                        if new_heading and new_queries_raw and total_query_count + len(new_queries_raw) <= config.RESEARCH_MAX_TOTAL_QUERIES:
-                            new_queries = [{"search": q, "topic": "general", "time_range": None, "start_date": None, "end_date": None} for q in new_queries_raw[:config.RESEARCH_MAX_QUERIES_PER_SECTION]]
-                            sections.append({"heading": new_heading, "description": new_desc, "queries": new_queries})
-                            n_sections = len(sections)
-                            total_query_count += len(new_queries)
-                            log_event("research_section_added", {"chat_id": chat_id, "heading": new_heading, "queries": len(new_queries)})
-                            yield f"data: {_create_activity_chunk(display_model, 'status', {'message': f'New section added: {new_heading}', 'icon': '➕'})}\n\n"
+            yield f"data: {_create_activity_chunk(display_model, 'status', {'message': f'Total: {len(section_content_buffer)} content items for section: {heading}', 'icon': '💾'})}\n\n"
 
-                yield f"data: {_create_activity_chunk(display_model, 'status', {'message': f'Section {section_idx+1}/{n_sections} complete: {heading}', 'icon': '✅'})}\n\n"
+            # --- SECTION-LEVEL PROCESSING: Reflect + Triage + Write + Summary ---
+            section_text = summary_points = plan_mod = _ = None
 
-                # Save state for resume
-                state = {
-                    "accumulated_summaries": accumulated_summaries,
-                    "source_registry": {str(k): v for k, v in source_registry.items()},
-                    "global_source_id": global_source_id,
-                    "last_completed_section": section_idx,
-                    "structural_recommendation": structural_recommendation,
-                    "entity_glossary": entity_glossary
-                }
-                with open(state_path, "w", encoding="utf-8") as f:
-                    json.dump(state, f)
+            query_strings = [q["search"] for q in section_queries]
+            async for packet in _execute_section_reflection_and_write(
+                    api_url, model, heading, description, query_strings,
+                    section_content_buffer, accumulated_summaries, section_idx,
+                    n_sections, original_query, approved_plan,
+                    search_depth_mode, vision_model, vlm_lock, chat_id,
+                    display_model, source_registry, global_source_id, mode_guidance, entity_glossary,
+                    image_results=vlm_image_results, api_key=api_key
+                ):
 
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            log_event("research_section_execution_error", {"chat_id": chat_id, "error": str(e)})
-            yield f"data: {create_chunk(model, content=f'**Error during section execution:** {str(e)}')}\n\n"
-            yield f"data: {_create_activity_chunk(display_model, 'needs_retry', {'state': 'section_execution', 'message': f'Section execution failed: {str(e)}'})}\n\n"
-            yield "data: [DONE]\n\n"
-            return
+                if packet["type"] in ("activity", "stream", "stream_chunk"):
+                    yield packet["data"]
+                elif packet["type"] == "result":
+                    section_text, summary_points, plan_mod, _, global_source_id = packet["data"]
+
+            yield f"data: {create_chunk(display_model, content=chr(10)*2)}\n\n"
+
+            # Pair the section text directly with its summary object
+            accumulated_summaries.append({
+                "section": section_idx, "heading": heading,
+                "summary_points": summary_points,
+                "plan_modification": plan_mod,
+                "section_text": section_text
+            })
+
+            # Handle plan modifications (adding new sections)
+            if plan_mod and isinstance(plan_mod, dict):
+                for addition in plan_mod.get('additions', []):
+                    new_heading = addition.get('heading', '')
+                    new_desc = addition.get('description', '')
+                    new_queries_raw = addition.get('queries', [])
+                    if new_heading and new_queries_raw and total_query_count + len(new_queries_raw) <= config.RESEARCH_MAX_TOTAL_QUERIES:
+                        new_queries = [{"search": q, "topic": "general", "time_range": None, "start_date": None, "end_date": None} for q in new_queries_raw[:config.RESEARCH_MAX_QUERIES_PER_SECTION]]
+                        sections.append({"heading": new_heading, "description": new_desc, "queries": new_queries})
+                        n_sections = len(sections)
+                        total_query_count += len(new_queries)
+                        log_event("research_section_added", {"chat_id": chat_id, "heading": new_heading, "queries": len(new_queries)})
+                        yield f"data: {_create_activity_chunk(display_model, 'status', {'message': f'New section added: {new_heading}', 'icon': '➕'})}\n\n"
+
+            yield f"data: {_create_activity_chunk(display_model, 'status', {'message': f'Section {section_idx+1}/{n_sections} complete: {heading}', 'icon': '✅'})}\n\n"
+
+            # Save state for resume
+            state = {
+                "accumulated_summaries": accumulated_summaries,
+                "source_registry": {str(k): v for k, v in source_registry.items()},
+                "global_source_id": global_source_id,
+                "last_completed_section": section_idx,
+                "structural_recommendation": structural_recommendation,
+                "entity_glossary": entity_glossary
+            }
+            with open(state_path, "w", encoding="utf-8") as f:
+                json.dump(state, f)
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        log_event("research_section_execution_error", {"chat_id": chat_id, "error": str(e)})
+        yield f"data: {create_chunk(model, content=f'**Error during section execution:** {str(e)}')}\n\n"
+        yield f"data: {_create_activity_chunk(display_model, 'needs_retry', {'state': 'section_execution', 'message': f'Section execution failed: {str(e)}'})}\n\n"
+        yield "data: [DONE]\n\n"
+        return
 
     # =====================================================================
     # PHASE 3: ASSEMBLY & AUDIT

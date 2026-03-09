@@ -84,3 +84,14 @@ After updating `backend/cache_system.py` to use `config.DATA_DIR` instead of a h
 
 **Resolution:**
 Added `from backend import config` to the imports in `backend/cache_system.py`. Validated the script via python execution to ensure the application starts without immediately crashing.
+
+
+## 8. Broken Resume Logic (Phase 2 Indentation Bug)
+
+**File(s):** `backend/agents/research.py`
+
+**Issue:**
+The research agent's logic for resuming interrupted tasks was broken due to an indentation error introduced in a previous repository iteration. Specifically, the entire "Phase 2: Section Execution" block was indented under the `if not resume_state:` conditional block. This meant that if a user attempted to resume an interrupted research task, the engine would completely skip the core execution phase (failing to pick up the uncompleted sections) and would jump straight into "Phase 3: Assembly & Audit", resulting in partial or failed reports.
+
+**Resolution:**
+Unindented the entire Phase 2 block by 4 spaces so that it sits parallel to the Phase 0 and Phase 1 blocks (which correctly execute only `if not resume_state`). Now, when `resume_state` is True, the engine skips planning and properly enters Phase 2, where the internal `if resume_state` checks load the saved progress and continue execution from where it left off.
