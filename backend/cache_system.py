@@ -4,10 +4,11 @@ import threading
 import queue
 import time
 from backend.logger import log_event
+from backend import config
 from backend.storage import add_message
 
 # WAL Directory
-CACHE_DIR = "./backend/cache"
+CACHE_DIR = os.path.join(config.DATA_DIR, "cache")
 os.makedirs(CACHE_DIR, exist_ok=True)
 
 class ResponseCache:

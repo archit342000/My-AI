@@ -77,6 +77,7 @@ def save_chat_endpoint():
     messages = data.get('messages')
     memory_mode = data.get('memory_mode', False)
     research_mode = data.get('research_mode', False)
+    max_tokens = data.get('max_tokens', 16384)
     
     if not chat_id or '..' in chat_id or '/' in chat_id or '\\' in chat_id:
         return jsonify({"error": "Invalid or missing chat_id"}), 400
@@ -89,7 +90,8 @@ def save_chat_endpoint():
         research_mode, 
         is_vision=data.get('is_vision', False),
         last_model=data.get('last_model'),
-        vision_model=data.get('vision_model')
+        vision_model=data.get('vision_model'),
+        max_tokens=max_tokens
     )
     
     if messages is not None:
@@ -105,6 +107,7 @@ def patch_chat_endpoint(chat_id):
     new_title = data.get('title')
     last_model = data.get('last_model')
     vision_model = data.get('vision_model')
+    max_tokens = data.get('max_tokens')
     
     existing_chat = get_chat(chat_id)
     if not existing_chat:
@@ -125,8 +128,11 @@ def patch_chat_endpoint(chat_id):
     if vision_model:
         from backend.storage import update_chat_vision_model
         update_chat_vision_model(chat_id, vision_model)
+    if max_tokens is not None:
+        from backend.storage import update_chat_max_tokens
+        update_chat_max_tokens(chat_id, max_tokens)
         
-    if not new_title and not last_model and not vision_model:
+    if not new_title and not last_model and not vision_model and max_tokens is None:
         return jsonify({"error": "Missing fields"}), 400
         
     return jsonify({"success": True})
@@ -331,7 +337,8 @@ def chat_completions():
                 research_mode,
                 is_vision=new_is_vision,
                 last_model=last_model_name,
-                vision_model=vision_model
+                vision_model=vision_model,
+                max_tokens=data.get('max_tokens', 16384)
             )
             add_message(chat_id, 'user', user_msg['content'])
 
