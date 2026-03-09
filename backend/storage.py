@@ -19,7 +19,7 @@ def init_db():
             is_vision INTEGER DEFAULT 0,
             last_model TEXT,
             vision_model TEXT,
-            max_tokens INTEGER DEFAULT 16384
+            max_tokens INTEGER DEFAULT 16384,
             is_custom_title INTEGER DEFAULT 0
         )
     ''')
