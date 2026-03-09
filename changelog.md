@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## v1.5.5
+* **Bug Fix**: Fixed `UnboundLocalError` for `reasoning_flow_prefix` in `backend/agents/chat.py` occurring when chat responses encounter validation errors without prior tool calls.
+* **Version Bump**: Incremented version to 1.5.5.
+
 ## v1.5.4
 * **Bug Fix**: Fixed a marked.js parsing error when rendering empty code blocks. By checking if `code.text === 'string'`, it prevents `.replace()` errors in Highlight.js, resolving a bug in the UI log where `e.replace is not a function` was occurring.
 * **Version Bump**: Incremented version to 1.5.4.
