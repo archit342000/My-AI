@@ -140,6 +140,7 @@ class TaskManager:
                 fn_kwargs[key] = task_info[key]
 
         async def consume():
+            generator = None
             try:
                 # Execution function call (may be sync or async generator)
                 if inspect.iscoroutinefunction(execute_fn):
@@ -209,6 +210,17 @@ class TaskManager:
                     add_message(chat_id, 'assistant', f"Error: {str(e)}", model=task_info.get("model"))
 
             finally:
+                if generator and hasattr(generator, 'aclose'):
+                    try:
+                        await generator.aclose()
+                    except:
+                        pass
+                elif generator and hasattr(generator, 'close'):
+                    try:
+                        generator.close()
+                    except:
+                        pass
+
                 cache_system.cleanup_chat(chat_id)
                 if fn_kwargs.get("rag") and hasattr(fn_kwargs["rag"], "cleanup_chat"):
                     try: fn_kwargs["rag"].cleanup_chat(chat_id)
@@ -230,8 +242,19 @@ class TaskManager:
             loop.run_until_complete(main_task)
         except Exception:
             pass 
+        except asyncio.CancelledError:
+            pass
         finally:
             self.active_tasks.pop(chat_id, None)
+            try:
+                # Cancel all remaining pending tasks in this loop
+                pending = asyncio.all_tasks(loop)
+                for p in pending:
+                    p.cancel()
+                if pending:
+                    loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+            except Exception:
+                pass
             loop.close()
 
     def is_task_running(self, chat_id):
