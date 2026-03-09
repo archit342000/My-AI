@@ -4,6 +4,7 @@ import threading
 import queue
 import time
 from backend.logger import log_event
+from backend import config
 from backend.storage import add_message
 
 # WAL Directory

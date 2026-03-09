@@ -73,3 +73,14 @@ If a Docker container mounts a volume to `/app/backend/data`, but the cache engi
 **Resolution:**
 - In `backend/cache_system.py`, replaced `CACHE_DIR = "./backend/cache"` with `CACHE_DIR = os.path.join(config.DATA_DIR, "cache")`.
 - In `backend/rag.py`, replaced the default kwarg `persist_path="./backend/chroma_db"` with `persist_path=config.CHROMA_PATH` (which is correctly derived from `DATA_DIR` in the configuration).
+
+
+## 7. NameError due to missing config import
+
+**File(s):** `backend/cache_system.py`
+
+**Issue:**
+After updating `backend/cache_system.py` to use `config.DATA_DIR` instead of a hardcoded path, the application failed to start inside the container because `config` was not imported into the file. This resulted in a `NameError: name 'config' is not defined` crash at startup.
+
+**Resolution:**
+Added `from backend import config` to the imports in `backend/cache_system.py`. Validated the script via python execution to ensure the application starts without immediately crashing.
