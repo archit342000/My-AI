@@ -1,0 +1,4 @@
+{"timestamp": "2026-03-08T18:52:01.125603", "type": "llm_stream_error", "data": {"error": "All connection attempts failed"}}
+{"timestamp": "2026-03-08T18:52:01.125821", "type": "validation_triggered", "data": {"chat_id": "temp_chat_456", "errors": ["NO_OUTPUT"]}}
+{"timestamp": "2026-03-08T18:52:05.032415", "type": "llm_stream_error", "data": {"error": "All connection attempts failed"}}
+{"timestamp": "2026-03-08T18:52:05.032636", "type": "validation_triggered", "data": {"chat_id": "temp_chat_456", "errors": ["NO_OUTPUT"]}}
