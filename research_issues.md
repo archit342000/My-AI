@@ -60,3 +60,16 @@ The research agent attempts to write checkpointing data after each completed sec
 
 **Resolution:**
 Replaced the hardcoded path with a dynamic path utilizing the persistent volume configuration: `os.path.join(config.DATA_DIR, "tasks", f"{chat_id}_state.json")`. Additionally, added an `os.makedirs(os.path.dirname(state_path), exist_ok=True)` call right after the initialization to guarantee that the `tasks` directory is dynamically created inside the `DATA_DIR` before attempting to dump the JSON file.
+
+
+## 6. Hardcoded Legacy Directories in Backend Services
+
+**File(s):** `backend/cache_system.py`, `backend/rag.py`
+
+**Issue:**
+After the migration to a containerized Docker environment with a dedicated volume mount mapped via `DATA_DIR` (as specified in `backend/config.py`), some critical persistence locations still had hardcoded legacy paths relative to the development environment (`./backend/cache` and `./backend/chroma_db`).
+If a Docker container mounts a volume to `/app/backend/data`, but the cache engine uses `./backend/cache`, the data is written directly to the container layer, leading to total data loss across restarts or container rebuilds.
+
+**Resolution:**
+- In `backend/cache_system.py`, replaced `CACHE_DIR = "./backend/cache"` with `CACHE_DIR = os.path.join(config.DATA_DIR, "cache")`.
+- In `backend/rag.py`, replaced the default kwarg `persist_path="./backend/chroma_db"` with `persist_path=config.CHROMA_PATH` (which is correctly derived from `DATA_DIR` in the configuration).
