@@ -5,6 +5,10 @@
 * **Rename Chat Fix**: When renaming a chat, the input field now correctly populates with the full, actual chat name instead of the visually truncated version.
 * **Version Bump**: Incremented version to v1.6.2.
 
+## v1.6.1
+* **Folder Deletion**: Added a delete button to chat folders allowing users to remove a folder. Chats inside the folder will be safely moved back to "uncategorized".
+* **Version Bump**: Incremented version to 1.6.1.
+
 ## v1.6.0
 * **Chat Folders**: Allow categorising chats into folders.
 * **Folder Sidebar UI**: Added a new UI section in the sidebar to organize chats by folder, separated from uncategorized chats.

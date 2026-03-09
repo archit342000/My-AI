@@ -3645,7 +3645,8 @@ a.chat-list-item:active {
 
 .chat-delete-btn,
 .chat-rename-btn,
-.chat-folder-btn {
+.chat-folder-btn,
+.folder-delete-btn {
     opacity: 0;
     transition: opacity 150ms ease, color 150ms ease;
     background: transparent;
@@ -3662,13 +3663,15 @@ a.chat-list-item:active {
 
 .chat-list-item:hover .chat-delete-btn,
 .chat-list-item:hover .chat-rename-btn,
-.chat-list-item:hover .chat-folder-btn {
+.chat-list-item:hover .chat-folder-btn,
+.folder-header:hover .folder-delete-btn {
     opacity: 0.8;
 }
 
 .chat-delete-btn:hover,
 .chat-rename-btn:hover,
-.chat-folder-btn:hover {
+.chat-folder-btn:hover,
+.folder-delete-btn:hover {
     opacity: 1 !important;
     background: var(--color-neutral-200);
     color: var(--content-primary);
@@ -3676,7 +3679,8 @@ a.chat-list-item:active {
 
 .dark .chat-delete-btn:hover,
 .dark .chat-rename-btn:hover,
-.dark .chat-folder-btn:hover {
+.dark .chat-folder-btn:hover,
+.dark .folder-delete-btn:hover {
     background: rgba(255, 255, 255, 0.1);
 }
 
@@ -3698,17 +3702,20 @@ a.chat-list-item:active {
     /* Use generic since mapped in dark mode */
 }
 
-.chat-list-item:hover .chat-delete-btn {
+.chat-list-item:hover .chat-delete-btn,
+.folder-header:hover .folder-delete-btn {
     opacity: 0.6;
 }
 
-.chat-list-item:hover .chat-delete-btn:hover {
+.chat-list-item:hover .chat-delete-btn:hover,
+.folder-header:hover .folder-delete-btn:hover {
     opacity: 1;
     color: var(--color-rose-500);
     background: var(--color-rose-50);
 }
 
-.dark .chat-delete-btn:hover {
+.dark .chat-delete-btn:hover,
+.dark .folder-delete-btn:hover {
     background: rgba(244, 63, 94, 0.1);
 }
 
