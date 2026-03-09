@@ -2705,34 +2705,6 @@ html.dark .sidebar-logo-icon {
     opacity: 0.5;
 }
 
-.folder-add-btn {
-    opacity: 0;
-    transition: opacity 150ms ease, color 150ms ease;
-    background: transparent;
-    border: none;
-    color: var(--content-muted);
-    cursor: pointer;
-    padding: 2px;
-    border-radius: 4px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.folder-header:hover .folder-add-btn {
-    opacity: 0.8;
-}
-
-.folder-add-btn:hover {
-    opacity: 1 !important;
-    background: var(--color-neutral-200);
-    color: var(--content-primary);
-}
-
-.dark .folder-add-btn:hover {
-    background: rgba(255, 255, 255, 0.1);
-}
-
 .folder-chevron {
     transition: transform 0.2s var(--ease-spring);
     color: var(--content-muted);

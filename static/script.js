@@ -725,20 +725,13 @@ document.addEventListener('DOMContentLoaded', () => {
             nameSpan.style.cssText = "flex:1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.8125rem; font-weight: 600;";
             nameSpan.textContent = folder.name;
 
-            const addBtn = document.createElement('button');
-            addBtn.className = 'folder-add-btn';
-            addBtn.title = 'New chat in folder';
-            addBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-
-            addBtn.onclick = (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                startNewChat(false, true, folder.name);
-            };
+            const countSpan = document.createElement('span');
+            countSpan.style.cssText = "font-size: 0.65rem; color: var(--content-muted);";
+            countSpan.textContent = grouped[folder.name].length;
 
             folderHeader.innerHTML = chevronSvg;
             folderHeader.appendChild(nameSpan);
-            folderHeader.appendChild(addBtn);
+            folderHeader.appendChild(countSpan);
 
             folderHeader.onclick = () => {
                 folder.expanded = !folder.expanded;
