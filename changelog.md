@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## v1.6.1
+* **Folder Deletion**: Added a delete button to chat folders allowing users to remove a folder. Chats inside the folder will be safely moved back to "uncategorized".
+* **Version Bump**: Incremented version to 1.6.1.
+
 ## v1.6.0
 * **Chat Folders**: Allow categorising chats into folders.
 * **Folder Sidebar UI**: Added a new UI section in the sidebar to organize chats by folder, separated from uncategorized chats.
