@@ -270,7 +270,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 memory_mode: isMemoryMode,
                 research_mode: isResearchMode,
                 is_vision: currentChatData ? currentChatData.is_vision : false,
-                last_model: currentChatData ? currentChatData.last_model : selectedModelName
+                last_model: currentChatData ? currentChatData.last_model : selectedModelName,
+                folder: currentChatData ? currentChatData.folder : null
             })
         }).catch(err => console.error('Failed to sync chat state:', err));
     }
@@ -299,14 +300,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if (typeof imagePreviewContainer !== 'undefined' && imagePreviewContainer) imagePreviewContainer.classList.add('hidden');
     }
 
-    function startNewChat(temporary = false, updateUrl = true) {
+    function startNewChat(temporary = false, updateUrl = true, folder = null) {
         resetGenerationState();
         isTemporaryChat = temporary;
         chatHistory = [];
         currentResearchPlan = null;
         messagesContainer.innerHTML = '';
         currentChatId = generateId(); // Always assign an ID for backend task routing (temporary chats are still prevented from persisting by the isTemporaryChat flag)
-        currentChatData = null; // New chat has no vision restriction yet
+        currentChatData = { folder: folder }; // Set initial folder if provided
         checkSendButtonCompatibility();
 
         // Memory Mode defaults to true, but must be off for temporary chats
@@ -724,19 +725,45 @@ document.addEventListener('DOMContentLoaded', () => {
             nameSpan.style.cssText = "flex:1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.8125rem; font-weight: 600;";
             nameSpan.textContent = folder.name;
 
-            const countSpan = document.createElement('span');
-            countSpan.style.cssText = "font-size: 0.65rem; color: var(--content-muted);";
-            countSpan.textContent = grouped[folder.name].length;
+            const addBtn = document.createElement('button');
+            addBtn.className = 'folder-add-btn';
+            addBtn.title = 'New chat in folder';
+            addBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+
+            addBtn.onclick = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                startNewChat(false, true, folder.name);
+            };
 
             folderHeader.innerHTML = chevronSvg;
             folderHeader.appendChild(nameSpan);
-            folderHeader.appendChild(countSpan);
+            folderHeader.appendChild(addBtn);
 
             folderHeader.onclick = () => {
                 folder.expanded = !folder.expanded;
                 saveFolders();
                 renderChatList();
             };
+
+            folderDiv.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                folderHeader.classList.add('drag-over');
+            });
+
+            folderDiv.addEventListener('dragleave', (e) => {
+                e.preventDefault();
+                folderHeader.classList.remove('drag-over');
+            });
+
+            folderDiv.addEventListener('drop', async (e) => {
+                e.preventDefault();
+                folderHeader.classList.remove('drag-over');
+                const dragChatId = e.dataTransfer.getData('text/plain');
+                if (dragChatId) {
+                    await moveChatToFolder(dragChatId, folder.name);
+                }
+            });
 
             folderDiv.appendChild(folderHeader);
 
@@ -767,10 +794,42 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    async function moveChatToFolder(chatId, folderName) {
+        const chat = savedChats.find(c => c.id === chatId);
+        if (!chat) return;
+
+        chat.folder = folderName;
+
+        if (folderName && !chatFolders.find(f => f.name === folderName)) {
+            chatFolders.push({ name: folderName, expanded: true });
+            saveFolders();
+        }
+
+        try {
+            await fetch(`/api/chats/${chatId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ folder: folderName })
+            });
+        } catch (err) {
+            console.error("Error updating folder", err);
+        }
+        renderChatList();
+    }
+
     function createChatItemElement(chat) {
         const item = document.createElement('a');
         item.href = `/chat/${chat.id}`;
         item.className = `chat-list-item ${chat.id === currentChatId ? 'active' : ''}`;
+
+        item.draggable = true;
+        item.addEventListener('dragstart', (e) => {
+            e.dataTransfer.setData('text/plain', chat.id);
+            item.classList.add('dragging');
+        });
+        item.addEventListener('dragend', () => {
+            item.classList.remove('dragging');
+        });
 
         item.onclick = (e) => {
             if (e.ctrlKey || e.metaKey || e.shiftKey) return;
@@ -806,27 +865,12 @@ document.addEventListener('DOMContentLoaded', () => {
         moveBtn.onclick = async (e) => {
             e.preventDefault();
             e.stopPropagation();
-            const folderName = prompt("Enter folder name to move chat to (leave empty to remove from folder):", chat.folder || "");
+
+            const folderName = await showPromptModal("Move to Folder", "Select a folder or create a new one:", chat.folder || "", chatFolders);
+
             if (folderName !== null) {
                 const finalFolder = folderName.trim() === "" ? null : folderName.trim();
-                chat.folder = finalFolder;
-
-                // Add to chatFolders if new
-                if (finalFolder && !chatFolders.find(f => f.name === finalFolder)) {
-                    chatFolders.push({ name: finalFolder, expanded: true });
-                    saveFolders();
-                }
-
-                try {
-                    await fetch(`/api/chats/${chat.id}`, {
-                        method: 'PATCH',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ folder: finalFolder })
-                    });
-                } catch (err) {
-                    console.error("Error updating folder", err);
-                }
-                renderChatList();
+                await moveChatToFolder(chat.id, finalFolder);
             }
         };
 
@@ -881,6 +925,101 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Research Toggle Logic
+
+    /**
+     * Shows a custom Luminous-styled prompt dialog
+     */
+    async function showPromptModal(title, message, currentVal = '', folderList = null) {
+        return new Promise((resolve) => {
+            const modal = document.getElementById('prompt-modal');
+            const titleEl = document.getElementById('prompt-title');
+            const msgEl = document.getElementById('prompt-message');
+            const inputEl = document.getElementById('prompt-input');
+            const selectContainer = document.getElementById('prompt-select-container');
+            const selectEl = document.getElementById('prompt-select');
+            const confirmBtn = document.getElementById('prompt-action-btn');
+            const cancelBtn = document.getElementById('prompt-cancel-btn');
+
+            titleEl.textContent = title;
+            msgEl.textContent = message;
+            inputEl.value = currentVal;
+
+            if (folderList !== null) {
+                selectContainer.style.display = 'block';
+                inputEl.style.display = 'none';
+
+                // Populate select
+                selectEl.innerHTML = '<option value="">(No Folder)</option>';
+                folderList.forEach(f => {
+                    const opt = document.createElement('option');
+                    opt.value = f.name;
+                    opt.textContent = f.name;
+                    if (f.name === currentVal) opt.selected = true;
+                    selectEl.appendChild(opt);
+                });
+
+                const optNew = document.createElement('option');
+                optNew.value = "__new__";
+                optNew.textContent = "+ Create New Folder...";
+                selectEl.appendChild(optNew);
+
+                selectEl.onchange = () => {
+                    if (selectEl.value === '__new__') {
+                        inputEl.style.display = 'block';
+                        inputEl.value = '';
+                        inputEl.focus();
+                    } else {
+                        inputEl.style.display = 'none';
+                    }
+                };
+
+                if (currentVal && !folderList.find(f => f.name === currentVal)) {
+                    inputEl.style.display = 'block';
+                    selectEl.value = '__new__';
+                }
+            } else {
+                selectContainer.style.display = 'none';
+                inputEl.style.display = 'block';
+            }
+
+            modal.style.display = 'flex';
+            // Force reflow
+            void modal.offsetWidth;
+            modal.classList.add('open');
+            if (inputEl.style.display !== 'none') {
+                inputEl.focus();
+            }
+
+            const cleanup = () => {
+                modal.classList.remove('open');
+                setTimeout(() => {
+                    modal.style.display = 'none';
+                }, 300);
+                confirmBtn.onclick = null;
+                cancelBtn.onclick = null;
+                inputEl.onkeydown = null;
+            };
+
+            confirmBtn.onclick = () => {
+                let finalVal = inputEl.value;
+                if (folderList !== null && selectEl.value !== '__new__') {
+                    finalVal = selectEl.value;
+                }
+                cleanup();
+                resolve(finalVal);
+            };
+
+            cancelBtn.onclick = () => {
+                cleanup();
+                resolve(null);
+            };
+
+            inputEl.onkeydown = (e) => {
+                if (e.key === 'Enter') confirmBtn.click();
+                if (e.key === 'Escape') cancelBtn.click();
+            };
+        });
+    }
 
     /**
      * Shows a custom Luminous-styled dialog (Alert or Confirm)
@@ -1210,8 +1349,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (newChatBtn) newChatBtn.addEventListener('click', () => startNewChat(false));
     if (newFolderBtn) {
-        newFolderBtn.addEventListener('click', () => {
-            const folderName = prompt("Enter new folder name:");
+        newFolderBtn.addEventListener('click', async () => {
+            const folderName = await showPromptModal("Create Folder", "Enter a name for the new folder:");
             if (folderName && folderName.trim() !== '') {
                 const name = folderName.trim();
                 if (!chatFolders.find(f => f.name === name)) {
@@ -1219,7 +1358,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     saveFolders();
                     renderChatList();
                 } else {
-                    alert("Folder already exists.");
+                    showModal('Notice', 'A folder with this name already exists.', { type: 'alert' });
                 }
             }
         });
@@ -3620,6 +3759,26 @@ document.addEventListener('DOMContentLoaded', () => {
             startNewChat(false, false);
         }
     });
+
+    // Setup static drag & drop events for the main history list (uncategorized drop zone)
+    if (chatHistoryList) {
+        chatHistoryList.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            chatHistoryList.classList.add('drag-over');
+        });
+        chatHistoryList.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            chatHistoryList.classList.remove('drag-over');
+        });
+        chatHistoryList.addEventListener('drop', async (e) => {
+            e.preventDefault();
+            chatHistoryList.classList.remove('drag-over');
+            const dragChatId = e.dataTransfer.getData('text/plain');
+            if (dragChatId) {
+                await moveChatToFolder(dragChatId, null);
+            }
+        });
+    }
 
     // Initialize
     const urlInitPath = window.location.pathname;

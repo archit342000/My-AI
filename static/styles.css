@@ -2682,6 +2682,57 @@ html.dark .sidebar-logo-icon {
     background: rgba(255, 255, 255, 0.05);
 }
 
+.folder-header.drag-over {
+    background: var(--color-primary-50);
+    border: 1px dashed var(--color-primary-400);
+}
+
+.dark .folder-header.drag-over {
+    background: rgba(37, 99, 235, 0.1);
+    border: 1px dashed var(--color-primary-400);
+}
+
+.chat-history-scroll.drag-over {
+    background: var(--color-primary-50);
+    border-radius: var(--radius-lg);
+}
+
+.dark .chat-history-scroll.drag-over {
+    background: rgba(37, 99, 235, 0.05);
+}
+
+.chat-list-item.dragging {
+    opacity: 0.5;
+}
+
+.folder-add-btn {
+    opacity: 0;
+    transition: opacity 150ms ease, color 150ms ease;
+    background: transparent;
+    border: none;
+    color: var(--content-muted);
+    cursor: pointer;
+    padding: 2px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.folder-header:hover .folder-add-btn {
+    opacity: 0.8;
+}
+
+.folder-add-btn:hover {
+    opacity: 1 !important;
+    background: var(--color-neutral-200);
+    color: var(--content-primary);
+}
+
+.dark .folder-add-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
 .folder-chevron {
     transition: transform 0.2s var(--ease-spring);
     color: var(--content-muted);
