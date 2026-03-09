@@ -6,6 +6,15 @@
 * **Live Update API**: Bound a slider `change` listener to send an immediate `PATCH` request to the backend `/api/chats/<id>`, ensuring token settings are saved as the user drags without requiring a formal chat submission.
 * **Auto-Restoration Engine**: Updated `loadChat` in `script.js` to ingest `chat.max_tokens` from the backend upon reload and instantly snap the parameters interface back to the exact saved state.
 
+## v1.5.2 (Chat Title Persistence)
+* **Custom Chat Title Persistence**: Added database schema and backend logic to prevent manually renamed chat titles from being overwritten by auto-generated summaries.
+
+## v1.5.1 (Research Engine Bug Fixes)
+* **Bug Fix**: Fixed `UnboundLocalError` related to `follow_up_content` in the research engine's section execution phase.
+* **Bug Fix**: Fixed an undefined `log_event` variable reference in utility functions used for URL safety checks.
+* **Code Quality**: Addressed minor exception raising linting warnings in the utils file.
+* **Version Bump**: Incremented version to v1.5.1.
+
 ## v1.5.0 (Secure Remote Architecture & Connection Hardening)
 * **Secure Remote Access (Bastion SSH)**: Introduced a hardened OpenSSH bastion container (`bastion_ssh`) on an isolated bridge network, enabling secure remote access via encrypted SSH tunnels without exposing the application port (5000) directly to the host or internet.
 * **Unified Connection Management**: Purged all frontend input fields and client-side logic for LLM server URLs and API keys. Connection details are now strictly managed as backend secrets (Docker Secrets/Env), preventing misconfiguration and protecting sensitive credentials.
