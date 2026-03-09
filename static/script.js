@@ -8,7 +8,8 @@ document.addEventListener('DOMContentLoaded', () => {
             let langVal = language;
 
             // Handle different marked versions signatures
-            if (typeof code === 'object' && code !== null && code.text) {
+            // If code is an object (token), extract text and lang. Check typeof to handle empty strings properly.
+            if (typeof code === 'object' && code !== null && typeof code.text === 'string') {
                 textVal = code.text;
                 langVal = code.lang;
             }
