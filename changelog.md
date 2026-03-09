@@ -1,5 +1,10 @@
 # CHANGELOG
 
+## v1.6.0
+* **Chat Folders**: Allow categorising chats into folders.
+* **Folder Sidebar UI**: Added a new UI section in the sidebar to organize chats by folder, separated from uncategorized chats.
+* **Version Bump**: Incremented version to v1.6.0.
+
 ## v1.5.5
 * **Bug Fix**: Fixed `UnboundLocalError` for `reasoning_flow_prefix` in `backend/agents/chat.py` occurring when chat responses encounter validation errors without prior tool calls.
 * **Version Bump**: Incremented version to 1.5.5.

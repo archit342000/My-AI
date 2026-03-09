@@ -1,4 +1,0 @@
-{"timestamp": "2026-03-09T03:41:56.372250", "type": "validation_triggered", "data": {"chat_id": "test_chat", "errors": ["format_error"]}}
-{"timestamp": "2026-03-09T03:41:56.372478", "type": "validation_fix_attempt", "data": {"chat_id": "test_chat", "strategy": "contextual_splice"}}
-{"timestamp": "2026-03-09T03:41:56.372554", "type": "validation_fixes_parsed", "data": {"chat_id": "test_chat", "count": 1}}
-{"timestamp": "2026-03-09T03:41:56.372641", "type": "validation_fix_success", "data": {"chat_id": "test_chat"}}

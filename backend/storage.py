@@ -20,7 +20,8 @@ def init_db():
             last_model TEXT,
             vision_model TEXT,
             max_tokens INTEGER DEFAULT 16384,
-            is_custom_title INTEGER DEFAULT 0
+            is_custom_title INTEGER DEFAULT 0,
+            folder TEXT
         )
     ''')
     
@@ -62,6 +63,11 @@ def init_db():
 
     try:
         c.execute('ALTER TABLE chats ADD COLUMN max_tokens INTEGER DEFAULT 16384')
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        c.execute('ALTER TABLE chats ADD COLUMN folder TEXT')
     except sqlite3.OperationalError:
         pass
 
@@ -120,12 +126,12 @@ def get_chat(chat_id):
 
     return chat_dict
 
-def save_chat(chat_id, title, timestamp, memory_mode, research_mode=False, is_vision=False, last_model=None, vision_model=None, max_tokens=16384):
+def save_chat(chat_id, title, timestamp, memory_mode, research_mode=False, is_vision=False, last_model=None, vision_model=None, max_tokens=16384, folder=None):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''
-        INSERT INTO chats (id, title, timestamp, memory_mode, research_mode, is_vision, last_model, vision_model, max_tokens, is_custom_title)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+        INSERT INTO chats (id, title, timestamp, memory_mode, research_mode, is_vision, last_model, vision_model, max_tokens, is_custom_title, folder)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
         ON CONFLICT(id) DO UPDATE SET
             title=CASE WHEN chats.is_custom_title = 1 THEN chats.title ELSE excluded.title END,
             timestamp=excluded.timestamp,
@@ -134,8 +140,9 @@ def save_chat(chat_id, title, timestamp, memory_mode, research_mode=False, is_vi
             is_vision=excluded.is_vision,
             last_model=excluded.last_model,
             vision_model=excluded.vision_model,
-            max_tokens=excluded.max_tokens
-    ''', (chat_id, title, timestamp, 1 if memory_mode else 0, 1 if research_mode else 0, 1 if is_vision else 0, last_model, vision_model, max_tokens))
+            max_tokens=excluded.max_tokens,
+            folder=COALESCE(excluded.folder, chats.folder)
+    ''', (chat_id, title, timestamp, 1 if memory_mode else 0, 1 if research_mode else 0, 1 if is_vision else 0, last_model, vision_model, max_tokens, folder))
     conn.commit()
     conn.close()
 
@@ -193,6 +200,13 @@ def update_chat_max_tokens(chat_id, max_tokens):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("UPDATE chats SET max_tokens = ? WHERE id = ?", (max_tokens, chat_id))
+    conn.commit()
+    conn.close()
+
+def update_chat_folder(chat_id, folder):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("UPDATE chats SET folder = ? WHERE id = ?", (folder, chat_id))
     conn.commit()
     conn.close()
 
