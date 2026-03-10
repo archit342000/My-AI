@@ -1,4 +1,16 @@
 document.addEventListener('DOMContentLoaded', () => {
+    // 0. Touch vs Mouse Detection (Global Fallback)
+    document.addEventListener('touchstart', function onFirstTouch() {
+        document.body.classList.add('is-touch-device');
+        document.removeEventListener('touchstart', onFirstTouch, false);
+
+        document.addEventListener('mousemove', function onFirstMouse() {
+            document.body.classList.remove('is-touch-device');
+            document.removeEventListener('mousemove', onFirstMouse, false);
+            document.addEventListener('touchstart', onFirstTouch, false);
+        }, false);
+    }, false);
+
     // 0. Security Utilities (Obfuscation)
     // Configure marked with highlight.js integration
     if (typeof marked !== 'undefined' && typeof hljs !== 'undefined') {
@@ -981,9 +993,11 @@ document.addEventListener('DOMContentLoaded', () => {
             clearTimeout(longPressTimer);
             if (isLongPress) {
                 // Prevent navigation click since we opened a modal
-                e.preventDefault();
+                if (e.cancelable) {
+                    e.preventDefault();
+                }
             }
-        });
+        }, { passive: false });
 
         item.addEventListener('touchcancel', () => {
             clearTimeout(longPressTimer);

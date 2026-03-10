@@ -3681,6 +3681,14 @@ a.chat-list-item:active {
     }
 }
 
+body.is-touch-device .chat-item-actions {
+    display: none !important;
+}
+
+body.is-touch-device .chat-list-item:hover .chat-item-actions {
+    display: none !important;
+}
+
 .chat-delete-btn,
 .chat-rename-btn,
 .chat-folder-btn,
