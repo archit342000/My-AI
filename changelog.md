@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## v1.7.3
+* **Removal**: Removed the `REASONING_TEMPLATE` from the prompts.
+* **Version Bump**: Incremented version to v1.7.3.
+
 ## v1.7.2
 * **Bug Fix (Backend State)**: Fixed an issue where the Deep Search state was prematurely overwritten during chat by passing the missing `search_depth_mode` argument to `save_chat` in `app.py`.
 * **Bug Fix (Frontend Sync)**: Replaced a missing `syncChatState` function call with the correct `persistChat` method in `script.js` to ensure real-time UI toggles correctly hit the backend mid-conversation.

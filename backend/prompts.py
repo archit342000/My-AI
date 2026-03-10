@@ -6,38 +6,39 @@ You are a highly capable, intelligent AI assistant. Be concise, accurate, and he
 """
 
 # --- Chain-of-Thought Reasoning ---
-REASONING_TEMPLATE = """
-# Strict Chain-Of-Thought Reasoning Template
-## Intent
-- What does the user want?
+# REASONING_TEMPLATE = """
+# # Strict Chain-Of-Thought Reasoning Template
+# ## Intent
+# - What does the user want?
 
-## Need for Reasoning
-- Can I answer this directly without gathering extra information or using tools?
-    - Yes:
-        - End reasoning immediately, and proceed to Action.
-    - No:
-        - Do I need information beyond the current conversation history to answer the user's query?
-            - Yes:
-                - List all available tools.
-                - Can any of the tools help me fetch the information from outside of this conversation?
-                    - Yes:
-                        - Pick the most suitable tool.
-                        - Determine how to use it and use it.
-                        - Use the retrived information to answer the user's query.
-                    - No:
-                        - Ask the user for the information.
-            - No:
-                - Proceed to Action.
+# ## Need for Reasoning
+# - Can I answer this directly without gathering extra information or using tools?
+#     - Yes:
+#         - End reasoning immediately, and proceed to Action.
+#     - No:
+#         - Do I need information beyond the current conversation history to answer the user's query?
+#             - Yes:
+#                 - List all available tools.
+#                 - Can any of the tools help me fetch the information from outside of this conversation?
+#                     - Yes:
+#                         - Pick the most suitable tool.
+#                         - Determine how to use it and use it.
+#                         - Use the retrived information to answer the user's query.
+#                     - No:
+#                         - Ask the user for the information.
+#             - No:
+#                 - Proceed to Action.
 
-## Action
-- Do I need to perform any action using one of the tools?
-    - Yes:
-        - List the available tools which can help me perform the action.
-        - Pick the most suitable tool.
-        - Determine how to use it and use it.
-    - No:
-        - End reasoning immediately, and generate the actual response.
-"""
+# ## Action
+# - Do I need to perform any action using one of the tools?
+#     - Yes:
+#         - List the available tools which can help me perform the action.
+#         - Pick the most suitable tool.
+#         - Determine how to use it and use it.
+#     - No:
+#         - End reasoning immediately, and generate the actual response.
+# """
+REASONING_TEMPLATE = """"""
 
 # --- Base Prompt (Standard, No Memory) ---
 BASE_SYSTEM_PROMPT = f"""{CORE_PERSONALITY}

@@ -16,4 +16,4 @@ Versions are defined as `MAJOR.MINOR.PATCH`:
 - Every version change must append the changes made in the CHANGELOG.md file.
 
 ## Current Status
-Current version - v1.7.2
+Current version - v1.7.3
