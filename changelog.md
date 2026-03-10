@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## v1.7.4
+* **Retraction**: Reverted the removal of `REASONING_TEMPLATE` from the prompts.
+* **Version Bump**: Incremented version to v1.7.4
+
 ## v1.7.3
 * **Removal**: Removed the `REASONING_TEMPLATE` from the prompts.
 * **Version Bump**: Incremented version to v1.7.3.
