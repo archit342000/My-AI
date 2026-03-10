@@ -887,9 +887,10 @@ document.addEventListener('DOMContentLoaded', () => {
         item.href = `/chat/${chat.id}`;
         item.className = `chat-list-item ${chat.id === currentChatId ? 'active' : ''}`;
 
-        const isTouchCapable = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || (navigator.msMaxTouchPoints > 0);
+        // Switch to window width detection for mobile mode
+        const isMobileMode = window.innerWidth <= 768;
 
-        if (!isTouchCapable) {
+        if (!isMobileMode) {
             item.draggable = true;
             item.addEventListener('dragstart', (e) => {
                 e.dataTransfer.setData('text/plain', chat.id);
@@ -962,7 +963,7 @@ document.addEventListener('DOMContentLoaded', () => {
             deleteChat(chat.id, e);
         };
 
-        if (!isTouchCapable) {
+        if (!isMobileMode) {
             actionsContainer.appendChild(moveBtn);
             actionsContainer.appendChild(renameBtn);
             actionsContainer.appendChild(delBtn);
