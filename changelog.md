@@ -3,6 +3,7 @@
 ## v1.7.6
 * **UI Redesign (Logs)**: The Logs page has been fully redesigned to perfectly match the Luminous Material aesthetic of the main application.
 * **UX Fix**: Implemented a responsive collapsible sidebar for the Logs page, significantly improving usability on mobile devices.
+* **UI Fix (Logs)**: Fixed an issue where long model names or events were overflowing the sidebar width.
 * **Version Bump**: Incremented version to v1.7.6.
 
 ## v1.7.5
