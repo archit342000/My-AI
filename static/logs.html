@@ -1,20 +1,15 @@
 <!DOCTYPE html>
-<html lang="en" class="dark">
+<html lang="en">
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Intelligence | Neural Traffic Monitor</title>
 
-    <!-- Modern Typography -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link
-        href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
-        rel="stylesheet">
+    <link rel="stylesheet" href="/styles.css">
 
     <!-- Syntax Highlighting -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" id="highlight-theme">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/json.min.js"></script>
 
@@ -24,206 +19,113 @@
         href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%236366F1'/><stop offset='1' stop-color='%2322D3EE'/></linearGradient></defs><path d='M16 2L26 12L16 30L6 12Z' fill='url(%23g)'/><path d='M16 2L26 12H6Z' fill='white' opacity='0.3'/><circle cx='16' cy='12' r='2.5' fill='white'/></svg>">
 
     <style>
-        :root {
-            --bg-deep: #050505;
-            --bg-surface: #0a0a0b;
-            --bg-sidebar: #0d0d0f;
-            --border: rgba(255, 255, 255, 0.08);
-            --border-hover: rgba(59, 130, 246, 0.3);
-            --text-primary: #f8fafc;
-            --text-secondary: #94a3b8;
-            --text-muted: #64748b;
-            --accent: #3b82f6;
-            --accent-glow: rgba(59, 130, 246, 0.4);
-            --accent-bg: rgba(59, 130, 246, 0.1);
-
-            --cat-llm: #22c55e;
-            --cat-tool: #f59e0b;
-            --cat-error: #ef4444;
-
-            --font-main: 'Outfit', sans-serif;
-            --font-mono: 'JetBrains Mono', monospace;
-
-            --radius-xl: 18px;
-            --radius-lg: 12px;
-            --radius-md: 8px;
-
-            --transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-
-        * {
-            box-sizing: border-box;
-        }
-
-        body {
-            margin: 0;
-            background: var(--bg-deep);
-            color: var(--text-primary);
-            font-family: var(--font-main);
-            height: 100vh;
-            display: flex;
-            overflow: hidden;
-            -webkit-font-smoothing: antialiased;
-        }
-
-        /* Experimental Scrollbar */
-        ::-webkit-scrollbar {
-            width: 5px;
-            height: 5px;
-        }
-
-        ::-webkit-scrollbar-track {
-            background: transparent;
-        }
-
-        ::-webkit-scrollbar-thumb {
-            background: var(--border);
-            border-radius: 10px;
-        }
-
-        ::-webkit-scrollbar-thumb:hover {
-            background: var(--text-muted);
-        }
-
-        /* Resizable Sidebar */
-        .sidebar {
-            background: var(--bg-sidebar);
-            border-right: 1px solid var(--border);
-            display: flex;
-            flex-direction: column;
-            width: 400px;
-            /* Default */
-            min-width: 320px;
-            max-width: 800px;
-            height: 100%;
-            position: relative;
-            flex-shrink: 0;
-        }
-
-        .resize-handle {
-            position: absolute;
-            right: -3px;
-            top: 0;
-            bottom: 0;
-            width: 6px;
-            cursor: col-resize;
-            z-index: 100;
-            transition: background 0.2s;
-        }
-
-        .resize-handle:hover,
-        .resize-handle.dragging {
-            background: var(--accent);
-        }
-
-        .sidebar-header {
-            padding: 32px 28px 20px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
-
-        .app-brand {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            text-decoration: none;
-            color: inherit;
-        }
-
-        .brand-logo {
-            width: 34px;
-            height: 34px;
-            background: linear-gradient(135deg, #4f46e5, #3b82f6);
-            border-radius: 9px;
-            display: grid;
-            place-items: center;
-        }
-
-        .sidebar-header h1 {
-            margin: 0;
-            font-size: 1.15rem;
-            font-weight: 600;
-        }
+        /* Logs Specific Styles */
 
         .search-area {
-            padding: 0 24px 20px;
+            padding: 0 16px 16px;
         }
 
         .search-container {
             position: relative;
-            background: rgba(255, 255, 255, 0.03);
-            border: 1px solid var(--border);
-            border-radius: 12px;
+            background: var(--bg-input);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-xl);
             display: flex;
             align-items: center;
             padding: 0 12px;
+            transition: border-color 0.2s;
+        }
+
+        .search-container:focus-within {
+            border-color: var(--color-primary-500);
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
         }
 
         .search-input {
             background: none;
             border: none;
-            color: var(--text-primary);
+            color: var(--content-primary);
             padding: 10px;
             font-size: 0.85rem;
             width: 100%;
             outline: none;
-            font-family: var(--font-main);
+            font-family: var(--font-body);
         }
 
         .nav-tabs {
             display: flex;
-            background: rgba(255, 255, 255, 0.02);
-            margin: 0 24px 24px;
+            background: var(--surface-secondary);
+            margin: 0 16px 16px;
             padding: 4px;
-            border-radius: 12px;
-            border: 1px solid var(--border);
+            border-radius: var(--radius-xl);
+            border: 1px solid var(--border-subtle);
         }
 
         .nav-tab {
             flex: 1;
-            padding: 9px;
+            padding: 8px;
             text-align: center;
             font-size: 0.8rem;
             font-weight: 600;
             cursor: pointer;
-            border-radius: 8px;
-            transition: var(--transition);
-            color: var(--text-secondary);
+            border-radius: var(--radius-lg);
+            transition: var(--ease-spring) 0.2s;
+            color: var(--content-muted);
             text-transform: uppercase;
         }
 
         .nav-tab.active {
             background: white;
-            color: black;
+            color: var(--color-primary-700);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+
+        html.dark .nav-tab.active {
+            background: var(--color-neutral-800);
+            color: var(--color-primary-400);
         }
 
         .list-container {
             flex: 1;
             overflow-y: auto;
-            padding: 0 24px 24px;
+            padding: 0 16px 16px;
+            scrollbar-width: thin;
+            scrollbar-color: var(--color-neutral-200) transparent;
         }
 
         /* Cards */
         .log-card {
-            background: rgba(255, 255, 255, 0.02);
-            border: 1px solid var(--border);
-            border-radius: 14px;
-            padding: 18px;
+            background: var(--surface-secondary);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-xl);
+            padding: 16px;
             margin-bottom: 12px;
             cursor: pointer;
-            transition: transform 0.2s, border-color 0.2s, background 0.2s;
+            transition: transform 0.2s, border-color 0.2s, background 0.2s, box-shadow 0.2s;
             position: relative;
         }
 
         .log-card:hover {
-            background: rgba(255, 255, 255, 0.04);
-            border-color: var(--border-hover);
+            transform: translateY(-2px);
+            box-shadow: var(--surface-shadow);
+            border-color: var(--color-primary-200);
+        }
+
+        html.dark .log-card:hover {
+            border-color: rgba(37, 99, 235, 0.3);
+            background: rgba(37, 99, 235, 0.05);
         }
 
         .log-card.active {
-            background: rgba(59, 130, 246, 0.1);
-            border-color: var(--accent);
+            background: rgba(59, 130, 246, 0.08);
+            border-color: var(--color-primary-500);
+            box-shadow: 0 0 0 2px var(--color-primary-100);
+        }
+
+        html.dark .log-card.active {
+            background: rgba(37, 99, 235, 0.1);
+            border-color: var(--color-primary-500);
+            box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
         }
 
         .log-meta {
@@ -243,38 +145,38 @@
 
         .pill-llm {
             background: rgba(34, 197, 94, 0.15);
-            color: #4ade80;
+            color: #10b981; /* teal-500 */
             border: 1px solid rgba(34, 197, 94, 0.2);
         }
 
         .pill-tool {
             background: rgba(245, 158, 11, 0.15);
-            color: #fbbf24;
+            color: #f59e0b;
             border: 1px solid rgba(245, 158, 11, 0.2);
         }
 
         .pill-error {
-            background: rgba(239, 68, 68, 0.15);
-            color: #f87171;
-            border: 1px solid rgba(239, 68, 68, 0.2);
+            background: rgba(244, 63, 94, 0.15);
+            color: var(--color-rose-500);
+            border: 1px solid rgba(244, 63, 94, 0.2);
         }
 
         .log-timestamp {
             font-family: var(--font-mono);
             font-size: 0.7rem;
-            color: var(--text-muted);
+            color: var(--content-muted);
         }
 
         .log-title {
             font-size: 0.95rem;
             font-weight: 600;
             margin-bottom: 4px;
-            color: var(--text-primary);
+            color: var(--content-primary);
         }
 
         .log-subtitle {
             font-size: 0.75rem;
-            color: var(--text-secondary);
+            color: var(--content-muted);
             font-family: var(--font-mono);
             word-break: break-all;
             display: -webkit-box;
@@ -286,20 +188,24 @@
         /* Detail View Area */
         .content-area {
             flex: 1;
-            background: var(--bg-surface);
             display: flex;
             flex-direction: column;
             overflow: hidden;
+            background: transparent;
+            height: 100vh;
+            height: 100svh;
         }
 
         .detail-header {
-            padding: 30px 40px;
-            border-bottom: 1px solid var(--border);
+            padding: 24px 32px;
+            border-bottom: 1px solid var(--border-header);
             display: flex;
             justify-content: space-between;
             align-items: center;
-            background: rgba(10, 10, 11, 0.8);
-            backdrop-filter: blur(20px);
+            background: var(--bg-header);
+            backdrop-filter: saturate(180%) blur(20px);
+            -webkit-backdrop-filter: saturate(180%) blur(20px);
+            z-index: 10;
         }
 
         .panes-container {
@@ -307,81 +213,112 @@
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 1px;
-            background: var(--border);
+            background: var(--border-subtle);
             overflow: hidden;
         }
 
+        @media (max-width: 1024px) {
+            .panes-container {
+                grid-template-columns: 1fr;
+                grid-template-rows: 1fr 1fr;
+            }
+        }
+
         .pane {
-            background: var(--bg-surface);
+            background: var(--bg-light-mid);
             display: flex;
             flex-direction: column;
             overflow: hidden;
         }
 
+        html.dark .pane {
+            background: var(--bg-dark);
+        }
+
         .pane-header {
-            padding: 14px 24px;
-            background: rgba(255, 255, 255, 0.02);
-            border-bottom: 1px solid var(--border);
+            padding: 12px 24px;
+            background: var(--surface-secondary);
+            border-bottom: 1px solid var(--border-subtle);
             display: flex;
             justify-content: space-between;
             align-items: center;
         }
 
         .pane-title {
-            font-size: 0.7rem;
+            font-size: 0.75rem;
             font-weight: 700;
-            color: var(--accent);
+            color: var(--color-primary-600);
             text-transform: uppercase;
             letter-spacing: 0.1em;
+        }
+
+        html.dark .pane-title {
+            color: var(--color-primary-400);
         }
 
         .pane-content {
             flex: 1;
             padding: 24px;
             overflow: auto;
-            background: #0d1117;
+            background: #0d1117; /* GitHub Dark bg for highlight.js */
+            scrollbar-width: thin;
+            scrollbar-color: var(--color-neutral-600) transparent;
+        }
+
+        .pane-content::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+
+        .pane-content::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .pane-content::-webkit-scrollbar-thumb {
+            background-color: var(--color-neutral-600);
+            border-radius: 10px;
         }
 
         pre code {
             font-family: var(--font-mono) !important;
             font-size: 0.85rem !important;
             line-height: 1.6 !important;
-        }
-
-        /* Sync Indicator */
-        .btn-refresh {
-            background: rgba(255, 255, 255, 0.03);
-            border: 1px solid var(--border);
-            color: var(--text-primary);
-            padding: 8px;
-            border-radius: 10px;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-        }
-
-        .btn-refresh:hover {
-            background: var(--border);
+            background: transparent !important;
+            padding: 0 !important;
         }
 
         /* Event Log Layout */
         .event-card {
-            background: rgba(255, 255, 255, 0.015);
-            border: 1px solid var(--border);
-            border-radius: 12px;
+            background: var(--surface-secondary);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-xl);
             padding: 16px;
             margin-bottom: 10px;
             cursor: pointer;
-            transition: all 0.2s;
+            transition: all 0.2s var(--ease-spring);
         }
 
         .event-card:hover {
-            border-color: var(--accent);
+            transform: translateY(-2px);
+            box-shadow: var(--surface-shadow);
+            border-color: var(--color-primary-200);
+        }
+
+        html.dark .event-card:hover {
+            border-color: rgba(37, 99, 235, 0.3);
+            background: rgba(37, 99, 235, 0.05);
         }
 
         .event-card.active {
-            background: var(--accent-bg);
-            border-color: var(--accent);
+            background: rgba(59, 130, 246, 0.08);
+            border-color: var(--color-primary-500);
+            box-shadow: 0 0 0 2px var(--color-primary-100);
+        }
+
+        html.dark .event-card.active {
+            background: rgba(37, 99, 235, 0.1);
+            border-color: var(--color-primary-500);
+            box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
         }
 
         .event-top {
@@ -393,99 +330,160 @@
 
         .event-name {
             font-weight: 700;
-            color: var(--accent);
+            color: var(--color-primary-600);
             font-size: 0.85rem;
+        }
+
+        html.dark .event-name {
+            color: var(--color-primary-400);
         }
 
         .event-data-preview {
             font-family: var(--font-mono);
             font-size: 0.75rem;
-            color: var(--text-secondary);
+            color: var(--content-muted);
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
         }
 
-        .empty-state {
+        .empty-state-logs {
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
             height: 100%;
-            color: var(--text-muted);
+            color: var(--content-muted);
             padding: 40px;
             text-align: center;
         }
 
         .copy-btn {
-            background: none;
-            border: 1px solid var(--border);
-            color: var(--text-muted);
+            background: transparent;
+            border: 1px solid var(--border-subtle);
+            color: var(--content-muted);
             padding: 4px 8px;
-            border-radius: 6px;
+            border-radius: var(--radius-md);
             font-size: 0.65rem;
+            font-weight: 600;
             cursor: pointer;
+            transition: all 0.2s;
         }
 
         .copy-btn:hover {
-            color: white;
-            border-color: var(--text-secondary);
+            background: var(--color-neutral-200);
+            color: var(--content-primary);
+        }
+
+        html.dark .copy-btn:hover {
+            background: var(--color-neutral-800);
+            border-color: var(--color-neutral-600);
+        }
+
+        /* Layout overrides for logs */
+        #app-root {
+            display: flex;
+            width: 100%;
+            height: 100vh;
+            height: 100svh;
+            overflow: hidden;
+        }
+
+        main {
+            flex: 1;
+            width: 0;
+            padding: 0 !important; /* Override standard padding */
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            height: 100svh;
+            position: relative;
+            overflow: hidden;
+            transition: all 400ms var(--ease-spring);
+        }
+
+        /* Override sidebar specific for logs */
+        .sidebar-header {
+            padding: 1rem 1rem;
         }
     </style>
 </head>
 
-<body>
-    <aside class="sidebar" id="sidebar">
-        <div class="resize-handle" id="resize-handle"></div>
+<body class="min-h-screen">
+    <div id="app-root">
+        <!-- Navigation Rail (Resizable) -->
+        <aside id="sidebar" class="sidebar-expanded">
+            <!-- Precision Drag Handle -->
+            <div class="resize-handle" id="sidebar-resizer"></div>
 
-        <header class="sidebar-header">
-            <a href="/" class="app-brand">
-                <div class="brand-logo">
-                    <svg width="18" height="18" viewBox="0 0 32 32" fill="none">
-                        <path d="M16 2L26 12L16 30L6 12Z" fill="white" />
-                        <circle cx="16" cy="12" r="2.5" fill="black" opacity="0.2" />
+            <div class="sidebar-header">
+                <a href="/" class="sidebar-brand" style="text-decoration: none;">
+                    <svg class="sidebar-logo-icon" width="22" height="22" viewBox="0 0 32 32" fill="none">
+                        <defs>
+                            <linearGradient id="brand-grad" x1="0" y1="0" x2="1" y2="1">
+                                <stop offset="0" stop-color="#4F46E5" />
+                                <stop offset="1" stop-color="#06B6D4" />
+                            </linearGradient>
+                        </defs>
+                        <path d="M16 2L26 12L16 30L6 12Z" fill="url(#brand-grad)" opacity="0.9" />
+                        <path d="M16 2L26 12H6Z" fill="white" opacity="0.3" />
+                        <circle cx="16" cy="12" r="2.5" fill="white" opacity="0.9" />
                     </svg>
+                    <span class="sidebar-brand-text font-heading sidebar-text">Intelligence</span>
+                </a>
+                <button class="sidebar-icon-btn" onclick="loadData(true)" title="Refresh" id="refresh-btn">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"
+                            stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                </button>
+                <button id="sidebar-toggle" class="sidebar-icon-btn" title="Toggle sidebar" aria-label="Toggle sidebar" >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2.5">
+                        <path d="M15 6l-6 6 6 6" id="toggle-icon-path" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                </button>
+            </div>
+
+            <section class="search-area sidebar-text" style="margin-top: 16px;">
+                <div class="search-container">
+                    <input type="text" id="log-search" class="search-input" placeholder="Filter stream..."
+                        oninput="renderList()">
                 </div>
-                <h1>Intelligence</h1>
-            </a>
-            <button class="btn-refresh" onclick="loadData(true)" title="Refresh">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                    <path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"
-                        stroke-linecap="round" stroke-linejoin="round" />
+            </section>
+
+            <nav class="nav-tabs sidebar-text">
+                <div class="nav-tab active" id="tab-network" onclick="switchMode('network')">Network</div>
+                <div class="nav-tab" id="tab-events" onclick="switchMode('events')">Events</div>
+            </nav>
+
+            <div class="list-container custom-scroll sidebar-text" id="log-list">
+                <!-- List Items -->
+            </div>
+        </aside>
+
+        <!-- Main Fluid Content -->
+        <main class="content-area" id="detail-view">
+            <!-- Mobile Menu Trigger -->
+            <button id="mobile-toggle" class="btn-secondary glass" title="Menu" style="position: fixed; z-index: 50;">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <path d="M3 12h18M3 6h18M3 18h18" stroke-linecap="round" stroke-linejoin="round" />
                 </svg>
             </button>
-        </header>
 
-        <section class="search-area">
-            <div class="search-container">
-                <input type="text" id="log-search" class="search-input" placeholder="Filter stream..."
-                    oninput="renderList()">
+            <div class="empty-state-logs">
+                <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"
+                    opacity="0.3" style="margin-bottom: 24px; color: var(--color-primary-500);">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="16" x2="12" y2="12"></line>
+                    <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                </svg>
+                <h2 class="font-heading" style="font-weight: 600; font-size: 1.5rem; color: var(--content-primary); margin-bottom: 8px;">Select a stream to begin inspection</h2>
+                <p style="color: var(--content-muted); max-width: 320px; line-height: 1.6;">Capture neural traffic and system events in
+                    high-fidelity resolution.</p>
             </div>
-        </section>
-
-        <nav class="nav-tabs">
-            <div class="nav-tab active" id="tab-network" onclick="switchMode('network')">Network</div>
-            <div class="nav-tab" id="tab-events" onclick="switchMode('events')">Events</div>
-        </nav>
-
-        <div class="list-container" id="log-list">
-            <!-- List Items -->
-        </div>
-    </aside>
-
-    <main class="content-area" id="detail-view">
-        <div class="empty-state">
-            <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"
-                opacity="0.3" style="margin-bottom: 20px;">
-                <circle cx="12" cy="12" r="10"></circle>
-                <line x1="12" y1="16" x2="12" y2="12"></line>
-                <line x1="12" y1="8" x2="12.01" y2="8"></line>
-            </svg>
-            <h2 style="font-weight: 500;">Select a stream to begin inspection</h2>
-            <p style="color: var(--text-muted); max-width: 300px;">Capture neural traffic and system events in
-                high-fidelity resolution.</p>
-        </div>
-    </main>
+        </main>
+    </div>
 
     <script>
         let currentMode = 'network';
@@ -495,38 +493,106 @@
 
         // Initialize Resizable Sidebar
         const sidebar = document.getElementById('sidebar');
-        const handle = document.getElementById('resize-handle');
+        const handle = document.getElementById('sidebar-resizer');
+        const sidebarToggle = document.getElementById('sidebar-toggle');
+        const mobileToggle = document.getElementById('mobile-toggle');
+        const toggleIconPath = document.getElementById('toggle-icon-path');
         let isResizing = false;
 
         const savedWidth = localStorage.getItem('logs_sidebar_width');
-        if (savedWidth) sidebar.style.width = savedWidth + 'px';
+        if (savedWidth && window.innerWidth > 768) sidebar.style.width = savedWidth + 'px';
 
         handle.addEventListener('mousedown', (e) => {
             isResizing = true;
+            sidebar.classList.add('resizing');
             document.body.style.cursor = 'col-resize';
-            handle.classList.add('dragging');
+            e.preventDefault();
         });
 
         document.addEventListener('mousemove', (e) => {
             if (!isResizing) return;
             let newWidth = e.clientX;
-            if (newWidth < 320) newWidth = 320;
-            if (newWidth > 800) newWidth = 800;
-            sidebar.style.width = newWidth + 'px';
-            localStorage.setItem('logs_sidebar_width', newWidth);
+
+            if (newWidth < 120) {
+                sidebar.classList.remove('sidebar-expanded');
+                sidebar.classList.add('sidebar-collapsed');
+                sidebar.style.width = '';
+                toggleIconPath.setAttribute('d', 'M9 6l6 6-6 6');
+            } else if (window.innerWidth > 768 && newWidth >= 240 && newWidth <= 800) {
+                sidebar.classList.remove('sidebar-collapsed');
+                sidebar.classList.add('sidebar-expanded');
+                sidebar.style.width = newWidth + 'px';
+                localStorage.setItem('logs_sidebar_width', newWidth);
+                toggleIconPath.setAttribute('d', 'M15 6l-6 6 6 6');
+            }
         });
 
         document.addEventListener('mouseup', () => {
-            isResizing = false;
-            document.body.style.cursor = 'default';
-            handle.classList.remove('dragging');
+            if (isResizing) {
+                isResizing = false;
+                sidebar.classList.remove('resizing');
+                document.body.style.cursor = 'default';
+            }
         });
+
+        // Toggles
+        [sidebarToggle, mobileToggle].forEach(btn => {
+            btn?.addEventListener('click', () => {
+                const isCollapsed = sidebar.classList.contains('sidebar-collapsed');
+                sidebar.style.width = '';
+
+                if (isCollapsed) {
+                    sidebar.classList.remove('sidebar-collapsed');
+                    sidebar.classList.add('sidebar-expanded');
+                    toggleIconPath.setAttribute('d', 'M15 6l-6 6 6 6');
+                } else {
+                    sidebar.classList.remove('sidebar-expanded');
+                    sidebar.classList.add('sidebar-collapsed');
+                    toggleIconPath.setAttribute('d', 'M9 6l6 6-6 6');
+                }
+            });
+        });
+
+        // Auto-collapse for mobile on load
+        if (window.innerWidth <= 768) {
+            sidebar.classList.remove('sidebar-expanded');
+            sidebar.classList.add('sidebar-collapsed');
+            toggleIconPath.setAttribute('d', 'M9 6l6 6-6 6');
+        }
+
+        // Theme System
+        let themeMode = localStorage.getItem('my_ai_theme_mode') || 'system';
+        function applyTheme() {
+            let isDark = false;
+            if (themeMode === 'system') {
+                isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            } else {
+                isDark = themeMode === 'dark';
+            }
+
+            if (isDark) {
+                document.documentElement.classList.add('dark');
+            } else {
+                document.documentElement.classList.remove('dark');
+            }
+
+            const highlightThemeLink = document.getElementById('highlight-theme');
+            if (highlightThemeLink) {
+                highlightThemeLink.href = isDark
+                    ? "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css"
+                    : "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css";
+            }
+        }
+        applyTheme();
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+            if (themeMode === 'system') applyTheme();
+        });
+
 
         // Data Handling
         async function loadData(force = false) {
             const listDiv = document.getElementById('log-list');
 
-            // Optimization: Only fetch if we don't have data or force is true
             if (!force && ((currentMode === 'network' && networkLogs.length > 0) || (currentMode === 'events' && eventLogs.length > 0))) {
                 renderList();
                 return;
@@ -542,7 +608,7 @@
 
                 renderList();
             } catch (err) {
-                listDiv.innerHTML = '<div class="empty-state">Communications Failure.</div>';
+                listDiv.innerHTML = '<div class="empty-state-logs">Communications Failure.</div>';
             }
         }
 
@@ -552,15 +618,19 @@
             document.getElementById(`tab-${mode}`).classList.add('active');
             selectedId = null;
             resetDetail();
-            // We use the cached data or fetch if needed
             loadData();
         }
 
         function resetDetail() {
             document.getElementById('detail-view').innerHTML = `
-                <div class="empty-state">
-                    <h2 style="font-weight: 500;">Telemetric Silence</h2>
-                    <p style="color: var(--text-muted);">Select a trace to open inspection windows.</p>
+                <button id="mobile-toggle" class="btn-secondary glass" title="Menu" style="position: fixed; z-index: 50;" onclick="document.getElementById('sidebar').classList.remove('sidebar-collapsed'); document.getElementById('sidebar').classList.add('sidebar-expanded');">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <path d="M3 12h18M3 6h18M3 18h18" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                </button>
+                <div class="empty-state-logs">
+                    <h2 class="font-heading" style="font-weight: 600; font-size: 1.5rem; margin-bottom: 8px;">Telemetric Silence</h2>
+                    <p style="color: var(--content-muted);">Select a trace to open inspection windows.</p>
                 </div>
             `;
         }
@@ -584,7 +654,13 @@
                 if (currentMode === 'network') {
                     const card = document.createElement('div');
                     card.className = `log-card ${selectedId === log.log_file ? 'active' : ''}`;
-                    card.onclick = () => showNetworkDetail(log, card);
+                    card.onclick = () => {
+                        showNetworkDetail(log, card);
+                        if (window.innerWidth <= 768) {
+                            sidebar.classList.remove('sidebar-expanded');
+                            sidebar.classList.add('sidebar-collapsed');
+                        }
+                    };
 
                     const time = new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
@@ -601,7 +677,13 @@
                     const card = document.createElement('div');
                     const id = log.timestamp + index;
                     card.className = `event-card ${selectedId === id ? 'active' : ''}`;
-                    card.onclick = () => showEventDetail(log, id, card);
+                    card.onclick = () => {
+                        showEventDetail(log, id, card);
+                        if (window.innerWidth <= 768) {
+                            sidebar.classList.remove('sidebar-expanded');
+                            sidebar.classList.add('sidebar-collapsed');
+                        }
+                    };
 
                     const time = new Date(log.timestamp).toLocaleTimeString();
                     const dataStr = JSON.stringify(log.data);
@@ -631,7 +713,13 @@
             element.classList.add('active');
 
             const detailView = document.getElementById('detail-view');
-            detailView.innerHTML = '<div class="empty-state">Streaming Log...</div>';
+            detailView.innerHTML = `
+            <button id="mobile-toggle" class="btn-secondary glass" title="Menu" style="position: fixed; z-index: 50;" onclick="document.getElementById('sidebar').classList.remove('sidebar-collapsed'); document.getElementById('sidebar').classList.add('sidebar-expanded');">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <path d="M3 12h18M3 6h18M3 18h18" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+            </button>
+            <div class="empty-state-logs">Streaming Log...</div>`;
 
             try {
                 const res = await fetch(`/api/logs/detail?path=${encodeURIComponent(log.log_file)}`);
@@ -639,7 +727,13 @@
 
                 renderDualPane(escapeHtml(log.model_tool), fullLog.timestamp, fullLog.duration_s, (log.type || 'blocking'), fullLog.request, fullLog.response);
             } catch (err) {
-                detailView.innerHTML = '<div class="empty-state">Handshake Failed.</div>';
+                detailView.innerHTML = `
+                <button id="mobile-toggle" class="btn-secondary glass" title="Menu" style="position: fixed; z-index: 50;" onclick="document.getElementById('sidebar').classList.remove('sidebar-collapsed'); document.getElementById('sidebar').classList.add('sidebar-expanded');">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <path d="M3 12h18M3 6h18M3 18h18" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                </button>
+                <div class="empty-state-logs">Handshake Failed.</div>`;
             }
         }
 
@@ -659,14 +753,19 @@
             let isJson = typeof res !== 'string';
 
             detailView.innerHTML = `
-                <header class="detail-header">
+                <button id="mobile-toggle" class="btn-secondary glass" title="Menu" style="position: fixed; z-index: 50;" onclick="document.getElementById('sidebar').classList.remove('sidebar-collapsed'); document.getElementById('sidebar').classList.add('sidebar-expanded');">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <path d="M3 12h18M3 6h18M3 18h18" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                </button>
+                <header class="detail-header" style="padding-left: 72px;">
                     <div>
-                        <h2 style="font-family: var(--font-mono); color: var(--accent); font-size: 1.1rem; margin:0;">${title}</h2>
-                        <p style="margin: 5px 0 0; font-size: 0.75rem; color: var(--text-muted); font-family: var(--font-mono);">${time}</p>
+                        <h2 style="font-family: var(--font-mono); color: var(--color-primary-600); font-size: 1.1rem; margin:0;">${title}</h2>
+                        <p style="margin: 5px 0 0; font-size: 0.75rem; color: var(--content-muted); font-family: var(--font-mono);">${time}</p>
                     </div>
                     <div style="display: flex; gap: 30px;">
-                        ${duration ? `<div style="text-align:right"><span style="display:block;font-size:0.6rem;color:var(--text-muted);text-transform:uppercase;">Compute</span><span style="font-family:var(--font-mono);font-size:0.9rem;">${duration.toFixed(2)}s</span></div>` : ''}
-                        <div style="text-align:right"><span style="display:block;font-size:0.6rem;color:var(--text-muted);text-transform:uppercase;">Mode</span><span style="font-family:var(--font-mono);font-size:0.9rem;">${mode.toUpperCase()}</span></div>
+                        ${duration ? `<div style="text-align:right"><span style="display:block;font-size:0.6rem;color:var(--content-muted);text-transform:uppercase;font-weight:700;">Compute</span><span style="font-family:var(--font-mono);font-size:0.9rem;">${duration.toFixed(2)}s</span></div>` : ''}
+                        <div style="text-align:right"><span style="display:block;font-size:0.6rem;color:var(--content-muted);text-transform:uppercase;font-weight:700;">Mode</span><span style="font-family:var(--font-mono);font-size:0.9rem;">${mode.toUpperCase()}</span></div>
                     </div>
                 </header>
                 <div class="panes-container">
@@ -679,7 +778,7 @@
                             <pre><code id="req-code" class="language-json">${escapeHtml(reqStr)}</code></pre>
                         </div>
                     </section>
-                    <section class="pane" style="border-left: 1px solid var(--border);">
+                    <section class="pane">
                         <div class="pane-header">
                             <span class="pane-title">Downstream</span>
                             <button class="copy-btn" onclick="copyText('res-code')">Copy</button>
@@ -691,13 +790,18 @@
                 </div>
             `;
 
+            if (document.documentElement.classList.contains('dark')) {
+                const h2 = detailView.querySelector('h2');
+                if (h2) h2.style.color = 'var(--color-primary-400)';
+            }
+
             document.querySelectorAll('pre code').forEach(hljs.highlightElement);
         }
 
-        function copyText(id) {
+        window.copyText = function(id) {
             const text = document.getElementById(id).innerText;
             navigator.clipboard.writeText(text);
-            const btn = event.target;
+            const btn = document.activeElement; // fallback
             const old = btn.innerText;
             btn.innerText = 'Copied';
             setTimeout(() => btn.innerText = old, 1500);
