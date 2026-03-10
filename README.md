@@ -1,4 +1,4 @@
-# 🌌 My-AI v1.7.0
+# 🌌 My-AI v1.7.2
 
 A premium, full-stack AI chat interface designed for local inference with [LM Studio](https://lmstudio.ai/). This application provides a high-fidelity Luminous Material interface for interacting with local LLMs, featuring persistent state, long-term memory, and an advanced deep research agent.
 

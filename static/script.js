@@ -1377,7 +1377,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 e.stopPropagation(); // Prevent dropdown from closing immediately
                 searchDepthMode = searchDepthMode === 'deep' ? 'regular' : 'deep';
                 updateResearchUI();
-                syncChatState(); // Sync backend immediately so the toggle state is saved mid-chat
+                persistChat(); // Sync backend immediately so the toggle state is saved mid-chat
             });
         }
     }

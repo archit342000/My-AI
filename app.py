@@ -352,7 +352,8 @@ def chat_completions():
                 is_vision=new_is_vision,
                 last_model=last_model_name,
                 vision_model=vision_model,
-                max_tokens=data.get('max_tokens', 16384)
+                max_tokens=data.get('max_tokens', 16384),
+                search_depth_mode=search_depth_mode
             )
             add_message(chat_id, 'user', user_msg['content'])
 

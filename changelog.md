@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## v1.7.2
+* **Bug Fix (Backend State)**: Fixed an issue where the Deep Search state was prematurely overwritten during chat by passing the missing `search_depth_mode` argument to `save_chat` in `app.py`.
+* **Bug Fix (Frontend Sync)**: Replaced a missing `syncChatState` function call with the correct `persistChat` method in `script.js` to ensure real-time UI toggles correctly hit the backend mid-conversation.
+* **UX/Safety**: Toggling the Deep Search mode now immediately and persistently locks the state to the SQLite DB, preventing AI hallucinations upon reload.
+* **Version Bump**: Incremented version to v1.7.2.
+
 ## v1.7.0
 * **Feature**: Added "Deep Search" mode which bypasses the audit tool and extracts the raw content directly into the prompt context for deeper analysis.
 * **UI Improvement**: Consolidated "Research Agent" and "Deep Search" toggles into a single "Tools" dropdown menu in the chat input area.
