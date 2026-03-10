@@ -953,30 +953,47 @@ document.addEventListener('DOMContentLoaded', () => {
         // Long Press Logic for Mobile
         let longPressTimer;
         let isLongPress = false;
+        let startY = 0;
+        let startX = 0;
 
         item.addEventListener('touchstart', (e) => {
             isLongPress = false;
+            startY = e.touches[0].clientY;
+            startX = e.touches[0].clientX;
+
             longPressTimer = setTimeout(() => {
                 isLongPress = true;
-                // Vibrate if supported
                 if (navigator.vibrate) navigator.vibrate(50);
                 showMobileContextMenu(chat.id, chat.folder, e);
             }, 500);
         }, { passive: true });
 
-        item.addEventListener('touchmove', () => {
-            clearTimeout(longPressTimer);
+        item.addEventListener('touchmove', (e) => {
+            const currentY = e.touches[0].clientY;
+            const currentX = e.touches[0].clientX;
+            // Cancel long press if the user scrolls/moves significantly
+            if (Math.abs(currentY - startY) > 10 || Math.abs(currentX - startX) > 10) {
+                clearTimeout(longPressTimer);
+            }
         }, { passive: true });
 
         item.addEventListener('touchend', (e) => {
             clearTimeout(longPressTimer);
             if (isLongPress) {
-                e.preventDefault(); // Prevent standard click if it was a long press
+                // Prevent navigation click since we opened a modal
+                e.preventDefault();
             }
         });
 
         item.addEventListener('touchcancel', () => {
             clearTimeout(longPressTimer);
+        });
+
+        // Ensure default click handles long press correctly
+        item.addEventListener('click', (e) => {
+            if (isLongPress) {
+                e.preventDefault();
+            }
         });
 
         return item;

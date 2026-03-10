@@ -3665,9 +3665,19 @@ a.chat-list-item:active {
     display: none !important;
 }
 
-@media (hover: hover) {
+@media (hover: hover) and (pointer: fine) {
     .chat-list-item:hover .chat-item-actions {
         display: flex !important;
+    }
+}
+
+@media (hover: none), (pointer: coarse) {
+    .chat-item-actions {
+        display: none !important;
+    }
+
+    .chat-list-item:hover .chat-item-actions {
+        display: none !important;
     }
 }
 
@@ -3689,20 +3699,22 @@ a.chat-list-item:active {
     justify-content: center;
 }
 
-.chat-list-item:hover .chat-delete-btn,
-.chat-list-item:hover .chat-rename-btn,
-.chat-list-item:hover .chat-folder-btn,
-.folder-header:hover .folder-delete-btn {
-    opacity: 0.8;
-}
+@media (hover: hover) and (pointer: fine) {
+    .chat-list-item:hover .chat-delete-btn,
+    .chat-list-item:hover .chat-rename-btn,
+    .chat-list-item:hover .chat-folder-btn,
+    .folder-header:hover .folder-delete-btn {
+        opacity: 0.8;
+    }
 
-.chat-delete-btn:hover,
-.chat-rename-btn:hover,
-.chat-folder-btn:hover,
-.folder-delete-btn:hover {
-    opacity: 1 !important;
-    background: var(--color-neutral-200);
-    color: var(--content-primary);
+    .chat-delete-btn:hover,
+    .chat-rename-btn:hover,
+    .chat-folder-btn:hover,
+    .folder-delete-btn:hover {
+        opacity: 1 !important;
+        background: var(--color-neutral-200);
+        color: var(--content-primary);
+    }
 }
 
 .dark .chat-delete-btn:hover,
