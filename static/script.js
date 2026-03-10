@@ -950,7 +950,98 @@ document.addEventListener('DOMContentLoaded', () => {
         actionsContainer.appendChild(renameBtn);
         actionsContainer.appendChild(delBtn);
 
+        // Long Press Logic for Mobile
+        let longPressTimer;
+        let isLongPress = false;
+
+        item.addEventListener('touchstart', (e) => {
+            isLongPress = false;
+            longPressTimer = setTimeout(() => {
+                isLongPress = true;
+                // Vibrate if supported
+                if (navigator.vibrate) navigator.vibrate(50);
+                showMobileContextMenu(chat.id, chat.folder, e);
+            }, 500);
+        }, { passive: true });
+
+        item.addEventListener('touchmove', () => {
+            clearTimeout(longPressTimer);
+        }, { passive: true });
+
+        item.addEventListener('touchend', (e) => {
+            clearTimeout(longPressTimer);
+            if (isLongPress) {
+                e.preventDefault(); // Prevent standard click if it was a long press
+            }
+        });
+
+        item.addEventListener('touchcancel', () => {
+            clearTimeout(longPressTimer);
+        });
+
         return item;
+    }
+
+    async function showMobileContextMenu(chatId, currentFolder, e) {
+        // Build a centered action modal matching design directives
+        const modalId = 'mobile-context-modal';
+        let modal = document.getElementById(modalId);
+        if (!modal) {
+            modal = document.createElement('div');
+            modal.id = modalId;
+            modal.className = 'modal-backdrop'; // Use modal-backdrop for correct styling and background overlay
+            modal.style.display = 'flex';
+            modal.style.alignItems = 'center';
+            modal.style.justifyContent = 'center';
+            modal.innerHTML = `
+                <div class="modal-content hardware-surface" style="max-width: 320px; text-align: center; padding: 24px;">
+                    <h3 class="text-h2" style="margin-bottom: 24px; font-size: 1.25rem;">Chat Actions</h3>
+                    <div style="display: flex; flex-direction: column; gap: 12px;">
+                        <button id="mobile-rename-btn" class="btn-secondary" style="width: 100%; justify-content: center; padding: 12px;">Rename Chat</button>
+                        <button id="mobile-move-btn" class="btn-secondary" style="width: 100%; justify-content: center; padding: 12px;">Move to Folder</button>
+                        <button id="mobile-delete-btn" class="btn-primary" style="width: 100%; justify-content: center; padding: 12px; background: var(--color-rose-500); border-color: var(--color-rose-500);">Delete Chat</button>
+                    </div>
+                    <button id="mobile-cancel-btn" class="btn-ghost" style="margin-top: 16px; width: 100%; justify-content: center;">Cancel</button>
+                </div>
+            `;
+            document.body.appendChild(modal);
+        }
+
+        const renameBtn = document.getElementById('mobile-rename-btn');
+        const moveBtn = document.getElementById('mobile-move-btn');
+        const deleteBtn = document.getElementById('mobile-delete-btn');
+        const cancelBtn = document.getElementById('mobile-cancel-btn');
+
+        // Remove old event listeners by cloning if necessary, but here we can just overwrite onclick
+        const closeModal = () => {
+            modal.classList.remove('open');
+            setTimeout(() => { modal.style.display = 'none'; }, 300); // hide after transition
+        };
+
+        renameBtn.onclick = () => { closeModal(); renameChat(chatId, e); };
+
+        moveBtn.onclick = async () => {
+            closeModal();
+            const folderName = await showPromptModal("Move to Folder", "Select a folder or create a new one:", currentFolder || "", chatFolders);
+            if (folderName !== null) {
+                const finalFolder = folderName.trim() === "" ? null : folderName.trim();
+                await moveChatToFolder(chatId, finalFolder);
+            }
+        };
+
+        deleteBtn.onclick = () => { closeModal(); deleteChat(chatId, e); };
+        cancelBtn.onclick = closeModal;
+
+        // Close on outside click
+        modal.onclick = (eEvent) => {
+            if (eEvent.target === modal) closeModal();
+        };
+
+        // Trigger animation
+        modal.style.display = 'flex';
+        requestAnimationFrame(() => {
+            modal.classList.add('open');
+        });
     }
 
     // Memory Toggle Logic
