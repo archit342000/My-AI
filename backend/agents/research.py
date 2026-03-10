@@ -922,9 +922,9 @@ async def _execute_section_reflection_and_write(
             fact_count = len(core_facts_array)
             yield {"type": "activity", "data": f"data: {_create_activity_chunk(display_model, 'status', {'message': f'Extracted {fact_count} core facts for drafting.', 'icon': '📂'})}\n\n"}
         else:
-            core_facts_str = "No specific core facts were successfully extracted."
+            raise ValueError("Triage extraction completed but no specific core facts were found.")
     else:
-        core_facts_str = "Triage extraction failed."
+        raise ValueError("Triage extraction failed to return valid data.")
         
     messages.append({"role": "user", "content": triage_prompt})
     messages.append({"role": "assistant", "content": f"I have processed the Triage request. Here are the core facts I extracted:\n{core_facts_str}"})
@@ -1039,6 +1039,8 @@ async def _execute_section_reflection_and_write(
         if parsed and isinstance(parsed, dict) and "markdown_content" in parsed:
             raw_section = parsed["markdown_content"]
         else:
+            if not raw_response or not raw_response.strip():
+                raise ValueError("Writer extraction failed to return valid data after structured fallback.")
             raw_section = raw_response or ""
 
     # Process entities from reasoning if any (before stripping)

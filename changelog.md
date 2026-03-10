@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## v1.6.6
+* **Bug Fix**: Fixed a bug in `backend/agents/research.py` where a failed triage extraction or empty facts would silently proceed, outputting an empty section. The process now correctly raises a `ValueError` which triggers a retry fallback mechanism, allowing the user to retry the extraction. A similar check was added to the fallback writer flow.
+* **Version Bump**: Incremented version to v1.6.6.
+
 ## v1.6.5
 * **Bug Fix**: Fixed a validation parsing error where the AI incorrectly placed query text as a tag attribute, causing empty query errors in `utils.py`. The regex recovery logic and LLM instructions were updated to robustly handle malformed XML.
 * **UX Improvement**: Improved the error feedback mechanism in `backend/agents/research.py` to prevent the AI from repeatedly hallucinating missing tags when validation fails.
