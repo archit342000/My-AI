@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## v1.7.2
+* **Bug Fix (Backend State)**: Fixed an issue where the Deep Search state was prematurely overwritten during chat by passing the missing `search_depth_mode` argument to `save_chat` in `app.py`.
+* **Bug Fix (Frontend Sync)**: Replaced a missing `syncChatState` function call with the correct `persistChat` method in `script.js` to ensure real-time UI toggles correctly hit the backend mid-conversation.
+* **UX/Safety**: Toggling the Deep Search mode now immediately and persistently locks the state to the SQLite DB, preventing AI hallucinations upon reload.
+* **Version Bump**: Incremented version to v1.7.2.
+
 ## v1.7.1
 * **Feature**: Added folder renaming capabilities with full cross-context database updating.
 * **UI Improvement**: Replaced inline chat renaming logic with the globally integrated modal input system (`showPromptModal`).
