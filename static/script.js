@@ -1189,10 +1189,16 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Update the Tools Button appearance based on active states
         if (toolsButton) {
+            const spanText = toolsButton.querySelector('span');
             if (isResearchMode || searchDepthMode === 'deep') {
                 toolsButton.classList.add('active');
+                if (spanText) {
+                    if (isResearchMode) spanText.textContent = "Research Agent";
+                    else if (searchDepthMode === 'deep') spanText.textContent = "Deep Search";
+                }
             } else {
                 toolsButton.classList.remove('active');
+                if (spanText) spanText.textContent = "Tools";
             }
         }
 
