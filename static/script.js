@@ -1183,14 +1183,8 @@ document.addEventListener('DOMContentLoaded', () => {
         
         if (uiDeepSearchToggle) {
             uiDeepSearchToggle.classList.toggle('active', searchDepthMode === 'deep');
-
-            if (chatHistory.length > 0) {
-                uiDeepSearchToggle.parentElement.style.opacity = '0.5';
-                uiDeepSearchToggle.parentElement.style.pointerEvents = 'none';
-            } else {
-                uiDeepSearchToggle.parentElement.style.opacity = '1';
-                uiDeepSearchToggle.parentElement.style.pointerEvents = 'auto';
-            }
+            uiDeepSearchToggle.parentElement.style.opacity = '1';
+            uiDeepSearchToggle.parentElement.style.pointerEvents = 'auto';
         }
         
         // Update the Tools Button appearance based on active states
@@ -1375,9 +1369,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (uiDeepSearchToggle) {
             uiDeepSearchToggle.parentElement.addEventListener('click', (e) => {
                 e.stopPropagation(); // Prevent dropdown from closing immediately
-                if (chatHistory.length > 0) return; // Locked
                 searchDepthMode = searchDepthMode === 'deep' ? 'regular' : 'deep';
                 updateResearchUI();
+                syncChatState(); // Sync backend immediately so the toggle state is saved mid-chat
             });
         }
     }
