@@ -414,6 +414,13 @@
             transition: all 400ms var(--ease-spring);
         }
 
+        @media (min-width: 769px) {
+            aside {
+                position: relative !important;
+                /* Pushes main content instead of overlapping it */
+            }
+        }
+
         /* Override sidebar specific for logs */
         .sidebar-header {
             padding: 1rem 1rem;
