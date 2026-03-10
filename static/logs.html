@@ -133,6 +133,8 @@
             align-items: center;
             justify-content: space-between;
             margin-bottom: 10px;
+            min-width: 0;
+            gap: 8px;
         }
 
         .pill {
@@ -141,6 +143,7 @@
             font-size: 0.65rem;
             font-weight: 700;
             text-transform: uppercase;
+            flex-shrink: 0;
         }
 
         .pill-llm {
@@ -165,6 +168,8 @@
             font-family: var(--font-mono);
             font-size: 0.7rem;
             color: var(--content-muted);
+            white-space: nowrap;
+            flex-shrink: 0;
         }
 
         .log-title {
@@ -174,6 +179,7 @@
             color: var(--content-primary);
             word-break: break-all;
             overflow-wrap: break-word;
+            white-space: normal;
         }
 
         .log-subtitle {
@@ -181,10 +187,8 @@
             color: var(--content-muted);
             font-family: var(--font-mono);
             word-break: break-all;
-            display: -webkit-box;
-            -webkit-line-clamp: 2;
-            -webkit-box-orient: vertical;
-            overflow: hidden;
+            overflow-wrap: break-word;
+            white-space: normal;
         }
 
         /* Detail View Area */
@@ -328,6 +332,8 @@
             justify-content: space-between;
             align-items: center;
             margin-bottom: 8px;
+            min-width: 0;
+            gap: 8px;
         }
 
         .event-name {
@@ -336,6 +342,8 @@
             font-size: 0.85rem;
             word-break: break-all;
             overflow-wrap: break-word;
+            white-space: normal;
+            margin-right: 8px;
         }
 
         html.dark .event-name {
@@ -409,6 +417,10 @@
         /* Override sidebar specific for logs */
         .sidebar-header {
             padding: 1rem 1rem;
+        }
+
+        .sidebar-collapsed #refresh-btn {
+            display: none !important;
         }
     </style>
 </head>
@@ -625,9 +637,26 @@
             loadData();
         }
 
+        window.toggleMobileMenu = function() {
+            const sidebar = document.getElementById('sidebar');
+            const toggleIconPath = document.getElementById('toggle-icon-path');
+            const isCollapsed = sidebar.classList.contains('sidebar-collapsed');
+            sidebar.style.width = '';
+
+            if (isCollapsed) {
+                sidebar.classList.remove('sidebar-collapsed');
+                sidebar.classList.add('sidebar-expanded');
+                if (toggleIconPath) toggleIconPath.setAttribute('d', 'M15 6l-6 6 6 6');
+            } else {
+                sidebar.classList.remove('sidebar-expanded');
+                sidebar.classList.add('sidebar-collapsed');
+                if (toggleIconPath) toggleIconPath.setAttribute('d', 'M9 6l6 6-6 6');
+            }
+        };
+
         function resetDetail() {
             document.getElementById('detail-view').innerHTML = `
-                <button id="mobile-toggle" class="btn-secondary glass" title="Menu" style="position: fixed; z-index: 50;" onclick="document.getElementById('sidebar').classList.remove('sidebar-collapsed'); document.getElementById('sidebar').classList.add('sidebar-expanded');">
+                <button id="mobile-toggle" class="btn-secondary glass" title="Menu" style="position: fixed; z-index: 50;" onclick="toggleMobileMenu()">
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                         <path d="M3 12h18M3 6h18M3 18h18" stroke-linecap="round" stroke-linejoin="round" />
                     </svg>
@@ -718,7 +747,7 @@
 
             const detailView = document.getElementById('detail-view');
             detailView.innerHTML = `
-            <button id="mobile-toggle" class="btn-secondary glass" title="Menu" style="position: fixed; z-index: 50;" onclick="document.getElementById('sidebar').classList.remove('sidebar-collapsed'); document.getElementById('sidebar').classList.add('sidebar-expanded');">
+            <button id="mobile-toggle" class="btn-secondary glass" title="Menu" style="position: fixed; z-index: 50;" onclick="toggleMobileMenu()">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                     <path d="M3 12h18M3 6h18M3 18h18" stroke-linecap="round" stroke-linejoin="round" />
                 </svg>
@@ -732,7 +761,7 @@
                 renderDualPane(escapeHtml(log.model_tool), fullLog.timestamp, fullLog.duration_s, (log.type || 'blocking'), fullLog.request, fullLog.response);
             } catch (err) {
                 detailView.innerHTML = `
-                <button id="mobile-toggle" class="btn-secondary glass" title="Menu" style="position: fixed; z-index: 50;" onclick="document.getElementById('sidebar').classList.remove('sidebar-collapsed'); document.getElementById('sidebar').classList.add('sidebar-expanded');">
+                <button id="mobile-toggle" class="btn-secondary glass" title="Menu" style="position: fixed; z-index: 50;" onclick="toggleMobileMenu()">
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                         <path d="M3 12h18M3 6h18M3 18h18" stroke-linecap="round" stroke-linejoin="round" />
                     </svg>
@@ -757,7 +786,7 @@
             let isJson = typeof res !== 'string';
 
             detailView.innerHTML = `
-                <button id="mobile-toggle" class="btn-secondary glass" title="Menu" style="position: fixed; z-index: 50;" onclick="document.getElementById('sidebar').classList.remove('sidebar-collapsed'); document.getElementById('sidebar').classList.add('sidebar-expanded');">
+                <button id="mobile-toggle" class="btn-secondary glass" title="Menu" style="position: fixed; z-index: 50;" onclick="toggleMobileMenu()">
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                         <path d="M3 12h18M3 6h18M3 18h18" stroke-linecap="round" stroke-linejoin="round" />
                     </svg>
@@ -776,7 +805,7 @@
                     <section class="pane">
                         <div class="pane-header">
                             <span class="pane-title">Upstream</span>
-                            <button class="copy-btn" onclick="copyText('req-code')">Copy</button>
+                            <button class="copy-btn" onclick="copyText('req-code', this)">Copy</button>
                         </div>
                         <div class="pane-content">
                             <pre><code id="req-code" class="language-json">${escapeHtml(reqStr)}</code></pre>
@@ -785,7 +814,7 @@
                     <section class="pane">
                         <div class="pane-header">
                             <span class="pane-title">Downstream</span>
-                            <button class="copy-btn" onclick="copyText('res-code')">Copy</button>
+                            <button class="copy-btn" onclick="copyText('res-code', this)">Copy</button>
                         </div>
                         <div class="pane-content">
                             <pre><code id="res-code" class="${isJson ? 'language-json' : 'language-markdown'}">${escapeHtml(resStr)}</code></pre>
@@ -802,10 +831,9 @@
             document.querySelectorAll('pre code').forEach(hljs.highlightElement);
         }
 
-        window.copyText = function(id) {
+        window.copyText = function(id, btn) {
             const text = document.getElementById(id).innerText;
             navigator.clipboard.writeText(text);
-            const btn = document.activeElement; // fallback
             const old = btn.innerText;
             btn.innerText = 'Copied';
             setTimeout(() => btn.innerText = old, 1500);
