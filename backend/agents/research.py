@@ -907,7 +907,7 @@ async def _execute_section_reflection_and_write(
 
     if triage_result and isinstance(triage_result, dict):
         core_facts_array = triage_result.get("core_facts", [])
-        if core_facts_array and isinstance(core_facts_array, list):
+        if core_facts_array:
             # Format the output for the writer
             core_facts_lines = []
             for f in core_facts_array:
@@ -920,6 +920,7 @@ async def _execute_section_reflection_and_write(
 
             if not core_facts_lines:
                 raise ValueError("Triage extraction completed but no valid core facts could be parsed.")
+
             core_facts_str = "\n".join(core_facts_lines)
             
             # Show a brief preview of facts extracted
