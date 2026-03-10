@@ -85,7 +85,7 @@ def _stream_corrected_content(model, fixed_content, fixed_reasoning=""):
         yield f"data: {create_chunk(model, content=chunk_text)}\n\n"
 
 
-async def generate_chat_response(api_url, model, messages, extra_body, rag=None, memory_mode=False, chat_id=None, has_vision=False, api_key=None):
+async def generate_chat_response(api_url, model, messages, extra_body, rag=None, memory_mode=False, search_depth_mode='regular', chat_id=None, has_vision=False, api_key=None):
     """
     Handles standard chat interaction with validation and self-healing.
     
@@ -102,7 +102,15 @@ async def generate_chat_response(api_url, model, messages, extra_body, rag=None,
       [final answer]
     """
     # 1. Setup Tools & Prompts
-    tools = [TAVILY_SEARCH_TOOL, AUDIT_TAVILY_SEARCH_TOOL, GET_TIME_TOOL, VALIDATE_OUTPUT_FORMAT_TOOL]
+    # If deep search is enabled, the search_web tool automatically returns raw content.
+    # We remove the audit_tavily_search tool to prevent redundancy/hallucination logic.
+    if search_depth_mode == 'deep':
+        DEEP_TAVILY = dict(TAVILY_SEARCH_TOOL)
+        DEEP_TAVILY["function"] = dict(TAVILY_SEARCH_TOOL["function"])
+        DEEP_TAVILY["function"]["description"] = "Performs a web search using Tavily to find information on a topic. Results include an AI-summarized answer and the FULL RAW text content of the primary pages. Use this tool ONCE for maximum information depth."
+        tools = [DEEP_TAVILY, GET_TIME_TOOL, VALIDATE_OUTPUT_FORMAT_TOOL]
+    else:
+        tools = [TAVILY_SEARCH_TOOL, AUDIT_TAVILY_SEARCH_TOOL, GET_TIME_TOOL, VALIDATE_OUTPUT_FORMAT_TOOL]
     system_prompt = BASE_SYSTEM_PROMPT
     
     if memory_mode:
@@ -113,9 +121,9 @@ async def generate_chat_response(api_url, model, messages, extra_body, rag=None,
     v_status = "ENABLED" if has_vision else "DISABLED"
     v_note = f"\n\n# System Capabilities\n- Vision Support: {v_status}. "
     if not has_vision:
-        v_note += "You CANNOT process images. If you use search_web, you must set include_images=false."
+        v_note += "You CANNOT process images."
     else:
-        v_note += "You CAN process images. You may use search_web with include_images=true to fetch visual context."
+        v_note += "You CAN process images. The search tool will automatically return images where relevant."
     system_prompt += v_note
         
     # 2. Context Management
@@ -134,11 +142,12 @@ async def generate_chat_response(api_url, model, messages, extra_body, rag=None,
     payload = {
         "model": model,
         "messages": list(messages_to_send),
-        "tools": tools if tools else None,
-        "tool_choice": "auto" if tools else None,
         "stream": True,
         **extra_body
     }
+    if tools:
+        payload["tools"] = tools
+        payload["tool_choice"] = "auto"
     if api_key:
         payload["api_key"] = api_key
 
@@ -179,6 +188,9 @@ async def generate_chat_response(api_url, model, messages, extra_body, rag=None,
             "tool_calls": tool_calls
         })
         
+        if tool_calls:
+            yield f"data: {json.dumps({'__assistant_tool_calls__': True, 'content': assistant_content_for_history if assistant_content_for_history else None, 'tool_calls': tool_calls})}\n\n"
+        
         has_real_tools = False
         for tc in tool_calls:
             fn_name = tc['function']['name']
@@ -218,6 +230,7 @@ async def generate_chat_response(api_url, model, messages, extra_body, rag=None,
                 res_log = f"Result: {context_result}\n"
                 current_reasoning += res_log
                 yield f"data: {create_chunk(model, reasoning=res_log)}\n\n"
+                yield f"data: {json.dumps({'__tool_result__': True, 'tool_call_id': tc['id'], 'name': fn_name, 'result': f'<context>{context_result}</context>'})}\n\n"
                 has_real_tools = True
             elif fn_name == "search_web":
                 query = args.get("query", "...")
@@ -225,7 +238,7 @@ async def generate_chat_response(api_url, model, messages, extra_body, rag=None,
                 time_range = args.get("time_range")
                 start_date = args.get("start_date")
                 end_date = args.get("end_date")
-                include_images = args.get("include_images", False) and has_vision
+                include_images = has_vision
                 
                 log = f"Calling: search_web(\"{query}\")\n"
                 current_reasoning += log
@@ -235,6 +248,22 @@ async def generate_chat_response(api_url, model, messages, extra_body, rag=None,
                     query=query, topic=topic, time_range=time_range, 
                     start_date=start_date, end_date=end_date, include_images=include_images, chat_id=chat_id
                 )
+                
+                # If Deep Search mode is on, fetch raw content immediately and append to payload
+                if search_depth_mode == 'deep':
+                    t0 = time.time()
+                    log_audit = "Deep Search Mode: Automatically auditing search results...\n"
+                    current_reasoning += log_audit
+                    yield f"data: {create_chunk(model, reasoning=log_audit)}\n\n"
+                    
+                    raw_result = audit_tavily_search(chat_id)
+                    if isinstance(search_result, list):
+                        search_result[0]["text"] = f"Summary:\n{search_result[0]['text']}\n\n==== RAW PAGE CONTENT ====\n{raw_result}"
+                    else:
+                        search_result = f"Summary:\n{search_result}\n\n==== RAW PAGE CONTENT ====\n{raw_result}"
+                    duration = time.time() - t0
+                    log_tool_call("audit_search_implicit", args, raw_result[:50] + "...", duration_s=duration, chat_id=chat_id)
+
                 messages_to_send.append({
                     "role": "tool", "tool_call_id": tc['id'], "name": fn_name,
                     "content": search_result
@@ -245,6 +274,7 @@ async def generate_chat_response(api_url, model, messages, extra_body, rag=None,
                 res_log = "Result: Search completed.\n"
                 current_reasoning += res_log
                 yield f"data: {create_chunk(model, reasoning=res_log)}\n\n"
+                yield f"data: {json.dumps({'__tool_result__': True, 'tool_call_id': tc['id'], 'name': fn_name, 'result': search_result})}\n\n"
                 has_real_tools = True
             elif fn_name == "audit_search":
                 t0 = time.time()
@@ -263,6 +293,7 @@ async def generate_chat_response(api_url, model, messages, extra_body, rag=None,
                 res_log = "Result: Audit available.\n"
                 current_reasoning += res_log
                 yield f"data: {create_chunk(model, reasoning=res_log)}\n\n"
+                yield f"data: {json.dumps({'__tool_result__': True, 'tool_call_id': tc['id'], 'name': fn_name, 'result': raw_result})}\n\n"
                 has_real_tools = True
             elif fn_name == "get_time":
                 t0 = time.time()
@@ -281,6 +312,7 @@ async def generate_chat_response(api_url, model, messages, extra_body, rag=None,
                 res_log = f"Result: {current_time}\n"
                 current_reasoning += res_log
                 yield f"data: {create_chunk(model, reasoning=res_log)}\n\n"
+                yield f"data: {json.dumps({'__tool_result__': True, 'tool_call_id': tc['id'], 'name': fn_name, 'result': current_time})}\n\n"
                 has_real_tools = True
             else:
                 # Unrecognized or garbled tool call — return error so the
@@ -340,11 +372,31 @@ async def generate_chat_response(api_url, model, messages, extra_body, rag=None,
             for chunk in _stream_corrected_content(model, tool_flow_prefix, fixed_reasoning=reasoning_flow_prefix):
                 yield chunk
         
+        validation_tool_schema = [{
+            "type": "function",
+            "function": {
+                "name": "validate_output_format",
+                "description": "Validates the output format and allows the assistant to propose corrections.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }
+            }
+        }]
+        
+        # Merge existing tools with the validation tool if any exist
+        current_tools = payload.get("tools", [])
+        if not isinstance(current_tools, list):
+            current_tools = []
+        combined_tools = current_tools + validation_tool_schema
+
         # --- Phase 2: Ask AI for contextual splice fixes (non-streaming) ---
         fix_messages = build_fix_messages(messages_to_send, validatable_content, validation_errors)
         fix_payload = {
             "model": model,
             "messages": fix_messages,
+            "tools": combined_tools,
             **extra_body
         }
         log_event("validation_fix_attempt", {"chat_id": chat_id, "strategy": "contextual_splice"})
@@ -385,12 +437,13 @@ async def generate_chat_response(api_url, model, messages, extra_body, rag=None,
                 "model": model,
                 "messages": regen_messages,
                 "stream": True,
+                "tools": combined_tools,
                 **extra_body
             }
             
             validatable_content = ""
             
-            for sse_chunk, final_state in _stream_and_accumulate(api_url, model, regen_payload):
+            async for sse_chunk, final_state in _stream_and_accumulate(api_url, model, regen_payload):
                 if final_state is not None:
                     validatable_content, regen_reasoning, _ = final_state
                     full_content = tool_flow_prefix + validatable_content

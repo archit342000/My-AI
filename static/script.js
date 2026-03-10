@@ -110,9 +110,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const saveTempChatBtn = document.getElementById('save-temp-chat-btn');
     // Memory toggle is now inside settings modal
     const memoryToggleSwitch = document.getElementById('memory-toggle-switch');
-    const researchToggle = document.getElementById('deep-research-toggle');
+    const uiResearchToggle = document.getElementById('deep-research-toggle');
+    const uiDeepSearchToggle = document.getElementById('ui-deep-search-toggle');
+    const toolsButton = document.getElementById('tools-button');
+    const toolsDropdown = document.getElementById('tools-dropdown');
+    
     const chatTitleHeader = document.getElementById('chat-title-header');
     const chatTitleDisplay = document.getElementById('chat-title-display');
+    // Deprecated hero toggles (can remain null safe)
     const researchDepthSelector = document.querySelector('.research-depth-selector');
     const toggleRegularSearchBtn = document.getElementById('toggle-regular-search');
     const toggleDeepSearchBtn = document.getElementById('toggle-deep-search');
@@ -269,6 +274,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 messages: chatHistory,
                 memory_mode: isMemoryMode,
                 research_mode: isResearchMode,
+                search_depth_mode: searchDepthMode,
                 is_vision: currentChatData ? currentChatData.is_vision : false,
                 last_model: currentChatData ? currentChatData.last_model : selectedModelName,
                 max_tokens: samplingParams.max_tokens,
@@ -375,6 +381,7 @@ document.addEventListener('DOMContentLoaded', () => {
             currentResearchPlan = null;
             isMemoryMode = !!chat.memory_mode;
             isResearchMode = !!chat.research_mode;
+            searchDepthMode = chat.search_depth_mode || 'regular';
 
             // Restore max_tokens setting
             if (chat.max_tokens !== undefined && chat.max_tokens !== null) {
@@ -406,6 +413,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (chat.research_mode) {
                     headerHtml += ` <span style="font-size: 0.6rem; font-weight: 600; padding: 2px 6px; background: rgba(168, 85, 247, 0.1); color: #a855f7; border-radius: 999px; border: 1px solid rgba(168, 85, 247, 0.2); margin-left: 6px; vertical-align: middle;">Research</span>`;
                 }
+                if (chat.search_depth_mode === 'deep') {
+                    headerHtml += ` <span style="font-size: 0.6rem; font-weight: 600; padding: 2px 6px; background: rgba(59, 130, 246, 0.1); color: #3B82F6; border-radius: 999px; border: 1px solid rgba(59, 130, 246, 0.2); margin-left: 6px; vertical-align: middle;">Deep Search</span>`;
+                }
                 chatTitleDisplay.innerHTML = headerHtml;
             }
 
@@ -423,7 +433,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         appendMessage('User', msg.content, 'user');
                     }
                 } else if (msg.role === 'assistant') {
-                    const { thoughts, cleaned, plan, report } = parseContent(msg.content);
+                    if (!msg.content && msg.tool_calls) return; // Skip invisible tool-calling turns
+
+                    const { thoughts, cleaned, plan, report } = parseContent(msg.content || "");
 
                     // Persistence Fix: Check if this plan was already approved in the following turn
                     let isApproved = false;
@@ -1156,22 +1168,37 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function updateResearchUI() {
-        // Toggle localized wrapper state
-        if (researchToggle) {
-            researchToggle.classList.toggle('active', isResearchMode);
+        // Toggle Dropdown logic logic
+        if (uiResearchToggle) {
+            uiResearchToggle.classList.toggle('active', isResearchMode);
 
             if (chatHistory.length > 0) {
-                researchToggle.disabled = true;
-                researchToggle.style.pointerEvents = 'auto'; // allow hover
-                researchToggle.style.opacity = '0.4';
-                researchToggle.style.cursor = 'not-allowed';
-                researchToggle.title = "Research Agent mode cannot be toggled after a conversation has started.";
+                uiResearchToggle.parentElement.style.opacity = '0.5';
+                uiResearchToggle.parentElement.style.pointerEvents = 'none';
             } else {
-                researchToggle.disabled = false;
-                researchToggle.style.pointerEvents = 'auto';
-                researchToggle.style.opacity = '1';
-                researchToggle.style.cursor = 'pointer';
-                researchToggle.title = isResearchMode ? "Research Agent Mode On" : "Enable Research Agent Mode";
+                uiResearchToggle.parentElement.style.opacity = '1';
+                uiResearchToggle.parentElement.style.pointerEvents = 'auto';
+            }
+        }
+        
+        if (uiDeepSearchToggle) {
+            uiDeepSearchToggle.classList.toggle('active', searchDepthMode === 'deep');
+
+            if (chatHistory.length > 0) {
+                uiDeepSearchToggle.parentElement.style.opacity = '0.5';
+                uiDeepSearchToggle.parentElement.style.pointerEvents = 'none';
+            } else {
+                uiDeepSearchToggle.parentElement.style.opacity = '1';
+                uiDeepSearchToggle.parentElement.style.pointerEvents = 'auto';
+            }
+        }
+        
+        // Update the Tools Button appearance based on active states
+        if (toolsButton) {
+            if (isResearchMode || searchDepthMode === 'deep') {
+                toolsButton.classList.add('active');
+            } else {
+                toolsButton.classList.remove('active');
             }
         }
 
@@ -1188,16 +1215,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 memoryToggleSwitch.title = isResearchMode ? "Memory mode is disabled in Research." : "Memory mode is disabled for Temporary Chats.";
             } else {
                 // Restore previous memory state if we were in a restricted mode formerly
-                // This prevents overwriting isMemoryMode with a stale wasMemoryMode on every call
-                if (wasMemoryMode !== isMemoryMode) {
-                    isMemoryMode = wasMemoryMode;
-                    if (isMemoryMode) memoryToggleSwitch.classList.add('active');
-                    else memoryToggleSwitch.classList.remove('active');
+                if (memoryToggleSwitch.style.pointerEvents === 'none') {
+                    isMemoryMode = wasMemoryMode; // Restore saved state
                 }
 
+                memoryToggleSwitch.classList.toggle('active', isMemoryMode);
                 memoryToggleSwitch.style.pointerEvents = 'auto';
                 memoryToggleSwitch.style.opacity = '1';
-                memoryToggleSwitch.title = "Toggle memory mode";
+                memoryToggleSwitch.title = "Toggle Memory Mode";
             }
         }
 
@@ -1319,31 +1344,47 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function updateSearchDepthUI() {
-        if (!toggleRegularSearchBtn || !toggleDeepSearchBtn) return;
+        // Legacy function, replaced largely by updateResearchUI logic but retained for any external calls
+        updateResearchUI();
+    }
 
-        if (searchDepthMode === 'regular') {
-            toggleRegularSearchBtn.style.background = 'var(--color-primary-500)';
-            toggleRegularSearchBtn.style.color = 'white';
-            toggleRegularSearchBtn.style.boxShadow = '0 2px 4px rgba(37, 99, 235, 0.2)';
+    // Tools Dropdown Listeners
+    if (toolsButton && toolsDropdown) {
+        toolsButton.addEventListener('click', (e) => {
+            e.stopPropagation();
+            toolsDropdown.classList.toggle('hidden');
+        });
 
-            toggleDeepSearchBtn.style.background = 'transparent';
-            toggleDeepSearchBtn.style.color = 'var(--content-muted)';
-            toggleDeepSearchBtn.style.boxShadow = 'none';
-        } else {
-            toggleDeepSearchBtn.style.background = 'var(--color-primary-500)';
-            toggleDeepSearchBtn.style.color = 'white';
-            toggleDeepSearchBtn.style.boxShadow = '0 2px 4px rgba(37, 99, 235, 0.2)';
+        document.addEventListener('click', (e) => {
+            if (!toolsButton.contains(e.target) && !toolsDropdown.contains(e.target)) {
+                toolsDropdown.classList.add('hidden');
+            }
+        });
 
-            toggleRegularSearchBtn.style.background = 'transparent';
-            toggleRegularSearchBtn.style.color = 'var(--content-muted)';
-            toggleRegularSearchBtn.style.boxShadow = 'none';
+        if (uiResearchToggle) {
+            // Find the parent row to attach click event (better UX)
+            uiResearchToggle.parentElement.addEventListener('click', (e) => {
+                e.stopPropagation(); // Prevent dropdown from closing immediately
+                if (chatHistory.length > 0) return; // Locked
+                isResearchMode = !isResearchMode;
+                updateResearchUI();
+                checkSendButtonCompatibility();
+            });
+        }
+        
+        if (uiDeepSearchToggle) {
+            uiDeepSearchToggle.parentElement.addEventListener('click', (e) => {
+                e.stopPropagation(); // Prevent dropdown from closing immediately
+                if (chatHistory.length > 0) return; // Locked
+                searchDepthMode = searchDepthMode === 'deep' ? 'regular' : 'deep';
+                updateResearchUI();
+            });
         }
     }
 
     if (toggleRegularSearchBtn) {
         toggleRegularSearchBtn.addEventListener('click', () => {
             searchDepthMode = 'regular';
-            updateSearchDepthUI();
             updateResearchUI();
         });
     }
@@ -1351,21 +1392,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (toggleDeepSearchBtn) {
         toggleDeepSearchBtn.addEventListener('click', () => {
             searchDepthMode = 'deep';
-            updateSearchDepthUI();
             updateResearchUI();
-        });
-    }
-
-    if (researchToggle) {
-        // Initialize state
-        updateResearchUI();
-
-        researchToggle.addEventListener('click', () => {
-            isResearchMode = !isResearchMode;
-            updateResearchUI();
-
-            // Sync vision compatibility when toggling mode
-            checkSendButtonCompatibility();
         });
     }
 
@@ -1423,7 +1450,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 fetch('/api/chats/save', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ chat_id: currentChatId, title: titleText, messages: chatHistory, memory_mode: isMemoryMode, research_mode: isResearchMode, max_tokens: samplingParams.max_tokens })
+                    body: JSON.stringify({ chat_id: currentChatId, title: titleText, messages: chatHistory, memory_mode: isMemoryMode, research_mode: isResearchMode, search_depth_mode: searchDepthMode, max_tokens: samplingParams.max_tokens })
                 }).then(() => { loadChats(); renderChatList(); });
             }
             updateResearchUI();
@@ -2341,6 +2368,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         messages: [],
                         memory_mode: isMemoryMode,
                         research_mode: isResearchMode ? 1 : 0,
+                        search_depth_mode: searchDepthMode,
                         is_vision: currentImageBase64 ? 1 : 0
                     };
                     savedChats.push(chat);
@@ -2448,7 +2476,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 messages: messages,
                 memoryMode: isMemoryMode,
                 researchMode: isResearchMode,
-                searchDepthMode: isResearchMode ? searchDepthMode : null,
+                searchDepthMode: searchDepthMode,
                 visionModel: reqVisionModel,
                 approvedPlan: approvedPlanPayload || undefined,
                 resumeState: resumeState || undefined,
@@ -2487,6 +2515,8 @@ document.addEventListener('DOMContentLoaded', () => {
             let accumulatedContent = '';
             let accumulatedReasoning = '';  // Raw accumulator for DB persistence (includes JSON activity chunks)
             let displayReasoning = '';      // Clean accumulator for live thought bubble rendering
+            let historyContentStartIdx = 0;
+            let historyReasoningStartIdx = 0;
             let buffer = '';
             let usageCounted = false;
             let isReasoningPhase = true; // Track if we're still in reasoning-only mode
@@ -2522,6 +2552,29 @@ document.addEventListener('DOMContentLoaded', () => {
                         // Capture the actual model name from the server stream if present
                         if (json.model) {
                             actualModelName = json.model;
+                        }
+                        
+                        // Handle Intermediate Sync for Tool calls
+                        if (json.__assistant_tool_calls__) {
+                            chatHistory.push({
+                                role: 'assistant',
+                                content: json.content || null,
+                                tool_calls: json.tool_calls
+                            });
+                            historyContentStartIdx = accumulatedContent.length;
+                            historyReasoningStartIdx = accumulatedReasoning.length;
+                            continue;
+                        }
+                        
+                        // Handle tool completions
+                        if (json.__tool_result__) {
+                            chatHistory.push({
+                                role: 'tool',
+                                tool_call_id: json.tool_call_id,
+                                name: json.name,
+                                content: json.result
+                            });
+                            continue;
                         }
 
                         // Handle redaction (validation detected formatting issues, correcting...)
@@ -2710,9 +2763,13 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             // Combine for history persistence (matches DB format)
-            let finalCombinedContent = accumulatedContent;
-            if (accumulatedReasoning) {
-                finalCombinedContent = `<think>\n${accumulatedReasoning}\n</think>\n${accumulatedContent}`;
+            // Build the final message content using ONLY the text after the last tool call
+            let finalContent = accumulatedContent.substring(historyContentStartIdx);
+            let finalReasoning = accumulatedReasoning.substring(historyReasoningStartIdx);
+
+            let finalCombinedContent = finalContent;
+            if (finalReasoning) {
+                finalCombinedContent = `<think>\n${finalReasoning}\n</think>\n${finalContent}`;
             }
 
             const assistantMsgObj = { role: 'assistant', content: finalCombinedContent, model: actualModelName };

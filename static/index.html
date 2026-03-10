@@ -167,38 +167,6 @@
                             <span class="greeting-sub font-heading">How can I help you today?</span>
                         </div>
 
-                        <!-- Research Depth Mode Toggle -->
-                        <div class="research-depth-selector"
-                            style="display: flex; justify-content: center; margin-top: 2rem;">
-                            <div
-                                style="display: inline-flex; background: var(--surface-secondary); padding: 0.375rem; border-radius: 9999px; border: 1px solid var(--border-subtle); box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
-                                <button id="toggle-regular-search"
-                                    style="padding: 0.5rem 1.5rem; border-radius: 9999px; border: none; background: var(--color-primary-500); color: white; font-weight: 600; font-size: 0.875rem; cursor: pointer; transition: all 0.2s var(--ease-spring); box-shadow: 0 2px 4px rgba(37, 99, 235, 0.2);">
-                                    <span style="display: flex; align-items: center; gap: 0.5rem;">
-                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
-                                            stroke="currentColor" stroke-width="2.5">
-                                            <circle cx="11" cy="11" r="8"></circle>
-                                            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                                        </svg>
-                                        Regular
-                                    </span>
-                                </button>
-                                <button id="toggle-deep-search"
-                                    style="padding: 0.5rem 1.5rem; border-radius: 9999px; border: none; background: transparent; color: var(--content-muted); font-weight: 600; font-size: 0.875rem; cursor: pointer; transition: all 0.2s var(--ease-spring);">
-                                    <span style="display: flex; align-items: center; gap: 0.5rem;">
-                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
-                                            stroke="currentColor" stroke-width="2.5">
-                                            <circle cx="12" cy="12" r="10"></circle>
-                                            <line x1="2" y1="12" x2="22" y2="12"></line>
-                                            <path
-                                                d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z">
-                                            </path>
-                                        </svg>
-                                        Deep
-                                    </span>
-                                </button>
-                            </div>
-                        </div>
                     </div>
                 </div>
 
@@ -237,28 +205,52 @@
                         </button>
                     </div>
 
-                    <button id="attach-btn" class="btn-ghost" title="Attach image">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                            stroke-width="2">
+                    <button id="attach-btn" class="input-action-btn" title="Attach image">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path
                                 d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"
                                 stroke-linecap="round" stroke-linejoin="round"></path>
                         </svg>
                     </button>
 
-                    <!-- Localized Research Toggle -->
-                    <button id="deep-research-toggle" class="btn-ghost deep-research-toggle"
-                        title="Enable Research Agent Mode">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" class="globe-icon"
-                            stroke="currentColor" stroke-width="2.5">
-                            <circle cx="12" cy="12" r="10"></circle>
-                            <line x1="2" y1="12" x2="22" y2="12"></line>
-                            <path
-                                d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z">
-                            </path>
-                        </svg>
-                        <span class="deep-research-label">Research Agent</span>
-                    </button>
+                    <!-- Tools Dropdown Container -->
+                    <div id="tools-container" style="position: relative; display: flex; align-items: center;">
+                        <button id="tools-button" class="input-action-btn" title="Select Tools">
+                            <svg viewBox="0 0 24 24" fill="none" class="globe-icon" stroke="currentColor" stroke-width="2.5">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <line x1="12" y1="8" x2="12" y2="16"></line>
+                                <line x1="8" y1="12" x2="16" y2="12"></line>
+                            </svg>
+                            <span>Tools</span>
+                        </button>
+                        
+                        <!-- Dropdown Menu -->
+                        <div id="tools-dropdown" class="hardware-surface hidden" style="position: absolute; bottom: 100%; left: 0; margin-bottom: 8px; padding: 12px; min-width: 240px; z-index: 50; flex-direction: column; gap: 8px; box-shadow: var(--surface-shadow-intense);">
+                            
+                            <!-- Research Agent Toggle -->
+                            <div class="tool-option" style="display: flex; align-items: center; justify-content: space-between; gap: 12px; cursor: pointer; padding: 8px; border-radius: 8px;">
+                                <div style="display: flex; flex-direction: column; pointer-events: none;">
+                                    <span style="font-weight: 600; font-size: 0.9rem; color: var(--content-primary);">Research Agent</span>
+                                    <span style="font-size: 0.75rem; color: var(--content-muted); line-height: 1.2; margin-top: 2px;">Multi-step autonomous agent</span>
+                                </div>
+                                <div class="toggle-switch" id="deep-research-toggle">
+                                    <div class="toggle-handle"></div>
+                                </div>
+                            </div>
+
+                            <!-- Deep Search Toggle -->
+                            <div class="tool-option" style="display: flex; align-items: center; justify-content: space-between; gap: 12px; cursor: pointer; padding: 8px; border-radius: 8px; border-top: 1px solid var(--border-subtle);">
+                                <div style="display: flex; flex-direction: column; pointer-events: none;">
+                                    <span style="font-weight: 600; font-size: 0.9rem; color: var(--content-primary);">Deep Search</span>
+                                    <span style="font-size: 0.75rem; color: var(--content-muted); line-height: 1.2; margin-top: 2px;">Auto-extracts raw page text</span>
+                                </div>
+                                <div class="toggle-switch" id="ui-deep-search-toggle">
+                                    <div class="toggle-handle"></div>
+                                </div>
+                            </div>
+
+                        </div>
+                    </div>
 
                     <textarea id="chat-textarea" placeholder="Start a conversation..." rows="1"></textarea>
 

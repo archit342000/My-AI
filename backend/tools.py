@@ -59,10 +59,6 @@ TAVILY_SEARCH_TOOL = {
                 "end_date": {
                     "type": "string",
                     "description": "Retrieve results published or updated before this date (format: YYYY-MM-DD)."
-                },
-                "include_images": {
-                    "type": "boolean",
-                    "description": "Set to true to also fetch relevant images from the search results. ONLY set this to true if you are a Vision Model and are 100% confident you have vision capabilities to process images."
                 }
             },
             "required": ["query"]

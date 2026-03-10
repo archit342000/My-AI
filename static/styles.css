@@ -3395,25 +3395,53 @@ html.dark .thought-chevron {
     margin-inline-start: 2px;
 }
 
-/* Image Attachment UI */
-#attach-btn {
-    padding: 0;
-    width: 40px;
-    height: 40px;
+/* Input Action Buttons (Tools and Attach) */
+.input-action-btn {
+    height: 36px;
+    padding: 0 12px;
     display: flex;
     align-items: center;
     justify-content: center;
+    gap: 6px;
+    background: transparent;
     color: var(--content-muted);
-    border-radius: var(--radius-lg);
+    border: none;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 0.85rem;
+    border-radius: var(--radius-full);
+    transition: all 0.2s var(--ease-spring);
+    margin-bottom: 2px;
 }
 
-#attach-btn:hover {
+#attach-btn.input-action-btn {
+    padding: 0;
+    width: 36px;
+}
+
+.input-action-btn:hover {
     color: var(--color-primary-600);
     background: var(--color-primary-50);
 }
 
-.dark #attach-btn:hover {
+.input-action-btn.active {
+    color: var(--color-primary-600);
     background: rgba(37, 99, 235, 0.1);
+}
+
+.dark .input-action-btn:hover {
+    background: rgba(37, 99, 235, 0.1);
+    color: var(--color-primary-400);
+}
+
+.dark .input-action-btn.active {
+    background: rgba(37, 99, 235, 0.2);
+    color: var(--color-primary-400);
+}
+
+.input-action-btn svg {
+    width: 20px;
+    height: 20px;
 }
 
 #image-preview-container {

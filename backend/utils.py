@@ -28,8 +28,8 @@ def execute_tavily_search(query, topic="general", time_range=None, start_date=No
         "max_results": config.MAX_SEARCH_RESULTS,
         "include_answer": config.INCLUDE_ANSWER,
         "include_raw_content": config.INCLUDE_RAW_CONTENT,
-        "include_images": include_images,
-        "include_image_descriptions": include_images
+        "include_images": False,
+        "include_image_descriptions": False
     }
 
     if time_range and time_range in ["day", "week", "month", "year", "d", "w", "m", "y"]:
@@ -67,7 +67,12 @@ def execute_tavily_search(query, topic="general", time_range=None, start_date=No
                 title = res.get("title", "No Title")
                 href = res.get("url", "")
                 content = res.get("content", "")
-                raw = res.get("raw_content", "No raw content available.")
+                raw = res.get("raw_content")
+                if raw and ("<html" in raw.lower() or "<body" in raw.lower() or "<div" in raw.lower()):
+                    raw = clean_html_to_markdown(raw, href)
+                else:
+                    # Generic cleanup for already-scraped text
+                    raw = _apply_markdown_post_processing(raw or "No raw content available.", href)
                 
                 output_parts.append(f"Title: {title}\nLink: {href}\nContent Snippet: {content}")
                 raw_contents_for_cache.append(f"Title: {title}\nLink: {href}\nRaw Content:\n{raw}")
@@ -85,24 +90,6 @@ def execute_tavily_search(query, topic="general", time_range=None, start_date=No
                     "raw_content": raw_output,
                     "timestamp": time.time()
                 }
-            
-            if include_images and images:
-                formatted_output = [{"type": "text", "text": standard_output}]
-                for img in images:
-                    img_url = img.get("url", "") if isinstance(img, dict) else img
-                    img_desc = img.get("description", "") if isinstance(img, dict) else ""
-                    
-                    if img_url:
-                        if img_desc:
-                            formatted_output.append({"type": "text", "text": f"\nImage Description: {img_desc}"})
-                        else:
-                            formatted_output.append({"type": "text", "text": "\nImage:"})
-                            
-                        formatted_output.append({
-                            "type": "image_url",
-                            "image_url": {"url": img_url}
-                        })
-                return formatted_output, None
             
             return standard_output, None
     except Exception as e:
@@ -131,7 +118,7 @@ async def async_tavily_search(query, topic="general", time_range=None, start_dat
         "max_results": max_results,
         "include_answer": False,
         "include_raw_content": True,
-        "include_images": True
+        "include_images": False
     }
     if time_range and time_range in ["day", "week", "month", "year"]: payload["time_range"] = time_range
     if start_date: payload["start_date"] = start_date
@@ -314,6 +301,84 @@ async def async_chat_completion(url, payload):
             log_llm_call(payload, f"Error: {str(e)}", model, duration_s=time.time()-start_time, call_type="async_blocking_error")
             return ""
 
+def _apply_markdown_post_processing(md_text, base_url):
+    """Normalizes and prunes markdown content for LLM consumption."""
+    # Post-Processing: Make links absolute
+    def make_absolute(match):
+        anchor_text = match.group(1)
+        href = match.group(2)
+        abs_url = urljoin(base_url, href)
+        return f"[{anchor_text}]({abs_url})"
+        
+    md_text = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', make_absolute, md_text)
+    
+    # Filter empty links
+    md_text = re.sub(r'\[[^\]]*\]\(\s*\)', '', md_text)
+    
+    # Normalize spaces (e.g., non-breaking spaces)
+    md_text = md_text.replace('\xa0', ' ').replace('\u200b', '')
+    
+    # Remove trailing whitespace from individual lines
+    md_text = re.sub(r'[ \t]+$', '', md_text, flags=re.MULTILINE)
+    
+    # Trim excessive horizontal rules/decorations (limit to max 3 dashes/stars/equals)
+    md_text = re.sub(r'([*_=]){4,}', r'\1\1\1', md_text)
+    
+    # Normalize whitespace: collapse 3+ newlines to 2
+    md_text = re.sub(r'\n{3,}', '\n\n', md_text)
+    
+    return md_text.strip()
+
+def clean_html_to_markdown(html_content, base_url):
+    """Strips noise from HTML and converts to clean, prioritized markdown."""
+    try:
+        parser = LexborHTMLParser(html_content)
+        
+        # Define noise selectors for aggressive pruning
+        noise_selectors = [
+            # Standard boilerplate
+            "script", "style", "noscript", "svg", "nav", "footer", "header", "aside", "meta",
+            # Ad networks & trackers
+            "iframe", "ins.adsbygoogle", ".ad", ".advertisement", ".banner",
+            "[class*='sponsor']", "[id*='taboola']", "[id*='outbrain']"
+        ]
+        
+        # Aggressively strip known noise
+        for selector in noise_selectors:
+            for node in parser.css(selector):
+                node.decompose()
+        
+        # Main Content Isolation
+        content_node = None
+        for wrapper in ["article", "main", ".main-content", ".post-body"]:
+            matches = parser.css(wrapper)
+            if matches:
+                content_node = matches[0]
+                break
+        
+        if not content_node:
+            content_node = parser.body
+            
+        if not content_node:
+            content_node = parser.root
+
+        if not content_node:
+            return ""
+        
+        clean_html = content_node.html
+        
+        # Semantic Markdown Conversion
+        md_text = markdownify.markdownify(
+            clean_html,
+            heading_style="ATX",
+            strip=['audio', 'video'],
+            keep_inline_images_in=['a']
+        )
+        
+        return _apply_markdown_post_processing(md_text, base_url)
+    except Exception:
+        return ""
+
 async def _async_visit_page(url, max_chars):
     if not is_safe_web_url(url):
         return "Error: URL is forbidden (SSRF protection). Cannot visit local or private IP addresses."
@@ -372,76 +437,11 @@ async def _async_visit_page(url, max_chars):
                 except Exception as e:
                     return f"Error parsing PDF: {str(e)}"
                     
-            # Handle HTML via selectolax Lexbor parser
-            html_content = response.text
-            parser = LexborHTMLParser(html_content)
-            
-            # Define noise selectors for aggressive pruning
-            noise_selectors = [
-                # Standard boilerplate
-                "script", "style", "noscript", "svg", "nav", "footer", "header", "aside", "meta",
-                # Ad networks & trackers
-                "iframe", "ins.adsbygoogle", ".ad", ".advertisement", ".banner",
-                "[class*='sponsor']", "[id*='taboola']", "[id*='outbrain']"
-            ]
-            
-            # Aggressively strip known noise
-            for selector in noise_selectors:
-                for node in parser.css(selector):
-                    node.decompose()
-            
-            # Main Content Isolation
-            content_node = None
-            for wrapper in ["article", "main", ".main-content", ".post-body"]:
-                matches = parser.css(wrapper)
-                if matches:
-                    content_node = matches[0]
-                    break
-            
-            if not content_node:
-                content_node = parser.body
-                
-            if not content_node:
-                content_node = parser.root
-
-            if not content_node:
-                return "Error: Could not find any valid content block on the page."
-            
-            clean_html = content_node.html
-            
-            # Semantic Markdown Conversion
-            md_text = markdownify.markdownify(
-                clean_html,
-                heading_style="ATX",
-                strip=['audio', 'video'],
-                keep_inline_images_in=['a']
-            )
-            
-            # Post-Processing
-            def make_absolute(match):
-                anchor_text = match.group(1)
-                href = match.group(2)
-                abs_url = urljoin(url, href)
-                return f"[{anchor_text}]({abs_url})"
-                
-            md_text = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', make_absolute, md_text)
-            
-            # Filter empty links
-            md_text = re.sub(r'\[[^\]]*\]\(\s*\)', '', md_text)
-            
-            # Normalize spaces (e.g., non-breaking spaces)
-            md_text = md_text.replace('\xa0', ' ').replace('\u200b', '')
-            
-            # Remove trailing whitespace from individual lines
-            md_text = re.sub(r'[ \t]+$', '', md_text, flags=re.MULTILINE)
-            
-            # Trim excessive horizontal rules/decorations (limit to max 3 dashes/stars/equals)
-            md_text = re.sub(r'([*_=]){4,}', r'\1\1\1', md_text)
-            
-            # Normalize whitespace: collapse 3+ newlines to 2
-            md_text = re.sub(r'\n{3,}', '\n\n', md_text)
-            
-            text = md_text.strip()
+            # Handle HTML via global cleaner
+            text = clean_html_to_markdown(response.text, url)
+            if not text:
+                 return "Error: Could not find any valid content block on the page."
+                 
             return text[:max_chars]
             
     except Exception as e:

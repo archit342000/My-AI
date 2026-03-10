@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## v1.7.0
+* **Feature**: Added "Deep Search" mode which bypasses the audit tool and extracts the raw content directly into the prompt context for deeper analysis.
+* **UI Improvement**: Consolidated "Research Agent" and "Deep Search" toggles into a single "Tools" dropdown menu in the chat input area.
+* **UX/Safety**: "Research Agent" and "Deep Search" modes cannot be toggled after a conversation starts, enforcing persistence to prevent AI hallucinations.
+* **Version Bump**: Incremented version to v1.7.0.
+
 ## v1.6.6
 * **Bug Fix**: Fixed a bug in `backend/agents/research.py` where a failed triage extraction or empty facts would silently proceed, outputting an empty section. The process now correctly raises a `ValueError` which triggers a retry fallback mechanism, allowing the user to retry the extraction. A similar check was added to the fallback writer flow.
 * **Version Bump**: Incremented version to v1.6.6.

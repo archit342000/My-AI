@@ -21,7 +21,8 @@ def init_db():
             vision_model TEXT,
             max_tokens INTEGER DEFAULT 16384,
             is_custom_title INTEGER DEFAULT 0,
-            folder TEXT
+            folder TEXT,
+            search_depth_mode TEXT DEFAULT 'regular'
         )
     ''')
     
@@ -71,6 +72,11 @@ def init_db():
     except sqlite3.OperationalError:
         pass
 
+    try:
+        c.execute("ALTER TABLE chats ADD COLUMN search_depth_mode TEXT DEFAULT 'regular'")
+    except sqlite3.OperationalError:
+        pass
+
     c.execute('''
         CREATE TABLE IF NOT EXISTS messages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -79,11 +85,26 @@ def init_db():
             content TEXT,
             timestamp REAL,
             model TEXT,
+            tool_calls TEXT,
+            tool_call_id TEXT,
+            name TEXT,
             FOREIGN KEY(chat_id) REFERENCES chats(id)
         )
     ''')
     try:
         c.execute('ALTER TABLE messages ADD COLUMN model TEXT')
+    except sqlite3.OperationalError:
+        pass
+    try:
+        c.execute('ALTER TABLE messages ADD COLUMN tool_calls TEXT')
+    except sqlite3.OperationalError:
+        pass
+    try:
+        c.execute('ALTER TABLE messages ADD COLUMN tool_call_id TEXT')
+    except sqlite3.OperationalError:
+        pass
+    try:
+        c.execute('ALTER TABLE messages ADD COLUMN name TEXT')
     except sqlite3.OperationalError:
         pass
     conn.commit()
@@ -119,19 +140,31 @@ def get_chat(chat_id):
         m = dict(msg)
         try:
             # Try to parse content as JSON if it's structured (e.g. multimodal)
-            m['content'] = json.loads(m['content'])
+            if m.get('content') is not None:
+                m['content'] = json.loads(m['content'])
         except:
             pass
+            
+        if m.get('tool_calls'):
+            try:
+                m['tool_calls'] = json.loads(m['tool_calls'])
+            except:
+                pass
+                
+        # Clean up null values to match OpenAI standard
+        if m.get('content') is None and m.get('tool_calls') is not None:
+            m['content'] = None
+            
         chat_dict['messages'].append(m)
 
     return chat_dict
 
-def save_chat(chat_id, title, timestamp, memory_mode, research_mode=False, is_vision=False, last_model=None, vision_model=None, max_tokens=16384, folder=None):
+def save_chat(chat_id, title, timestamp, memory_mode, research_mode=False, is_vision=False, last_model=None, vision_model=None, max_tokens=16384, folder=None, search_depth_mode='regular'):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''
-        INSERT INTO chats (id, title, timestamp, memory_mode, research_mode, is_vision, last_model, vision_model, max_tokens, is_custom_title, folder)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
+        INSERT INTO chats (id, title, timestamp, memory_mode, research_mode, is_vision, last_model, vision_model, max_tokens, is_custom_title, folder, search_depth_mode)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
             title=CASE WHEN chats.is_custom_title = 1 THEN chats.title ELSE excluded.title END,
             timestamp=excluded.timestamp,
@@ -141,20 +174,27 @@ def save_chat(chat_id, title, timestamp, memory_mode, research_mode=False, is_vi
             last_model=excluded.last_model,
             vision_model=excluded.vision_model,
             max_tokens=excluded.max_tokens,
-            folder=COALESCE(excluded.folder, chats.folder)
-    ''', (chat_id, title, timestamp, 1 if memory_mode else 0, 1 if research_mode else 0, 1 if is_vision else 0, last_model, vision_model, max_tokens, folder))
+            folder=COALESCE(excluded.folder, chats.folder),
+            search_depth_mode=excluded.search_depth_mode
+    ''', (chat_id, title, timestamp, 1 if memory_mode else 0, 1 if research_mode else 0, 1 if is_vision else 0, last_model, vision_model, max_tokens, folder, search_depth_mode))
     conn.commit()
     conn.close()
 
-def add_message(chat_id, role, content, model=None):
+def add_message(chat_id, role, content, model=None, tool_calls=None, tool_call_id=None, name=None):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
 
     # Ensure content is string for DB
-    if isinstance(content, (list, dict)):
+    if content is not None and not isinstance(content, str):
         content = json.dumps(content)
+        
+    if tool_calls is not None and not isinstance(tool_calls, str):
+        tool_calls = json.dumps(tool_calls)
 
-    c.execute("INSERT INTO messages (chat_id, role, content, timestamp, model) VALUES (?, ?, ?, ?, ?)", (chat_id, role, content, time.time(), model))
+    c.execute(
+        "INSERT INTO messages (chat_id, role, content, timestamp, model, tool_calls, tool_call_id, name) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", 
+        (chat_id, role, content, time.time(), model, tool_calls, tool_call_id, name)
+    )
     conn.commit()
     conn.close()
 

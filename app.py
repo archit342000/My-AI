@@ -92,13 +92,22 @@ def save_chat_endpoint():
         last_model=data.get('last_model'),
         vision_model=data.get('vision_model'),
         max_tokens=max_tokens,
-        folder=data.get('folder')
+        folder=data.get('folder'),
+        search_depth_mode=data.get('search_depth_mode', 'regular')
     )
     
     if messages is not None:
         clear_messages(chat_id)
         for msg in messages:
-            add_message(chat_id, msg['role'], msg['content'], msg.get('model'))
+            add_message(
+                chat_id, 
+                msg['role'], 
+                msg.get('content'), 
+                model=msg.get('model'),
+                tool_calls=msg.get('tool_calls'),
+                tool_call_id=msg.get('tool_call_id'),
+                name=msg.get('name')
+            )
     
     return jsonify({"success": True})
 
@@ -264,7 +273,7 @@ def chat_completions():
         chat_id = data.get('chatId')
         memory_mode = data.get('memoryMode', False)
         research_mode = data.get('researchMode', False)
-        search_depth_mode = data.get('searchDepthMode', 'regular')
+        search_depth_mode = data.get('searchDepthMode') or 'regular'
         vision_model = data.get('visionModel')
         approved_plan = data.get('approvedPlan')
         resume_state = data.get('resumeState')
@@ -374,6 +383,7 @@ def chat_completions():
                 extra_body=extra_body,
                 rag=rag,
                 memory_mode=memory_mode,
+                search_depth_mode=search_depth_mode,
                 has_vision=has_vision,
                 api_url=api_url,
                 api_key=api_key
