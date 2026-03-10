@@ -3615,6 +3615,10 @@ html.dark .thought-chevron {
     color: var(--content-muted);
     gap: 0.5rem;
     text-decoration: none !important;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-user-drag: none;
 }
 
 a.chat-list-item,

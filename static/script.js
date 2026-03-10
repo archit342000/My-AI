@@ -887,14 +887,18 @@ document.addEventListener('DOMContentLoaded', () => {
         item.href = `/chat/${chat.id}`;
         item.className = `chat-list-item ${chat.id === currentChatId ? 'active' : ''}`;
 
-        item.draggable = true;
-        item.addEventListener('dragstart', (e) => {
-            e.dataTransfer.setData('text/plain', chat.id);
-            item.classList.add('dragging');
-        });
-        item.addEventListener('dragend', () => {
-            item.classList.remove('dragging');
-        });
+        const isTouchCapable = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || (navigator.msMaxTouchPoints > 0);
+
+        if (!isTouchCapable) {
+            item.draggable = true;
+            item.addEventListener('dragstart', (e) => {
+                e.dataTransfer.setData('text/plain', chat.id);
+                item.classList.add('dragging');
+            });
+            item.addEventListener('dragend', () => {
+                item.classList.remove('dragging');
+            });
+        }
 
         item.onclick = (e) => {
             if (e.ctrlKey || e.metaKey || e.shiftKey) return;
@@ -958,9 +962,13 @@ document.addEventListener('DOMContentLoaded', () => {
             deleteChat(chat.id, e);
         };
 
-        actionsContainer.appendChild(moveBtn);
-        actionsContainer.appendChild(renameBtn);
-        actionsContainer.appendChild(delBtn);
+        if (!isTouchCapable) {
+            actionsContainer.appendChild(moveBtn);
+            actionsContainer.appendChild(renameBtn);
+            actionsContainer.appendChild(delBtn);
+        } else {
+            actionsContainer.style.display = 'none';
+        }
 
         // Long Press Logic for Mobile
         let longPressTimer;
