@@ -790,22 +790,51 @@ document.addEventListener('DOMContentLoaded', () => {
             countSpan.style.cssText = "font-size: 0.65rem; color: var(--content-muted);";
             countSpan.textContent = grouped[folder.name].length;
 
-            const delBtn = document.createElement('button');
-            delBtn.className = 'folder-delete-btn';
-            delBtn.title = 'Delete Folder';
-            delBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>`;
-            delBtn.onclick = (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                deleteFolder(folder.name, e);
-            };
-
             folderHeader.innerHTML = chevronSvg;
             folderHeader.appendChild(nameSpan);
             folderHeader.appendChild(countSpan);
-            folderHeader.appendChild(delBtn);
 
-            folderHeader.onclick = () => {
+            let fLongPressTimer;
+            let fIsLongPress = false;
+            let fStartY = 0;
+            let fStartX = 0;
+
+            folderHeader.addEventListener('touchstart', (e) => {
+                fIsLongPress = false;
+                fStartY = e.touches[0].clientY;
+                fStartX = e.touches[0].clientX;
+                fLongPressTimer = setTimeout(() => {
+                    fIsLongPress = true;
+                    if (navigator.vibrate) navigator.vibrate(50);
+                    showContextMenu('folder', folder.name, null, e);
+                }, 500);
+            }, { passive: true });
+
+            folderHeader.addEventListener('touchmove', (e) => {
+                if (Math.abs(e.touches[0].clientY - fStartY) > 10 || Math.abs(e.touches[0].clientX - fStartX) > 10) {
+                    clearTimeout(fLongPressTimer);
+                }
+            }, { passive: true });
+
+            folderHeader.addEventListener('touchend', (e) => {
+                clearTimeout(fLongPressTimer);
+                if (fIsLongPress) {
+                    if (e.cancelable) e.preventDefault();
+                }
+            }, { passive: false });
+
+            folderHeader.addEventListener('touchcancel', () => clearTimeout(fLongPressTimer));
+
+            folderHeader.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                showContextMenu('folder', folder.name, null, e);
+            });
+
+            folderHeader.onclick = (e) => {
+                if (fIsLongPress) {
+                    e.preventDefault();
+                    return;
+                }
                 folder.expanded = !folder.expanded;
                 saveFolders();
                 renderChatList();
@@ -923,55 +952,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 ${chat.is_vision ? `<span style="font-size: 0.6rem; font-weight: 500; letter-spacing: 0.02em; padding: 1px 4px; background: rgba(6, 182, 212, 0.1); color: var(--brand-accent-1); border-radius: 4px; border: 1px solid rgba(6, 182, 212, 0.2); flex-shrink: 0;">Vision</span>` : ''}
                 ${chat.research_mode ? `<span style="font-size: 0.6rem; font-weight: 500; letter-spacing: 0.02em; padding: 1px 4px; background: rgba(168, 85, 247, 0.1); color: #a855f7; border-radius: 4px; border: 1px solid rgba(168, 85, 247, 0.2); flex-shrink: 0;">Research</span>` : ''}
             </div>
-            <div class="chat-item-actions" style="display: flex; gap: 2px;"></div>
         `;
 
-        const actionsContainer = item.querySelector('.chat-item-actions');
-
-        const moveBtn = document.createElement('button');
-        moveBtn.className = 'chat-folder-btn';
-        moveBtn.title = 'Move to folder';
-        moveBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>`;
-        moveBtn.onclick = async (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-
-            const folderName = await showPromptModal("Move to Folder", "Select a folder or create a new one:", chat.folder || "", chatFolders);
-
-            if (folderName !== null) {
-                const finalFolder = folderName.trim() === "" ? null : folderName.trim();
-                await moveChatToFolder(chat.id, finalFolder);
-            }
-        };
-
-        const renameBtn = document.createElement('button');
-        renameBtn.className = 'chat-rename-btn';
-        renameBtn.title = 'Rename';
-        renameBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-        renameBtn.onclick = (e) => {
-            e.preventDefault();
-            renameChat(chat.id, e);
-        };
-
-        const delBtn = document.createElement('button');
-        delBtn.className = 'chat-delete-btn';
-        delBtn.title = 'Delete';
-        delBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-        delBtn.onclick = (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            deleteChat(chat.id, e);
-        };
-
-        if (!isMobileMode) {
-            actionsContainer.appendChild(moveBtn);
-            actionsContainer.appendChild(renameBtn);
-            actionsContainer.appendChild(delBtn);
-        } else {
-            actionsContainer.style.display = 'none';
-        }
-
-        // Long Press Logic for Mobile
+        // Long Press Logic / Right Click Context Menu
         let longPressTimer;
         let isLongPress = false;
         let startY = 0;
@@ -985,14 +968,13 @@ document.addEventListener('DOMContentLoaded', () => {
             longPressTimer = setTimeout(() => {
                 isLongPress = true;
                 if (navigator.vibrate) navigator.vibrate(50);
-                showMobileContextMenu(chat.id, chat.folder, e);
+                showContextMenu('chat', chat.id, chat.folder, e);
             }, 500);
         }, { passive: true });
 
         item.addEventListener('touchmove', (e) => {
             const currentY = e.touches[0].clientY;
             const currentX = e.touches[0].clientX;
-            // Cancel long press if the user scrolls/moves significantly
             if (Math.abs(currentY - startY) > 10 || Math.abs(currentX - startX) > 10) {
                 clearTimeout(longPressTimer);
             }
@@ -1001,7 +983,6 @@ document.addEventListener('DOMContentLoaded', () => {
         item.addEventListener('touchend', (e) => {
             clearTimeout(longPressTimer);
             if (isLongPress) {
-                // Prevent navigation click since we opened a modal
                 if (e.cancelable) {
                     e.preventDefault();
                 }
@@ -1012,7 +993,11 @@ document.addEventListener('DOMContentLoaded', () => {
             clearTimeout(longPressTimer);
         });
 
-        // Ensure default click handles long press correctly
+        item.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            showContextMenu('chat', chat.id, chat.folder, e);
+        });
+
         item.addEventListener('click', (e) => {
             if (isLongPress) {
                 e.preventDefault();
@@ -1022,62 +1007,77 @@ document.addEventListener('DOMContentLoaded', () => {
         return item;
     }
 
-    async function showMobileContextMenu(chatId, currentFolder, e) {
-        // Build a centered action modal matching design directives
-        const modalId = 'mobile-context-modal';
+    async function showContextMenu(type, id, extraData, e) {
+        const modalId = 'universal-context-modal';
         let modal = document.getElementById(modalId);
         if (!modal) {
             modal = document.createElement('div');
             modal.id = modalId;
-            modal.className = 'modal-backdrop'; // Use modal-backdrop for correct styling and background overlay
+            modal.className = 'modal-backdrop';
             modal.style.display = 'flex';
             modal.style.alignItems = 'center';
             modal.style.justifyContent = 'center';
+            document.body.appendChild(modal);
+        }
+
+        if (type === 'chat') {
             modal.innerHTML = `
                 <div class="modal-content hardware-surface" style="max-width: 320px; text-align: center; padding: 24px;">
                     <h3 class="text-h2" style="margin-bottom: 24px; font-size: 1.25rem;">Chat Actions</h3>
                     <div style="display: flex; flex-direction: column; gap: 12px;">
-                        <button id="mobile-rename-btn" class="btn-secondary" style="width: 100%; justify-content: center; padding: 12px;">Rename Chat</button>
-                        <button id="mobile-move-btn" class="btn-secondary" style="width: 100%; justify-content: center; padding: 12px;">Move to Folder</button>
-                        <button id="mobile-delete-btn" class="btn-primary" style="width: 100%; justify-content: center; padding: 12px; background: var(--color-rose-500); border-color: var(--color-rose-500);">Delete Chat</button>
+                        <button id="ctx-rename-btn" class="btn-secondary" style="width: 100%; justify-content: center; padding: 12px;">Rename Chat</button>
+                        <button id="ctx-move-btn" class="btn-secondary" style="width: 100%; justify-content: center; padding: 12px;">Move to Folder</button>
+                        <button id="ctx-delete-btn" class="btn-primary" style="width: 100%; justify-content: center; padding: 12px; background: var(--color-rose-500); border-color: var(--color-rose-500);">Delete Chat</button>
                     </div>
-                    <button id="mobile-cancel-btn" class="btn-ghost" style="margin-top: 16px; width: 100%; justify-content: center;">Cancel</button>
+                    <button id="ctx-cancel-btn" class="btn-ghost" style="margin-top: 16px; width: 100%; justify-content: center;">Cancel</button>
                 </div>
             `;
-            document.body.appendChild(modal);
+        } else if (type === 'folder') {
+            modal.innerHTML = `
+                <div class="modal-content hardware-surface" style="max-width: 320px; text-align: center; padding: 24px;">
+                    <h3 class="text-h2" style="margin-bottom: 24px; font-size: 1.25rem;">Folder Actions</h3>
+                    <div style="display: flex; flex-direction: column; gap: 12px;">
+                        <button id="ctx-delete-btn" class="btn-primary" style="width: 100%; justify-content: center; padding: 12px; background: var(--color-rose-500); border-color: var(--color-rose-500);">Delete Folder</button>
+                    </div>
+                    <button id="ctx-cancel-btn" class="btn-ghost" style="margin-top: 16px; width: 100%; justify-content: center;">Cancel</button>
+                </div>
+            `;
         }
 
-        const renameBtn = document.getElementById('mobile-rename-btn');
-        const moveBtn = document.getElementById('mobile-move-btn');
-        const deleteBtn = document.getElementById('mobile-delete-btn');
-        const cancelBtn = document.getElementById('mobile-cancel-btn');
-
-        // Remove old event listeners by cloning if necessary, but here we can just overwrite onclick
         const closeModal = () => {
             modal.classList.remove('open');
-            setTimeout(() => { modal.style.display = 'none'; }, 300); // hide after transition
+            setTimeout(() => { modal.style.display = 'none'; }, 300);
         };
 
-        renameBtn.onclick = () => { closeModal(); renameChat(chatId, e); };
-
-        moveBtn.onclick = async () => {
-            closeModal();
-            const folderName = await showPromptModal("Move to Folder", "Select a folder or create a new one:", currentFolder || "", chatFolders);
-            if (folderName !== null) {
-                const finalFolder = folderName.trim() === "" ? null : folderName.trim();
-                await moveChatToFolder(chatId, finalFolder);
-            }
-        };
-
-        deleteBtn.onclick = () => { closeModal(); deleteChat(chatId, e); };
+        const deleteBtn = document.getElementById('ctx-delete-btn');
+        const cancelBtn = document.getElementById('ctx-cancel-btn');
         cancelBtn.onclick = closeModal;
 
-        // Close on outside click
+        if (type === 'chat') {
+            const renameBtn = document.getElementById('ctx-rename-btn');
+            const moveBtn = document.getElementById('ctx-move-btn');
+
+            renameBtn.onclick = () => { closeModal(); renameChat(id, e); };
+            moveBtn.onclick = async () => {
+                closeModal();
+                const folderName = await showPromptModal("Move to Folder", "Select a folder or create a new one:", extraData || "", chatFolders);
+                if (folderName !== null) {
+                    const finalFolder = folderName.trim() === "" ? null : folderName.trim();
+                    await moveChatToFolder(id, finalFolder);
+                }
+            };
+            deleteBtn.onclick = () => { closeModal(); deleteChat(id, e); };
+        } else if (type === 'folder') {
+            deleteBtn.onclick = () => {
+                closeModal();
+                deleteFolder(id, e);
+            };
+        }
+
         modal.onclick = (eEvent) => {
             if (eEvent.target === modal) closeModal();
         };
 
-        // Trigger animation
         modal.style.display = 'flex';
         requestAnimationFrame(() => {
             modal.classList.add('open');
