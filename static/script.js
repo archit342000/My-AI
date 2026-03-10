@@ -686,6 +686,35 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    async function renameFolder(oldFolderName, event) {
+        if (event) event.stopPropagation();
+        
+        const newFolderName = await showPromptModal("Rename Folder", "Enter new name for folder:", oldFolderName);
+        if (newFolderName !== null && newFolderName.trim() !== "" && newFolderName.trim() !== oldFolderName) {
+            const finalFolderName = newFolderName.trim();
+            try {
+                // Update locally
+                const folder = chatFolders.find(f => f.name === oldFolderName);
+                if (folder) folder.name = finalFolderName;
+                saveFolders();
+
+                // Find all chats in this folder and update them on backend
+                const chatsInFolder = savedChats.filter(c => c.folder === oldFolderName);
+                for (const chat of chatsInFolder) {
+                    chat.folder = finalFolderName;
+                    await fetch(`/api/chats/${chat.id}`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ folder: finalFolderName })
+                    });
+                }
+                renderChatList();
+            } catch (e) {
+                console.error("Error renaming folder:", e);
+            }
+        }
+    }
+
     async function renameChat(id, event) {
         if (event) event.stopPropagation();
         const chatItem = document.querySelector(`.chat-list-item[href="/chat/${id}"]`);
@@ -695,49 +724,28 @@ document.addEventListener('DOMContentLoaded', () => {
         const chat = savedChats.find(c => c.id === id);
         const oldTitle = chat ? (chat.title || 'Untitled Chat') : titleSpan.textContent;
 
-        // Create input field
-        const input = document.createElement('input');
-        input.type = 'text';
-        input.className = 'rename-input';
-        input.value = oldTitle;
-
-        // Replace span with input
-        titleSpan.style.display = 'none';
-        titleSpan.parentElement.insertBefore(input, titleSpan);
-        input.focus();
-        input.select();
-
-        const handleRename = async (save) => {
-            const newTitle = input.value.trim();
-            if (save && newTitle && newTitle !== oldTitle) {
-                try {
-                    const response = await fetch(`/api/chats/${id}`, {
-                        method: 'PATCH',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ title: newTitle })
-                    });
-                    if (response.ok) {
-                        const chat = savedChats.find(c => c.id === id);
-                        if (chat) chat.title = newTitle;
-                        titleSpan.textContent = newTitle;
-                        // Also update top header if this is the current chat
-                        if (currentChatId === id && chatTitleDisplay) {
-                            chatTitleDisplay.textContent = newTitle;
-                        }
+        const newTitle = await showPromptModal("Rename Chat", "Enter a new name:", oldTitle);
+        
+        if (newTitle !== null && newTitle.trim() !== "" && newTitle.trim() !== oldTitle) {
+            try {
+                const finalTitle = newTitle.trim();
+                const response = await fetch(`/api/chats/${id}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ title: finalTitle })
+                });
+                if (response.ok) {
+                    if (chat) chat.title = finalTitle;
+                    titleSpan.textContent = finalTitle;
+                    // Also update top header if this is the current chat
+                    if (currentChatId === id && chatTitleDisplay) {
+                        chatTitleDisplay.textContent = finalTitle;
                     }
-                } catch (e) {
-                    console.error("Error renaming chat:", e);
                 }
+            } catch (e) {
+                console.error("Error renaming chat:", e);
             }
-            input.remove();
-            titleSpan.style.display = '';
-        };
-
-        input.onblur = () => handleRename(true);
-        input.onkeydown = (e) => {
-            if (e.key === 'Enter') handleRename(true);
-            if (e.key === 'Escape') handleRename(false);
-        };
+        }
     }
 
     function renderChatList() {
@@ -1037,6 +1045,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="modal-content hardware-surface" style="max-width: 320px; text-align: center; padding: 24px;">
                     <h3 class="text-h2" style="margin-bottom: 24px; font-size: 1.25rem;">Folder Actions</h3>
                     <div style="display: flex; flex-direction: column; gap: 12px;">
+                        <button id="ctx-rename-folder-btn" class="btn-secondary" style="width: 100%; justify-content: center; padding: 12px;">Rename Folder</button>
                         <button id="ctx-delete-btn" class="btn-primary" style="width: 100%; justify-content: center; padding: 12px; background: var(--color-rose-500); border-color: var(--color-rose-500);">Delete Folder</button>
                     </div>
                     <button id="ctx-cancel-btn" class="btn-ghost" style="margin-top: 16px; width: 100%; justify-content: center;">Cancel</button>
@@ -1068,6 +1077,10 @@ document.addEventListener('DOMContentLoaded', () => {
             };
             deleteBtn.onclick = () => { closeModal(); deleteChat(id, e); };
         } else if (type === 'folder') {
+            const renameFolderBtn = document.getElementById('ctx-rename-folder-btn');
+            if (renameFolderBtn) {
+                renameFolderBtn.onclick = () => { closeModal(); renameFolder(id, e); };
+            }
             deleteBtn.onclick = () => {
                 closeModal();
                 deleteFolder(id, e);

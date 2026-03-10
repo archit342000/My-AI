@@ -1,5 +1,10 @@
 # CHANGELOG
 
+## v1.7.1
+* **Feature**: Added folder renaming capabilities with full cross-context database updating.
+* **UI Improvement**: Replaced inline chat renaming logic with the globally integrated modal input system (`showPromptModal`).
+* **Version Bump**: Incremented version to v1.7.1.
+
 ## v1.7.0
 * **Feature**: Added "Deep Search" mode which bypasses the audit tool and extracts the raw content directly into the prompt context for deeper analysis.
 * **UI Improvement**: Consolidated "Research Agent" and "Deep Search" toggles into a single "Tools" dropdown menu in the chat input area.
