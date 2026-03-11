@@ -3,23 +3,29 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Intelligence | Neural Traffic Monitor</title>
 
     <link rel="stylesheet" href="/styles.css">
 
     <!-- Syntax Highlighting -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" id="highlight-theme">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css"
+        id="highlight-theme">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/json.min.js"></script>
 
     <link rel="icon" media="(prefers-color-scheme: light)"
-        href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%234F46E5'/><stop offset='1' stop-color='%2306B6D4'/></linearGradient></defs><path d='M16 2L26 12L16 30L6 12Z' fill='url(%23g)'/><path d='M16 2L26 12H6Z' fill='white' opacity='0.25'/><circle cx='16' cy='12' r='2.5' fill='white' opacity='0.9'/></svg>">
+        href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%23A855F7'/><stop offset='1' stop-color='%237E22CE'/></linearGradient></defs><path d='M16 2L26 12L16 30L6 12Z' fill='url(%23g)'/><path d='M16 2L26 12H6Z' fill='white' opacity='0.25'/><circle cx='16' cy='12' r='2.5' fill='white' opacity='0.9'/></svg>">
     <link rel="icon" media="(prefers-color-scheme: dark)"
-        href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%236366F1'/><stop offset='1' stop-color='%2322D3EE'/></linearGradient></defs><path d='M16 2L26 12L16 30L6 12Z' fill='url(%23g)'/><path d='M16 2L26 12H6Z' fill='white' opacity='0.3'/><circle cx='16' cy='12' r='2.5' fill='white'/></svg>">
+        href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%23C084FC'/><stop offset='1' stop-color='%23A855F7'/></linearGradient></defs><path d='M16 2L26 12L16 30L6 12Z' fill='url(%23g)'/><path d='M16 2L26 12H6Z' fill='white' opacity='0.3'/><circle cx='16' cy='12' r='2.5' fill='white'/></svg>">
 
     <style>
-        /* Logs Specific Styles */
+        /* Logs Specific Styles — Unified Glassmorphism */
+        body {
+            background: transparent !important;
+            color: var(--content-primary);
+        }
 
         .search-area {
             padding: 0 16px 16px;
@@ -27,8 +33,10 @@
 
         .search-container {
             position: relative;
-            background: var(--bg-input);
-            border: 1px solid var(--border-subtle);
+            background: var(--glass-bg);
+            backdrop-filter: var(--glass-blur);
+            -webkit-backdrop-filter: var(--glass-blur);
+            border: 1px solid var(--glass-border);
             border-radius: var(--radius-xl);
             display: flex;
             align-items: center;
@@ -54,11 +62,13 @@
 
         .nav-tabs {
             display: flex;
-            background: var(--surface-secondary);
+            background: var(--glass-bg);
+            backdrop-filter: var(--glass-blur);
+            -webkit-backdrop-filter: var(--glass-blur);
             margin: 0 16px 16px;
             padding: 4px;
             border-radius: var(--radius-xl);
-            border: 1px solid var(--border-subtle);
+            border: 1px solid var(--glass-border);
         }
 
         .nav-tab {
@@ -75,14 +85,14 @@
         }
 
         .nav-tab.active {
-            background: white;
-            color: var(--color-primary-700);
-            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            background: var(--accent);
+            color: white;
+            box-shadow: var(--surface-shadow-intense);
         }
 
         html.dark .nav-tab.active {
-            background: var(--color-neutral-800);
-            color: var(--color-primary-400);
+            background: var(--accent);
+            color: white;
         }
 
         .list-container {
@@ -95,8 +105,10 @@
 
         /* Cards */
         .log-card {
-            background: var(--surface-secondary);
-            border: 1px solid var(--border-subtle);
+            background: var(--glass-bg);
+            backdrop-filter: var(--glass-blur);
+            -webkit-backdrop-filter: var(--glass-blur);
+            border: 1px solid var(--glass-border);
             border-radius: var(--radius-xl);
             padding: 16px;
             margin-bottom: 12px;
@@ -148,7 +160,8 @@
 
         .pill-llm {
             background: rgba(34, 197, 94, 0.15);
-            color: #10b981; /* teal-500 */
+            color: #10b981;
+            /* teal-500 */
             border: 1px solid rgba(34, 197, 94, 0.2);
         }
 
@@ -209,8 +222,8 @@
             justify-content: space-between;
             align-items: center;
             background: var(--bg-header);
-            backdrop-filter: saturate(180%) blur(20px);
-            -webkit-backdrop-filter: saturate(180%) blur(20px);
+            backdrop-filter: var(--glass-blur);
+            -webkit-backdrop-filter: var(--glass-blur);
             z-index: 10;
         }
 
@@ -231,14 +244,14 @@
         }
 
         .pane {
-            background: var(--bg-light-mid);
+            background: transparent;
             display: flex;
             flex-direction: column;
             overflow: hidden;
         }
 
         html.dark .pane {
-            background: var(--bg-dark);
+            background: transparent;
         }
 
         .pane-header {
@@ -266,9 +279,15 @@
             flex: 1;
             padding: 24px;
             overflow: auto;
-            background: #0d1117; /* GitHub Dark bg for highlight.js */
+            background: var(--surface-secondary) !important;
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
             scrollbar-width: thin;
             scrollbar-color: var(--color-neutral-600) transparent;
+        }
+
+        html.dark .pane-content {
+            background: rgba(255, 255, 255, 0.05) !important;
         }
 
         .pane-content::-webkit-scrollbar {
@@ -302,8 +321,10 @@
 
         /* Event Log Layout */
         .event-card {
-            background: var(--surface-secondary);
-            border: 1px solid var(--border-subtle);
+            background: var(--glass-bg);
+            backdrop-filter: var(--glass-blur);
+            -webkit-backdrop-filter: var(--glass-blur);
+            border: 1px solid var(--glass-border);
             border-radius: var(--radius-xl);
             padding: 16px;
             margin-bottom: 10px;
@@ -411,7 +432,8 @@
         main {
             flex: 1;
             width: 0;
-            padding: 0 !important; /* Override standard padding */
+            padding: 0 !important;
+            /* Override standard padding */
             display: flex;
             flex-direction: column;
             height: 100vh;
@@ -440,6 +462,8 @@
 </head>
 
 <body class="min-h-screen">
+    <!-- Ambient Atmospheric Background -->
+    <div id="ambient-bg"></div>
     <div id="app-root">
         <!-- Navigation Rail (Resizable) -->
         <aside id="sidebar" class="sidebar-expanded">
@@ -451,8 +475,8 @@
                     <svg class="sidebar-logo-icon" width="22" height="22" viewBox="0 0 32 32" fill="none">
                         <defs>
                             <linearGradient id="brand-grad" x1="0" y1="0" x2="1" y2="1">
-                                <stop offset="0" stop-color="#4F46E5" />
-                                <stop offset="1" stop-color="#06B6D4" />
+                                <stop offset="0" stop-color="#A855F7" />
+                                <stop offset="1" stop-color="#7E22CE" />
                             </linearGradient>
                         </defs>
                         <path d="M16 2L26 12L16 30L6 12Z" fill="url(#brand-grad)" opacity="0.9" />
@@ -462,12 +486,14 @@
                     <span class="sidebar-brand-text font-heading sidebar-text">Intelligence</span>
                 </a>
                 <button class="sidebar-icon-btn" onclick="loadData(true)" title="Refresh" id="refresh-btn">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                        <path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2.5">
+                        <path
+                            d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"
                             stroke-linecap="round" stroke-linejoin="round" />
                     </svg>
                 </button>
-                <button id="sidebar-toggle" class="sidebar-icon-btn" title="Toggle sidebar" aria-label="Toggle sidebar" >
+                <button id="sidebar-toggle" class="sidebar-icon-btn" title="Toggle sidebar" aria-label="Toggle sidebar">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                         stroke-width="2.5">
                         <path d="M15 6l-6 6 6 6" id="toggle-icon-path" stroke-linecap="round" stroke-linejoin="round" />
@@ -508,8 +534,11 @@
                     <line x1="12" y1="16" x2="12" y2="12"></line>
                     <line x1="12" y1="8" x2="12.01" y2="8"></line>
                 </svg>
-                <h2 class="font-heading" style="font-weight: 600; font-size: 1.5rem; color: var(--content-primary); margin-bottom: 8px;">Select a stream to begin inspection</h2>
-                <p style="color: var(--content-muted); max-width: 320px; line-height: 1.6;">Capture neural traffic and system events in
+                <h2 class="font-heading"
+                    style="font-weight: 600; font-size: 1.5rem; color: var(--content-primary); margin-bottom: 8px;">
+                    Select a stream to begin inspection</h2>
+                <p style="color: var(--content-muted); max-width: 320px; line-height: 1.6;">Capture neural traffic and
+                    system events in
                     high-fidelity resolution.</p>
             </div>
         </main>
@@ -651,7 +680,7 @@
             loadData();
         }
 
-        window.toggleMobileMenu = function() {
+        window.toggleMobileMenu = function () {
             const sidebar = document.getElementById('sidebar');
             const toggleIconPath = document.getElementById('toggle-icon-path');
             const isCollapsed = sidebar.classList.contains('sidebar-collapsed');
@@ -807,12 +836,12 @@
                 </button>
                 <header class="detail-header" style="padding-left: 72px;">
                     <div>
-                        <h2 style="font-family: var(--font-mono); color: var(--color-primary-600); font-size: 1.1rem; margin:0;">${title}</h2>
+                        <h2 style="font-family: var(--font-mono); color: var(--accent); font-size: 1.1rem; margin:0;">${title}</h2>
                         <p style="margin: 5px 0 0; font-size: 0.75rem; color: var(--content-muted); font-family: var(--font-mono);">${time}</p>
                     </div>
                     <div style="display: flex; gap: 30px;">
-                        ${duration ? `<div style="text-align:right"><span style="display:block;font-size:0.6rem;color:var(--content-muted);text-transform:uppercase;font-weight:700;">Compute</span><span style="font-family:var(--font-mono);font-size:0.9rem;">${duration.toFixed(2)}s</span></div>` : ''}
-                        <div style="text-align:right"><span style="display:block;font-size:0.6rem;color:var(--content-muted);text-transform:uppercase;font-weight:700;">Mode</span><span style="font-family:var(--font-mono);font-size:0.9rem;">${mode.toUpperCase()}</span></div>
+                        ${duration ? `<div style="text-align:right"><span style="display:block;font-size:0.6rem;color:var(--content-muted);text-transform:uppercase;font-weight:700;">Compute</span><span style="font-family:var(--font-mono);font-size:0.9rem; color: var(--content-primary);">${duration.toFixed(2)}s</span></div>` : ''}
+                        <div style="text-align:right"><span style="display:block;font-size:0.6rem;color:var(--content-muted);text-transform:uppercase;font-weight:700;">Mode</span><span style="font-family:var(--font-mono);font-size:0.9rem; color: var(--content-primary);">${mode.toUpperCase()}</span></div>
                     </div>
                 </header>
                 <div class="panes-container">
@@ -822,7 +851,7 @@
                             <button class="copy-btn" onclick="copyText('req-code', this)">Copy</button>
                         </div>
                         <div class="pane-content">
-                            <pre><code id="req-code" class="language-json">${escapeHtml(reqStr)}</code></pre>
+                            <pre><code id="req-code" style="background:transparent;" class="language-json">${escapeHtml(reqStr)}</code></pre>
                         </div>
                     </section>
                     <section class="pane">
@@ -831,21 +860,16 @@
                             <button class="copy-btn" onclick="copyText('res-code', this)">Copy</button>
                         </div>
                         <div class="pane-content">
-                            <pre><code id="res-code" class="${isJson ? 'language-json' : 'language-markdown'}">${escapeHtml(resStr)}</code></pre>
+                            <pre><code id="res-code" style="background:transparent;" class="${isJson ? 'language-json' : 'language-markdown'}">${escapeHtml(resStr)}</code></pre>
                         </div>
                     </section>
                 </div>
             `;
 
-            if (document.documentElement.classList.contains('dark')) {
-                const h2 = detailView.querySelector('h2');
-                if (h2) h2.style.color = 'var(--color-primary-400)';
-            }
-
             document.querySelectorAll('pre code').forEach(hljs.highlightElement);
         }
 
-        window.copyText = function(id, btn) {
+        window.copyText = function (id, btn) {
             const text = document.getElementById(id).innerText;
             navigator.clipboard.writeText(text);
             const old = btn.innerText;

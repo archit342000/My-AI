@@ -23,7 +23,7 @@ The application follows a clean separation between a vanilla web frontend and a 
 
 When modifying the frontend, styling, or animations, this document (`AGENTS.md`) defers completely to **`docs/design_directives.md`**.
 
-*   **Single Source of Truth**: The `docs/design_directives.md` file is the absolute authority on all things related to the Luminous Material UI, CSS custom properties, responsive breakpoints, structural logic, and motion design.
+*   **Single Source of Truth**: The `docs/design_directives.md` file is the absolute authority on all things related to the Aurora + Obsidian UI, CSS custom properties, responsive breakpoints, structural logic, and motion design.
 *   **Mandatory Reading**: If your task involves modifying HTML, CSS, or any DOM manipulation in `script.js`, you **must** parse and adhere to `docs/design_directives.md` before writing code. Do not invent new styling conventions or introduce UI frameworks.
 
 ---

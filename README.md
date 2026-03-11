@@ -1,6 +1,6 @@
-# 🌌 My-AI v1.7.6
+# 🌌 My-AI v2.0.0
 
-A premium, full-stack AI chat interface designed for local inference with [LM Studio](https://lmstudio.ai/). This application provides a high-fidelity Luminous Material interface for interacting with local LLMs, featuring persistent state, long-term memory, and an advanced deep research agent.
+A premium, full-stack AI chat interface designed for local inference with [LM Studio](https://lmstudio.ai/). This application provides a high-fidelity atmospheric glass interface for interacting with local LLMs, featuring persistent state, long-term memory, and an advanced deep research agent.
 
 ## ✨ Features
 
@@ -8,9 +8,10 @@ A premium, full-stack AI chat interface designed for local inference with [LM St
 *   **Intelligent Memory (RAG)**: Long-term semantic memory powered by **ChromaDB**. The AI automatically remembers facts from previous conversations to maintain context.
 *   **Multimodal Vision**: Seamlessly attach and analyze images. Compatible with vision-enabled models (e.g., Llama 3.2 Vision, Qwen 2 VL).
 *   **Persistent SQLite Backend**: All conversations and metadata are stored in a local SQLite database for instant retrieval and management.
-*   **Luminous Design System**:
-    *   **Glassmorphism Branding**: Modern, airy, and high-performance UI.
-    *   **True Dark Mode**: Smooth theme transitions with system preference detection.
+*   **Aurora + Obsidian Design System**:
+    *   **Frosted Glass Surfaces**: Atmospheric glass panels with `backdrop-filter: blur(16px)` and violet-tinted borders.
+    *   **True Dark Mode**: Deep black (#09090B) with subtle violet ambient washes and smooth theme transitions.
+    *   **Monochrome + Violet**: Electric Violet (#A855F7) as the single accent on a pure zinc palette.
     *   **Responsive Motion**: Motion-first interactions and fluid layouts (Mobile, Tablet, Desktop).
 *   **Real-time Logic**: Streaming Markdown rendering with Highlight.js syntax highlighting and interactive "Thought Process" (Reasoning) blocks.
 
@@ -75,5 +76,5 @@ This application is fully containerized and runs with user-level permissions for
 
 ## 📄 License & Versioning
 
-This project follows [SemVer v2.0.0](https://semver.org/). Current version: `v1.7.6`.
+This project follows [SemVer v2.0.0](https://semver.org/). Current version: `v2.0.0`.
 See [CHANGELOG.md](./changelog.md) and [docs/versioning_directives.md](./docs/versioning_directives.md) for a detailed history of updates and versioning rules.

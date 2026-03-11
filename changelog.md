@@ -1,4 +1,18 @@
 # CHANGELOG
+ 
+## v2.0.0 (Aurora + Obsidian Design Overhaul)
+* **UI Fix (Tools Dropdown)**: Increased the opaqueness of the tools dropdown to match modal dialogs, ensuring better legibility and a more premium feel.
+* **UX/Behavior Fix (Tool Toggles)**: Implemented sticky tool blocking. Enabling one tool now correctly blocks other tools from being engaged until the active tool is disabled.
+* **UI Improvement**: Moved inline styles from the tools dropdown to CSS and added a smooth slide-up entry animation.
+* **Complete UI Redesign**: Replaced the Luminous Material design system with the new "Aurora + Obsidian" aesthetic — atmospheric frosted glass surfaces, monochrome palette with Electric Violet (#A855F7) as the single accent color, and extreme typography weight contrast (200↔800).
+* **Frosted Glass Surfaces**: All panels (sidebar, modals, input bar, chat header, toasts, tooltips, thought process containers) now use `backdrop-filter: blur(16px)` with translucent backgrounds, creating depth and atmosphere.
+* **Ambient Background**: Added a fixed atmospheric layer with subtle violet radial gradient orbs that slowly drift — very subtle in dark mode (opacity 0.03), warmer and more present in light mode (opacity 0.09).
+* **Color System Overhaul**: Migrated from Ocean Blue palette (`#3B82F6`) to Electric Violet (`#A855F7`) monochrome system. All buttons, toggles, active states, and accents now use violet.
+* **Typography Refinement**: Section labels (RECENT CHATS, THOUGHT PROCESS, etc.) now use weight 200 with 0.15em letter-spacing for a signature ultra-thin uppercase look. Headings use weight 800 for dramatic contrast.
+* **Hero Text**: Greeting text changed from gradient fill to solid white (dark) / near-black (light) for cleaner Obsidian aesthetic.
+* **Light Mode**: Warm off-white background (#F8F7F4) with visible violet ambient presence; all surfaces use milky white glass treatment.
+* **Favicon**: Updated from blue-teal gradient to violet gradient.
+* **Version Bump**: Incremented version to v2.0.0 (MAJOR — significant UI/UX overhaul per SemVer).
 
 ## v1.7.6
 * **UI Redesign (Logs)**: The Logs page has been fully redesigned to perfectly match the Luminous Material aesthetic of the main application.

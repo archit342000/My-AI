@@ -124,13 +124,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const memoryToggleSwitch = document.getElementById('memory-toggle-switch');
     const uiResearchToggle = document.getElementById('deep-research-toggle');
     const uiDeepSearchToggle = document.getElementById('ui-deep-search-toggle');
+    const uiResearchDepthSelector = document.getElementById('research-mode-selector');
     const toolsButton = document.getElementById('tools-button');
     const toolsDropdown = document.getElementById('tools-dropdown');
+    const activeToolIconContainer = document.getElementById('active-tool-icon');
     
     const chatTitleHeader = document.getElementById('chat-title-header');
     const chatTitleDisplay = document.getElementById('chat-title-display');
     // Deprecated hero toggles (can remain null safe)
-    const researchDepthSelector = document.querySelector('.research-depth-selector');
     const toggleRegularSearchBtn = document.getElementById('toggle-regular-search');
     const toggleDeepSearchBtn = document.getElementById('toggle-deep-search');
     const researchActions = document.getElementById('research-actions');
@@ -1312,37 +1313,79 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function updateResearchUI() {
-        // Toggle Dropdown logic logic
+        const isChatStarted = chatHistory.length > 0;
+
+        // 1. Research Agent Toggle
         if (uiResearchToggle) {
             uiResearchToggle.classList.toggle('active', isResearchMode);
+            
+            // Block Research if:
+            // - Chat started (locked for this conversation)
+            // - Deep Search is currently ON (user must disable it first)
+            const shouldBlockResearch = isChatStarted || (searchDepthMode === 'deep' && !isResearchMode);
 
-            if (chatHistory.length > 0) {
+            if (shouldBlockResearch) {
                 uiResearchToggle.parentElement.style.opacity = '0.5';
                 uiResearchToggle.parentElement.style.pointerEvents = 'none';
+                uiResearchToggle.parentElement.style.cursor = 'not-allowed';
             } else {
                 uiResearchToggle.parentElement.style.opacity = '1';
                 uiResearchToggle.parentElement.style.pointerEvents = 'auto';
+                uiResearchToggle.parentElement.style.cursor = 'pointer';
             }
         }
         
+        // 2. Deep Search Toggle
         if (uiDeepSearchToggle) {
-            uiDeepSearchToggle.classList.toggle('active', searchDepthMode === 'deep');
-            uiDeepSearchToggle.parentElement.style.opacity = '1';
-            uiDeepSearchToggle.parentElement.style.pointerEvents = 'auto';
+            const isDeepSearch = (searchDepthMode === 'deep');
+            uiDeepSearchToggle.classList.toggle('active', isDeepSearch);
+
+            // Block Deep Search if Research Agent is currently ON
+            const shouldBlockDeepSearch = isResearchMode;
+
+            if (shouldBlockDeepSearch) {
+                uiDeepSearchToggle.parentElement.style.opacity = '0.5';
+                uiDeepSearchToggle.parentElement.style.pointerEvents = 'none';
+                uiDeepSearchToggle.parentElement.style.cursor = 'not-allowed';
+            } else {
+                uiDeepSearchToggle.parentElement.style.opacity = '1';
+                uiDeepSearchToggle.parentElement.style.pointerEvents = 'auto';
+                uiDeepSearchToggle.parentElement.style.cursor = 'pointer';
+            }
+        }
+
+        if (uiResearchDepthSelector) {
+            uiResearchDepthSelector.classList.toggle('hidden', !isResearchMode);
+            uiResearchDepthSelector.setAttribute('data-mode', searchDepthMode);
+            
+            // Research depth can be changed mid-chat for active agents
+            uiResearchDepthSelector.style.opacity = '1';
+            uiResearchDepthSelector.style.pointerEvents = 'auto';
+            
+            const btns = uiResearchDepthSelector.querySelectorAll('.mode-btn');
+            btns.forEach(btn => {
+                btn.classList.toggle('active', btn.getAttribute('data-mode') === searchDepthMode);
+            });
         }
         
-        // Update the Tools Button appearance based on active states
-        if (toolsButton) {
-            const spanText = toolsButton.querySelector('span');
-            if (isResearchMode || searchDepthMode === 'deep') {
+        // Update the Tools Button icon based on active states
+        if (activeToolIconContainer) {
+            if (isResearchMode) {
+                activeToolIconContainer.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                             <path d="M6 3h12M12 3v11M9 21h6a4 4 0 0 0 4-4V10a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v7a4 4 0 0 0 4 4z"/>
+                                         </svg>`;
                 toolsButton.classList.add('active');
-                if (spanText) {
-                    if (isResearchMode) spanText.textContent = "Research Agent";
-                    else if (searchDepthMode === 'deep') spanText.textContent = "Deep Search";
-                }
+            } else if (searchDepthMode === 'deep') {
+                activeToolIconContainer.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                             <circle cx="11" cy="11" r="8"></circle>
+                                             <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                                         </svg>`;
+                toolsButton.classList.add('active');
             } else {
+                activeToolIconContainer.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                             <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.77 3.77z"/>
+                                         </svg>`;
                 toolsButton.classList.remove('active');
-                if (spanText) spanText.textContent = "Tools";
             }
         }
 
@@ -1426,9 +1469,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        if (researchDepthSelector) {
-            researchDepthSelector.style.display = isResearchMode ? 'flex' : 'none';
-        }
 
         // Chat Lockdown Logic
         // Lock input ONLY if making a deep research run AND the plan is confirmed/executing.
@@ -1510,7 +1550,15 @@ document.addEventListener('DOMContentLoaded', () => {
             uiResearchToggle.parentElement.addEventListener('click', (e) => {
                 e.stopPropagation(); // Prevent dropdown from closing immediately
                 if (chatHistory.length > 0) return; // Locked
+                
+                // Toggle Research Mode
                 isResearchMode = !isResearchMode;
+                
+                // Default search depth to regular if enabling research
+                if (isResearchMode) {
+                    searchDepthMode = 'regular';
+                }
+                
                 updateResearchUI();
                 checkSendButtonCompatibility();
             });
@@ -1518,10 +1566,35 @@ document.addEventListener('DOMContentLoaded', () => {
         
         if (uiDeepSearchToggle) {
             uiDeepSearchToggle.parentElement.addEventListener('click', (e) => {
-                e.stopPropagation(); // Prevent dropdown from closing immediately
-                searchDepthMode = searchDepthMode === 'deep' ? 'regular' : 'deep';
+                e.stopPropagation();
+                // Standalone Deep Search can be toggled mid-chat
+                
+                if (searchDepthMode === 'deep') {
+                    searchDepthMode = 'regular';
+                } else {
+                    searchDepthMode = 'deep';
+                }
                 updateResearchUI();
-                persistChat(); // Sync backend immediately so the toggle state is saved mid-chat
+                
+                // Only sync to backend if the chat already has content
+                if (chatHistory.length > 0) {
+                    persistChat();
+                }
+            });
+        }
+
+        if (uiResearchDepthSelector) {
+            const btns = uiResearchDepthSelector.querySelectorAll('.mode-btn');
+            btns.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    searchDepthMode = btn.getAttribute('data-mode');
+                    updateResearchUI();
+                    
+                    // Only sync to backend if the chat already has content
+                    if (chatHistory.length > 0) {
+                        persistChat();
+                    }
+                });
             });
         }
     }
