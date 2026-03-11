@@ -60,7 +60,7 @@ If you are an AI agent working on this codebase, you must strictly adhere to the
 
 ### 3.5 AI Cognitive Strategies & Debugging
 If you are an AI agent, you must employ these advanced cognitive strategies to prevent hallucination loops and maintain a pristine codebase state:
-*   **The "Sandbox First" Rule**: Do not modify core files like `app.py` or `backend/research.py` to test complex new logic (e.g., parsing LM Studio streams or web extraction). You **MUST** write a standalone sandbox script (e.g., `test_feature.py`), prove your logic works independently, and then integrate it into the core architecture.
+*   **The "Sandbox First" Rule**: Do not modify core files like `app.py` or `backend/research.py` to test complex new logic (e.g., parsing llama.cpp streams or web extraction). You **MUST** write a standalone sandbox script (e.g., `test_feature.py`), prove your logic works independently, and then integrate it into the core architecture.
 *   **Echo The Scope**: Before issuing the `submit` tool, you must explicitly reiterate the original user request in your reasoning blocks and verify that your changes solve exactly that request—no more, no less. Do not submit "bonus features" unless explicitly asked.
 *   **State Restoration Directives**: If your code or tests fail consecutively and you realize you have corrupted multiple files, **do not attempt to manually rewrite them from memory**. Immediately execute `git checkout -- .` or use the `reset_all` tool to return to a clean slate before formulating a completely new plan.
 *   **Log-Injection Debugging**: If you encounter a silent failure in a Flask backend route, do not guess the cause by staring at the code. You are **required** to inject aggressive, temporary `log_event()` statements into every step of the failing function, execute the request, read the `network_index.jsonl` output, and then remove the temporary logs before submission.
@@ -87,22 +87,22 @@ You are strictly forbidden from executing the change autonomously. You must firs
 You should proactively propose an update to this file if:
 *   A new core architectural dependency or framework is authorized.
 *   A new "anti-pattern" or recurring agent execution failure is identified.
-*   The API payload structures from local LLMs change in future LM Studio releases.
+*   The API payload structures from local LLMs change in future llama.cpp releases.
 
 ---
 
-## 4. LM Studio & Backend Integrations (`docs/lm_studio_integration.md`)
+## 4. llama.cpp & Backend Integrations (`docs/llama_cpp_integration.md`)
 
-When modifying backend logic related to LLM inference, chunk streaming, or the `/v1/chat/completions` API endpoints, you **must** refer to `docs/lm_studio_integration.md`.
+When modifying backend logic related to LLM inference, chunk streaming, or the `/v1/chat/completions` API endpoints, you **must** refer to `docs/llama_cpp_integration.md`.
 
-*   **API Deviations**: Local models running through LM Studio do not behave identically to OpenAI. The integration guide explicitly details handling for `reasoning_content` streams, missing tags, and critical JSON schema deviations.
-*   **Mandatory Reading**: If your task involves editing `app.py`, `backend/llm.py`, or any agent logic that parses model output, read `docs/lm_studio_integration.md` to prevent stream-parsing failures.
+*   **API Deviations**: Local models running through llama.cpp do not behave identically to OpenAI. The integration guide explicitly details handling for `reasoning_content` streams, missing tags, and critical JSON schema deviations.
+*   **Mandatory Reading**: If your task involves editing `app.py`, `backend/llm.py`, or any agent logic that parses model output, read `docs/llama_cpp_integration.md` to prevent stream-parsing failures.
 
 ## 5. Historical Agent Pitfalls (Lessons Learned)
 
 *AI Agents: If you make a significant mistake during development that is specific to this codebase's architecture and requires multiple turns to fix, you MUST append a concise warning to this list before completing your task.*
 
-*   **Missing Tags (LM Studio)**: Local models emitting `reasoning_content` via LM Studio do NOT include `<think>` tags. Do not assume they are present in the stream. You must wrap them manually before SQLite DB insertion.
-*   **Empty Content Bug (LM Studio)**: When a JSON schema is enforced via `response_format`, the `"content"` key may literally be `None` or `""`. Do not write while-loops waiting for it to populate; pull the JSON string directly from `"reasoning_content"`.
+*   **Missing Tags (llama.cpp)**: Local models emitting `reasoning_content` via llama.cpp do NOT include `<think>` tags. Do not assume they are present in the stream. You must wrap them manually before SQLite DB insertion.
+*   **Empty Content Bug (llama.cpp)**: When a JSON schema is enforced via `response_format`, the `"content"` key may literally be `None` or `""`. Do not write while-loops waiting for it to populate; pull the JSON string directly from `"reasoning_content"`.
 *   **File Truncation on Edits**: Do not use full-file write tools on large files like `app.py` or `static/script.js`. It frequently results in missing code blocks or severe truncation. Always use targeted diff or search-and-replace tools.
-*   **Vision Payloads in Tool Messages**: OpenAI-compatible local endpoints (like LM Studio) strictly require the `content` of a `tool` role message to be a string. Do NOT append arrays containing `image_url` dicts or other multipart data to a `tool` message. If a tool retrieves images, append its text response as a string in the `tool` message, and append the images in a follow-up `user` message.
+*   **Vision Payloads in Tool Messages**: OpenAI-compatible local endpoints (like llama.cpp) strictly require the `content` of a `tool` role message to be a string. Do NOT append arrays containing `image_url` dicts or other multipart data to a `tool` message. If a tool retrieves images, append its text response as a string in the `tool` message, and append the images in a follow-up `user` message.

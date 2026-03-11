@@ -1,6 +1,6 @@
 # 🌌 My-AI v2.0.0
 
-A premium, full-stack AI chat interface designed for local inference with [LM Studio](https://lmstudio.ai/). This application provides a high-fidelity atmospheric glass interface for interacting with local LLMs, featuring persistent state, long-term memory, and an advanced deep research agent.
+A premium, full-stack AI chat interface designed for local inference natively powered by [llama.cpp](https://github.com/ggerganov/llama.cpp). This application provides a high-fidelity atmospheric glass interface for interacting with local LLMs, featuring persistent state, long-term memory, and an advanced deep research agent.
 
 ## ✨ Features
 
@@ -18,7 +18,7 @@ A premium, full-stack AI chat interface designed for local inference with [LM St
 ## 🛠️ Prerequisites
 
 *   **Python 3.10+**
-*   **LM Studio**: Running with the local server active (default port `1234`).
+*   **llama.cpp**: Running with the local server active (default port `8080`).
 *   **Models**: 
     *   A tool-calling capable chat model (e.g., Llama 3.1+, Mistral, Qwen).
     *   An embedding model for RAG (e.g., `text-embedding-embeddinggemma-300m`).
@@ -39,9 +39,9 @@ This application is fully containerized and runs with user-level permissions for
     Create a `./secrets/` directory and map your configuration files. You will also need to add your SSH public key to authenticate with the containerized Bastion Host.
     ```bash
     mkdir -p secrets
-    echo "http://host.docker.internal:1234" > secrets/LM_STUDIO_URL
+    echo "http://host.docker.internal:8080" > secrets/LM_STUDIO_URL
     echo "your_tavily_api_key_here" > secrets/TAVILY_API_KEY
-    echo "your_lm_studio_api_key_here" > secrets/LM_STUDIO_API_KEY  # Optional
+    echo "your_api_key_here" > secrets/LM_STUDIO_API_KEY  # Optional
     echo "/app/backend/data" > secrets/DATA_DIR                     # Default container mapped volume
     echo "your_secret_password" > secrets/APP_PASSWORD              # Optional, enables HTTP Basic Auth
     cat ~/.ssh/id_rsa.pub > secrets/authorized_keys                 # Add your public key for the Bastion Host
@@ -56,7 +56,7 @@ This application is fully containerized and runs with user-level permissions for
 
 ## 🎮 Usage
 
-1.  **Start LM Studio**: Ensure your models are loaded and the local server is running on the host machine.
+1.  **Start llama.cpp Server**: Ensure your models are accessible and the `llama.cpp` server is actively running on your host machine.
 2.  **Build and Launch with Docker Compose**:
     ```bash
     docker compose up --build -d

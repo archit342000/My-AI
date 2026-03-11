@@ -138,22 +138,28 @@ def get_chat(chat_id):
     chat_dict['messages'] = []
     for msg in messages:
         m = dict(msg)
-        try:
-            # Try to parse content as JSON if it's structured (e.g. multimodal)
-            if m.get('content') is not None:
-                m['content'] = json.loads(m['content'])
-        except:
-            pass
+        # AGENTS.md compliance: ensure content is never None and parse JSON if structured
+        raw_content = m.get('content')
+        if raw_content is None:
+            m['content'] = ""
+        else:
+            try:
+                # Restore structured content (e.g., multimodal [text, image] lists)
+                m['content'] = json.loads(raw_content)
+            except (json.JSONDecodeError, TypeError):
+                m['content'] = raw_content
             
         if m.get('tool_calls'):
             try:
                 m['tool_calls'] = json.loads(m['tool_calls'])
             except:
                 pass
-                
-        # Clean up null values to match OpenAI standard
-        if m.get('content') is None and m.get('tool_calls') is not None:
-            m['content'] = None
+            
+        # Ensure tool metadata fields are strings, not None
+        if m.get('tool_call_id') is None:
+            m['tool_call_id'] = ""
+        if m.get('name') is None:
+            m['name'] = ""
             
         chat_dict['messages'].append(m)
 

@@ -33,6 +33,7 @@ async def stream_chat_completion(url, payload):
         headers["Authorization"] = f"Bearer {config.LM_STUDIO_API_KEY}"
 
     try:
+        timings = None
         async with httpx.AsyncClient(timeout=httpx.Timeout(config.TIMEOUT_LLM_ASYNC or 5.0, read=None), headers=headers) as client:
             async with client.stream("POST", endpoint, json=request_payload) as response:
                 response.raise_for_status()
@@ -45,6 +46,8 @@ async def stream_chat_completion(url, payload):
                     
                     try:
                         data_json = json.loads(line[6:])
+                        if 'timings' in data_json:
+                            timings = data_json['timings']
                         choices = data_json.get('choices', [])
                         if choices:
                             delta = choices[0].get('delta', {})
@@ -68,7 +71,7 @@ async def stream_chat_completion(url, payload):
                 final_log_text += f"<think>\n{full_reasoning}\n</think>\n"
             final_log_text += (full_response or "")
             
-        log_llm_call(payload, final_log_text, model, duration_s=duration, call_type="stream")
+        log_llm_call(payload, final_log_text, model, duration_s=duration, call_type="stream", timings=timings)
             
     except Exception as e:
         import traceback
@@ -112,6 +115,7 @@ def chat_completion(url, payload):
         response.raise_for_status()
         
         data = response.json()
+        timings = data.get("timings")
         
         msg = data.get("choices", [{}])[0].get("message", {})
         content = msg.get("content", "")
@@ -143,7 +147,7 @@ def chat_completion(url, payload):
         
         # Log the full transaction
         duration = time.time() - start_time
-        log_llm_call(payload, final_output, model, duration_s=duration, call_type="blocking")
+        log_llm_call(payload, final_output, model, duration_s=duration, call_type="blocking", timings=timings)
         
         return final_output
         

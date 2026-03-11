@@ -20,7 +20,7 @@ def _get_timestamp():
 
 def _save_log(directory, entry, prefix=""):
     timestamp = _get_timestamp()
-    transaction_id = str(uuid.uuid4())
+    transaction_id = uuid.uuid4().hex
     safe_ts = timestamp.strftime("%Y%m%d_%H%M%S")
     filename = f"{prefix}{safe_ts}_{transaction_id[:8]}.json"
     filepath = os.path.join(directory, filename)
@@ -29,7 +29,7 @@ def _save_log(directory, entry, prefix=""):
         json.dump(entry, f, indent=2, ensure_ascii=False)
     return filename
 
-def log_llm_call(payload, response_text, model, chat_id=None, duration_s=0, call_type="stream"):
+def log_llm_call(payload, response_text, model, chat_id=None, duration_s=0, call_type="stream", timings=None):
     """Logs an LLM transaction (request and final accumulated response)."""
     entry = {
         "timestamp": _get_timestamp().isoformat(),
@@ -40,6 +40,8 @@ def log_llm_call(payload, response_text, model, chat_id=None, duration_s=0, call
         "request": payload,
         "response": response_text
     }
+    if timings:
+        entry["timings"] = timings
     filename = _save_log(LLM_LOG_DIR, entry)
     
     # Update index

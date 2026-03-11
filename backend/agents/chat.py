@@ -184,12 +184,12 @@ async def generate_chat_response(api_url, model, messages, extra_body, rag=None,
         # Build LLM history with the closed content
         messages_to_send.append({
             "role": "assistant",
-            "content": assistant_content_for_history if assistant_content_for_history else None,
+            "content": assistant_content_for_history if assistant_content_for_history else "",
             "tool_calls": tool_calls
         })
         
         if tool_calls:
-            yield f"data: {json.dumps({'__assistant_tool_calls__': True, 'content': assistant_content_for_history if assistant_content_for_history else None, 'tool_calls': tool_calls})}\n\n"
+            yield f"data: {json.dumps({'__assistant_tool_calls__': True, 'content': assistant_content_for_history if assistant_content_for_history else '', 'tool_calls': tool_calls})}\n\n"
         
         has_real_tools = False
         for tc in tool_calls:

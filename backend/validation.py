@@ -363,7 +363,7 @@ Rules:
     messages = list(original_messages)
     messages.append({
         "role": "assistant",
-        "content": assistant_content,
+        "content": assistant_content or "",
         "tool_calls": [{
             "id": tool_call_id,
             "type": "function",
@@ -395,7 +395,7 @@ def build_regeneration_messages(original_messages, validation_errors):
     messages = list(original_messages)
     messages.append({
         "role": "assistant",
-        "content": None,
+        "content": "",
         "tool_calls": [{
             "id": tool_call_id,
             "type": "function",

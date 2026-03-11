@@ -400,7 +400,8 @@
                     </div>
 
 
-                    <div class="hardware-surface" style="padding: 1.5rem;">
+                    <!-- General Mode Settings -->
+                    <div id="general-model-settings" class="hardware-surface" style="padding: 1.5rem;">
                         <h3 class="text-h2" style="font-size: 1.1rem; margin-bottom: 0.5rem;">Model Selection</h3>
                         <p style="font-size: 0.85rem; color: var(--content-muted); margin-bottom: 1rem;">Select the
                             primary LLM for chat completions.</p>
@@ -409,17 +410,26 @@
                         </select>
                     </div>
 
-                    <div class="hardware-surface" style="padding: 1.5rem; margin-top: 1rem;">
-                        <h3 class="text-h2" style="font-size: 1.1rem; margin-bottom: 0.5rem;">Research Agent Vision
-                            Model
-                        </h3>
-                        <p style="font-size: 0.85rem; color: var(--content-muted); margin-bottom: 1rem;">Select a vision
-                            model to extract descriptions from images encountered during research.</p>
-                        <select id="vision-model-select-dropdown" class="input-luminous"
-                            style="width: 100%; cursor: pointer;">
-                            <option value="">None (Skip Images)</option>
-                            <option value="" disabled selected>Loading vision models...</option>
-                        </select>
+                    <!-- Research Mode Settings (Hardcoded config) -->
+                    <div id="research-model-settings" class="hardware-surface" style="padding: 1.5rem; display: none;">
+                        <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary-500)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M6 3h12M12 3v11M9 21h6a4 4 0 0 0 4-4V10a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v7a4 4 0 0 0 4 4z"/>
+                            </svg>
+                            <h3 class="text-h2" style="font-size: 1.1rem; margin: 0;">Research Configuration</h3>
+                        </div>
+                        <p style="font-size: 0.85rem; color: var(--content-muted); margin-bottom: 1rem;">Research mode models are pre-configured to ensure optimal autonomous agent execution.</p>
+                        
+                        <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+                            <div style="background: rgba(0,0,0,0.2); padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);">
+                                <span style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--content-muted); display: block; margin-bottom: 0.2rem;">Core Reasoning Agent</span>
+                                <span id="research-main-display" style="font-weight: 500; font-family: var(--font-mono); font-size: 0.85rem; color: var(--color-primary-100);">Loading...</span>
+                            </div>
+                            <div style="background: rgba(0,0,0,0.2); padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);">
+                                <span style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--content-muted); display: block; margin-bottom: 0.2rem;">Vision Extraction Agent</span>
+                                <span id="research-vision-display" style="font-weight: 500; font-family: var(--font-mono); font-size: 0.85rem; color: var(--color-primary-100);">Loading...</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
 

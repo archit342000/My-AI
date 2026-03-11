@@ -801,7 +801,7 @@
                 const res = await fetch(`/api/logs/detail?path=${encodeURIComponent(log.log_file)}`);
                 const fullLog = await res.json();
 
-                renderDualPane(escapeHtml(log.model_tool), fullLog.timestamp, fullLog.duration_s, (log.type || 'blocking'), fullLog.request, fullLog.response);
+                renderDualPane(escapeHtml(log.model_tool), fullLog.timestamp, fullLog.duration_s, (log.type || 'blocking'), fullLog.request, fullLog.response, fullLog.timings);
             } catch (err) {
                 detailView.innerHTML = `
                 <button id="mobile-toggle" class="btn-secondary glass" title="Menu" style="position: fixed; z-index: 50;" onclick="toggleMobileMenu()">
@@ -821,7 +821,7 @@
             renderDualPane(log.type, new Date(log.timestamp).toLocaleString(), 0, 'EVENT', {}, log.data);
         }
 
-        function renderDualPane(title, time, duration, mode, req, res) {
+        function renderDualPane(title, time, duration, mode, req, res, timings) {
             const detailView = document.getElementById('detail-view');
 
             const reqStr = JSON.stringify(req, null, 2);
@@ -841,6 +841,7 @@
                     </div>
                     <div style="display: flex; gap: 30px;">
                         ${duration ? `<div style="text-align:right"><span style="display:block;font-size:0.6rem;color:var(--content-muted);text-transform:uppercase;font-weight:700;">Compute</span><span style="font-family:var(--font-mono);font-size:0.9rem; color: var(--content-primary);">${duration.toFixed(2)}s</span></div>` : ''}
+                        ${timings && timings.predicted_per_second ? `<div style="text-align:right"><span style="display:block;font-size:0.6rem;color:var(--content-muted);text-transform:uppercase;font-weight:700;">Speed</span><span style="font-family:var(--font-mono);font-size:0.9rem; color: var(--content-primary);">${timings.predicted_per_second.toFixed(1)} t/s</span></div>` : ''}
                         <div style="text-align:right"><span style="display:block;font-size:0.6rem;color:var(--content-muted);text-transform:uppercase;font-weight:700;">Mode</span><span style="font-family:var(--font-mono);font-size:0.9rem; color: var(--content-primary);">${mode.toUpperCase()}</span></div>
                     </div>
                 </header>

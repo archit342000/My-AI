@@ -23,7 +23,6 @@ APP_PASSWORD = get_secret("APP_PASSWORD", None)
 # =============================================================================
 LM_STUDIO_URL = get_secret("LM_STUDIO_URL", "http://localhost:1234")
 LM_STUDIO_API_KEY = get_secret("LM_STUDIO_API_KEY", "")
-EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-embeddinggemma-300m")
 CHROMA_PATH = get_secret("CHROMA_PATH", os.path.join(DATA_DIR, "chroma_db"))
 
 # =============================================================================
@@ -184,3 +183,7 @@ RESEARCH_VISION_RETRIES = 3               # Retries for VLM inference calls
 # =============================================================================
 RESEARCH_CONTEXT_HISTORY_SCOUT = 5         # Messages passed to scout
 RESEARCH_CONTEXT_HISTORY_PLANNING = 10     # Messages passed to planner
+# =============================================================================
+# LOCALIZATION & TIME
+# =============================================================================
+USER_TIMEZONE = os.getenv("TZ", "Asia/Kolkata")

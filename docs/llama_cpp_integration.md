@@ -1,6 +1,6 @@
-# LM Studio / Local LLM Integration Guide
+# llama.cpp / Local LLM Integration Guide
 
-This document details the exact streaming behavior, payload structures, and known quirks of local LLMs running through LM Studio's OpenAI-compatible `/v1/chat/completions` endpoint.
+This document details the exact streaming behavior, payload structures, and known quirks of local LLMs running through llama.cpp's OpenAI-compatible `/v1/chat/completions` endpoint.
 
 Local reasoning models (like `nvidia/nemotron-3-nano`, `DeepSeek-R1`, etc.) often exhibit non-standard behaviors compared to OpenAI's official API. Understanding these differences is critical for writing robust backend parsing logic.
 
@@ -62,7 +62,7 @@ When `tools` are provided and `stream: true`, the model accumulates tool argumen
 
 **🚨 CRITICAL QUIRK IDENTIFIED 🚨**
 
-When a strict JSON schema is enforced using OpenAI's structured output parameter (`response_format`), local integrations via LM Studio exhibit a major deviation from standard behavior.
+When a strict JSON schema is enforced using OpenAI's structured output parameter (`response_format`), local integrations via llama.cpp exhibit a major deviation from standard behavior.
 
 **Instead of returning the structured JSON in the `"content"` key, it streams the entire generated JSON object inside the `"reasoning_content"` key.**
 
@@ -100,7 +100,7 @@ Even without streaming, the quirk persists. When `response_format` is provided, 
 
 ## 5. Summary for Backend Implementation
 
-Any backend client or utility function designed to handle LM Studio MUST account for these deviations:
+Any backend client or utility function designed to handle llama.cpp MUST account for these deviations:
 
 1. **Stateful Parsers**: Accumulate both `content` and `reasoning_content`.
 2. **Empty Content Bug Avoidance**: Never wait for or assume that the `"content"` key will eventually populate if `response_format` (JSON Schema) is requested. It frequently resolves to `""` or `None`.

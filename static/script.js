@@ -1413,6 +1413,17 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
+        // Toggle Chat Settings Containers
+        const generalSettingsContainer = document.getElementById('general-model-settings');
+        const researchSettingsContainer = document.getElementById('research-model-settings');
+        
+        if (generalSettingsContainer) {
+            generalSettingsContainer.style.display = isResearchMode ? 'none' : 'block';
+        }
+        if (researchSettingsContainer) {
+            researchSettingsContainer.style.display = isResearchMode ? 'block' : 'none';
+        }
+
         // Disable Model Selection if Research has started
         if (modelSelectDropdown) {
             if (isResearchMode && chatHistory.length > 0) {
@@ -1561,6 +1572,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 updateResearchUI();
                 checkSendButtonCompatibility();
+                fetchModels();
             });
         }
         
@@ -1717,82 +1729,68 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function fetchModels() {
-
         if (modelSelectDropdown) {
-            modelSelectDropdown.innerHTML = '<option value="" disabled selected>Fetching models...</option>';
+            modelSelectDropdown.innerHTML = '<option value="" disabled selected>Fetching config...</option>';
         }
         if (visionModelSelectDropdown) {
-            visionModelSelectDropdown.innerHTML = '<option value="" disabled selected>Fetching vision models...</option>';
+            visionModelSelectDropdown.innerHTML = '<option value="" disabled selected>Fetching config...</option>';
         }
 
-        const headers = {};
-
-
         try {
-            // Try native LM Studio v1 API first via backend proxy
-            let response = await fetch(`/api/v1/models`, {
-                method: 'GET',
-                headers: headers
-            }).catch(() => null);
-            let responseData = null;
-
-            if (response && response.ok) {
-                responseData = await response.json();
-                const rawModels = responseData.models || [];
-                // Filter out known embedding models and only keep LLMs
-                availableModels = rawModels.filter(m => {
-                    const id = (m.id || m.key || '').toLowerCase();
-                    const isEmbedding = id.includes('embedding');
-                    // LM Studio v1 API uses m.type: "llm" | "embedding"
-                    // If type is present, use it. If not, follow ID heuristic.
-                    if (m.type) return m.type === 'llm' && !isEmbedding;
-                    return !isEmbedding;
-                });
+            const response = await fetch('/api/models/config');
+            if (!response.ok) throw new Error('Failed to fetch model config');
+            const config = await response.json();
+            
+            if (isResearchMode) {
+                availableModels = [
+                    { key: config.research.main, display_name: "Research Main (Nemotron-3)", capabilities: { vision: false }, category: 'research' },
+                    { key: config.research.vision, display_name: "Research Vision (Qwen3.5-4B)", capabilities: { vision: true }, category: 'research' }
+                ];
+            } else {
+                availableModels = [
+                    { key: config.general.text, display_name: "General Text (Nemotron-3)", capabilities: { vision: false }, category: 'general' },
+                    { key: config.general.vision, display_name: "General Vision (Qwen3.5-35B)", capabilities: { vision: true }, category: 'general' },
+                    { key: config.general.coder, display_name: "General Coder (Qwen3-Coder)", capabilities: { vision: false }, category: 'general' }
+                ];
             }
 
-            // Fallback to OpenAI compatible endpoint if native fails or returns nothing
-            if (!availableModels || availableModels.length === 0) {
-                response = await fetch(`/v1/models`, {
-                    method: 'GET',
-                    headers: headers
-                });
-                if (!response.ok) throw new Error('Failed to fetch models from both endpoints');
+            // Sync global config state for potential future use
+            window.modelConfig = config;
 
-                responseData = await response.json();
-                const rawModels = responseData.data || [];
-                availableModels = rawModels.map(m => ({
-                    key: m.id,
-                    display_name: m.id.split('/').pop(),
-                    capabilities: {
-                        vision: m.id.toLowerCase().includes('vision') || m.id.toLowerCase().includes('multimodal')
-                    }
-                })).filter(m => !m.key.toLowerCase().includes('embedding'));
-            }
-
-            if (!availableModels || availableModels.length === 0) {
-                if (modelSelectDropdown) modelSelectDropdown.innerHTML = '<option value="" disabled selected>No models found</option>';
-                if (visionModelSelectDropdown) visionModelSelectDropdown.innerHTML = '<option value="">None (Skip Images)</option><option value="" disabled>No vision models found</option>';
-                return;
-            }
+            // Populate the static UI readouts for research mode
+            const researchMainDisplay = document.getElementById('research-main-display');
+            const researchVisionDisplay = document.getElementById('research-vision-display');
+            if (researchMainDisplay) researchMainDisplay.textContent = config.research.main.split('/').pop() || config.research.main;
+            if (researchVisionDisplay) researchVisionDisplay.textContent = config.research.vision.split('/').pop() || config.research.vision;
 
             renderModelOptions();
 
-            // Handle model selection/update
-            if (!selectedModel && availableModels.length > 0) {
-                const firstModel = availableModels[0];
-                const hasVision = firstModel.capabilities?.vision === true;
-                selectModel(firstModel.key, firstModel.display_name || firstModel.key.split('/').pop(), hasVision, false);
+            // Auto-select models based on modes
+            if (!selectedModel || !availableModels.some(m => m.key === selectedModel)) {
+                // If in research mode, select research.main. If regular, select general.text
+                const defaultModel = isResearchMode ? config.research.main : config.general.text;
+                const modelDef = availableModels.find(m => m.key === defaultModel);
+                if (modelDef) {
+                    selectModel(modelDef.key, modelDef.display_name, modelDef.capabilities.vision, false);
+                }
+                
+                if (isResearchMode) {
+                    // Pre-select vision model for research automatically
+                    selectVisionModel(config.research.vision, "Research Vision (Qwen3.5-4B)");
+                }
             } else if (selectedModel) {
                 const model = availableModels.find(m => m.key === selectedModel);
                 if (model) {
-                    const hasVision = model.capabilities?.vision === true;
-                    updateVisionUI(hasVision);
+                    updateVisionUI(model.capabilities.vision);
                 }
             }
         } catch (err) {
-            console.error('Model fetch error:', err);
+            console.error('Model config fetch error:', err);
             if (modelSelectDropdown) {
-                modelSelectDropdown.innerHTML = '<option value="" disabled selected>Error fetching models</option>';
+                modelSelectDropdown.innerHTML = '<option value="" disabled selected>Error fetching config</option>';
+            }
+            if (visionModelSelectDropdown) {
+                visionModelSelectDropdown.innerHTML = '<option value="" disabled selected>Error fetching config</option>';
             }
         }
     }
@@ -1892,6 +1890,50 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    async function updateModelStatusUI() {
+        try {
+            // Add cache-buster to ensure fresh state from the inference server
+            const res = await fetch(`/api/v1/models?t=${Date.now()}`, {
+                headers: { 'Cache-Control': 'no-cache' }
+            });
+            if (!res.ok) return;
+            const data = await res.json();
+            const loadedModelIds = Array.isArray(data.data) ? data.data.map(m => m.id) : [];
+
+            // Update Model Select Dropdown
+            if (modelSelectDropdown) {
+                Array.from(modelSelectDropdown.options).forEach(opt => {
+                    if (opt.value && !opt.disabled) {
+                        const isActive = loadedModelIds.includes(opt.value);
+                        // Clean existing status first
+                        let baseText = opt.textContent.replace(/\s\((Active|Inactive)\)$/, '');
+                        opt.textContent = `${baseText} (${isActive ? 'Active' : 'Inactive'})`;
+                    }
+                });
+            }
+
+            // Update Research Display Readouts if Research Mode is on
+            if (isResearchMode) {
+                const researchMainDisplay = document.getElementById('research-main-display');
+                const researchVisionDisplay = document.getElementById('research-vision-display');
+                
+                if (researchMainDisplay && window.modelConfig && window.modelConfig.research) {
+                    const isActive = loadedModelIds.includes(window.modelConfig.research.main);
+                    let baseText = researchMainDisplay.textContent.replace(/\s\((Active|Inactive)\)$/, '');
+                    researchMainDisplay.textContent = `${baseText} (${isActive ? 'Active' : 'Inactive'})`;
+                }
+                
+                if (researchVisionDisplay && window.modelConfig && window.modelConfig.research) {
+                    const isActive = loadedModelIds.includes(window.modelConfig.research.vision);
+                    let baseText = researchVisionDisplay.textContent.replace(/\s\((Active|Inactive)\)$/, '');
+                    researchVisionDisplay.textContent = `${baseText} (${isActive ? 'Active' : 'Inactive'})`;
+                }
+            }
+        } catch (e) {
+            console.error("Failed to update model statuses:", e);
+        }
+    }
+
     function checkSendButtonCompatibility() {
         if (!sendBtn || !sendBtnWrapper) return;
 
@@ -1946,53 +1988,29 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    async function unloadAllModels(excludeId = null, cachedModels = null) {
-        const headers = {};
-
+    async function unloadAllModels(excludeId = null) {
         try {
-            let allModels = cachedModels;
-            if (!allModels) {
-                // First, get all models to check their state
-                const response = await fetch(`/api/v1/models`, { method: 'GET', headers: headers });
-
-                if (response.ok) {
-                    const data = await response.json();
-                    allModels = data.models || []; // Using 'models' array as per documentation
-                }
-            }
-
-            if (!allModels) return;
-
-            // Filter for models that are LLMs (not embedding) AND have active instances
-            // Note: The structure is models -> loaded_instances -> [ { id: ... } ]
-            const activeLLMs = allModels.filter(m => {
-                // Check if it has any loaded instances
-                const hasLoadedInstances = m.loaded_instances && m.loaded_instances.length > 0;
-
-                // Documentation says type: "llm" | "embedding". Default to LLM if unknown.
-                // Also robust check by excluding "embedding" in key/id
-                const isEmbeddingType = m.type === 'embedding';
-                const isEmbeddingKey = (m.key || m.id || '').toLowerCase().includes('embedding');
-
-                return hasLoadedInstances && !isEmbeddingType && !isEmbeddingKey;
+            // Fetch current active models based on llama.cpp schema
+            const response = await fetch(`/api/v1/models`);
+            if (!response.ok) return;
+            const data = await response.json();
+            
+            const modelsArray = data.data || [];
+            // Unload anything except the one we want to keep, and never unload the embedding model
+            const activeModels = modelsArray.filter(m => {
+                const isLoaded = m.status && m.status.value === 'loaded';
+                const isTarget = m.id === excludeId;
+                const isEmbedding = m.id.toLowerCase().includes('embedding');
+                return isLoaded && !isTarget && !isEmbedding;
             });
 
-            // Iterate through active models and unload their specific instances
-            for (const model of activeLLMs) {
-                for (const instance of model.loaded_instances) {
-                    // Skip if this instance corresponds to the model we want to keep/load
-                    // (The excludeId matches the model key, which typically matches instance ID prefix or ID itself)
-                    if (excludeId && (instance.id === excludeId || instance.id.startsWith(excludeId))) {
-                        continue;
-                    }
-
-                    console.log(`Unloading LLM Instance: ${instance.id}`);
-                    await fetch(`/api/v1/models/unload`, {
-                        method: 'POST',
-                        headers: { ...headers, "Content-Type": "application/json" },
-                        body: JSON.stringify({ instance_id: instance.id }) // Documentation requires 'instance_id'
-                    }).catch(err => console.error(`Failed to unload instance ${instance.id}:`, err));
-                }
+            for (const model of activeModels) {
+                console.log(`Unloading LLM Instance: ${model.id}`);
+                await fetch(`/api/v1/models/unload`, {
+                    method: 'POST',
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ model: model.id })
+                }).catch(err => console.error(`Failed to unload instance ${model.id}:`, err));
             }
         } catch (err) {
             console.error('Error during model unloading:', err);
@@ -2000,21 +2018,16 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function loadModel(modelKey) {
-        const headers = { "Content-Type": "application/json" };
-
         try {
             console.log(`Loading model: ${modelKey}`);
-            // Update overlay text to show loading phase
             const overlayText = document.getElementById('model-switch-text');
-            if (overlayText) overlayText.textContent = "Loading Model...";
+            if (overlayText) overlayText.textContent = "Loading Model to VRAM...";
 
+            // Issue the load command
             const response = await fetch(`/api/v1/models/load`, {
                 method: 'POST',
-                headers: headers,
-                body: JSON.stringify({
-                    model: modelKey
-                    // We can add configurable parameters here later (context_length, etc.)
-                })
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ model: modelKey })
             });
 
             if (!response.ok) {
@@ -2022,10 +2035,24 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.error(`Failed to load model ${modelKey}`, errorText);
                 await showAlert('Model Load Failed', `Failed to load model. Output: ${errorText}`);
                 return false;
-            } else {
-                console.log(`Model ${modelKey} loaded successfully`);
-                return true;
             }
+
+            // Polling loop to block until llama.cpp says 'loaded'
+            while (true) {
+                await new Promise(r => setTimeout(r, 1500));
+                let pollResp = await fetch(`/api/v1/models`);
+                if (pollResp.ok) {
+                    let pollData = await pollResp.json();
+                    let modelsArray = pollData.data || [];
+                    let targetModel = modelsArray.find(m => m.id === modelKey);
+                    
+                    if (targetModel && targetModel.status && targetModel.status.value === 'loaded') {
+                        console.log(`Model ${modelKey} is now fully loaded in VRAM.`);
+                        return true;
+                    }
+                }
+            }
+
         } catch (err) {
             console.error('Error loading model:', err);
             await showAlert('Error', `Error loading model: ${err.message}`);
@@ -2060,28 +2087,25 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
         if (isManual) {
-            // 0. Preliminary Check - Avoid reloading if already active in LM Studio
-            const headers = {};
-
-            let isLoadedInStudio = false;
+            // Check if it's already loaded
+            let isLoadedInLlama = false;
             let currentModelsData = null;
             try {
-                const response = await fetch(`/api/v1/models`, { method: 'GET', headers: headers });
+                const response = await fetch(`/api/v1/models`);
                 if (response.ok) {
                     const data = await response.json();
-                    currentModelsData = data.models || [];
-                    const found = currentModelsData.find(m => m.key === id);
-                    if (found && found.loaded_instances && found.loaded_instances.length > 0) {
-                        isLoadedInStudio = true;
+                    currentModelsData = data.data || [];
+                    const found = currentModelsData.find(m => m.id === id);
+                    if (found && found.status && found.status.value === 'loaded') {
+                        isLoadedInLlama = true;
                     }
                 }
             } catch (err) {
                 console.warn("Could not verify model status, proceeding with standard cycle", err);
             }
 
-            if (isLoadedInStudio) {
+            if (isLoadedInLlama) {
                 console.log(`Model ${id} is already loaded. Switching context only.`);
-                // Just update state and close UI
                 selectedModel = id;
                 selectedModelName = name;
                 localStorage.setItem('my_ai_selected_model', id);
@@ -2101,33 +2125,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const overlayText = document.getElementById('model-switch-text');
             if (overlay) {
                 overlay.style.display = 'flex';
-                // Small delay to allow display flex to apply before adding opacity class for transition
-                requestAnimationFrame(() => {
-                    overlay.classList.add('open');
-                });
-
-                if (overlayText) overlayText.textContent = "Unloading models...";
+                requestAnimationFrame(() => overlay.classList.add('open'));
+                if (overlayText) overlayText.textContent = "Unloading previous models...";
             }
 
-
-            // 1. Check if we actually need to unload/wait
-            const hasOtherModelsLoaded = currentModelsData && currentModelsData.some(m =>
-                m.key !== id &&
-                m.loaded_instances && m.loaded_instances.length > 0 &&
-                m.type !== 'embedding' &&
-                !m.key.toLowerCase().includes('embedding')
-            );
-
-            if (hasOtherModelsLoaded) {
-                // 1. Unload other models
-                await unloadAllModels(id, currentModelsData);
-
-                // 1.5 Give system a moment to actually free resources
-                if (overlayText) overlayText.textContent = "Freeing resources...";
-                await new Promise(resolve => setTimeout(resolve, 10000));
-            } else {
-                console.log("No other models loaded, skipping unload/wait.");
-            }
+            // 1. Unload other models
+            await unloadAllModels(id);
 
             // 2. Load the new model
             const success = await loadModel(id);
@@ -2135,10 +2138,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // Hide loading overlay
             if (overlay) {
                 overlay.classList.remove('open');
-                // Wait for transition to finish before hiding
-                setTimeout(() => {
-                    overlay.style.display = 'none';
-                }, 300);
+                setTimeout(() => overlay.style.display = 'none', 300);
             }
 
             if (!success) {
@@ -2449,9 +2449,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    if (settingsTrigger) settingsTrigger.addEventListener('click', (e) => {
+    if (settingsTrigger) settingsTrigger.addEventListener('click', async (e) => {
         e.preventDefault();
         openSettings();
+        await updateModelStatusUI();
     });
 
     if (closeSettingsBtn) closeSettingsBtn.addEventListener('click', closeSettings);

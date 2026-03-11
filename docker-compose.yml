@@ -8,6 +8,8 @@ services:
       - "host.docker.internal:host-gateway"
     volumes:
       - /home/archit-anand/My-AI-data:/app/backend/data
+    environment:
+      - TZ=Asia/Kolkata
     secrets:
       - DATA_DIR
       - APP_PASSWORD

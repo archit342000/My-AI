@@ -1,0 +1,12 @@
+{
+  "research": {
+    "main": "NVIDIA/NVIDIA-Nemotron-3-Nano-30B-A3B-Q4_K_M",
+    "vision": "Qwen/Qwen3.5-4B-Q4_K_M"
+  },
+  "general": {
+    "text": "NVIDIA/NVIDIA-Nemotron-3-Nano-30B-A3B-Q4_K_M",
+    "vision": "Qwen/Qwen3.5-35B-A3B-Q4_K_M",
+    "coder": "Qwen/Qwen3-Coder-Next-Q3_K_S"
+  },
+  "embedding": "embeddinggemma/embeddinggemma-300M-Q8_0"
+}

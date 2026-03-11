@@ -1,6 +1,7 @@
 # CHANGELOG
  
-## v2.0.0 (Aurora + Obsidian Design Overhaul)
+## v2.0.0 (Aurora + Obsidian Design Overhaul and AI backend migration)
+* **AI Backend Migration**: Migrated from LM Studio to llama.cpp.
 * **UI Fix (Tools Dropdown)**: Increased the opaqueness of the tools dropdown to match modal dialogs, ensuring better legibility and a more premium feel.
 * **UX/Behavior Fix (Tool Toggles)**: Implemented sticky tool blocking. Enabling one tool now correctly blocks other tools from being engaged until the active tool is disabled.
 * **UI Improvement**: Moved inline styles from the tools dropdown to CSS and added a smooth slide-up entry animation.

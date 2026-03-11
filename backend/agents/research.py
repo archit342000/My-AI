@@ -814,7 +814,7 @@ async def _execute_section_reflection_and_write(
         if attempt == 1:
             # Stage 1: Warning & Self-Correction
             triage_messages.append({"role": "user", "content": triage_prompt})
-            triage_messages.append({"role": "assistant", "content": raw_triage})
+            triage_messages.append({"role": "assistant", "content": raw_triage or ""})
             triage_messages.append({
                 "role": "user", 
                 "content": "Your reasoning was too long or you failed to provide valid JSON. Please be extremely concise. Output ONLY the valid JSON object with core facts extracted from the provided text."
@@ -955,7 +955,7 @@ async def _execute_section_reflection_and_write(
         if attempt == 1:
             # Stage 1: Warning & Self-Correction — send back AI's exact response
             writer_messages.append({"role": "user", "content": writer_prompt})
-            writer_messages.append({"role": "assistant", "content": raw_section})
+            writer_messages.append({"role": "assistant", "content": raw_section or ""})
             writer_messages.append({
                 "role": "user", 
                 "content": "Your previous attempt meandered or produced insufficient content. Please be extremely concise. Focus on writing a high-density, data-rich markdown section immediately. Start with ## heading."
@@ -1454,7 +1454,7 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
                     if attempt < config.RESEARCH_MAX_PLAN_RETRIES:
                         messages_to_send = list(messages_to_send)
                         # Ensure we include the full trace if things go wrong
-                        messages_to_send.append({"role": "assistant", "content": plan_source})
+                        messages_to_send.append({"role": "assistant", "content": plan_source or ""})
                         messages_to_send.append({
                             "role": "user",
                             "content": f"Your output failed validation: {error}\nPlease correct the issue and regenerate the complete <research_plan> block carefully."

@@ -9,6 +9,14 @@ from dotenv import load_dotenv
 # Load environment variables FIRST
 load_dotenv()
 
+# Set correct timezone dynamically for the process
+import os
+import time
+if os.environ.get('TZ') is None:
+    os.environ['TZ'] = 'Asia/Kolkata'
+if os.name != 'nt' and hasattr(time, 'tzset'):
+    time.tzset()
+
 from backend import config
 from backend.rag import MemoryRAG, ResearchRAG
 from backend.storage import init_db, get_all_chats, get_chat, save_chat, add_message, clear_messages, delete_chat, delete_all_chats, rename_chat
@@ -21,10 +29,21 @@ app = Flask(__name__, static_folder='static')
 # Limit request size to 16MB to prevent unbounded payload DoS (e.g. extremely large JSON arrays)
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 
+# Determine config path
+config_path = os.path.join(os.path.dirname(__file__), 'backend', 'model_config.json')
+try:
+    with open(config_path, 'r', encoding='utf-8') as f:
+        model_cfg = json.load(f)
+    embedding_model = model_cfg.get('embedding', 'embeddinggemma/embeddinggemma-300M-Q8_0')
+except Exception as e:
+    log_event("config_load_error", {"error": str(e)})
+    # Fallback default
+    embedding_model = "embeddinggemma/embeddinggemma-300M-Q8_0"
+
 # Initialize components with config
 init_db()
-rag = MemoryRAG(persist_path=config.CHROMA_PATH, api_url=config.LM_STUDIO_URL, api_key=config.LM_STUDIO_API_KEY, embedding_model=config.EMBEDDING_MODEL)
-research_rag = ResearchRAG(persist_path=config.CHROMA_PATH, api_url=config.LM_STUDIO_URL, api_key=config.LM_STUDIO_API_KEY, embedding_model=config.EMBEDDING_MODEL)
+rag = MemoryRAG(persist_path=config.CHROMA_PATH, api_url=config.LM_STUDIO_URL, api_key=config.LM_STUDIO_API_KEY, embedding_model=embedding_model)
+research_rag = ResearchRAG(persist_path=config.CHROMA_PATH, api_url=config.LM_STUDIO_URL, api_key=config.LM_STUDIO_API_KEY, embedding_model=embedding_model)
 task_manager.recover_tasks()
 
 @app.route('/')
@@ -215,7 +234,7 @@ def proxy_get_models():
     api_url = config.LM_STUDIO_URL.rstrip("/")
     
     base_url = api_url[:-3] if api_url.endswith('/v1') else api_url
-    endpoint = f"{base_url}{request.path}"
+    endpoint = f"{base_url}/v1/models"
     headers = {"Content-Type": "application/json"}
     if config.LM_STUDIO_API_KEY:
         headers["Authorization"] = f"Bearer {config.LM_STUDIO_API_KEY}"
@@ -226,14 +245,24 @@ def proxy_get_models():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route('/api/models/config', methods=['GET'])
+def get_model_config():
+    config_path = os.path.join(os.path.dirname(__file__), 'backend', 'model_config.json')
+    try:
+        with open(config_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/api/v1/models/load', methods=['POST'])
 def proxy_load_model():
-    """Proxy POST /api/v1/models/load to LM Studio."""
+    """Proxy POST to llama.cpp /models/load."""
     data = request.json or {}
     api_url = config.LM_STUDIO_URL.rstrip("/")
     
     base_url = api_url[:-3] if api_url.endswith('/v1') else api_url
-    endpoint = f"{base_url}{request.path}"
+    endpoint = f"{base_url}/models/load"
         
     headers = {"Content-Type": "application/json"}
     if config.LM_STUDIO_API_KEY:
@@ -247,12 +276,12 @@ def proxy_load_model():
 
 @app.route('/api/v1/models/unload', methods=['POST'])
 def proxy_unload_model():
-    """Proxy POST /api/v1/models/unload to LM Studio."""
+    """Proxy POST to llama.cpp /models/unload."""
     data = request.json or {}
     api_url = config.LM_STUDIO_URL.rstrip("/")
     
     base_url = api_url[:-3] if api_url.endswith('/v1') else api_url
-    endpoint = f"{base_url}{request.path}"
+    endpoint = f"{base_url}/models/unload"
         
     headers = {"Content-Type": "application/json"}
     if config.LM_STUDIO_API_KEY:
@@ -268,7 +297,20 @@ def proxy_unload_model():
 def chat_completions():
     try:
         data = request.json
-        messages = data.get('messages', [])
+        raw_messages = data.get('messages', [])
+        messages = []
+        for msg in raw_messages:
+            clean_msg = dict(msg)
+            # AGENTS.md compliance: ensure all required string fields are never None
+            if clean_msg.get('role') is None:
+                clean_msg['role'] = "user"
+            if clean_msg.get('content') is None:
+                clean_msg['content'] = ""
+            if clean_msg.get('tool_call_id') is None and clean_msg.get('role') == 'tool':
+                clean_msg['tool_call_id'] = ""
+            if clean_msg.get('name') is None and clean_msg.get('role') == 'tool':
+                clean_msg['name'] = ""
+            messages.append(clean_msg)
         model = data.get('model', 'local-model')
         chat_id = data.get('chatId')
         memory_mode = data.get('memoryMode', False)
@@ -340,8 +382,12 @@ def chat_completions():
                 new_is_vision = 0
 
             if isinstance(title, list):
-                title = next((p['text'] for p in title if p.get('type') == 'text'), "Image Message")
-            title = title[:50] if isinstance(title, str) else "New Chat"
+                title = next((p.get('text', '') for p in title if p.get('type') == 'text'), "Image Message")
+            
+            if isinstance(title, str):
+                title = title[:50]
+            else:
+                title = "New Chat"
 
             save_chat(
                 chat_id,

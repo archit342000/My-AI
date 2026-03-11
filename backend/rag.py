@@ -30,12 +30,12 @@ class LMStudioEmbeddingFunction(embedding_functions.EmbeddingFunction):
         return self._embed_with_task(input, task=self.default_task)
 
     def _embed_with_task(self, input, task=None):
-        # Ensure base URL is clean and handle /v1 suffix robustly
+        # Ensure base URL is clean and use /v1/embeddings
         base_url = self.api_url.rstrip("/")
         if not base_url.endswith("/v1"):
-             url = f"{base_url}/v1/embeddings"
+            url = f"{base_url}/v1/embeddings"
         else:
-             url = f"{base_url}/embeddings"
+            url = f"{base_url}/embeddings"
 
         # Ensure input is a list of strings
         if isinstance(input, str):
