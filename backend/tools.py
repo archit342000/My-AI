@@ -62,6 +62,24 @@ MANAGE_CORE_MEMORY_TOOL = {
     }
 }
 
+VISIT_PAGE_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "visit_page_tool",
+        "description": "Visits a specific URL and extracts its visible text content. Uses an initial request and falls back to a Playwright headless browser if the request fails.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "url": {
+                    "type": "string",
+                    "description": "The URL to visit."
+                }
+            },
+            "required": ["url"]
+        }
+    }
+}
+
 GET_TIME_TOOL = {
     "type": "function",
     "function": {

@@ -1,5 +1,11 @@
 # CHANGELOG
  
+## v2.3.0
+* **Site Visit Tool Fallback**: Implemented a new `playwright_mcp` container for the site visit tool, which attempts to scrape using requests first and falls back to a Playwright headless browser if it fails.
+* **Separated MCP Services**: Split the previous `research_mcp` container into two separate, dedicated MCP servers: `tavily_mcp` (for searching and mapping) and `playwright_mcp` (for visiting URLs and fetching images).
+* **Normal Chat Integration**: The robust new `visit_page_tool` is now directly available to the standard Chat agent.
+* **Output Sanitization**: Implemented basic output sanitization (stripping suspicious scripts and remaining HTML) at the MCP layer before returning data to the main server.
+
 ## v2.2.2
 * **3D Background Animation (Antigravity Inspired)**: Implemented an interactive 3D particle cloud background using Vanilla JS and Canvas. Features autonomous "breathing" motion, smooth mouse/touch following, and a zero-lag volumetric ripple effect on click/tap.
 * **Complete UI Redesign**: Overhauled the application theme, changing the primary accent color from Electric Violet to Ocean Blue (`#3B82F6`) and the neutral scale from Pure Zinc to Slate.

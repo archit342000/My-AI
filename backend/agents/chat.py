@@ -6,7 +6,7 @@ from backend.prompts import BASE_SYSTEM_PROMPT, MEMORY_SYSTEM_PROMPT
 from backend.tools import MANAGE_CORE_MEMORY_TOOL, GET_TIME_TOOL, VALIDATE_OUTPUT_FORMAT_TOOL
 from backend.utils import create_chunk, get_current_time
 from backend import config
-from backend.mcp_client import mcp_client
+from backend.mcp_client import tavily_client, playwright_client
 from backend.llm import stream_chat_completion, chat_completion
 from backend.validation import (
     validate_output_format, parse_fixes, find_fix_locations, apply_fixes,
@@ -103,14 +103,17 @@ async def generate_chat_response(api_url, model, messages, extra_body, rag=None,
       <think>[second reasoning]</think>
       [final answer]
     """
-    # Ensure MCP client is connected
-    await mcp_client.connect()
+    # Ensure MCP clients are connected
+    await tavily_client.connect()
+    await playwright_client.connect()
 
-    # Fetch tools from MCP Server
-    mcp_tools_raw = await mcp_client.get_available_tools()
+    # Fetch tools from MCP Servers
+    tavily_tools_raw = await tavily_client.get_available_tools()
+    playwright_tools_raw = await playwright_client.get_available_tools()
+    mcp_tools_raw = tavily_tools_raw + playwright_tools_raw
 
     # Filter only the chat-facing tools
-    chat_mcp_tool_names = ["search_web", "audit_search"]
+    chat_mcp_tool_names = ["search_web", "audit_search", "visit_page_tool"]
     mcp_tools = []
 
     # Map MCP tool schema to OpenAI tool schema
@@ -333,7 +336,7 @@ async def generate_chat_response(api_url, model, messages, extra_body, rag=None,
                     "start_date": start_date, "end_date": end_date,
                     "include_images": include_images, "chat_id": chat_id
                 }
-                mcp_res = await mcp_client.execute_tool("search_web", mcp_args)
+                mcp_res = await tavily_client.execute_tool("search_web", mcp_args)
                 
                 # Parse JSON string from MCP tool result
                 try:
@@ -372,7 +375,7 @@ async def generate_chat_response(api_url, model, messages, extra_body, rag=None,
                 yield f"data: {create_chunk(model, reasoning=log)}\n\n"
                 
                 mcp_args = {"chat_id": chat_id}
-                mcp_res = await mcp_client.execute_tool("audit_search", mcp_args)
+                mcp_res = await tavily_client.execute_tool("audit_search", mcp_args)
                 raw_result = mcp_res.content[0].text
 
                 messages_to_send.append({
@@ -383,6 +386,29 @@ async def generate_chat_response(api_url, model, messages, extra_body, rag=None,
                 duration = time.time() - t0
                 log_tool_call(fn_name, args, raw_result, duration_s=duration, chat_id=chat_id)
                 res_log = "Result: Audit available via MCP.\n"
+                current_reasoning += res_log
+                yield f"data: {create_chunk(model, reasoning=res_log)}\n\n"
+                yield f"data: {json.dumps({'__tool_result__': True, 'tool_call_id': tc['id'], 'name': fn_name, 'result': raw_result})}\n\n"
+
+            elif fn_name == "visit_page_tool":
+                url_arg = args.get("url", "...")
+                t0 = time.time()
+                log = f"Calling: MCP visit_page_tool(\"{url_arg}\")\n"
+                current_reasoning += log
+                yield f"data: {create_chunk(model, reasoning=log)}\n\n"
+
+                mcp_args = {"url": url_arg}
+                mcp_res = await playwright_client.execute_tool("visit_page_tool", mcp_args)
+                raw_result = mcp_res.content[0].text
+
+                messages_to_send.append({
+                    "role": "tool", "tool_call_id": tc['id'], "name": fn_name,
+                    "content": raw_result
+                })
+
+                duration = time.time() - t0
+                log_tool_call(fn_name, args, raw_result, duration_s=duration, chat_id=chat_id)
+                res_log = "Result: Page visit completed via MCP.\n"
                 current_reasoning += res_log
                 yield f"data: {create_chunk(model, reasoning=res_log)}\n\n"
                 yield f"data: {json.dumps({'__tool_result__': True, 'tool_call_id': tc['id'], 'name': fn_name, 'result': raw_result})}\n\n"

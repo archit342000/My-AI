@@ -6,11 +6,11 @@ RUN groupadd -r appgroup && useradd -r -g appgroup -m -d /app appuser
 WORKDIR /app
 
 # Install isolated dependencies (no Flask, ChromaDB, etc.)
-COPY mcp_server/requirements.txt /app/requirements.txt
+COPY tavily_mcp/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy code
-COPY mcp_server /app/mcp_server
+COPY tavily_mcp /app/tavily_mcp
 
 # Set ownership
 RUN chown -R appuser:appgroup /app
@@ -19,4 +19,4 @@ USER appuser
 
 EXPOSE 8000
 
-CMD ["python3", "-m", "mcp_server.server"]
+CMD ["python3", "-m", "tavily_mcp.server"]

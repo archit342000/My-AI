@@ -1,0 +1,25 @@
+# Using the official Playwright jammy image
+FROM mcr.microsoft.com/playwright/python:v1.50.0-jammy
+
+# Create user
+RUN groupadd -r appgroup && useradd -r -g appgroup -m -d /app appuser
+
+WORKDIR /app
+
+# Install isolated dependencies
+COPY playwright_mcp/requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+# We don't need `playwright install` here because the image already has the browsers pre-installed.
+
+# Copy code
+COPY playwright_mcp /app/playwright_mcp
+
+# Set ownership
+RUN chown -R appuser:appgroup /app
+
+USER appuser
+
+EXPOSE 8001
+
+CMD ["python3", "-m", "playwright_mcp.server"]
