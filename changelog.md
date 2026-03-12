@@ -1,5 +1,13 @@
 # CHANGELOG
  
+## v2.1.1 (Model Lifecycle & VRAM Optimization)
+* **Model Lifecycle Tracking**: Added full support for tracking model states (`unloaded`, `loading`, `loaded`) through a corrected `/api/v1/models` proxy that respects the `llama.cpp` server-specific `status` object.
+* **Improved Management Consistency**: Moved loading/unloading logic from `/api/v1/models` to unprefixed `/api/models/load` and `/api/models/unload` endpoints to align with `llama.cpp` native management paths.
+* **Proactive VRAM Management**: Implemented automatic "pre-inference" cleanups that purge unnecessary models from GPU/RAM before starting a new chat or research session.
+* **Multi-Model Exclusions**: Enhanced the unloader utility to support multiple simultaneous exclusions, allowing the Research Agent to keep Main, Vision, and Embedding models co-resident while purging others.
+* **UI Status Indicators**: Added real-time "Loading..." and "Active" status badges to the model selection dropdown and research activity readouts.
+* **Version Bump**: Incremented version to v2.1.1.
+
 ## v2.1.0 (MCP Architecture Migration)
 * **Architecture Overhaul**: Migrated all external-facing tools (web search, web scraping, PDF extraction, map, etc.) to a dedicated Model Context Protocol (MCP) server container (`research_mcp`).
 * **Security & Isolation**: External operations now run entirely outside the main app container, significantly reducing the blast radius of potential vulnerabilities.

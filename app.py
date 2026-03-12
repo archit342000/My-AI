@@ -255,7 +255,7 @@ def get_model_config():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route('/api/v1/models/load', methods=['POST'])
+@app.route('/api/models/load', methods=['POST'])
 def proxy_load_model():
     """Proxy POST to llama.cpp /models/load."""
     data = request.json or {}
@@ -274,7 +274,7 @@ def proxy_load_model():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route('/api/v1/models/unload', methods=['POST'])
+@app.route('/api/models/unload', methods=['POST'])
 def proxy_unload_model():
     """Proxy POST to llama.cpp /models/unload."""
     data = request.json or {}

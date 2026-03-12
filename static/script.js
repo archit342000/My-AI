@@ -1898,16 +1898,30 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             if (!res.ok) return;
             const data = await res.json();
-            const loadedModelIds = Array.isArray(data.data) ? data.data.map(m => m.id) : [];
+            
+            // Map: modelId -> statusValue
+            const modelStatuses = {};
+            if (Array.isArray(data.data)) {
+                data.data.forEach(m => {
+                    modelStatuses[m.id] = m.status?.value || 'unloaded';
+                });
+            }
+
+            const getStatusText = (status) => {
+                if (status === 'loaded') return 'Active';
+                if (status === 'loading') return 'Loading...';
+                return 'Inactive';
+            };
 
             // Update Model Select Dropdown
             if (modelSelectDropdown) {
                 Array.from(modelSelectDropdown.options).forEach(opt => {
                     if (opt.value && !opt.disabled) {
-                        const isActive = loadedModelIds.includes(opt.value);
+                        const status = modelStatuses[opt.value] || 'unloaded';
+                        const statusLabel = getStatusText(status);
                         // Clean existing status first
-                        let baseText = opt.textContent.replace(/\s\((Active|Inactive)\)$/, '');
-                        opt.textContent = `${baseText} (${isActive ? 'Active' : 'Inactive'})`;
+                        let baseText = opt.textContent.replace(/\s\((Active|Inactive|Loading\.\.\.)\)$/, '');
+                        opt.textContent = `${baseText} (${statusLabel})`;
                     }
                 });
             }
@@ -1918,15 +1932,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 const researchVisionDisplay = document.getElementById('research-vision-display');
                 
                 if (researchMainDisplay && window.modelConfig && window.modelConfig.research) {
-                    const isActive = loadedModelIds.includes(window.modelConfig.research.main);
-                    let baseText = researchMainDisplay.textContent.replace(/\s\((Active|Inactive)\)$/, '');
-                    researchMainDisplay.textContent = `${baseText} (${isActive ? 'Active' : 'Inactive'})`;
+                    const status = modelStatuses[window.modelConfig.research.main] || 'unloaded';
+                    const statusLabel = getStatusText(status);
+                    let baseText = researchMainDisplay.textContent.replace(/\s\((Active|Inactive|Loading\.\.\.)\)$/, '');
+                    researchMainDisplay.textContent = `${baseText} (${statusLabel})`;
                 }
                 
                 if (researchVisionDisplay && window.modelConfig && window.modelConfig.research) {
-                    const isActive = loadedModelIds.includes(window.modelConfig.research.vision);
-                    let baseText = researchVisionDisplay.textContent.replace(/\s\((Active|Inactive)\)$/, '');
-                    researchVisionDisplay.textContent = `${baseText} (${isActive ? 'Active' : 'Inactive'})`;
+                    const status = modelStatuses[window.modelConfig.research.vision] || 'unloaded';
+                    const statusLabel = getStatusText(status);
+                    let baseText = researchVisionDisplay.textContent.replace(/\s\((Active|Inactive|Loading\.\.\.)\)$/, '');
+                    researchVisionDisplay.textContent = `${baseText} (${statusLabel})`;
                 }
             }
         } catch (e) {
@@ -1988,25 +2004,32 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    async function unloadAllModels(excludeId = null) {
+    async function unloadAllModels(excludeIds = []) {
         try {
+            // Ensure excludeIds is an array
+            const exclusions = Array.isArray(excludeIds) ? excludeIds : [excludeIds];
+            
+            // Add embedding model to exclusions by default to prevent RAG breakage
+            if (window.modelConfig && window.modelConfig.embedding && !exclusions.includes(window.modelConfig.embedding)) {
+                exclusions.push(window.modelConfig.embedding);
+            }
+
             // Fetch current active models based on llama.cpp schema
             const response = await fetch(`/api/v1/models`);
             if (!response.ok) return;
             const data = await response.json();
             
             const modelsArray = data.data || [];
-            // Unload anything except the one we want to keep, and never unload the embedding model
+            // Unload anything except the ones we want to keep
             const activeModels = modelsArray.filter(m => {
-                const isLoaded = m.status && m.status.value === 'loaded';
-                const isTarget = m.id === excludeId;
-                const isEmbedding = m.id.toLowerCase().includes('embedding');
-                return isLoaded && !isTarget && !isEmbedding;
+                const isBusy = m.status && (m.status.value === 'loaded' || m.status.value === 'loading');
+                const isTarget = exclusions.includes(m.id);
+                return isBusy && !isTarget;
             });
 
             for (const model of activeModels) {
                 console.log(`Unloading LLM Instance: ${model.id}`);
-                await fetch(`/api/v1/models/unload`, {
+                await fetch(`/api/models/unload`, {
                     method: 'POST',
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ model: model.id })
@@ -2024,7 +2047,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (overlayText) overlayText.textContent = "Loading Model to VRAM...";
 
             // Issue the load command
-            const response = await fetch(`/api/v1/models/load`, {
+            const response = await fetch(`/api/models/load`, {
                 method: 'POST',
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ model: modelKey })
@@ -2130,7 +2153,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             // 1. Unload other models
-            await unloadAllModels(id);
+            await unloadAllModels([id]);
 
             // 2. Load the new model
             const success = await loadModel(id);
@@ -2544,6 +2567,19 @@ document.addEventListener('DOMContentLoaded', () => {
         if (sendBtn && sendBtn.classList.contains('incompatible-model')) {
             await showAlert('Incompatible Model', 'This conversation contains images. You must select a model with vision capabilities in the settings dropdown to continue.');
             return;
+        }
+
+        // Proactive VRAM Cleanup before inference
+        if (isResearchMode) {
+            // In Research Mode, keep Main + Vision + Embedding
+            const exclusions = [];
+            if (window.modelConfig?.research?.main) exclusions.push(window.modelConfig.research.main);
+            if (window.modelConfig?.research?.vision) exclusions.push(window.modelConfig.research.vision);
+            // unloadAllModels handles embedding model inclusion automatically
+            await unloadAllModels(exclusions);
+        } else {
+            // In Normal Mode, keep Selected + Embedding
+            await unloadAllModels([selectedModel]);
         }
 
         isGenerating = true;

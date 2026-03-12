@@ -98,7 +98,91 @@ Even without streaming, the quirk persists. When `response_format` is provided, 
    ```
 3. **`finish_reason`**: Remains `"stop"`.
 
-## 5. Summary for Backend Implementation
+## 5. Model Inventory & Status (`/v1/models`)
+
+The `/v1/models` endpoint provides a list of available models, but includes a critical **`status`** object not found in the standard OpenAI spec. This allows the backend to track model readiness.
+
+### Status Object Structure:
+```json
+{
+  "id": "model-alias",
+  "object": "model",
+  "status": {
+    "value": "unloaded", // Possible: "unloaded", "loading", "loaded"
+    "args": ["/app/llama-server", "--model", "..."],
+    "preset": "[model-alias]\nctx-size = 4096..."
+  }
+}
+```
+
+## 6. Model Lifecycle: Loading & Unloading
+
+Models are managed dynamically by the server.
+
+### Automatic Loading:
+When a request is sent to `/v1/chat/completions` or `/v1/embeddings` for a model that is currently `"unloaded"`, the server automatically initiates the loading process.
+*   **Behavior**: The request will block/wait while the status transitions from `"unloaded"` -> `"loading"` -> `"loaded"`.
+*   **Timeout Handling**: If a model is large, the initial request may exceed standard client timeouts (like the 5s default in `httpx`).
+
+### Manual Loading:
+The server allows manual triggering of a model load, which is useful when switching models via chat settings or preparing a model for inference ahead of time.
+
+*   **Endpoint**: `POST /models/load`
+*   **Payload**:
+    ```json
+    {
+      "model": "model-id-to-load"
+    }
+    ```
+*   **Response**: `{"success": true}`
+*   **Success Indicator**: The model status in `/v1/models` will return to `"loaded"`.
+
+### Manual Unloading:
+The server supports a custom endpoint for releasing GPU/RAM resources by unloading specific models.
+
+*   **Endpoint**: `POST /models/unload`
+*   **Payload**:
+    ```json
+    {
+      "model": "model-id-to-unload"
+    }
+    ```
+*   **Response**: `{"success": true}`
+*   **Success Indicator**: The model status in `/v1/models` will return to `"unloaded"`.
+
+## 7. Embeddings API (`/v1/embeddings`)
+
+The server provides a standard OpenAI-compatible embeddings endpoint.
+
+### Request Format:
+```json
+{
+  "input": "Text to embed",
+  "model": "embedding-model-alias"
+}
+```
+
+### Response Format:
+```json
+{
+  "model": "embedding-model-alias",
+  "object": "list",
+  "data": [
+    {
+      "object": "embedding",
+      "index": 0,
+      "embedding": [0.0676, 0.0662, -0.0243, ...]
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 3,
+    "total_tokens": 3
+  }
+}
+```
+
+
+## 8. Summary for Backend Implementation
 
 Any backend client or utility function designed to handle llama.cpp MUST account for these deviations:
 
