@@ -30,7 +30,7 @@ class MCPClient:
                 await self.session.initialize()
                 logger.info("Connected to MCP server")
                 return
-            except Exception as e:
+            except BaseException as e:
                 logger.warning(f"Failed to connect to MCP server (attempt {attempt+1}/{max_retries}): {e}")
                 if attempt < max_retries - 1:
                     await asyncio.sleep(retry_delay)
