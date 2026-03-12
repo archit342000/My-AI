@@ -1,5 +1,10 @@
 # CHANGELOG
  
+## v2.2.1 (Full Height UI Overlays)
+* **Full Height UI Canvases**: The Research Report and Global Knowledge Base overlays now span the full height of the viewport on all devices.
+* **Mobile Flush Edges**: Added mobile responsiveness to strip the border and border-radius off full-screen canvases for a flush, native full-screen feel on touch devices.
+* **Version Bump**: Incremented version to v2.2.1.
+
 ## v2.2.0 (Memory Management & VRAM Optimization)
 * **Memory Management UI**: Added a comprehensive Memory Canvas Overlay for searching, filtering, editing, and deleting memories directly from the UI.
 * **Enhanced Memory API**: Implemented RESTful endpoints (`PUT`, `DELETE`) to support granular memory modification and cleanup.
