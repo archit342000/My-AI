@@ -332,7 +332,14 @@
                     </div>
                 </div>
 
-
+                <!-- Memory Management -->
+                <div class="hardware-surface" style="padding: 1.5rem; margin-bottom: 1rem;">
+                    <h3 class="text-h2" style="font-size: 1.1rem; margin-bottom: 0.5rem;">Knowledge Base</h3>
+                    <p style="font-size: 0.85rem; color: var(--content-muted); margin-bottom: 1rem;">Manage global facts and preferences learned by the AI.</p>
+                    <button id="sys-manage-memory" class="btn-primary" style="width: 100%;">
+                        Manage Memory
+                    </button>
+                </div>
 
                 <!-- Reset -->
                 <div class="hardware-surface" style="padding: 1.5rem; border-color: var(--color-rose-500);">
@@ -652,6 +659,51 @@
             <div class="canvas-body custom-scroll">
                 <div id="report-canvas-content" class="actual-content-wrapper"></div>
                 <div id="report-canvas-editor" class="canvas-editor hidden"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Memory Management Overlay -->
+    <div id="memory-canvas-overlay" class="canvas-backdrop hidden" style="z-index: 99999;">
+        <div class="canvas-content" style="max-width: 900px; max-height: 90vh;">
+            <div class="canvas-header" style="flex-wrap: wrap;">
+                <h2 class="canvas-title font-heading" style="margin-bottom: 0.5rem; width: 100%;">Global Knowledge Base</h2>
+                <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; width: 100%; align-items: center; justify-content: space-between;">
+                    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; flex: 1;">
+                        <input type="text" id="memory-search-input" class="input-luminous" placeholder="Search memories..." style="flex: 1; min-width: 200px; padding: 0.5rem 1rem;">
+                        <select id="memory-filter-select" class="input-luminous" style="padding: 0.5rem; cursor: pointer;">
+                            <option value="all">All Tags</option>
+                            <option value="user_preference">Preference</option>
+                            <option value="user_profile">Profile</option>
+                            <option value="environment_global">Environment</option>
+                            <option value="explicit_fact">Fact</option>
+                        </select>
+                        <select id="memory-sort-select" class="input-luminous" style="padding: 0.5rem; cursor: pointer;">
+                            <option value="newest">Newest First</option>
+                            <option value="oldest">Oldest First</option>
+                        </select>
+                    </div>
+                    <div class="canvas-actions">
+                        <button id="memory-add-btn" class="utility-btn primary glass" title="Add Memory">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                                <line x1="12" y1="5" x2="12" y2="19"></line>
+                                <line x1="5" y1="12" x2="19" y2="12"></line>
+                            </svg>
+                            <span>Add Memory</span>
+                        </button>
+                        <button id="close-memory-btn" class="btn-ghost" title="Close">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                                <path d="M18 6L6 18M6 6l12 12" stroke-linecap="round" stroke-linejoin="round" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="canvas-body custom-scroll" style="padding: 1.5rem;">
+                <div id="memory-list-container" style="display: flex; flex-direction: column; gap: 1rem;">
+                    <!-- Memory items injected here -->
+                    <div class="text-center" style="color: var(--content-muted); padding: 2rem;">Loading memories...</div>
+                </div>
             </div>
         </div>
     </div>

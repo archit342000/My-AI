@@ -170,23 +170,8 @@ class TaskManager:
                         try:
                             msgs = task_info.get("messages", [])
                             user_content = ""
-                            for m in reversed(msgs):
-                                if m['role'] == 'user':
-                                    c = m.get('content', '')
-                                    if isinstance(c, str): user_content = c
-                                    elif isinstance(c, list):
-                                        user_content = next((p['text'] for p in c if p.get('type') == 'text'), "")
-                                    break
-
-                            if fn_kwargs.get("rag"):
-                                clean_content = final_content
-                                if "<think>" in final_content:
-                                    import re
-                                    clean_content = re.sub(r'<think>.*?</think>', '', final_content, flags=re.DOTALL).strip()
-                                if user_content and clean_content:
-                                    fn_kwargs["rag"].add_conversation_turn(user_content, clean_content, chat_id)
                         except Exception as e:
-                            log_event("rag_update_error", {"error": str(e)})
+                            log_event("cache_save_error", {"error": str(e)})
 
             except (InterruptedError, asyncio.CancelledError):
                 log_event("task_interrupted", {"chat_id": chat_id})

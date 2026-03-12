@@ -3,8 +3,9 @@ import json
 from backend.logger import log_event, log_tool_call
 import time
 from backend.prompts import BASE_SYSTEM_PROMPT, MEMORY_SYSTEM_PROMPT
-from backend.tools import MEMORY_SEARCH_TOOL, GET_TIME_TOOL, VALIDATE_OUTPUT_FORMAT_TOOL
+from backend.tools import MANAGE_CORE_MEMORY_TOOL, GET_TIME_TOOL, VALIDATE_OUTPUT_FORMAT_TOOL
 from backend.utils import create_chunk, get_current_time
+from backend import config
 from backend.mcp_client import mcp_client
 from backend.llm import stream_chat_completion, chat_completion
 from backend.validation import (
@@ -143,9 +144,16 @@ async def generate_chat_response(api_url, model, messages, extra_body, rag=None,
     system_prompt = BASE_SYSTEM_PROMPT
     
     if memory_mode:
-        tools.append(MEMORY_SEARCH_TOOL)
+        tools.append(MANAGE_CORE_MEMORY_TOOL)
         system_prompt = MEMORY_SYSTEM_PROMPT
-        
+        if rag:
+            # Fetch current memories and inject them into the system prompt
+            memories_block = rag.get_all_core_memories_formatted()
+            if memories_block:
+                system_prompt += f"\n\n## Current Global Memory Store\n<User Profile & Preferences>\n{memories_block}\n</User Profile & Preferences>\n"
+            else:
+                system_prompt += f"\n\n## Current Global Memory Store\n<User Profile & Preferences>\n(The memory store is currently empty. Add to it if needed.)\n</User Profile & Preferences>\n"
+
     # Append Capability Notes
     v_status = "ENABLED" if has_vision else "DISABLED"
     v_note = f"\n\n# System Capabilities\n- Vision Support: {v_status}. "
@@ -240,26 +248,72 @@ async def generate_chat_response(api_url, model, messages, extra_body, rag=None,
                 has_real_tools = True
                 continue
 
-            if fn_name == "search_memory" and rag:
+            if fn_name == "manage_core_memory" and rag:
                 t0 = time.time()
-                query = args.get("query", "...")
-                log = f"Calling: search_memory(\"{query}\")\n"
+
+                additions = args.get("additions") or []
+                edits = args.get("edits") or []
+                deletions = args.get("deletions") or []
+
+                # Enforce config limits to prevent rogue overwrites
+                additions = additions[:config.MEMORY_MAX_ADD_PER_TURN]
+                edits = edits[:config.MEMORY_MAX_EDIT_PER_TURN]
+                deletions = deletions[:config.MEMORY_MAX_DELETE_PER_TURN]
+
+                log = f"Calling: manage_core_memory(adding: {len(additions)}, editing: {len(edits)}, deleting: {len(deletions)})\n"
                 current_reasoning += log
                 yield f"data: {create_chunk(model, reasoning=log)}\n\n"
                 
-                context_result = rag.retrieve_context(query)
-                if not context_result: context_result = "No relevant results found."
+                results = []
+
+                for item in additions:
+                    if not isinstance(item, dict):
+                        continue
+                    content = item.get("content", "")
+                    tag = item.get("tag", "explicit_fact")
+                    doc_id = rag.add_core_memory(content, tag)
+                    if doc_id:
+                        results.append(f"Successfully added memory. Assigned ID: {doc_id}")
+                    else:
+                        results.append(f"Failed to add memory: {content[:30]}...")
+
+                for item in edits:
+                    if not isinstance(item, dict):
+                        continue
+                    doc_id = item.get("id", "")
+                    content = item.get("content", "")
+                    tag = item.get("tag", "explicit_fact")
+                    success = rag.update_core_memory(doc_id, content, tag)
+                    if success:
+                        results.append(f"Successfully edited memory {doc_id}")
+                    else:
+                        results.append(f"Failed to edit memory {doc_id} (Not found or empty)")
+
+                for doc_id in deletions:
+                    if not isinstance(doc_id, str):
+                        continue
+                    success = rag.delete_core_memory(doc_id)
+                    if success:
+                        results.append(f"Successfully deleted memory {doc_id}")
+                    else:
+                        results.append(f"Failed to delete memory {doc_id}")
+
+                if not results:
+                    results = ["No valid memory operations were performed."]
+
+                context_result = "\n".join(results)
+
                 messages_to_send.append({
                     "role": "tool", "tool_call_id": tc['id'], "name": fn_name,
-                    "content": f"<context>{context_result}</context>"
+                    "content": f"<tool_result>\n{context_result}\n</tool_result>"
                 })
                 
                 duration = time.time() - t0
                 log_tool_call(fn_name, args, context_result, duration_s=duration, chat_id=chat_id)
-                res_log = f"Result: {context_result}\n"
+                res_log = f"Result: Memory operations completed.\n"
                 current_reasoning += res_log
                 yield f"data: {create_chunk(model, reasoning=res_log)}\n\n"
-                yield f"data: {json.dumps({'__tool_result__': True, 'tool_call_id': tc['id'], 'name': fn_name, 'result': f'<context>{context_result}</context>'})}\n\n"
+                yield f"data: {json.dumps({'__tool_result__': True, 'tool_call_id': tc['id'], 'name': fn_name, 'result': f'<tool_result>{context_result}</tool_result>'})}\n\n"
                 has_real_tools = True
             elif fn_name == "search_web":
                 query = args.get("query", "...")

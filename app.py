@@ -213,6 +213,45 @@ def reset_memory():
     success = rag.reset_memory()
     return jsonify({"success": success})
 
+@app.route('/api/memory', methods=['GET'])
+def get_memories():
+    try:
+        memories = rag.get_all_core_memories_raw()
+        return jsonify({"success": True, "memories": memories})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/memory', methods=['POST'])
+def add_memory():
+    data = request.json
+    content = data.get('content')
+    tag = data.get('tag')
+    if not content or not tag:
+        return jsonify({"error": "Missing content or tag"}), 400
+    doc_id = rag.add_core_memory(content, tag)
+    if doc_id:
+        return jsonify({"success": True, "id": doc_id})
+    return jsonify({"error": "Failed to add memory"}), 500
+
+@app.route('/api/memory/<doc_id>', methods=['PUT'])
+def update_memory(doc_id):
+    data = request.json
+    content = data.get('content')
+    tag = data.get('tag')
+    if not content or not tag:
+        return jsonify({"error": "Missing content or tag"}), 400
+    success = rag.update_core_memory(doc_id, content, tag)
+    if success:
+        return jsonify({"success": True})
+    return jsonify({"error": "Failed to update memory"}), 500
+
+@app.route('/api/memory/<doc_id>', methods=['DELETE'])
+def delete_memory(doc_id):
+    success = rag.delete_core_memory(doc_id)
+    if success:
+        return jsonify({"success": True})
+    return jsonify({"error": "Failed to delete memory"}), 500
+
 @app.route('/api/memory/debug', methods=['GET'])
 def debug_memory():
     try:

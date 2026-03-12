@@ -69,6 +69,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const sysResetAppBtn = document.getElementById('sys-reset-app');
     const themeRadios = document.querySelectorAll('input[name="theme"]');
 
+    // Memory Management UI Selectors
+    const sysManageMemoryBtn = document.getElementById('sys-manage-memory');
+    const memoryCanvasOverlay = document.getElementById('memory-canvas-overlay');
+    const closeMemoryBtn = document.getElementById('close-memory-btn');
+    const memoryAddBtn = document.getElementById('memory-add-btn');
+    const memoryListContainer = document.getElementById('memory-list-container');
+    const memorySearchInput = document.getElementById('memory-search-input');
+    const memoryFilterSelect = document.getElementById('memory-filter-select');
+    const memorySortSelect = document.getElementById('memory-sort-select');
+
     // Unified Settings Selectors
     const settingsTrigger = document.getElementById('settings-trigger');
     const settingsModal = document.getElementById('settings-modal');
@@ -2424,6 +2434,235 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
+
+    // Memory Management UI Logic
+    let allMemories = [];
+
+    const loadMemories = async () => {
+        try {
+            const res = await fetch('/api/memory');
+            const data = await res.json();
+            if (data.success) {
+                allMemories = data.memories;
+                renderMemories();
+            }
+        } catch (e) {
+            console.error("Error loading memories:", e);
+        }
+    };
+
+    const renderMemories = () => {
+        if (!memoryListContainer) return;
+        memoryListContainer.innerHTML = '';
+
+        let filtered = [...allMemories];
+
+        // Filter by Tag
+        const tagFilter = memoryFilterSelect.value;
+        if (tagFilter !== 'all') {
+            filtered = filtered.filter(m => m.tag === tagFilter);
+        }
+
+        // Search
+        const query = memorySearchInput.value.toLowerCase();
+        if (query) {
+            filtered = filtered.filter(m => m.content.toLowerCase().includes(query));
+        }
+
+        // Sort
+        const sortMode = memorySortSelect.value;
+        if (sortMode === 'newest') {
+            filtered.sort((a, b) => b.timestamp - a.timestamp);
+        } else {
+            filtered.sort((a, b) => a.timestamp - b.timestamp);
+        }
+
+        if (filtered.length === 0) {
+            memoryListContainer.innerHTML = `<div class="text-center" style="color: var(--content-muted); padding: 2rem;">No memories found.</div>`;
+            return;
+        }
+
+        filtered.forEach(mem => {
+            const item = document.createElement('div');
+            item.className = 'hardware-surface';
+            item.style.padding = '1rem';
+            item.style.display = 'flex';
+            item.style.flexDirection = 'column';
+            item.style.gap = '0.5rem';
+
+            const tagColorMap = {
+                'user_preference': 'var(--color-primary-500)',
+                'user_profile': 'var(--brand-accent-1)',
+                'environment_global': '#10b981',
+                'explicit_fact': '#f59e0b'
+            };
+            const tagColor = tagColorMap[mem.tag] || 'var(--content-muted)';
+
+            const dateStr = new Date(mem.timestamp * 1000).toLocaleString();
+
+            item.innerHTML = `
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem;">
+                    <div style="flex: 1;">
+                        <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.25rem;">
+                            <span style="font-size: 0.7rem; font-weight: 700; text-transform: uppercase; color: ${tagColor}; border: 1px solid ${tagColor}; padding: 2px 6px; border-radius: 4px;">${mem.tag.replace('_', ' ')}</span>
+                            <span style="font-size: 0.7rem; color: var(--content-muted);">${dateStr}</span>
+                        </div>
+                        <div style="font-size: 0.95rem; color: var(--content-primary); line-height: 1.5; white-space: pre-wrap;">${escapeHtml(mem.content)}</div>
+                    </div>
+                    <div style="display: flex; gap: 0.5rem;">
+                        <button class="btn-ghost edit-mem-btn" title="Edit" style="padding: 0.5rem;">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg>
+                        </button>
+                        <button class="btn-ghost delete-mem-btn" title="Delete" style="padding: 0.5rem; color: var(--color-rose-500);">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"></path><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                        </button>
+                    </div>
+                </div>
+            `;
+
+            item.querySelector('.edit-mem-btn').addEventListener('click', () => openEditMemoryModal(mem));
+            item.querySelector('.delete-mem-btn').addEventListener('click', async () => {
+                if (await showConfirm('Delete Memory', 'Are you sure you want to delete this memory?')) {
+                    try {
+                        const res = await fetch(`/api/memory/${mem.id}`, { method: 'DELETE' });
+                        if (res.ok) {
+                            loadMemories();
+                        }
+                    } catch (e) {
+                        console.error('Failed to delete', e);
+                    }
+                }
+            });
+
+            memoryListContainer.appendChild(item);
+        });
+    };
+
+    if (memorySearchInput) memorySearchInput.addEventListener('input', renderMemories);
+    if (memoryFilterSelect) memoryFilterSelect.addEventListener('change', renderMemories);
+    if (memorySortSelect) memorySortSelect.addEventListener('change', renderMemories);
+
+    if (sysManageMemoryBtn) {
+        sysManageMemoryBtn.addEventListener('click', () => {
+            closeSystemSettings();
+            if (memoryCanvasOverlay) {
+                memoryCanvasOverlay.classList.remove('hidden');
+                setTimeout(() => memoryCanvasOverlay.classList.add('open'), 10);
+                loadMemories();
+            }
+        });
+    }
+
+    if (closeMemoryBtn) {
+        closeMemoryBtn.addEventListener('click', () => {
+            memoryCanvasOverlay.classList.remove('open');
+            setTimeout(() => memoryCanvasOverlay.classList.add('hidden'), 300);
+        });
+    }
+
+    const openEditMemoryModal = async (mem = null) => {
+        // We reuse the prompt modal but modify it slightly for larger text
+        const isEdit = !!mem;
+
+        // Temporarily change prompt input to textarea
+        const inputEl = document.getElementById('prompt-input');
+        const parent = inputEl.parentNode;
+        const textarea = document.createElement('textarea');
+        textarea.id = 'temp-mem-textarea';
+        textarea.className = 'input-luminous';
+        textarea.style.width = '100%';
+        textarea.style.minHeight = '100px';
+        textarea.style.marginBottom = '1rem';
+        textarea.style.resize = 'vertical';
+        textarea.placeholder = "Enter memory fact...";
+        textarea.value = isEdit ? mem.content : '';
+
+        const tagSelect = document.createElement('select');
+        tagSelect.id = 'temp-mem-tag';
+        tagSelect.className = 'input-luminous';
+        tagSelect.style.width = '100%';
+        tagSelect.style.marginBottom = '1.5rem';
+        tagSelect.innerHTML = `
+            <option value="user_preference">User Preference</option>
+            <option value="user_profile">User Profile</option>
+            <option value="environment_global">Environment/Global</option>
+            <option value="explicit_fact">Explicit Fact</option>
+        `;
+        tagSelect.value = isEdit ? mem.tag : 'explicit_fact';
+
+        parent.insertBefore(textarea, inputEl);
+        parent.insertBefore(tagSelect, inputEl);
+        inputEl.style.display = 'none';
+
+        const result = await new Promise((resolve) => {
+            const modal = document.getElementById('prompt-modal');
+            const titleEl = document.getElementById('prompt-title');
+            const msgEl = document.getElementById('prompt-message');
+            const confirmBtn = document.getElementById('prompt-action-btn');
+            const cancelBtn = document.getElementById('prompt-cancel-btn');
+            const selectContainer = document.getElementById('prompt-select-container');
+            selectContainer.style.display = 'none';
+
+            titleEl.textContent = isEdit ? 'Edit Memory' : 'Add Memory';
+            msgEl.textContent = "Provide the fact and select its category:";
+
+            modal.style.display = 'flex';
+            void modal.offsetWidth;
+            modal.classList.add('open');
+            textarea.focus();
+
+            const cleanup = () => {
+                modal.classList.remove('open');
+                setTimeout(() => {
+                    modal.style.display = 'none';
+                    textarea.remove();
+                    tagSelect.remove();
+                    inputEl.style.display = 'block';
+                }, 300);
+                confirmBtn.onclick = null;
+                cancelBtn.onclick = null;
+            };
+
+            confirmBtn.onclick = () => {
+                const content = textarea.value.trim();
+                const tag = tagSelect.value;
+                cleanup();
+                if (content) {
+                    resolve({ content, tag });
+                } else {
+                    resolve(null);
+                }
+            };
+
+            cancelBtn.onclick = () => {
+                cleanup();
+                resolve(null);
+            };
+        });
+
+        if (result) {
+            try {
+                if (isEdit) {
+                    await fetch(`/api/memory/${mem.id}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(result)
+                    });
+                } else {
+                    await fetch(`/api/memory`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(result)
+                    });
+                }
+                loadMemories();
+            } catch (e) {
+                console.error('Failed to save memory', e);
+            }
+        }
+    };
+
+    if (memoryAddBtn) memoryAddBtn.addEventListener('click', () => openEditMemoryModal());
 
     // Deprecated theme toggle listener removed
 

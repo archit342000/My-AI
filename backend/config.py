@@ -80,6 +80,14 @@ RAG_DECAY_RATE = 0.10              # Time-decay weight for older memories
 RAG_RETRIEVAL_LIMIT = 500          # Hard cap on total retrieved chunks
 
 # =============================================================================
+# CORE MEMORY MANAGEMENT
+# =============================================================================
+MEMORY_MAX_INJECT_CHARS = int(os.getenv("MEMORY_MAX_INJECT_CHARS", 10000))
+MEMORY_MAX_ADD_PER_TURN = int(os.getenv("MEMORY_MAX_ADD_PER_TURN", 5))
+MEMORY_MAX_EDIT_PER_TURN = int(os.getenv("MEMORY_MAX_EDIT_PER_TURN", 5))
+MEMORY_MAX_DELETE_PER_TURN = int(os.getenv("MEMORY_MAX_DELETE_PER_TURN", 5))
+
+# =============================================================================
 # UI & STREAMING
 # =============================================================================
 RESEARCH_UI_THOUGHT_MIN_LENGTH = 15       # Min chars to show reasoning snippet

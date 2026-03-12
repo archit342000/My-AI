@@ -128,251 +128,115 @@ class MemoryRAG:
             self.client, "memory_store", self.embedding_fn
         )
 
-    def add_memory(self, text, metadata=None):
-        """Low-level: store a single text document."""
+    def add_core_memory(self, text, tag):
+        """Low-level: store a single text document into core memory."""
         if not text or not text.strip():
-            return
+            return None
 
-        # Deduplication: Use hash of text as ID
-        doc_id = hashlib.sha256(text.encode('utf-8')).hexdigest()
+        # Generate unique ID for CRUD
+        doc_id = str(uuid.uuid4())
 
-        # Default metadata
-        meta = {"timestamp": time.time(), "type": "conversation"}
-        if metadata:
-            meta.update(metadata)
+        meta = {"timestamp": time.time(), "type": "core", "tag": tag}
 
         # Explicitly embed so we can correctly assign the "document" prefix
         try:
-            # Use our custom method to bypass Chroma's strict __call__ signature enforcement
             if hasattr(self.embedding_fn, '_embed_with_task'):
                 embeddings = self.embedding_fn._embed_with_task([text], task="document")
             else:
                 embeddings = self.embedding_fn([text])
         except Exception as e:
             log_event("rag_add_memory_error", {"error": str(e)})
-            return
+            return None
 
-        # Use upsert to handle potential duplicates (idempotent)
         self.collection.upsert(
             documents=[text],
             metadatas=[meta],
             ids=[doc_id],
             embeddings=embeddings
         )
+        return doc_id
 
-    # --- Noise Filtering ---
-    TRIVIAL_MESSAGES = {
-        "hello", "hi", "hey", "good morning", "good afternoon", "good evening",
-        "how are you", "whats up", "yo", "greetings", "hi there", "hello there",
-        "ok", "okay", "sure", "thanks", "thank you", "cool", "yes", "no",
-        "bye", "goodbye", "see you", "got it", "alright", "yep", "nope",
-    }
+    def update_core_memory(self, doc_id, new_text, new_tag):
+        """Updates an existing memory."""
+        if not new_text or not new_text.strip():
+            return False
 
-    def _is_trivial(self, text):
-        """Check if a message is too short or generic to store."""
-        clean = "".join(c for c in text.strip().lower() if c.isalnum() or c.isspace())
-        return clean in self.TRIVIAL_MESSAGES or len(clean) < 5
+        # Verify existence
+        existing = self.collection.get(ids=[doc_id])
+        if not existing or not existing.get('ids'):
+            return False
 
-    def _chunk_text(self, text, max_chars=config.RAG_CHUNK_MAX_CHARS):
-        """Split long text into chunks of ~600-800 tokens (~2200 chars).
-        Splits on paragraph boundaries first, then sentence boundaries."""
-        if len(text) <= max_chars:
-            return [text]
+        meta = {"timestamp": time.time(), "type": "core", "tag": new_tag}
 
-        chunks = []
-        paragraphs = text.split('\n\n')
-        current_chunk = ""
-
-        for para in paragraphs:
-            if len(current_chunk) + len(para) + 2 <= max_chars:
-                current_chunk += ("\n\n" if current_chunk else "") + para
-            else:
-                if current_chunk:
-                    chunks.append(current_chunk.strip())
-                # If a single paragraph exceeds max, split on sentences
-                if len(para) > max_chars:
-                    sentences = para.replace('. ', '.\n').split('\n')
-                    current_chunk = ""
-                    for sent in sentences:
-                        if len(current_chunk) + len(sent) + 1 <= max_chars:
-                            current_chunk += (" " if current_chunk else "") + sent
-                        else:
-                            if current_chunk:
-                                chunks.append(current_chunk.strip())
-                            current_chunk = sent
-                else:
-                    current_chunk = para
-
-        if current_chunk.strip():
-            chunks.append(current_chunk.strip())
-
-        return chunks if chunks else [text]
-
-    def _clean_for_storage(self, text):
-        """Strip tool call patterns and other artifacts from text before storing."""
-        import re
-        # Remove text-based tool call patterns like [search_memory(query="...")]
-        text = re.sub(r'\[\w+\(.*?\)\]', '', text)
-        # Remove any "Relevant Context:" blocks the model might have hallucinated
-        text = re.sub(r'(?:Relevant Context|Earlier Context):.*?(?=\n\n|\Z)', '', text, flags=re.DOTALL)
-        # Remove reasoning blocks
-        text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
-        return text.strip()
-
-    def add_conversation_turn(self, user_text, assistant_text, chat_id=None):
-        """Store a conversation turn as separate, well-structured documents.
-        
-        - User and assistant messages are stored separately with clear labels.
-        - Trivial messages (greetings, short acks) are filtered out.
-        - Tool call artifacts are stripped before storage.
-        - Long assistant responses are chunked for optimal retrieval.
-        """
-        ts = time.time()
-        base_meta = {"chat_id": chat_id, "timestamp": ts, "type": "conversation"} if chat_id else {"timestamp": ts, "type": "conversation"}
-
-        # Clean inputs
-        clean_user = self._clean_for_storage(user_text) if user_text else ""
-        clean_assistant = self._clean_for_storage(assistant_text) if assistant_text else ""
-
-        # 1. Store user message (if non-trivial)
-        if clean_user and not self._is_trivial(clean_user):
-            user_meta = {**base_meta, "role": "user"}
-            self.add_memory(f"[USER] {clean_user}", user_meta)
-
-        # 2. Store assistant response (chunked if long, skip if trivial)
-        if clean_assistant and not self._is_trivial(clean_assistant):
-            chunks = self._chunk_text(clean_assistant)
-            for i, chunk in enumerate(chunks):
-                chunk_meta = {**base_meta, "role": "assistant"}
-                if len(chunks) > 1:
-                    chunk_meta["chunk_index"] = i
-                    chunk_meta["total_chunks"] = len(chunks)
-                # Prefix with what the user asked for retrieval context
-                context_hint = f"(User asked: \"{clean_user[:100]}\")\n" if clean_user else ""
-                self.add_memory(f"[ASSISTANT] {context_hint}{chunk}", chunk_meta)
-
-
-    def add_core_memory(self, text):
-        """Adds a fact to the permanent Core Memory."""
-        self.add_memory(text, metadata={"type": "core", "timestamp": time.time()})
-
-    def get_core_memory(self):
-        """Retrieves all core memories."""
-        results = self.collection.get(where={"type": "core"})
-        if results and results['documents']:
-             return "\n".join(results['documents'])
-        return ""
-
-    def retrieve_context(self, query, n_results=5, where=None):
-        if not query:
-            return ""
-        
-        # 1. Imports
-        import math
-        import time
-
-        # 2. Smart Filter: Ignore generic greetings & short queries
-        q_lower = query.strip().lower()
-        q_clean = "".join(c for c in q_lower if c.isalnum() or c.isspace())
-        
-        COMMON_GREETINGS = {
-            "hello", "hi", "hey", "good morning", "good afternoon", "good evening", 
-            "how are you", "whats up", "yo", "greetings", "hi there", "hello there",
-            "ok", "okay", "sure", "thanks", "thank you", "cool", "yes", "no"
-        }
-        
-        if q_clean in COMMON_GREETINGS or len(q_clean) < 3:
-             return ""
-
-        # 3. Explicitly Embed Query for Re-Ranking
         try:
-             # Use custom explicit entry to bypass Chroma constraints
-             if hasattr(self.embedding_fn, '_embed_with_task'):
-                 query_embedding = self.embedding_fn._embed_with_task([query], task="query")[0]
-             else:
-                 query_embedding = self.embedding_fn([query])[0]
+            if hasattr(self.embedding_fn, '_embed_with_task'):
+                embeddings = self.embedding_fn._embed_with_task([new_text], task="document")
+            else:
+                embeddings = self.embedding_fn([new_text])
         except Exception as e:
-             # If embedding fails, return nothing
-             print(f"Embedding error: {e}")
-             return ""
+            log_event("rag_update_memory_error", {"error": str(e)})
+            return False
 
-        # 4. Fetch Large Candidate Pool
-        # We fetch 5x results to re-rank semantically and chronologically
-        FETCH_K = n_results * config.RAG_FETCH_MULTIPLIER
-        
-        # We request 'embeddings' to do manual cosine similarity
-        results = self.collection.query(
-            query_embeddings=[query_embedding],
-            n_results=FETCH_K,
-            where=where,
-            include=['documents', 'metadatas', 'embeddings'] 
+        self.collection.update(
+            documents=[new_text],
+            metadatas=[meta],
+            ids=[doc_id],
+            embeddings=embeddings
         )
+        return True
 
-        if not results['documents']:
+    def delete_core_memory(self, doc_id):
+        """Deletes a memory by ID."""
+        try:
+            self.collection.delete(ids=[doc_id])
+            return True
+        except Exception as e:
+            log_event("rag_delete_memory_error", {"error": str(e)})
+            return False
+
+    def get_all_core_memories_raw(self):
+        """Retrieves all core memories as a raw list of dicts."""
+        results = self.collection.get(where={"type": "core"})
+        memories = []
+        if results and results.get('documents'):
+            for i in range(len(results['ids'])):
+                memories.append({
+                    "id": results['ids'][i],
+                    "content": results['documents'][i],
+                    "tag": results['metadatas'][i].get("tag", "explicit_fact"),
+                    "timestamp": results['metadatas'][i].get("timestamp", 0)
+                })
+        return memories
+
+    def get_all_core_memories_formatted(self):
+        """Retrieves and formats core memories for system prompt injection.
+        Enforces character limit and priority tags."""
+        memories = self.get_all_core_memories_raw()
+        if not memories:
             return ""
 
-        documents = results['documents'][0]
-        metadatas = results['metadatas'][0]
-        embeddings = results['embeddings'][0]
+        # Priority mapping
+        tag_priority = {
+            "user_preference": 1,
+            "user_profile": 2,
+            "environment_global": 3,
+            "explicit_fact": 4
+        }
 
-        # 5. Helper: Manual Cosine Similarity
+        # Sort by priority, then descending by timestamp
+        memories.sort(key=lambda x: (tag_priority.get(x['tag'], 99), -x['timestamp']))
 
-        # 6. Scoring & Re-Ranking
-        scored_results = []
-        current_time = time.time()
-        DECAY_RATE = config.RAG_DECAY_RATE
-        
-        # Heuristic Threshold for Cosine Similarity (Range -1 to 1)
-        # 1.0 = identical, 0.0 = orthogonal
-        # With cosine distance metric properly set, Qwen model scores are well-
-        # calibrated: >0.7 strong match, 0.5-0.7 moderate, <0.5 weak.
-        MIN_SEMANTIC_SCORE = config.RAG_MIN_SEMANTIC_SCORE
+        formatted_lines = []
+        total_chars = 0
 
-        for doc, meta, emb in zip(documents, metadatas, embeddings):
-            # A. Semantic Score (High is Good)
-            sem_score = _cosine_similarity(query_embedding, emb)
-            print(f"[RAG DEBUG] Candidate: '{doc[:50]}...' Score: {sem_score:.3f}")
-            
-            if sem_score < MIN_SEMANTIC_SCORE:
-                continue
+        for m in memories:
+            line = f"[{m['id']}] [{m['tag'].upper()}] {m['content']}"
+            if total_chars + len(line) + 1 > config.MEMORY_MAX_INJECT_CHARS:
+                break
+            formatted_lines.append(line)
+            total_chars += len(line) + 1
 
-            # B. Recency Penalty (Time Decay)
-            # High Penalty = Bad
-            timestamp = float(meta.get('timestamp', 0))
-            # Handle potential non-numeric timestamp
-            if timestamp == 0: 
-                 try: timestamp = float(meta.get('timestamp'))
-                 except Exception: timestamp = 0
-
-            age_seconds = current_time - timestamp
-            age_hours = age_seconds / 3600
-            if age_hours < 0: age_hours = 0
-            
-            # Decay factor increases with age (DECAY_RATE=0.10)
-            # 1 hour  -> 1.07
-            # 24 hour -> 1.32
-            # 720 hour (1 month) -> 1.66
-            time_decay = 1 + (math.log(age_hours + 1) * DECAY_RATE)
-            
-            # Final Score: Similarity / Decay
-            # (High Sim / Low Decay) = Best
-            final_score = sem_score / time_decay
-            
-            scored_results.append((doc, final_score))
-
-        # Sort DESCENDING (Higher score is better)
-        scored_results.sort(key=lambda x: x[1], reverse=True)
-        
-        # Take Top N
-        final_docs = [item[0] for item in scored_results[:n_results]]
-        
-        if not final_docs:
-            return ""
-
-        # Simplified format for Tool Output
-        # Just return the raw text chunks separated by newlines
-        context = "\n\n".join(final_docs)
-        return context
+        return "\n".join(formatted_lines)
 
     def reset_memory(self):
         """Clears all stored memories."""
