@@ -102,7 +102,8 @@
     --z-header: 40;
     --z-sidebar: 1000;
     --z-overlay: 10000;
-    --z-tooltip: 11000;
+    --z-modal: 11000;
+    --z-tooltip: 12000;
 
     /* Semantic UI Colors — Light Mode */
     --bg-sidebar: var(--glass-bg);
@@ -2319,7 +2320,7 @@ html.dark .stopped-message .avatar {
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: var(--z-overlay);
+    z-index: var(--z-modal);
     opacity: 0;
     pointer-events: none;
     transition: opacity 300ms var(--ease-spring);
@@ -4410,9 +4411,10 @@ a.chat-list-item:active {
     top: 0;
     /* Atmospheric overlay, not solid */
     background: transparent;
-    z-index: 9999;
+    z-index: var(--z-overlay);
     display: flex;
     justify-content: center;
+    align-items: center; /* Center vertically */
     opacity: 0;
     pointer-events: none;
     transform: translateY(20px);
@@ -4432,14 +4434,17 @@ a.chat-list-item:active {
 .canvas-content {
     width: 100%;
     max-width: 1000px;
-    height: 100%;
+    height: calc(100% - 4rem); /* Limit height for centering */
+    max-height: 85vh;
     background: var(--glass-bg);
     backdrop-filter: var(--glass-blur);
     -webkit-backdrop-filter: var(--glass-blur);
-    border-inline: 1px solid var(--glass-border);
-    box-shadow: 0 40px 80px rgba(0,0,0,0.15);
+    border: 1px solid var(--glass-border); /* Full border */
+    border-radius: var(--radius-2xl); /* Rounded corners */
+    box-shadow: var(--surface-shadow-intense);
     display: flex;
     flex-direction: column;
+    overflow: hidden;
 }
 
 .dark .canvas-content {

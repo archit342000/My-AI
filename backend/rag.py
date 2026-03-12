@@ -92,27 +92,83 @@ class MemoryRAG:
     @staticmethod
     def _ensure_cosine_collection(client, name, embedding_fn):
         """Ensure the collection exists with cosine distance.
-        If an old collection exists with a different metric (e.g. L2 from the
-        Gemma era), delete and recreate it. This also clears stale embeddings
-        that are incompatible with the current embedding model."""
+        If an old collection exists with a different metric (e.g. L2), 
+        migrate the data to a new cosine-based collection.
+        This re-indexes stale embeddings so they are compatible with the current model."""
+        
+        # 1. Check if collection exists and get its metadata
         try:
             existing = client.get_collection(name=name)
-            coll_meta = existing.metadata or {}
-            if coll_meta.get("hnsw:space") != "cosine":
-                log_event("rag_collection_migration", {
-                    "collection": name,
-                    "old_space": coll_meta.get("hnsw:space", "l2 (default)"),
-                    "action": "delete_and_recreate_with_cosine"
-                })
-                client.delete_collection(name=name)
-        except Exception:
-            pass  # Collection doesn't exist yet — will be created below
+        except (ValueError, Exception):
+            # Collection doesn't exist yet — create it fresh
+            return client.get_or_create_collection(
+                name=name,
+                embedding_function=embedding_fn,
+                metadata=MemoryRAG.COSINE_METADATA
+            )
 
-        return client.get_or_create_collection(
-            name=name,
-            embedding_function=embedding_fn,
-            metadata=MemoryRAG.COSINE_METADATA
-        )
+        # 2. Check if migration is needed
+        coll_meta = existing.metadata or {}
+        if coll_meta.get("hnsw:space") == "cosine":
+            return existing
+
+        # 3. Migration Logic
+        try:
+            # Fetch ALL existing data. We use a large limit to ensure we don't miss records.
+            count = existing.count()
+            old_data = existing.get(include=["documents", "metadatas"])
+            
+            docs = old_data.get('documents', [])
+            metas = old_data.get('metadatas', [])
+            ids = old_data.get('ids', [])
+
+            log_event("rag_collection_migration_start", {
+                "collection": name,
+                "old_space": coll_meta.get("hnsw:space", "l2 (default)"),
+                "found_count": len(ids),
+                "actual_count": count
+            })
+
+            # Re-verify we actually have the data if count > 0
+            if count > 0 and not ids:
+                log_event("rag_migration_error", {"error": "Count > 0 but get() returned no IDs. Aborting deletion to prevent data loss."})
+                return existing
+
+            # Delete and recreate
+            client.delete_collection(name=name)
+            
+            new_coll = client.create_collection(
+                name=name,
+                embedding_function=embedding_fn,
+                metadata=MemoryRAG.COSINE_METADATA
+            )
+
+            if ids:
+                # Migrate in batches. Re-embedding happens here.
+                batch_size = 50 
+                for i in range(0, len(ids), batch_size):
+                    try:
+                        new_coll.add(
+                            ids=ids[i:i+batch_size],
+                            documents=docs[i:i+batch_size],
+                            metadatas=metas[i:i+batch_size]
+                        )
+                    except Exception as e:
+                        log_event("rag_migration_batch_error", {"error": str(e), "index": i})
+                
+                log_event("rag_migration_complete", {"collection": name, "migrated": len(ids)})
+            
+            return new_coll
+
+        except Exception as e:
+            log_event("rag_migration_critical_failure", {"error": str(e)})
+            # If we hit an error here, the collection might be deleted but recreate failed.
+            # We must at least ensure we return A collection for the app to function.
+            return client.get_or_create_collection(
+                name=name,
+                embedding_function=embedding_fn,
+                metadata=MemoryRAG.COSINE_METADATA
+            )
 
     def __init__(self, persist_path=config.CHROMA_PATH, api_url="http://localhost:1234", embedding_model="text-embedding-embeddinggemma-300m", api_key=None):
         self.client = chromadb.PersistentClient(path=persist_path)
@@ -127,6 +183,11 @@ class MemoryRAG:
         self.collection = self._ensure_cosine_collection(
             self.client, "memory_store", self.embedding_fn
         )
+        log_event("rag_memory_initialized", {
+            "persist_path": persist_path,
+            "collection": "memory_store",
+            "embedding_model": embedding_model
+        })
 
     def add_core_memory(self, text, tag):
         """Low-level: store a single text document into core memory."""

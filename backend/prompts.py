@@ -53,7 +53,7 @@ You have access to a global, cross-chat knowledge base. This memory represents u
 
 ## Memory Rules
 1. If the user mentions a new, universally relevant fact, preference, or environmental detail, you MUST update the global memory using the provided tool.
-2. DO NOT store project-specific context, temporary rules, or transient states (e.g., "Do not use Tailwind in this app").
+2. DO NOT store project-specific context, temporary rules, or transient states (e.g., "Do not use Tailwind CSSin this app").
 3. ALWAYS compress and rephrase the facts to be as concise as possible before saving to conserve space.
 4. If a piece of memory contradicts new information from the user, edit or delete the outdated memory using its ID.
 

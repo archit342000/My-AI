@@ -23,7 +23,12 @@ APP_PASSWORD = get_secret("APP_PASSWORD", None)
 # =============================================================================
 LM_STUDIO_URL = get_secret("LM_STUDIO_URL", "http://localhost:1234")
 LM_STUDIO_API_KEY = get_secret("LM_STUDIO_API_KEY", "")
-CHROMA_PATH = get_secret("CHROMA_PATH", os.path.join(DATA_DIR, "chroma_db"))
+CHROMA_PATH = get_secret("CHROMA_PATH", os.path.abspath(os.path.join(DATA_DIR, "chroma_db")))
+
+# Ensure persistence directories exist
+os.makedirs(CHROMA_PATH, exist_ok=True)
+os.makedirs(os.path.join(DATA_DIR, "logs", "general"), exist_ok=True)
+os.makedirs(os.path.join(DATA_DIR, "tasks"), exist_ok=True)
 
 # =============================================================================
 # SEARCH (Tavily API)

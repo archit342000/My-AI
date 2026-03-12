@@ -1,5 +1,11 @@
 # CHANGELOG
  
+## v2.2.0 (Memory Management & VRAM Optimization)
+* **Memory Management UI**: Added a comprehensive Memory Canvas Overlay for searching, filtering, editing, and deleting memories directly from the UI.
+* **Enhanced Memory API**: Implemented RESTful endpoints (`PUT`, `DELETE`) to support granular memory modification and cleanup.
+* **System Settings Integration**: Added a dedicated "Manage Memories" module within the System Settings for unified configuration control.
+* **Version Bump**: Incremented version to v2.2.0.
+
 ## v2.1.1 (Model Lifecycle & VRAM Optimization)
 * **Model Lifecycle Tracking**: Added full support for tracking model states (`unloaded`, `loading`, `loaded`) through a corrected `/api/v1/models` proxy that respects the `llama.cpp` server-specific `status` object.
 * **Improved Management Consistency**: Moved loading/unloading logic from `/api/v1/models` to unprefixed `/api/models/load` and `/api/models/unload` endpoints to align with `llama.cpp` native management paths.

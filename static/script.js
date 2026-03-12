@@ -73,7 +73,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const sysManageMemoryBtn = document.getElementById('sys-manage-memory');
     const memoryCanvasOverlay = document.getElementById('memory-canvas-overlay');
     const closeMemoryBtn = document.getElementById('close-memory-btn');
-    const memoryAddBtn = document.getElementById('memory-add-btn');
+    const memoryAddBtn = document.getElementById('memory-add-fab');
     const memoryListContainer = document.getElementById('memory-list-container');
     const memorySearchInput = document.getElementById('memory-search-input');
     const memoryFilterSelect = document.getElementById('memory-filter-select');
@@ -1150,6 +1150,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
             titleEl.textContent = title;
             msgEl.textContent = message;
+            
+            // Reset to default folder icon
+            const iconSvg = document.getElementById('prompt-icon-svg');
+            if (iconSvg) {
+                iconSvg.innerHTML = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path><line x1="12" y1="11" x2="12" y2="17"></line><line x1="9" y1="14" x2="15" y2="14"></line></svg>`;
+            }
+
+            confirmBtn.textContent = "Confirm";
+            cancelBtn.textContent = "Cancel";
+
             inputEl.value = currentVal;
 
             if (folderList !== null) {
@@ -2571,7 +2581,9 @@ document.addEventListener('DOMContentLoaded', () => {
         textarea.id = 'temp-mem-textarea';
         textarea.className = 'input-luminous';
         textarea.style.width = '100%';
-        textarea.style.minHeight = '100px';
+        textarea.style.minHeight = '120px';
+        textarea.style.padding = '14px 1rem';
+        textarea.style.lineHeight = '1.6';
         textarea.style.marginBottom = '1rem';
         textarea.style.resize = 'vertical';
         textarea.placeholder = "Enter memory fact...";
@@ -2605,6 +2617,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
             titleEl.textContent = isEdit ? 'Edit Memory' : 'Add Memory';
             msgEl.textContent = "Provide the fact and select its category:";
+            
+            confirmBtn.textContent = "Save Memory";
+            cancelBtn.textContent = "Cancel";
+
+            const iconSvg = document.getElementById('prompt-icon-svg');
+            if (iconSvg) {
+                iconSvg.innerHTML = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .52 8.125A5.002 5.002 0 0 0 14 18a5 5 0 0 0 4-8 4.003 4.003 0 0 0-3-6.912Q13.5 3 12 5Z"/><path d="M9 18q4.5 0 4.5-4.5c0-4.5 4.5-4.5 4.5-4.5"/><path d="M12 5v14"/></svg>`;
+            }
 
             modal.style.display = 'flex';
             void modal.offsetWidth;
