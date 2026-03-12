@@ -1,5 +1,10 @@
 # CHANGELOG
  
+## v3.0.0 (Live Web Browsing)
+* **Live Web Browsing Tool**: An autonomous AI agent utilizing Playwright in a fully containerized environment that searches and browses websites.
+* **Vision Pane**: A resizable video pane stream embedded seamlessly in the chat application that lets you watch the AI operate.
+* **Interactivity**: Support for Automatic and Semi-Automatic browsing modes, providing mechanisms for the user to pass 2FA codes or stop the AI directly using the vision panel text box.
+
 ## v2.2.1 (Full Height UI Overlays)
 * **Full Height UI Canvases**: The Research Report and Global Knowledge Base overlays now span the full height of the viewport on all devices.
 * **Mobile Flush Edges**: Added mobile responsiveness to strip the border and border-radius off full-screen canvases for a flush, native full-screen feel on touch devices.

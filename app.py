@@ -24,8 +24,10 @@ from backend.agents.research import generate_research_response
 from backend.agents.chat import generate_chat_response
 from backend.task_manager import task_manager
 from backend.cache_system import cache_system
+from flask_sock import Sock
 
 app = Flask(__name__, static_folder='static')
+sock = Sock(app)
 # Limit request size to 16MB to prevent unbounded payload DoS (e.g. extremely large JSON arrays)
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 
@@ -265,6 +267,61 @@ def debug_memory():
         return jsonify({"error": str(e)}), 500
 
 import httpx
+import websockets
+import asyncio
+
+@sock.route('/ws/browser')
+def browser_ws(ws):
+    """Proxy WebSocket connection to the browser_mcp server."""
+    # Run the proxy logic in a new event loop for this thread,
+    # since Flask-Sock handles each connection in a new thread natively.
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    async def proxy():
+        try:
+            # Connect to the internal browser_mcp server websocket on port 8001
+            async with websockets.connect("ws://browser_mcp:8001") as internal_ws:
+                async def forward_to_client():
+                    try:
+                        while True:
+                            message = await internal_ws.recv()
+                            ws.send(message)
+                    except Exception as e:
+                        log_event("browser_ws_receive_error", {"error": str(e)})
+
+                async def forward_to_internal():
+                    try:
+                        while True:
+                            # Use asyncio to run the blocking ws.receive() in an executor
+                            message = await loop.run_in_executor(None, ws.receive)
+                            if message is None:
+                                break
+                            await internal_ws.send(message)
+                    except Exception as e:
+                        log_event("browser_ws_send_error", {"error": str(e)})
+
+                await asyncio.gather(
+                    forward_to_client(),
+                    forward_to_internal()
+                )
+        except Exception as e:
+            log_event("browser_ws_connection_error", {"error": str(e)})
+
+    loop.run_until_complete(proxy())
+
+
+@app.route('/api/browser/interrupt', methods=['POST'])
+def browser_interrupt():
+    """Forward interrupt message to the browser MCP server."""
+    data = request.json
+    try:
+        # The browser_mcp server is running its HTTP FastMCP server on port 8000
+        response = requests.post("http://browser_mcp:8000/interrupt", json=data, timeout=5)
+        return Response(response.content, status=response.status_code, content_type=response.headers.get('content-type', 'application/json'))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 
 @app.route('/api/v1/models', methods=['GET'])
 @app.route('/v1/models', methods=['GET'])

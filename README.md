@@ -1,10 +1,11 @@
-# 🌌 My-AI v2.2.1
+# 🌌 My-AI v3.0.0
 
 A premium, full-stack AI chat interface designed for local inference natively powered by [llama.cpp](https://github.com/ggerganov/llama.cpp). This application provides a high-fidelity atmospheric glass interface for interacting with local LLMs, featuring persistent state, long-term memory, and an advanced deep research agent.
 
 ## ✨ Features
 
 *   **Deep Research Agent**: A multi-pass ($n+1$) autonomous research engine that browses the live web using [Tavily](https://tavily.com/), discovers links, and compiles structured reports.
+*   **Web Browsing**: A fully autonomous tool allowing the AI to browse the web using Playwright, while you watch the visual feed stream directly to the UI. Includes 'automatic' and 'semi-automatic' modes, where you can interrupt or provide guidance.
 *   **Intelligent Memory (RAG)**: Long-term semantic memory powered by **ChromaDB**. The AI automatically remembers facts from previous conversations to maintain context.
 *   **Multimodal Vision**: Seamlessly attach and analyze images. Compatible with vision-enabled models (e.g., Llama 3.2 Vision, Qwen 2 VL).
 *   **Persistent SQLite Backend**: All conversations and metadata are stored in a local SQLite database for instant retrieval and management.
@@ -76,5 +77,5 @@ This application is fully containerized and runs with user-level permissions for
 
 ## 📄 License & Versioning
 
-This project follows [SemVer v2.0.0](https://semver.org/). Current version: `v2.2.1`.
+This project follows [SemVer v2.0.0](https://semver.org/). Current version: `v3.0.0`.
 See [CHANGELOG.md](./changelog.md) and [docs/versioning_directives.md](./docs/versioning_directives.md) for a detailed history of updates and versioning rules.

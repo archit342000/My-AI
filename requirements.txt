@@ -1,4 +1,5 @@
 flask
+flask-sock
 chromadb
 requests
 python-dotenv

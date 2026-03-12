@@ -6,7 +6,7 @@ from backend.prompts import BASE_SYSTEM_PROMPT, MEMORY_SYSTEM_PROMPT
 from backend.tools import MANAGE_CORE_MEMORY_TOOL, GET_TIME_TOOL, VALIDATE_OUTPUT_FORMAT_TOOL
 from backend.utils import create_chunk, get_current_time
 from backend import config
-from backend.mcp_client import mcp_client
+from backend.mcp_client import mcp_client, browser_mcp_client
 from backend.llm import stream_chat_completion, chat_completion
 from backend.validation import (
     validate_output_format, parse_fixes, find_fix_locations, apply_fixes,
@@ -105,9 +105,11 @@ async def generate_chat_response(api_url, model, messages, extra_body, rag=None,
     """
     # Ensure MCP client is connected
     await mcp_client.connect()
+    await browser_mcp_client.connect()
 
     # Fetch tools from MCP Server
     mcp_tools_raw = await mcp_client.get_available_tools()
+    browser_tools_raw = await browser_mcp_client.get_available_tools()
 
     # Filter only the chat-facing tools
     chat_mcp_tool_names = ["search_web", "audit_search"]
@@ -125,23 +127,44 @@ async def generate_chat_response(api_url, model, messages, extra_body, rag=None,
                 }
             })
 
+    # Check if browsing mode is active
+    browsing_mode = extra_body.pop('browsingMode', False)
+    browsing_auto_mode = extra_body.pop('browsingAutoMode', 'automatic')
+
     # 1. Setup Tools & Prompts
-    # If deep search is enabled, the search_web tool automatically returns raw content.
-    # We remove the audit_tavily_search tool to prevent redundancy/hallucination logic.
     tools = [GET_TIME_TOOL, VALIDATE_OUTPUT_FORMAT_TOOL]
-
-    if search_depth_mode == 'deep':
-        # Find search_web from MCP and modify description, omit audit_search
-        for mt in mcp_tools:
-            if mt["function"]["name"] == "search_web":
-                deep_tool = dict(mt)
-                deep_tool["function"] = dict(mt["function"])
-                deep_tool["function"]["description"] = "Performs a web search using Tavily to find information on a topic. Results include an AI-summarized answer and the FULL RAW text content of the primary pages. Use this tool ONCE for maximum information depth."
-                tools.append(deep_tool)
-    else:
-        tools.extend(mcp_tools)
-
     system_prompt = BASE_SYSTEM_PROMPT
+
+    if browsing_mode:
+        for mcp_tool in browser_tools_raw:
+            if mcp_tool.name == "start_browsing_task":
+                tools.append({
+                    "type": "function",
+                    "function": {
+                        "name": mcp_tool.name,
+                        "description": mcp_tool.description,
+                        "parameters": mcp_tool.inputSchema
+                    }
+                })
+
+        system_prompt += f"""
+# Browsing Setup Mode
+You are currently helping the user set up a web browsing task. The user has requested to browse the web in '{browsing_auto_mode}' mode.
+You MUST ask the user clarifying questions about their web task until you are 100% certain of the goal.
+Do not start the browsing task until you have all the necessary information, links, or login requirements needed.
+Once you are completely sure of what needs to be done, call the `start_browsing_task` tool with the detailed goal.
+"""
+    else:
+        # Standard tools if not in browsing mode
+        if search_depth_mode == 'deep':
+            for mt in mcp_tools:
+                if mt["function"]["name"] == "search_web":
+                    deep_tool = dict(mt)
+                    deep_tool["function"] = dict(mt["function"])
+                    deep_tool["function"]["description"] = "Performs a web search using Tavily to find information on a topic. Results include an AI-summarized answer and the FULL RAW text content of the primary pages. Use this tool ONCE for maximum information depth."
+                    tools.append(deep_tool)
+        else:
+            tools.extend(mcp_tools)
     
     if memory_mode:
         tools.append(MANAGE_CORE_MEMORY_TOOL)
@@ -405,6 +428,48 @@ async def generate_chat_response(api_url, model, messages, extra_body, rag=None,
                 current_reasoning += res_log
                 yield f"data: {create_chunk(model, reasoning=res_log)}\n\n"
                 yield f"data: {json.dumps({'__tool_result__': True, 'tool_call_id': tc['id'], 'name': fn_name, 'result': current_time})}\n\n"
+                has_real_tools = True
+            elif fn_name == "start_browsing_task":
+                # Ensure the browser websocket panel shows up via signal to UI
+                yield f"data: {json.dumps({'__browser_start__': True})}\n\n"
+
+                goal = args.get("goal", "Browse the web")
+                mode = args.get("mode", "automatic")
+                task_id = chat_id # Use chat_id as task_id
+
+                log = f"Calling: MCP start_browsing_task(\"{goal}\", mode=\"{mode}\")\n"
+                current_reasoning += log
+                yield f"data: {create_chunk(model, reasoning=log)}\n\n"
+
+                t0 = time.time()
+                mcp_args = {
+                    "goal": goal,
+                    "mode": mode,
+                    "task_id": task_id
+                }
+                mcp_res = await browser_mcp_client.execute_tool("start_browsing_task", mcp_args)
+
+                try:
+                    res_json = json.loads(mcp_res.content[0].text)
+                    browser_result = res_json.get("result", "")
+                except:
+                    browser_result = mcp_res.content[0].text
+
+                # Close panel
+                yield f"data: {json.dumps({'__browser_end__': True})}\n\n"
+
+                duration = time.time() - t0
+                log_tool_call("start_browsing_task", mcp_args, browser_result, duration_s=duration, chat_id=chat_id)
+
+                messages_to_send.append({
+                    "role": "tool", "tool_call_id": tc['id'], "name": fn_name,
+                    "content": browser_result
+                })
+
+                res_log = "Result: Browsing task completed.\n"
+                current_reasoning += res_log
+                yield f"data: {create_chunk(model, reasoning=res_log)}\n\n"
+                yield f"data: {json.dumps({'__tool_result__': True, 'tool_call_id': tc['id'], 'name': fn_name, 'result': browser_result})}\n\n"
                 has_real_tools = True
             else:
                 # Unrecognized or garbled tool call — return error so the
