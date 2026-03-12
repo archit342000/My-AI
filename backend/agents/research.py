@@ -25,9 +25,9 @@ from backend.prompts import (
 )
 from backend.utils import (
     create_chunk, validate_research_plan,
-    get_current_time, async_tavily_search, async_tavily_map,
-    async_tavily_extract, is_safe_web_url
+    get_current_time, is_safe_web_url
 )
+from backend.mcp_client import mcp_client
 from backend.llm import stream_chat_completion
 from backend import config
 
@@ -155,39 +155,13 @@ async def _stream_research_call(api_url, payload, display_model, activity_type,
 
 
 async def _fetch_and_encode_image(url):
-    if not is_safe_web_url(url):
-        return None
     try:
-        current_url = url
-        resp = None
-        # AGENTS.md Compliance: Add browser-like headers to bypass CDN bot-blocks
-        headers = {
-            'User-Agent': "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            'Accept': "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
-            'Accept-Language': "en-US,en;q=0.9",
-            'Referer': f"https://{urllib.parse.urlparse(url).netloc}/"
-        }
-        async with httpx.AsyncClient(timeout=config.TIMEOUT_IMAGE_FETCH, follow_redirects=False, headers=headers) as client:
-            for _ in range(config.RESEARCH_IMAGE_FETCH_RETRIES):
-                resp = await client.get(current_url)
-                if resp.status_code in (301, 302, 303, 307, 308):
-                    next_url = resp.headers.get('Location')
-                    if not next_url:
-                        break
-                    next_url = urllib.parse.urljoin(current_url, next_url)
-                    if not is_safe_web_url(next_url):
-                        return None
-                    current_url = next_url
-                else:
-                    break
-                    
-            if not resp:
-                return None
-            resp.raise_for_status()
-            mime = resp.headers.get('content-type', 'image/jpeg').split(';')[0].strip()
-            b64 = base64.b64encode(resp.content).decode('utf-8')
-            return f"data:{mime};base64,{b64}"
-    except:
+        mcp_res = await mcp_client.execute_tool("fetch_and_encode_image", {"url": url})
+        res_json = json.loads(mcp_res.content[0].text)
+        if "error" in res_json:
+            return None
+        return res_json.get("image")
+    except Exception:
         return None
 
 
@@ -291,24 +265,6 @@ def _select_top_urls(results, n=None):
     return selected
 
 
-async def _extract_pdf_content(pdf_bytes):
-    """Extract text from PDF bytes using pymupdf (fitz). Returns markdown-formatted text."""
-    try:
-        import fitz  # pymupdf
-        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-        pages = []
-        for page in doc:
-            text = page.get_text("text")
-            if text.strip():
-                pages.append(text.strip())
-        doc.close()
-        return "\n\n---\n\n".join(pages) if pages else None
-    except ImportError:
-        print("[Research] pymupdf not installed. Skipping PDF extraction.")
-        return None
-    except Exception as e:
-        print(f"[Research] PDF extraction error: {e}")
-        return None
 
 
 async def _process_images_in_content(content, url, vision_model, api_url, vlm_lock, display_model=None, step_id=None, api_key=None):
@@ -469,43 +425,30 @@ async def _extract_content_for_url(url, search_depth_mode, vision_model, api_url
         return
     
     # ===== DEEP MODE EXTRACTION =====
-    is_pdf = urllib.parse.urlparse(url).path.lower().endswith('.pdf')
     
-    # Strategy 1: Direct HTTP GET
+    # Strategy 1: MCP visit_page (Handles GET, HTML to Markdown, and PDF extraction)
     content = None
     try:
-        async with httpx.AsyncClient(timeout=config.TIMEOUT_WEB_SCRAPE, follow_redirects=True) as client:
-            resp = await client.get(url)
-            if resp.status_code == 200:
-                content_type = resp.headers.get('content-type', '').lower()
-                
-                if is_pdf or 'application/pdf' in content_type:
-                    # PDF: try pymupdf first
-                    content = await _extract_pdf_content(resp.content)
-                    if content and len(content.strip()) > config.RESEARCH_EXTRACT_MIN_PDF_CONTENT:
-                        yield {"type": "result", "data": (url, content)}
-                        return
-                    # pymupdf failed, will try Tavily Extract below
-                    content = None
-                else:
-                    # HTML: markdownify
-                    md = markdownify.markdownify(resp.text)
-                    if md and len(md.strip()) > (config.RESEARCH_CONTENT_MIN_LENGTH_DEEP if search_depth_mode == 'deep' else config.RESEARCH_CONTENT_MIN_LENGTH_REGULAR):
-                        # Vision processing for inline images (deep mode only)
-                        if vision_model:
-                            async for packet in _process_images_in_content(md, url, vision_model, api_url, vlm_lock, display_model, step_id, api_key=api_key):
-                                if packet["type"] == "activity":
-                                    yield packet
-                                else:
-                                    md = packet["data"]
-                        yield {"type": "result", "data": (url, md)}
-                        return
+        mcp_res = await mcp_client.execute_tool("visit_page", {"url": url, "max_chars": 40000})
+        extracted = mcp_res.content[0].text
+        if extracted and "Error:" not in extracted and len(extracted.strip()) > (config.RESEARCH_CONTENT_MIN_LENGTH_DEEP if search_depth_mode == 'deep' else config.RESEARCH_CONTENT_MIN_LENGTH_REGULAR):
+            # Vision processing for inline images
+            if vision_model:
+                async for packet in _process_images_in_content(extracted, url, vision_model, api_url, vlm_lock, display_model, step_id, api_key=api_key):
+                    if packet["type"] == "activity":
+                        yield packet
+                    else:
+                        extracted = packet["data"]
+            yield {"type": "result", "data": (url, extracted)}
+            return
     except Exception:
         pass
     
-    # Strategy 2: Tavily Extract fallback (handles JS-rendered pages and some PDFs)
+    # Strategy 2: MCP Tavily Extract fallback (handles JS-rendered pages and some PDFs)
     try:
-        tavily_results = await async_tavily_extract([url])
+        mcp_res = await mcp_client.execute_tool("async_tavily_extract", {"urls": [url]})
+        res_json = json.loads(mcp_res.content[0].text)
+        tavily_results = res_json.get("results", [])
         for tr in tavily_results:
             if tr.get('raw_content') and len(tr['raw_content'].strip()) > config.RESEARCH_EXTRACT_MIN_TAVILY_CONTENT:
                 yield {"type": "result", "data": (url, tr['raw_content'])}
@@ -750,8 +693,14 @@ async def _execute_section_reflection_and_write(
 
             follow_up_content_text = ""
             for fq in follow_up_queries:
-                fu_results, _ = await async_tavily_search(fq, max_results=config.RESEARCH_TAVILY_MAX_RESULTS_FOLLOWUP)
-                fu_results = [r for r in fu_results if r.get('raw_content') or r.get('content')]
+                mcp_res = await mcp_client.execute_tool("async_tavily_search", {"query": fq, "max_results": config.RESEARCH_TAVILY_MAX_RESULTS_FOLLOWUP})
+                try:
+                    res_json = json.loads(mcp_res.content[0].text)
+                    fu_results_raw = res_json.get("results", [])
+                except:
+                    fu_results_raw = []
+
+                fu_results = [r for r in fu_results_raw if r.get('raw_content') or r.get('content')]
 
                 if fu_results:
                     fu_selected = _select_top_urls(fu_results, n=config.RESEARCH_SELECT_TOP_URLS_FOLLOWUP_COUNT)
@@ -1242,6 +1191,10 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
     # VLM concurrency lock (serialize vision model calls)
     vlm_lock = asyncio.Semaphore(1) if vision_model else None
 
+    # Ensure MCP client is connected
+    if not mcp_client.session:
+        await mcp_client.connect()
+
     # ===== PARSE PLAN IF EXECUTING =====
     sections = []
     total_query_count = 0
@@ -1357,11 +1310,17 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
                             _pq_msg = f'Gathering preliminary context: "{prelim_query}"...'
                             yield f"data: {_create_activity_chunk(display_model, 'planning', {'message': _pq_msg, 'state': 'thinking'})}\n\n"
 
-                            prelim_results, prelim_images = await async_tavily_search(
-                                prelim_query, 
-                                topic=prelim_topic, 
-                                time_range=prelim_time_range
-                            )
+                            mcp_res = await mcp_client.execute_tool("async_tavily_search", {
+                                "query": prelim_query,
+                                "topic": prelim_topic,
+                                "time_range": prelim_time_range
+                            })
+                            try:
+                                res_json = json.loads(mcp_res.content[0].text)
+                                prelim_results = res_json.get("results", [])
+                                prelim_images = res_json.get("images", [])
+                            except:
+                                prelim_results, prelim_images = [], []
 
                             if prelim_results:
                                 context_snippets = []
@@ -1527,12 +1486,19 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
                 yield f"data: {_create_activity_chunk(display_model, 'search', {'query': query, 'step_id': section_idx, 'displayMessage': f'Query {q_idx+1}/{len(section_queries)}: Searching...'})}\n\n"
 
                 # --- SEARCH ---
-                results, search_images = await async_tavily_search(
-                    query, topic=q_topic, time_range=q_time_range,
-                    start_date=q_start_date, end_date=q_end_date,
-                    max_results=config.RESEARCH_TAVILY_MAX_RESULTS_INITIAL
-                )
-                results = [r for r in results if r.get('raw_content') or r.get('content')]
+                mcp_res = await mcp_client.execute_tool("async_tavily_search", {
+                    "query": query, "topic": q_topic, "time_range": q_time_range,
+                    "start_date": q_start_date, "end_date": q_end_date,
+                    "max_results": config.RESEARCH_TAVILY_MAX_RESULTS_INITIAL
+                })
+                try:
+                    res_json = json.loads(mcp_res.content[0].text)
+                    results_raw = res_json.get("results", [])
+                    search_images = res_json.get("images", [])
+                except:
+                    results_raw, search_images = [], []
+
+                results = [r for r in results_raw if r.get('raw_content') or r.get('content')]
 
                 if not results:
                     yield f"data: {_create_activity_chunk(display_model, 'status', {'message': f'No results for query: {query[:40]}...', 'icon': '⚠️'})}\n\n"
@@ -1600,7 +1566,13 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
                         sel_url = sel_result.get('url', '')
                         yield f"data: {_create_activity_chunk(display_model, 'status', {'message': f'Deep mapping: {sel_url[:40]}...', 'step_id': section_idx, 'icon': '🗺️'})}\n\n"
 
-                        sub_mapped = await async_tavily_map(sel_url, instruction=f"Researching: {heading}. Find deep data pages.")
+                        mcp_res = await mcp_client.execute_tool("async_tavily_map", {"url_to_map": sel_url, "instruction": f"Researching: {heading}. Find deep data pages."})
+                        try:
+                            res_json = json.loads(mcp_res.content[0].text)
+                            sub_mapped = res_json.get("results", [])
+                        except:
+                            sub_mapped = []
+
                         if sub_mapped:
                             for mapped_url in sub_mapped[:config.RESEARCH_DEEP_MAP_MAX_URLS]:
                                 if accumulated_tokens >= content_budget:

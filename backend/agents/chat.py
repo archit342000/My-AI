@@ -3,8 +3,9 @@ import json
 from backend.logger import log_event, log_tool_call
 import time
 from backend.prompts import BASE_SYSTEM_PROMPT, MEMORY_SYSTEM_PROMPT
-from backend.tools import MEMORY_SEARCH_TOOL, TAVILY_SEARCH_TOOL, AUDIT_TAVILY_SEARCH_TOOL, GET_TIME_TOOL, VALIDATE_OUTPUT_FORMAT_TOOL
-from backend.utils import create_chunk, execute_tavily_search, audit_tavily_search, get_current_time
+from backend.tools import MEMORY_SEARCH_TOOL, GET_TIME_TOOL, VALIDATE_OUTPUT_FORMAT_TOOL
+from backend.utils import create_chunk, get_current_time
+from backend.mcp_client import mcp_client
 from backend.llm import stream_chat_completion, chat_completion
 from backend.validation import (
     validate_output_format, parse_fixes, find_fix_locations, apply_fixes,
@@ -101,16 +102,45 @@ async def generate_chat_response(api_url, model, messages, extra_body, rag=None,
       <think>[second reasoning]</think>
       [final answer]
     """
+    # Ensure MCP client is connected
+    if not mcp_client.session:
+        await mcp_client.connect()
+
+    # Fetch tools from MCP Server
+    mcp_tools_raw = await mcp_client.get_available_tools()
+
+    # Filter only the chat-facing tools
+    chat_mcp_tool_names = ["search_web", "audit_search"]
+    mcp_tools = []
+
+    # Map MCP tool schema to OpenAI tool schema
+    for mcp_tool in mcp_tools_raw:
+        if mcp_tool.name in chat_mcp_tool_names:
+            mcp_tools.append({
+                "type": "function",
+                "function": {
+                    "name": mcp_tool.name,
+                    "description": mcp_tool.description,
+                    "parameters": mcp_tool.inputSchema
+                }
+            })
+
     # 1. Setup Tools & Prompts
     # If deep search is enabled, the search_web tool automatically returns raw content.
     # We remove the audit_tavily_search tool to prevent redundancy/hallucination logic.
+    tools = [GET_TIME_TOOL, VALIDATE_OUTPUT_FORMAT_TOOL]
+
     if search_depth_mode == 'deep':
-        DEEP_TAVILY = dict(TAVILY_SEARCH_TOOL)
-        DEEP_TAVILY["function"] = dict(TAVILY_SEARCH_TOOL["function"])
-        DEEP_TAVILY["function"]["description"] = "Performs a web search using Tavily to find information on a topic. Results include an AI-summarized answer and the FULL RAW text content of the primary pages. Use this tool ONCE for maximum information depth."
-        tools = [DEEP_TAVILY, GET_TIME_TOOL, VALIDATE_OUTPUT_FORMAT_TOOL]
+        # Find search_web from MCP and modify description, omit audit_search
+        for mt in mcp_tools:
+            if mt["function"]["name"] == "search_web":
+                deep_tool = dict(mt)
+                deep_tool["function"] = dict(mt["function"])
+                deep_tool["function"]["description"] = "Performs a web search using Tavily to find information on a topic. Results include an AI-summarized answer and the FULL RAW text content of the primary pages. Use this tool ONCE for maximum information depth."
+                tools.append(deep_tool)
     else:
-        tools = [TAVILY_SEARCH_TOOL, AUDIT_TAVILY_SEARCH_TOOL, GET_TIME_TOOL, VALIDATE_OUTPUT_FORMAT_TOOL]
+        tools.extend(mcp_tools)
+
     system_prompt = BASE_SYSTEM_PROMPT
     
     if memory_mode:
@@ -240,49 +270,58 @@ async def generate_chat_response(api_url, model, messages, extra_body, rag=None,
                 end_date = args.get("end_date")
                 include_images = has_vision
                 
-                log = f"Calling: search_web(\"{query}\")\n"
+                log = f"Calling: MCP search_web(\"{query}\")\n"
                 current_reasoning += log
                 yield f"data: {create_chunk(model, reasoning=log)}\n\n"
                 
-                search_result, _ = execute_tavily_search(
-                    query=query, topic=topic, time_range=time_range, 
-                    start_date=start_date, end_date=end_date, include_images=include_images, chat_id=chat_id
-                )
+                t0 = time.time()
+                mcp_args = {
+                    "query": query, "topic": topic, "time_range": time_range,
+                    "start_date": start_date, "end_date": end_date,
+                    "include_images": include_images, "chat_id": chat_id
+                }
+                mcp_res = await mcp_client.execute_tool("search_web", mcp_args)
                 
-                # If Deep Search mode is on, fetch raw content immediately and append to payload
+                # Parse JSON string from MCP tool result
+                try:
+                    res_json = json.loads(mcp_res.content[0].text)
+                    search_result = res_json.get("standard_output", "")
+                    raw_result = res_json.get("raw_output", "")
+                except:
+                    search_result = mcp_res.content[0].text
+                    raw_result = ""
+
+                duration = time.time() - t0
+                log_tool_call("mcp_search_web", mcp_args, search_result[:50] + "...", duration_s=duration, chat_id=chat_id)
+
+                # If Deep Search mode is on, append raw content immediately
                 if search_depth_mode == 'deep':
-                    t0 = time.time()
-                    log_audit = "Deep Search Mode: Automatically auditing search results...\n"
+                    log_audit = "Deep Search Mode: Automatically auditing search results via MCP...\n"
                     current_reasoning += log_audit
                     yield f"data: {create_chunk(model, reasoning=log_audit)}\n\n"
                     
-                    raw_result = audit_tavily_search(chat_id)
-                    if isinstance(search_result, list):
-                        search_result[0]["text"] = f"Summary:\n{search_result[0]['text']}\n\n==== RAW PAGE CONTENT ====\n{raw_result}"
-                    else:
-                        search_result = f"Summary:\n{search_result}\n\n==== RAW PAGE CONTENT ====\n{raw_result}"
-                    duration = time.time() - t0
-                    log_tool_call("audit_search_implicit", args, raw_result[:50] + "...", duration_s=duration, chat_id=chat_id)
+                    search_result = f"Summary:\n{search_result}\n\n==== RAW PAGE CONTENT ====\n{raw_result}"
 
                 messages_to_send.append({
                     "role": "tool", "tool_call_id": tc['id'], "name": fn_name,
                     "content": search_result
                 })
                 
-                # Note: Tavily search already logs internally, but we can log the abstraction wrapper too
-                # or just rely on tavily's internal `log_tool_call` which is already invoked.
-                res_log = "Result: Search completed.\n"
+                res_log = "Result: Search completed via MCP.\n"
                 current_reasoning += res_log
                 yield f"data: {create_chunk(model, reasoning=res_log)}\n\n"
                 yield f"data: {json.dumps({'__tool_result__': True, 'tool_call_id': tc['id'], 'name': fn_name, 'result': search_result})}\n\n"
                 has_real_tools = True
             elif fn_name == "audit_search":
                 t0 = time.time()
-                log = "Calling: audit_search()\n"
+                log = "Calling: MCP audit_search()\n"
                 current_reasoning += log
                 yield f"data: {create_chunk(model, reasoning=log)}\n\n"
                 
-                raw_result = audit_tavily_search(chat_id)
+                mcp_args = {"chat_id": chat_id}
+                mcp_res = await mcp_client.execute_tool("audit_search", mcp_args)
+                raw_result = mcp_res.content[0].text
+
                 messages_to_send.append({
                     "role": "tool", "tool_call_id": tc['id'], "name": fn_name,
                     "content": raw_result
@@ -290,7 +329,7 @@ async def generate_chat_response(api_url, model, messages, extra_body, rag=None,
                 
                 duration = time.time() - t0
                 log_tool_call(fn_name, args, raw_result[:500] + ("..." if len(raw_result) > 500 else ""), duration_s=duration, chat_id=chat_id)
-                res_log = "Result: Audit available.\n"
+                res_log = "Result: Audit available via MCP.\n"
                 current_reasoning += res_log
                 yield f"data: {create_chunk(model, reasoning=res_log)}\n\n"
                 yield f"data: {json.dumps({'__tool_result__': True, 'tool_call_id': tc['id'], 'name': fn_name, 'result': raw_result})}\n\n"

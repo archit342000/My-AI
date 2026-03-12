@@ -1,4 +1,4 @@
-# 🌌 My-AI v2.0.0
+# 🌌 My-AI v2.1.0
 
 A premium, full-stack AI chat interface designed for local inference natively powered by [llama.cpp](https://github.com/ggerganov/llama.cpp). This application provides a high-fidelity atmospheric glass interface for interacting with local LLMs, featuring persistent state, long-term memory, and an advanced deep research agent.
 
@@ -76,5 +76,5 @@ This application is fully containerized and runs with user-level permissions for
 
 ## 📄 License & Versioning
 
-This project follows [SemVer v2.0.0](https://semver.org/). Current version: `v2.0.0`.
+This project follows [SemVer v2.0.0](https://semver.org/). Current version: `v2.1.0`.
 See [CHANGELOG.md](./changelog.md) and [docs/versioning_directives.md](./docs/versioning_directives.md) for a detailed history of updates and versioning rules.

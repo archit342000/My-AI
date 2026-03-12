@@ -9,3 +9,4 @@ httpx
 selectolax
 markdownify
 pypdf
+mcp

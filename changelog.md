@@ -1,5 +1,13 @@
 # CHANGELOG
  
+## v2.1.0 (MCP Architecture Migration)
+* **Architecture Overhaul**: Migrated all external-facing tools (web search, web scraping, PDF extraction, map, etc.) to a dedicated Model Context Protocol (MCP) server container (`research_mcp`).
+* **Security & Isolation**: External operations now run entirely outside the main app container, significantly reducing the blast radius of potential vulnerabilities.
+* **Network Communication**: The main Flask backend now communicates with the MCP server using Server-Sent Events (SSE) over HTTP (`mcp.client.sse`).
+* **Chat Integration**: The chat agent (`generate_chat_response`) now dynamically fetches external tool schemas from the MCP server and executes them via the MCP client, while retaining internal tools (memory, time) within the main app.
+* **Research Integration**: The deep research engine (`generate_research_response`) now offloads all heavy lifting (fetching URLs, downloading PDFs, querying Tavily) to the MCP server via direct client execution, keeping only the orchestration and database logic in the main app container.
+* **Version Bump**: Incremented version to v2.1.0.
+
 ## v2.0.0 (Aurora + Obsidian Design Overhaul and AI backend migration)
 * **AI Backend Migration**: Migrated from LM Studio to llama.cpp.
 * **UI Fix (Tools Dropdown)**: Increased the opaqueness of the tools dropdown to match modal dialogs, ensuring better legibility and a more premium feel.
