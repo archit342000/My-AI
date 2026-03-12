@@ -192,7 +192,7 @@ async def execute_tavily_search(query: str, topic: str = "general", time_range: 
                                start_date: str | None = None, end_date: str | None = None,
                                include_images: bool = False, chat_id: str | None = None):
     if not TAVILY_API_KEY:
-         return "Error: TAVILY_API_KEY is not configured in the MCP Server environment.", "Tavily API key missing"
+         return "Error: TAVILY_API_KEY is not configured in the MCP Server environment."
 
     url = f"{TAVILY_BASE_URL}/search"
     payload = {
@@ -436,20 +436,37 @@ async def fetch_and_encode_image(url: str):
 mcp = FastMCP("research_tools_mcp", host="0.0.0.0", port=8000)
 
 # Security Middleware to protect MCP endpoints
-from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
-class AuthMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request, call_next):
-        # We protect both the SSE establishment and the message posts
-        if request.url.path in ["/sse", "/messages/"] or request.url.path.startswith("/messages/"):
-             # Only check auth if MCP_API_KEY is configured
-             if MCP_API_KEY:
-                 api_key = request.headers.get("X-MCP-API-KEY")
-                 if api_key != MCP_API_KEY:
-                     logger.warning(f"Unauthorized access attempt to {request.url.path} from {request.client.host}")
-                     return JSONResponse({"error": "Unauthorized"}, status_code=401)
-        return await call_next(request)
+class AuthMiddleware:
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        path = scope["path"]
+        # Protect SSE and message routes
+        if path in ["/sse", "/messages/"] or path.startswith("/messages/"):
+            if MCP_API_KEY:
+                # Headers in ASGI scope are raw bytes
+                headers = dict(scope.get("headers", []))
+                # Check for both lowercase and original case
+                api_key_bytes = headers.get(b"x-mcp-api-key")
+                if api_key_bytes is None:
+                    api_key_bytes = headers.get(b"X-MCP-API-KEY", b"")
+                
+                api_key = api_key_bytes.decode("utf-8")
+                
+                if api_key != MCP_API_KEY:
+                    logger.warning(f"Unauthorized access attempt to {path}")
+                    response = JSONResponse({"error": "Unauthorized"}, status_code=401)
+                    await response(scope, receive, send)
+                    return
+        
+        await self.app(scope, receive, send)
 
 @mcp.tool()
 async def search_web(query: str, topic: str = "general", time_range: str | None = None,
