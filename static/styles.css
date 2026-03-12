@@ -4434,8 +4434,8 @@ a.chat-list-item:active {
 .canvas-content {
     width: 100%;
     max-width: 1000px;
-    height: calc(100% - 4rem); /* Limit height for centering */
-    max-height: 85vh;
+    height: 100%; /* Span full height */
+    max-height: 100vh;
     background: var(--glass-bg);
     backdrop-filter: var(--glass-blur);
     -webkit-backdrop-filter: var(--glass-blur);
@@ -4449,6 +4449,13 @@ a.chat-list-item:active {
 
 .dark .canvas-content {
     box-shadow: 0 0 50px rgba(0, 0, 0, 0.5);
+}
+
+@media (max-width: 768px) {
+    .canvas-content {
+        border-radius: 0;
+        border: none;
+    }
 }
 
 .canvas-header {
