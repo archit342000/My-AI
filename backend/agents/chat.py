@@ -103,8 +103,7 @@ async def generate_chat_response(api_url, model, messages, extra_body, rag=None,
       [final answer]
     """
     # Ensure MCP client is connected
-    if not mcp_client.session:
-        await mcp_client.connect()
+    await mcp_client.connect()
 
     # Fetch tools from MCP Server
     mcp_tools_raw = await mcp_client.get_available_tools()
@@ -292,7 +291,7 @@ async def generate_chat_response(api_url, model, messages, extra_body, rag=None,
                     raw_result = ""
 
                 duration = time.time() - t0
-                log_tool_call("mcp_search_web", mcp_args, search_result[:50] + "...", duration_s=duration, chat_id=chat_id)
+                log_tool_call("mcp_search_web", mcp_args, search_result, duration_s=duration, chat_id=chat_id)
 
                 # If Deep Search mode is on, append raw content immediately
                 if search_depth_mode == 'deep':
@@ -328,7 +327,7 @@ async def generate_chat_response(api_url, model, messages, extra_body, rag=None,
                 })
                 
                 duration = time.time() - t0
-                log_tool_call(fn_name, args, raw_result[:500] + ("..." if len(raw_result) > 500 else ""), duration_s=duration, chat_id=chat_id)
+                log_tool_call(fn_name, args, raw_result, duration_s=duration, chat_id=chat_id)
                 res_log = "Result: Audit available via MCP.\n"
                 current_reasoning += res_log
                 yield f"data: {create_chunk(model, reasoning=res_log)}\n\n"

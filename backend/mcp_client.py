@@ -4,6 +4,7 @@ from contextlib import AsyncExitStack
 
 from mcp import ClientSession
 from mcp.client.sse import sse_client
+from backend.config import get_secret
 
 logger = logging.getLogger(__name__)
 
@@ -12,18 +13,35 @@ class MCPClient:
         self.server_url = server_url
         self.session = None
         self.exit_stack = AsyncExitStack()
+        self._loop = None
+        self.read_stream = None
+        self.write_stream = None
 
     async def connect(self):
         """Connect to the MCP server via SSE with retries."""
-        if self.session:
+        try:
+            current_loop = asyncio.get_running_loop()
+        except RuntimeError:
             return
+
+        if self.session and self._loop == current_loop:
+            return
+
+        # If session exists but loop changed, reset the stack for the new loop context
+        if self.session:
+            logger.info("New event loop detected, resetting MCP session stack")
+            self.session = None
+            self.exit_stack = AsyncExitStack()
+
+        self._loop = current_loop
 
         max_retries = 5
         retry_delay = 2
 
         for attempt in range(max_retries):
             try:
-                sse_transport = await self.exit_stack.enter_async_context(sse_client(self.server_url))
+                headers = {"X-MCP-API-KEY": get_secret("MCP_API_KEY", "")}
+                sse_transport = await self.exit_stack.enter_async_context(sse_client(self.server_url, headers=headers))
                 self.read_stream, self.write_stream = sse_transport
                 self.session = await self.exit_stack.enter_async_context(ClientSession(self.read_stream, self.write_stream))
 

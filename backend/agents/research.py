@@ -1174,6 +1174,9 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
     display_model = model_name or model
     log_event("research_start", {"chat_id": chat_id, "mode": 'execution' if approved_plan else 'planning', "model": model, "vision_model": vision_model})
 
+    # Ensure MCP client is connected
+    await mcp_client.connect()
+
     accumulated_summaries = []
     source_registry = {}  # {global_source_id: {"url": str}}
     global_source_id = 1

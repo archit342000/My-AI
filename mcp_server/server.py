@@ -21,17 +21,23 @@ import pypdf
 
 from mcp.server.fastmcp import FastMCP
 from mcp.types import TextContent
+import uvicorn
 
 # Configure basic logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("mcp_server")
 
 # =====================================================================
-# CONSTANTS AND CONFIGURATION
-# =====================================================================
+def get_secret(secret_name, default=None):
+    try:
+        with open(f"/run/secrets/{secret_name}", "r") as f:
+            return f.read().strip()
+    except IOError:
+        return os.getenv(secret_name, default)
 
 TAVILY_BASE_URL = "https://api.tavily.com"
-TAVILY_API_KEY = os.environ.get("TAVILY_API_KEY", "")
+TAVILY_API_KEY = get_secret("TAVILY_API_KEY", "")
+MCP_API_KEY = get_secret("MCP_API_KEY", "")
 
 # Timeouts
 TIMEOUT_TAVILY_SEARCH = 15.0
@@ -182,9 +188,9 @@ async def _extract_pdf_content(pdf_bytes):
 # CORE TOOL IMPLEMENTATIONS
 # =====================================================================
 
-async def execute_tavily_search(query: str, topic: str = "general", time_range: str = None,
-                               start_date: str = None, end_date: str = None,
-                               include_images: bool = False, chat_id: str = None):
+async def execute_tavily_search(query: str, topic: str = "general", time_range: str | None = None,
+                               start_date: str | None = None, end_date: str | None = None,
+                               include_images: bool = False, chat_id: str | None = None):
     if not TAVILY_API_KEY:
          return "Error: TAVILY_API_KEY is not configured in the MCP Server environment.", "Tavily API key missing"
 
@@ -275,8 +281,8 @@ async def audit_tavily_search(chat_id: str):
 
     return cache_entry["raw_content"]
 
-async def async_tavily_search(query: str, topic: str = "general", time_range: str = None,
-                              start_date: str = None, end_date: str = None, max_results: int = 10):
+async def async_tavily_search(query: str, topic: str = "general", time_range: str | None = None,
+                              start_date: str | None = None, end_date: str | None = None, max_results: int = 10):
     url = f"{TAVILY_BASE_URL}/search"
     payload = {
         "api_key": TAVILY_API_KEY,
@@ -427,12 +433,28 @@ async def fetch_and_encode_image(url: str):
 # MCP SERVER SETUP (FastMCP)
 # =====================================================================
 
-mcp = FastMCP("research_tools_mcp")
+mcp = FastMCP("research_tools_mcp", host="0.0.0.0", port=8000)
+
+# Security Middleware to protect MCP endpoints
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import JSONResponse
+
+class AuthMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        # We protect both the SSE establishment and the message posts
+        if request.url.path in ["/sse", "/messages/"] or request.url.path.startswith("/messages/"):
+             # Only check auth if MCP_API_KEY is configured
+             if MCP_API_KEY:
+                 api_key = request.headers.get("X-MCP-API-KEY")
+                 if api_key != MCP_API_KEY:
+                     logger.warning(f"Unauthorized access attempt to {request.url.path} from {request.client.host}")
+                     return JSONResponse({"error": "Unauthorized"}, status_code=401)
+        return await call_next(request)
 
 @mcp.tool()
-async def search_web(query: str, topic: str = "general", time_range: str = None,
-                     start_date: str = None, end_date: str = None,
-                     include_images: bool = False, chat_id: str = None) -> str:
+async def search_web(query: str, topic: str = "general", time_range: str | None = None,
+                     start_date: str | None = None, end_date: str | None = None,
+                     include_images: bool = False, chat_id: str | None = None) -> str:
     """Performs a web search using Tavily to find information on a topic. Results include an AI-summarized answer and excerpts from the top sources. Use this tool for normal web searching. If the initial results do not contain enough information, you may use the audit_search tool to get the raw content."""
     res = await execute_tavily_search(query, topic, time_range, start_date, end_date, include_images, chat_id)
     return res
@@ -444,8 +466,8 @@ async def audit_search(chat_id: str) -> str:
     return res
 
 @mcp.tool()
-async def async_tavily_search_tool(query: str, topic: str = "general", time_range: str = None,
-                              start_date: str = None, end_date: str = None, max_results: int = 10) -> str:
+async def async_tavily_search_tool(query: str, topic: str = "general", time_range: str | None = None,
+                              start_date: str | None = None, end_date: str | None = None, max_results: int = 10) -> str:
     """Internal research tool to perform async web searches."""
     res = await async_tavily_search(query, topic, time_range, start_date, end_date, max_results)
     return res
@@ -474,5 +496,10 @@ async def fetch_and_encode_image_tool(url: str) -> str:
     res = await fetch_and_encode_image(url)
     return res
 
+
+# Create the app instance and add middleware
+app = mcp.sse_app()
+app.add_middleware(AuthMiddleware)
+
 if __name__ == "__main__":
-    mcp.run(transport='sse')
+    uvicorn.run(app, host="0.0.0.0", port=8000)
