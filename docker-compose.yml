@@ -47,6 +47,19 @@ services:
       - MCP_API_KEY
     restart: unless-stopped
 
+  browser_mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile.browser
+    container_name: browser_mcp
+    networks:
+      - secure-internal
+    environment:
+      - TZ=Asia/Kolkata
+    secrets:
+      - MCP_API_KEY
+    restart: unless-stopped
+
 networks:
   secure-internal:
     driver: bridge

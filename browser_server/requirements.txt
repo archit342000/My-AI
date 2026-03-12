@@ -1,0 +1,6 @@
+mcp
+httpx
+starlette
+uvicorn
+websockets
+playwright

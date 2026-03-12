@@ -1,4 +1,49 @@
 document.addEventListener('DOMContentLoaded', () => {
+    // Browser interrupt button
+    const browserInterruptBtn = document.getElementById('browser-interrupt-btn');
+    const browserInterruptInput = document.getElementById('browser-interrupt-input');
+
+    if (browserInterruptBtn && browserInterruptInput) {
+        browserInterruptBtn.addEventListener('click', async () => {
+            const message = browserInterruptInput.value.trim();
+            if (!message) return;
+
+            try {
+                const response = await fetch('/api/browser/interrupt', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ task_id: currentChatId, message: message })
+                });
+
+                if (response.ok) {
+                    browserInterruptInput.value = '';
+                    browserInterruptInput.placeholder = 'Message sent...';
+                    setTimeout(() => {
+                        browserInterruptInput.placeholder = 'Type instructions or 2FA codes to guide the AI...';
+                    }, 2000);
+                } else {
+                    console.error("Failed to send interrupt message.");
+                }
+            } catch (e) {
+                console.error("Error sending interrupt message:", e);
+            }
+        });
+
+        browserInterruptInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                browserInterruptBtn.click();
+            }
+        });
+    }
+
+    // Close browser vision pane button
+    const closeBrowserVisionBtn = document.getElementById('close-browser-vision-btn');
+    if (closeBrowserVisionBtn) {
+        closeBrowserVisionBtn.addEventListener('click', () => {
+            document.getElementById('browser-vision-pane').classList.add('hidden');
+        });
+    }
+
     // 0. Touch vs Mouse Detection (Global Fallback)
     document.addEventListener('touchstart', function onFirstTouch() {
         document.body.classList.add('is-touch-device');
@@ -134,6 +179,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const memoryToggleSwitch = document.getElementById('memory-toggle-switch');
     const uiResearchToggle = document.getElementById('deep-research-toggle');
     const uiDeepSearchToggle = document.getElementById('ui-deep-search-toggle');
+    const uiBrowsingToggle = document.getElementById('browsing-tool-toggle');
+    const browsingModeSelector = document.getElementById('browsing-mode-selector');
+    const browsingAutoBtn = document.getElementById('browsing-mode-auto');
+    const browsingSemiBtn = document.getElementById('browsing-mode-semi');
     const uiResearchDepthSelector = document.getElementById('research-mode-selector');
     const toolsButton = document.getElementById('tools-button');
     const toolsDropdown = document.getElementById('tools-dropdown');
@@ -161,6 +210,9 @@ document.addEventListener('DOMContentLoaded', () => {
     let isMemoryMode = true;
     let isResearchMode = false;
     let searchDepthMode = 'regular'; // 'regular' or 'deep'
+    let isBrowsingMode = false;
+    let browsingAutoMode = 'automatic'; // 'automatic' or 'semi-automatic'
+    let browserWebSocket = null;
     let wasMemoryMode = true; // Track previous memory state - default to true
     let currentResearchPlan = null; // Store current unapproved plan text
     let chatFolders = JSON.parse(localStorage.getItem('chatFolders') || '[]');
@@ -1388,6 +1440,21 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
         
+        // Disable toggles if browser is active
+        if (uiBrowsingToggle) {
+            uiBrowsingToggle.classList.toggle('active', isBrowsingMode);
+
+            if (isResearchMode || isDeepSearchActive) {
+                uiBrowsingToggle.parentElement.style.opacity = '0.5';
+                uiBrowsingToggle.parentElement.style.pointerEvents = 'none';
+                uiBrowsingToggle.parentElement.style.cursor = 'not-allowed';
+            } else {
+                uiBrowsingToggle.parentElement.style.opacity = '1';
+                uiBrowsingToggle.parentElement.style.pointerEvents = 'auto';
+                uiBrowsingToggle.parentElement.style.cursor = 'pointer';
+            }
+        }
+
         // Update the Tools Button icon based on active states
         if (activeToolIconContainer) {
             if (isResearchMode) {
@@ -1487,7 +1554,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const greetingSub = welcomeHero ? welcomeHero.querySelector('.greeting-sub') : null;
 
         if (greetingText && greetingSub) {
-            if (isResearchMode) {
+            if (isBrowsingMode) {
+                greetingText.textContent = "Live Browsing";
+                greetingSub.textContent = "I'll navigate the web autonomously to achieve your goal, while you watch.";
+            } else if (isResearchMode) {
                 greetingText.textContent = "Research Agent";
                 if (searchDepthMode === 'deep') {
                     greetingSub.textContent = "I'll recursively explore every source, mapping out websites and sub-pages to uncover hidden details.";
@@ -1605,6 +1675,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     searchDepthMode = 'regular';
                 } else {
                     searchDepthMode = 'deep';
+                    isBrowsingMode = false; // Mutually exclusive
                 }
                 updateResearchUI();
                 
@@ -1612,6 +1683,50 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (chatHistory.length > 0) {
                     persistChat();
                 }
+            });
+        }
+
+        // Browsing Toggle Logic
+        if (uiBrowsingToggle) {
+            uiBrowsingToggle.parentElement.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (isResearchMode || isDeepSearchActive) return; // Disabled state
+
+                isBrowsingMode = !isBrowsingMode;
+                if (isBrowsingMode) {
+                    isResearchMode = false;
+                    searchDepthMode = 'regular';
+                    if (browsingModeSelector) browsingModeSelector.style.display = 'flex';
+                } else {
+                    if (browsingModeSelector) browsingModeSelector.style.display = 'none';
+                }
+                updateResearchUI();
+            });
+        }
+
+        // Browsing Mode Buttons
+        if (browsingAutoBtn && browsingSemiBtn) {
+            browsingAutoBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                browsingAutoMode = 'automatic';
+                browsingAutoBtn.classList.add('active');
+                browsingSemiBtn.classList.remove('active');
+                // style updates
+                browsingAutoBtn.style.background = '';
+                browsingAutoBtn.style.border = '';
+                browsingSemiBtn.style.background = 'transparent';
+                browsingSemiBtn.style.border = '1px solid rgba(255,255,255,0.1)';
+            });
+            browsingSemiBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                browsingAutoMode = 'semi-automatic';
+                browsingSemiBtn.classList.add('active');
+                browsingAutoBtn.classList.remove('active');
+                // style updates
+                browsingSemiBtn.style.background = '';
+                browsingSemiBtn.style.border = '';
+                browsingAutoBtn.style.background = 'transparent';
+                browsingAutoBtn.style.border = '1px solid rgba(255,255,255,0.1)';
             });
         }
 
@@ -2990,6 +3105,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 memoryMode: isMemoryMode,
                 researchMode: isResearchMode,
                 searchDepthMode: searchDepthMode,
+                browsingMode: isBrowsingMode,
+                browsingAutoMode: browsingAutoMode,
                 visionModel: reqVisionModel,
                 approvedPlan: approvedPlanPayload || undefined,
                 resumeState: resumeState || undefined,
@@ -3087,6 +3204,65 @@ document.addEventListener('DOMContentLoaded', () => {
                                 name: json.name,
                                 content: json.result
                             });
+                            continue;
+                        }
+
+                        // Handle Browser Tool Events
+                        if (json.__browser_start__) {
+                            const browserPane = document.getElementById('browser-vision-pane');
+                            const browserImg = document.getElementById('browser-stream-img');
+                            const browserLoading = document.getElementById('browser-stream-loading');
+                            if (browserPane) {
+                                browserPane.classList.remove('hidden');
+                                // Connect websocket
+                                if (browserWebSocket) {
+                                    browserWebSocket.close();
+                                }
+                                const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                                browserWebSocket = new WebSocket(`${wsProtocol}//${window.location.host}/ws/browser`);
+
+                                browserWebSocket.onmessage = function(event) {
+                                    try {
+                                        const data = JSON.parse(event.data);
+                                        if (data.image && browserImg && browserLoading) {
+                                            browserImg.src = data.image;
+                                            browserImg.style.display = 'block';
+                                            browserLoading.style.display = 'none';
+                                        }
+                                    } catch (e) {
+                                        console.error("Error parsing browser stream data", e);
+                                    }
+                                };
+
+                                browserWebSocket.onclose = function() {
+                                    if (browserImg && browserLoading) {
+                                        browserImg.style.display = 'none';
+                                        browserLoading.style.display = 'flex';
+                                        browserLoading.querySelector('span').textContent = 'Stream disconnected.';
+                                    }
+                                };
+                            }
+                            continue;
+                        }
+
+                        if (json.__browser_end__) {
+                            const browserPane = document.getElementById('browser-vision-pane');
+                            if (browserPane) {
+                                browserPane.classList.add('hidden');
+                            }
+                            if (browserWebSocket) {
+                                browserWebSocket.close();
+                                browserWebSocket = null;
+                            }
+                            // Turn off browsing mode when done
+                            if (isBrowsingMode) {
+                                const browserToggle = document.getElementById('browsing-tool-toggle');
+                                if (browserToggle) browserToggle.classList.remove('active');
+                                document.getElementById('browsing-mode-selector').style.display = 'none';
+                                isBrowsingMode = false;
+                                updateToolsButtonUI();
+                                updatePlaceholders();
+                            }
                             continue;
                         }
 

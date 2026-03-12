@@ -1,0 +1,26 @@
+FROM mcr.microsoft.com/playwright/python:v1.44.0-jammy
+
+# Create non-root user
+RUN groupadd -r appgroup && useradd -r -g appgroup -m -d /app appuser
+
+WORKDIR /app
+
+# Copy and install dependencies
+COPY browser_server/requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Install browsers explicitly just in case, though the base image has them
+RUN playwright install chromium
+
+# Copy code
+COPY browser_server /app/browser_server
+
+# Set ownership
+RUN chown -R appuser:appgroup /app
+
+USER appuser
+
+EXPOSE 8000
+EXPOSE 8001
+
+CMD ["python3", "-m", "browser_server.server"]

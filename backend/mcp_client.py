@@ -83,3 +83,6 @@ class MCPClient:
 import os
 server_url = os.environ.get("MCP_SERVER_URL", "http://research_mcp:8000/sse")
 mcp_client = MCPClient(server_url=server_url)
+
+browser_mcp_url = os.environ.get("BROWSER_MCP_SERVER_URL", "http://browser_mcp:8000/sse")
+browser_mcp_client = MCPClient(server_url=browser_mcp_url)
