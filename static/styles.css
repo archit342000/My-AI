@@ -146,28 +146,24 @@ body {
 /* Ambient Background — Atmospheric blue orbs */
 #ambient-bg {
     position: fixed;
-    inset: -10%; /* Overshoot for motion */
+    inset: 0;
     z-index: -1;
     pointer-events: none;
-    background:
-        radial-gradient(circle at 85% 15%, var(--ambient-orb-1) 0%, transparent 45%),
-        radial-gradient(circle at 15% 85%, var(--ambient-orb-2) 0%, transparent 45%),
-        var(--bg-base);
-    animation: ambient-drift 30s ease-in-out infinite alternate;
+    background: var(--bg-base);
+    overflow: hidden;
 }
 
-@keyframes ambient-drift {
-    0% {
-        transform: translate(0, 0) scale(1) rotate(0deg);
-    }
+#bg-stars {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0.6;
+    transition: opacity 1.5s ease;
+}
 
-    50% {
-        transform: translate(-3%, 2%) scale(1.05) rotate(1deg);
-    }
-
-    100% {
-        transform: translate(2%, -2%) scale(0.95) rotate(-1deg);
-    }
+.dark #bg-stars {
+    opacity: 0.45;
 }
 
 .dark {

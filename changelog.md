@@ -1,6 +1,7 @@
 # CHANGELOG
  
 ## v2.2.2
+* **3D Background Animation (Antigravity Inspired)**: Implemented an interactive 3D particle cloud background using Vanilla JS and Canvas. Features autonomous "breathing" motion, smooth mouse/touch following, and a zero-lag volumetric ripple effect on click/tap.
 * **Complete UI Redesign**: Overhauled the application theme, changing the primary accent color from Electric Violet to Ocean Blue (`#3B82F6`) and the neutral scale from Pure Zinc to Slate.
 * **Design Directives Updated**: Updated `docs/design_directives.md` and `AGENTS.md` to reflect the new Ocean Blue standard and deprecate Electric Violet.
 

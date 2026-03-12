@@ -194,7 +194,8 @@ All animations are defined in CSS — never in JS logic:
 
 | Name                    | Behaviour                                                       | Duration / Timing              |
 |-------------------------|-----------------------------------------------------------------|--------------------------------|
-| `ambient-drift`         | Ambient orb layer drifts via translate/scale/rotate             | `30s ease-in-out infinite alternate` |
+| `ambient-orb-1-drift`   | Primary ambient orb drifts via translate/scale/rotate          | `45s ease-in-out infinite alternate` |
+| `ambient-orb-2-drift`   | Secondary ambient orb drifts via translate/scale/rotate        | `38s ease-in-out infinite alternate-reverse` |
 | `message-slide-in`      | Messages rise from bottom (`translateY(12px) → 0`)              | `400ms --ease-spring`          |
 | `blink-caret`           | AI generating cursor pulsing                                    | `800ms steps(2) infinite`      |
 | `orbit-spin`            | AI avatar conic-gradient ring                                   | `2s linear infinite`           |
@@ -372,9 +373,9 @@ All animations are defined in CSS — never in JS logic:
 - Dark mode modals / dropdowns → heavy prism edge shadow: `box-shadow: 0 40px 80px rgba(0, 0, 0, 0.5), inset 0 0 0 1px rgba(255, 255, 255, 0.08)`.
 
 ### Ambient Background
-- Fixed `#ambient-bg` div behind all content (`z-index: -1`), overshooting viewport by 10% (`inset: -10%`).
-- Two blue radial gradient orbs positioned at `85% 15%` and `15% 85%`.
-- `ambient-drift` animation: slow 30s translate/scale/rotate cycle. Creates a living, atmospheric feel.
+- Fixed `#ambient-bg` div behind all content (`z-index: -1`).
+- Two independent `ambient-orb` child elements (`orb-1` and `orb-2`) with custom radial gradients.
+- Separate `ambient-orb-1-drift` and `ambient-orb-2-drift` animations: slow 38s-45s translate/scale/rotate cycles. Creates a living, atmospheric feel with independent, fluid movement.
 - Light mode → more opaque orbs on warm off-white (`#F8F7F4`). Dark mode → extremely subtle orbs on deep black (`#09090B`).
 - `body` background set to `transparent` — never a solid color — allowing the ambient layer to show through glass surfaces.
 
