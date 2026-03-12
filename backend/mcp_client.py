@@ -14,20 +14,30 @@ class MCPClient:
         self.exit_stack = AsyncExitStack()
 
     async def connect(self):
-        """Connect to the MCP server via SSE."""
+        """Connect to the MCP server via SSE with retries."""
         if self.session:
             return
 
-        try:
-            sse_transport = await self.exit_stack.enter_async_context(sse_client(self.server_url))
-            self.read_stream, self.write_stream = sse_transport
-            self.session = await self.exit_stack.enter_async_context(ClientSession(self.read_stream, self.write_stream))
+        max_retries = 5
+        retry_delay = 2
 
-            await self.session.initialize()
-            logger.info("Connected to MCP server")
-        except Exception as e:
-            logger.error(f"Failed to connect to MCP server: {e}")
-            raise
+        for attempt in range(max_retries):
+            try:
+                sse_transport = await self.exit_stack.enter_async_context(sse_client(self.server_url))
+                self.read_stream, self.write_stream = sse_transport
+                self.session = await self.exit_stack.enter_async_context(ClientSession(self.read_stream, self.write_stream))
+
+                await self.session.initialize()
+                logger.info("Connected to MCP server")
+                return
+            except Exception as e:
+                logger.warning(f"Failed to connect to MCP server (attempt {attempt+1}/{max_retries}): {e}")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(retry_delay)
+                    retry_delay *= 1.5
+                else:
+                    logger.error(f"Max retries reached. Failed to connect to MCP server: {e}")
+                    raise
 
     async def get_available_tools(self):
         """List available tools from the MCP server."""
