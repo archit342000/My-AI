@@ -10,3 +10,5 @@ selectolax
 markdownify
 pypdf
 mcp
+starlette
+uvicorn

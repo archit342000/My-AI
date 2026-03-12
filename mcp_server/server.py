@@ -19,9 +19,8 @@ import markdownify
 from selectolax.lexbor import LexborHTMLParser
 import pypdf
 
-from mcp.server import Server
-from mcp.server.stdio import stdio_server
-from mcp.types import Tool, TextContent, ImageContent
+from mcp.server.fastmcp import FastMCP
+from mcp.types import TextContent
 
 # Configure basic logging
 logging.basicConfig(level=logging.INFO)
@@ -425,199 +424,55 @@ async def fetch_and_encode_image(url: str):
          return json.dumps({"error": str(e)})
 
 # =====================================================================
-# MCP SERVER SETUP
+# MCP SERVER SETUP (FastMCP)
 # =====================================================================
 
-app = Server("research_tools_mcp")
+mcp = FastMCP("research_tools_mcp")
 
-@app.list_tools()
-async def list_tools() -> list[Tool]:
-    return [
-        Tool(
-            name="search_web",
-            description="Performs a web search using Tavily to find information on a topic. Results include an AI-summarized answer and excerpts from the top sources. Use this tool for normal web searching. If the initial results do not contain enough information, you may use the audit_search tool to get the raw content.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "The search query to perform."
-                    },
-                    "topic": {
-                        "type": "string",
-                        "description": "The category of the search. Defaults to 'general', but can be 'news' or 'finance' if more appropriate.",
-                        "enum": ["general", "news", "finance"]
-                    },
-                    "time_range": {
-                        "type": "string",
-                        "description": "A time range for the search. Examples: 'day', 'week', 'month', 'year'. Use this if searching for recent news.",
-                        "enum": ["day", "week", "month", "year"]
-                    },
-                    "start_date": {
-                        "type": "string",
-                        "description": "Retrieve results published or updated after this date (format: YYYY-MM-DD)."
-                    },
-                    "end_date": {
-                        "type": "string",
-                        "description": "Retrieve results published or updated before this date (format: YYYY-MM-DD)."
-                    },
-                    "include_images": {
-                        "type": "boolean",
-                        "description": "Whether to include images in the search results."
-                    },
-                    "chat_id": {
-                        "type": "string",
-                        "description": "The chat ID for caching the raw content."
-                    }
-                },
-                "required": ["query"]
-            }
-        ),
-        Tool(
-            name="audit_search",
-            description="Retrieves the full raw content of the most recently executed web search. Use this ONLY if the summarized content from the previous web search was not detailed enough to answer the user's query.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                     "chat_id": {
-                        "type": "string",
-                        "description": "The chat ID to retrieve the cached search results for."
-                    }
-                },
-                "required": ["chat_id"]
-            }
-        ),
-        Tool(
-            name="async_tavily_search",
-            description="Internal research tool to perform async web searches.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string"},
-                    "topic": {"type": "string"},
-                    "time_range": {"type": "string"},
-                    "start_date": {"type": "string"},
-                    "end_date": {"type": "string"},
-                    "max_results": {"type": "integer"}
-                },
-                "required": ["query"]
-            }
-        ),
-        Tool(
-            name="async_tavily_map",
-            description="Internal research tool to map a URL for deep data pages.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "url_to_map": {"type": "string"},
-                    "instruction": {"type": "string"}
-                },
-                "required": ["url_to_map", "instruction"]
-            }
-        ),
-        Tool(
-            name="async_tavily_extract",
-            description="Internal research tool to extract content from URLs.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "urls": {"type": "array", "items": {"type": "string"}}
-                },
-                "required": ["urls"]
-            }
-        ),
-        Tool(
-            name="visit_page",
-            description="Visits a specific URL and extracts its visible text content.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "url": {
-                        "type": "string",
-                        "description": "The URL to visit."
-                    },
-                    "max_chars": {
-                        "type": "integer",
-                        "description": "Maximum characters to return."
-                    }
-                },
-                "required": ["url"]
-            }
-        ),
-        Tool(
-            name="fetch_and_encode_image",
-            description="Internal research tool to fetch and base64 encode an image URL.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "url": {"type": "string"}
-                },
-                "required": ["url"]
-            }
-        )
-    ]
+@mcp.tool()
+async def search_web(query: str, topic: str = "general", time_range: str = None,
+                     start_date: str = None, end_date: str = None,
+                     include_images: bool = False, chat_id: str = None) -> str:
+    """Performs a web search using Tavily to find information on a topic. Results include an AI-summarized answer and excerpts from the top sources. Use this tool for normal web searching. If the initial results do not contain enough information, you may use the audit_search tool to get the raw content."""
+    res = await execute_tavily_search(query, topic, time_range, start_date, end_date, include_images, chat_id)
+    return res
 
-@app.call_tool()
-async def call_tool(name: str, arguments: dict) -> list[TextContent | ImageContent]:
-    try:
-        if name == "search_web":
-            res = await execute_tavily_search(
-                query=arguments["query"],
-                topic=arguments.get("topic", "general"),
-                time_range=arguments.get("time_range"),
-                start_date=arguments.get("start_date"),
-                end_date=arguments.get("end_date"),
-                include_images=arguments.get("include_images", False),
-                chat_id=arguments.get("chat_id")
-            )
-            return [TextContent(type="text", text=res)]
+@mcp.tool()
+async def audit_search(chat_id: str) -> str:
+    """Retrieves the full raw content of the most recently executed web search. Use this ONLY if the summarized content from the previous web search was not detailed enough to answer the user's query."""
+    res = await audit_tavily_search(chat_id)
+    return res
 
-        elif name == "audit_search":
-            res = await audit_tavily_search(arguments["chat_id"])
-            return [TextContent(type="text", text=res)]
+@mcp.tool()
+async def async_tavily_search_tool(query: str, topic: str = "general", time_range: str = None,
+                              start_date: str = None, end_date: str = None, max_results: int = 10) -> str:
+    """Internal research tool to perform async web searches."""
+    res = await async_tavily_search(query, topic, time_range, start_date, end_date, max_results)
+    return res
 
-        elif name == "async_tavily_search":
-            res = await async_tavily_search(
-                query=arguments["query"],
-                topic=arguments.get("topic", "general"),
-                time_range=arguments.get("time_range"),
-                start_date=arguments.get("start_date"),
-                end_date=arguments.get("end_date"),
-                max_results=arguments.get("max_results", 10)
-            )
-            return [TextContent(type="text", text=res)]
+@mcp.tool()
+async def async_tavily_map_tool(url_to_map: str, instruction: str) -> str:
+    """Internal research tool to map a URL for deep data pages."""
+    res = await async_tavily_map(url_to_map, instruction)
+    return res
 
-        elif name == "async_tavily_map":
-            res = await async_tavily_map(arguments["url_to_map"], arguments["instruction"])
-            return [TextContent(type="text", text=res)]
+@mcp.tool()
+async def async_tavily_extract_tool(urls: list[str]) -> str:
+    """Internal research tool to extract content from URLs."""
+    res = await async_tavily_extract(urls)
+    return res
 
-        elif name == "async_tavily_extract":
-            res = await async_tavily_extract(arguments["urls"])
-            return [TextContent(type="text", text=res)]
+@mcp.tool()
+async def visit_page_tool(url: str, max_chars: int = 40000) -> str:
+    """Visits a specific URL and extracts its visible text content."""
+    res = await visit_page(url, max_chars)
+    return res
 
-        elif name == "visit_page":
-            res = await visit_page(arguments["url"], arguments.get("max_chars", 40000))
-            return [TextContent(type="text", text=res)]
-
-        elif name == "fetch_and_encode_image":
-             res = await fetch_and_encode_image(arguments["url"])
-             return [TextContent(type="text", text=res)]
-
-        else:
-            raise ValueError(f"Unknown tool: {name}")
-
-    except Exception as e:
-        logger.error(f"Error executing tool {name}: {e}")
-        return [TextContent(type="text", text=json.dumps({"error": str(e)}))]
-
-
-async def main():
-    async with stdio_server() as (read_stream, write_stream):
-        await app.run(
-            read_stream,
-            write_stream,
-            app.create_initialization_options()
-        )
+@mcp.tool()
+async def fetch_and_encode_image_tool(url: str) -> str:
+    """Internal research tool to fetch and base64 encode an image URL."""
+    res = await fetch_and_encode_image(url)
+    return res
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    mcp.run(transport='sse')

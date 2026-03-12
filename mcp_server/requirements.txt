@@ -1,0 +1,9 @@
+mcp
+httpx
+beautifulsoup4
+markdownify
+selectolax
+pypdf
+pymupdf
+starlette
+uvicorn

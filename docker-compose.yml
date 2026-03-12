@@ -6,6 +6,8 @@ services:
       - secure-internal
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    depends_on:
+      - research_mcp
     volumes:
       - /home/archit-anand/My-AI-data:/app/backend/data
     environment:
@@ -28,6 +30,19 @@ services:
       - 2222:2222
     networks:
       - secure-internal
+    restart: unless-stopped
+
+  research_mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp
+    container_name: research_mcp
+    networks:
+      - secure-internal
+    environment:
+      - TZ=Asia/Kolkata
+    secrets:
+      - TAVILY_API_KEY
     restart: unless-stopped
 
 networks:

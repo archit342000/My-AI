@@ -2,32 +2,26 @@ import asyncio
 import logging
 from contextlib import AsyncExitStack
 
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
+from mcp import ClientSession
+from mcp.client.sse import sse_client
 
 logger = logging.getLogger(__name__)
 
 class MCPClient:
-    def __init__(self, server_script_path: str):
-        self.server_script_path = server_script_path
+    def __init__(self, server_url: str):
+        self.server_url = server_url
         self.session = None
         self.exit_stack = AsyncExitStack()
 
     async def connect(self):
-        """Connect to the MCP server via stdio."""
+        """Connect to the MCP server via SSE."""
         if self.session:
             return
 
-        server_params = StdioServerParameters(
-            command="python3",
-            args=[self.server_script_path],
-            env=None  # Inherit env so it gets TAVILY_API_KEY
-        )
-
         try:
-            stdio_transport = await self.exit_stack.enter_async_context(stdio_client(server_params))
-            self.stdio, self.write = stdio_transport
-            self.session = await self.exit_stack.enter_async_context(ClientSession(self.stdio, self.write))
+            sse_transport = await self.exit_stack.enter_async_context(sse_client(self.server_url))
+            self.read_stream, self.write_stream = sse_transport
+            self.session = await self.exit_stack.enter_async_context(ClientSession(self.read_stream, self.write_stream))
 
             await self.session.initialize()
             logger.info("Connected to MCP server")
@@ -59,5 +53,5 @@ class MCPClient:
 
 # Global instance for the app
 import os
-server_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "mcp_server", "server.py"))
-mcp_client = MCPClient(server_script_path=server_path)
+server_url = os.environ.get("MCP_SERVER_URL", "http://research_mcp:8000/sse")
+mcp_client = MCPClient(server_url=server_url)

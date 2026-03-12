@@ -156,7 +156,7 @@ async def _stream_research_call(api_url, payload, display_model, activity_type,
 
 async def _fetch_and_encode_image(url):
     try:
-        mcp_res = await mcp_client.execute_tool("fetch_and_encode_image", {"url": url})
+        mcp_res = await mcp_client.execute_tool("fetch_and_encode_image_tool", {"url": url})
         res_json = json.loads(mcp_res.content[0].text)
         if "error" in res_json:
             return None
@@ -429,7 +429,7 @@ async def _extract_content_for_url(url, search_depth_mode, vision_model, api_url
     # Strategy 1: MCP visit_page (Handles GET, HTML to Markdown, and PDF extraction)
     content = None
     try:
-        mcp_res = await mcp_client.execute_tool("visit_page", {"url": url, "max_chars": 40000})
+        mcp_res = await mcp_client.execute_tool("visit_page_tool", {"url": url, "max_chars": 40000})
         extracted = mcp_res.content[0].text
         if extracted and "Error:" not in extracted and len(extracted.strip()) > (config.RESEARCH_CONTENT_MIN_LENGTH_DEEP if search_depth_mode == 'deep' else config.RESEARCH_CONTENT_MIN_LENGTH_REGULAR):
             # Vision processing for inline images
@@ -446,7 +446,7 @@ async def _extract_content_for_url(url, search_depth_mode, vision_model, api_url
     
     # Strategy 2: MCP Tavily Extract fallback (handles JS-rendered pages and some PDFs)
     try:
-        mcp_res = await mcp_client.execute_tool("async_tavily_extract", {"urls": [url]})
+        mcp_res = await mcp_client.execute_tool("async_tavily_extract_tool", {"urls": [url]})
         res_json = json.loads(mcp_res.content[0].text)
         tavily_results = res_json.get("results", [])
         for tr in tavily_results:
@@ -693,7 +693,7 @@ async def _execute_section_reflection_and_write(
 
             follow_up_content_text = ""
             for fq in follow_up_queries:
-                mcp_res = await mcp_client.execute_tool("async_tavily_search", {"query": fq, "max_results": config.RESEARCH_TAVILY_MAX_RESULTS_FOLLOWUP})
+                mcp_res = await mcp_client.execute_tool("async_tavily_search_tool", {"query": fq, "max_results": config.RESEARCH_TAVILY_MAX_RESULTS_FOLLOWUP})
                 try:
                     res_json = json.loads(mcp_res.content[0].text)
                     fu_results_raw = res_json.get("results", [])
@@ -1310,7 +1310,7 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
                             _pq_msg = f'Gathering preliminary context: "{prelim_query}"...'
                             yield f"data: {_create_activity_chunk(display_model, 'planning', {'message': _pq_msg, 'state': 'thinking'})}\n\n"
 
-                            mcp_res = await mcp_client.execute_tool("async_tavily_search", {
+                            mcp_res = await mcp_client.execute_tool("async_tavily_search_tool", {
                                 "query": prelim_query,
                                 "topic": prelim_topic,
                                 "time_range": prelim_time_range
@@ -1486,7 +1486,7 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
                 yield f"data: {_create_activity_chunk(display_model, 'search', {'query': query, 'step_id': section_idx, 'displayMessage': f'Query {q_idx+1}/{len(section_queries)}: Searching...'})}\n\n"
 
                 # --- SEARCH ---
-                mcp_res = await mcp_client.execute_tool("async_tavily_search", {
+                mcp_res = await mcp_client.execute_tool("async_tavily_search_tool", {
                     "query": query, "topic": q_topic, "time_range": q_time_range,
                     "start_date": q_start_date, "end_date": q_end_date,
                     "max_results": config.RESEARCH_TAVILY_MAX_RESULTS_INITIAL
@@ -1566,7 +1566,7 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
                         sel_url = sel_result.get('url', '')
                         yield f"data: {_create_activity_chunk(display_model, 'status', {'message': f'Deep mapping: {sel_url[:40]}...', 'step_id': section_idx, 'icon': '🗺️'})}\n\n"
 
-                        mcp_res = await mcp_client.execute_tool("async_tavily_map", {"url_to_map": sel_url, "instruction": f"Researching: {heading}. Find deep data pages."})
+                        mcp_res = await mcp_client.execute_tool("async_tavily_map_tool", {"url_to_map": sel_url, "instruction": f"Researching: {heading}. Find deep data pages."})
                         try:
                             res_json = json.loads(mcp_res.content[0].text)
                             sub_mapped = res_json.get("results", [])
