@@ -9,9 +9,9 @@ A premium, full-stack AI chat interface designed for local inference natively po
 *   **Multimodal Vision**: Seamlessly attach and analyze images. Compatible with vision-enabled models (e.g., Llama 3.2 Vision, Qwen 2 VL).
 *   **Persistent SQLite Backend**: All conversations and metadata are stored in a local SQLite database for instant retrieval and management.
 *   **Aurora + Obsidian Design System**:
-    *   **Frosted Glass Surfaces**: Atmospheric glass panels with `backdrop-filter: blur(16px)` and violet-tinted borders.
-    *   **True Dark Mode**: Deep black (#09090B) with subtle violet ambient washes and smooth theme transitions.
-    *   **Monochrome + Violet**: Electric Violet (#A855F7) as the single accent on a pure zinc palette.
+    *   **Frosted Glass Surfaces**: Atmospheric glass panels with `backdrop-filter: blur(16px)` and blue-tinted borders.
+    *   **True Dark Mode**: Deep black (#09090B) with subtle blue ambient washes and smooth theme transitions.
+    *   **Monochrome + Blue**: Ocean Blue (#3B82F6) as the single accent on a slate palette.
     *   **Responsive Motion**: Motion-first interactions and fluid layouts (Mobile, Tablet, Desktop).
 *   **Real-time Logic**: Streaming Markdown rendering with Highlight.js syntax highlighting and interactive "Thought Process" (Reasoning) blocks.
 

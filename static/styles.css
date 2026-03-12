@@ -13,17 +13,17 @@
 :root {
     /* ═══════════════════════════════════════════
        AURORA + OBSIDIAN Design System v2.0.0
-       Atmospheric Glass · Monochrome + Violet
+       Atmospheric Glass · Monochrome + Blue
        ═══════════════════════════════════════════ */
 
-    /* Accent — Electric Violet (THE single accent) */
-    --accent: #A855F7;
-    --accent-hover: #9333EA;
-    --accent-light: #C084FC;
-    --accent-subtle: rgba(168, 85, 247, 0.08);
-    --accent-border: rgba(168, 85, 247, 0.15);
-    --accent-glow: rgba(168, 85, 247, 0.25);
-    --accent-rgb: 168, 85, 247;
+    /* Accent — Ocean Blue (THE single accent) */
+    --accent: #3B82F6;
+    --accent-hover: #2563EB;
+    --accent-light: #60A5FA;
+    --accent-subtle: rgba(59, 130, 246, 0.08);
+    --accent-border: rgba(59, 130, 246, 0.15);
+    --accent-glow: rgba(59, 130, 246, 0.25);
+    --accent-rgb: 59, 130, 246;
 
     /* Functional Colors */
     --color-emerald: #10B981;
@@ -31,29 +31,29 @@
     --color-rose: #F43F5E;
     --color-rose-subtle: rgba(244, 63, 94, 0.08);
 
-    /* Neutral (Pure Zinc — no blue tint) */
-    --color-neutral-50: #FAFAFA;
-    --color-neutral-100: #F4F4F5;
-    --color-neutral-200: #E4E4E7;
-    --color-neutral-300: #D4D4D8;
-    --color-neutral-400: #A1A1AA;
-    --color-neutral-500: #71717A;
-    --color-neutral-600: #52525B;
-    --color-neutral-700: #3F3F46;
-    --color-neutral-800: #27272A;
-    --color-neutral-900: #18181B;
+    /* Neutral (Slate — no blue tint) */
+    --color-neutral-50: #F8FAFC;
+    --color-neutral-100: #F1F5F9;
+    --color-neutral-200: #E2E8F0;
+    --color-neutral-300: #CBD5E1;
+    --color-neutral-400: #94A3B8;
+    --color-neutral-500: #64748B;
+    --color-neutral-600: #475569;
+    --color-neutral-700: #334155;
+    --color-neutral-800: #1E293B;
+    --color-neutral-900: #0F172A;
 
     /* Legacy compat aliases (for any JS that references these) */
-    --color-primary-50: #FAF5FF;
-    --color-primary-100: #F3E8FF;
-    --color-primary-200: #E9D5FF;
-    --color-primary-300: #D8B4FE;
-    --color-primary-400: #C084FC;
-    --color-primary-500: #A855F7;
-    --color-primary-600: #9333EA;
-    --color-primary-700: #7E22CE;
-    --color-primary-900: #581C87;
-    --color-primary-500-rgb: 168, 85, 247;
+    --color-primary-50: #EFF6FF;
+    --color-primary-100: #DBEAFE;
+    --color-primary-200: #BFDBFE;
+    --color-primary-300: #93C5FD;
+    --color-primary-400: #60A5FA;
+    --color-primary-500: #3B82F6;
+    --color-primary-600: #2563EB;
+    --color-primary-700: #1D4ED8;
+    --color-primary-900: #1E3A8A;
+    --color-primary-500-rgb: 59, 130, 246;
     --color-rose-50: #FFF1F2;
     --color-rose-500: #F43F5E;
     --color-teal-50: #ECFDF5;
@@ -79,7 +79,7 @@
 
     /* Surfaces — Glass (Light Mode) - Unified Premium Setting */
     --glass-bg: rgba(255, 255, 255, 0.85);
-    --glass-border: rgba(168, 85, 247, 0.08);
+    --glass-border: rgba(59, 130, 246, 0.08);
     --glass-blur: blur(20px) saturate(160%);
     --surface-secondary: var(--color-neutral-100);
 
@@ -89,8 +89,8 @@
     --radius-xl: 12px;
     --radius-lg: 8px;
     --radius-full: 9999px;
-    --surface-shadow: 0 4px 20px -2px rgba(168, 85, 247, 0.06);
-    --surface-shadow-intense: 0 10px 25px -5px rgba(168, 85, 247, 0.12);
+    --surface-shadow: 0 4px 20px -2px rgba(59, 130, 246, 0.06);
+    --surface-shadow-intense: 0 10px 25px -5px rgba(59, 130, 246, 0.12);
 
     /* Motion */
     --ease-spring: cubic-bezier(0.2, 0.8, 0.2, 1);
@@ -111,23 +111,23 @@
     --border-header: var(--glass-border);
     --bg-chat-display: rgba(0, 0, 0, 0.02);
     --border-chat-display: var(--glass-border);
-    --border-subtle: rgba(168, 85, 247, 0.08);
-    --sidebar-border-color: rgba(168, 85, 247, 0.12);
+    --border-subtle: rgba(59, 130, 246, 0.08);
+    --sidebar-border-color: rgba(59, 130, 246, 0.12);
     --glass-blur-sidebar: var(--glass-blur);
 
     /* Message Bubbles — Light Mode */
     --bg-user-message: var(--glass-bg);
     --text-user-message: var(--content-primary);
     --border-user-message: var(--glass-border);
-    --shadow-user-message: 0 1px 4px rgba(168, 85, 247, 0.06);
+    --shadow-user-message: 0 1px 4px rgba(59, 130, 246, 0.06);
 
     /* Inputs — Light Mode */
     --bg-input: rgba(255, 255, 255, 0.85);
     --border-input: var(--accent);
 
     /* Ambient Background — Light Mode (Concentrated Prism) */
-    --ambient-orb-1: rgba(168, 85, 247, 0.6);
-    --ambient-orb-2: rgba(168, 85, 247, 0.5);
+    --ambient-orb-1: rgba(59, 130, 246, 0.6);
+    --ambient-orb-2: rgba(59, 130, 246, 0.5);
 }
 
 /* 1. Core Architecture */
@@ -143,7 +143,7 @@ body {
     line-height: 1.7;
 }
 
-/* Ambient Background — Atmospheric violet orbs */
+/* Ambient Background — Atmospheric blue orbs */
 #ambient-bg {
     position: fixed;
     inset: -10%; /* Overshoot for motion */
@@ -181,7 +181,7 @@ body {
 
     /* Glass — Dark Mode */
     --glass-bg: rgba(12, 12, 15, 0.92);
-    --glass-border: rgba(168, 85, 247, 0.08);
+    --glass-border: rgba(59, 130, 246, 0.08);
 
     /* Semantic UI Colors — Dark Mode */
     --bg-sidebar: var(--glass-bg);
@@ -196,7 +196,7 @@ body {
 
     /* Message Bubbles — Dark Mode */
     --bg-user-message: rgba(255, 255, 255, 0.04);
-    --text-user-message: #FAFAFA;
+    --text-user-message: #F8FAFC;
     --border-user-message: rgba(255, 255, 255, 0.08);
     --shadow-user-message: none;
 
@@ -205,8 +205,8 @@ body {
     --border-input: var(--accent);
 
     /* Ambient Background — Dark Mode (Concentrated Prism) */
-    --ambient-orb-1: rgba(168, 85, 247, 0.35);
-    --ambient-orb-2: rgba(168, 85, 247, 0.3);
+    --ambient-orb-1: rgba(59, 130, 246, 0.35);
+    --ambient-orb-2: rgba(59, 130, 246, 0.3);
     --bg-base: var(--bg-dark);
 }
 
@@ -544,7 +544,7 @@ body {
 
 .dark .input-luminous {
     background: rgba(255, 255, 255, 0.04);
-    color: #FAFAFA;
+    color: #F8FAFC;
     border-color: rgba(255, 255, 255, 0.06);
 }
 
@@ -565,8 +565,8 @@ body {
 }
 
 .dark .input-luminous option {
-    background: #18181B;
-    color: #FAFAFA;
+    background: #0F172A;
+    color: #F8FAFC;
 }
 
 .dark .input-luminous optgroup {
@@ -2762,11 +2762,11 @@ aside {
 
 .sidebar-logo-icon {
     flex-shrink: 0;
-    filter: drop-shadow(0 1px 4px rgba(168, 85, 247, 0.25));
+    filter: drop-shadow(0 1px 4px rgba(59, 130, 246, 0.25));
 }
 
 html.dark .sidebar-logo-icon {
-    filter: drop-shadow(0 2px 6px rgba(168, 85, 247, 0.4));
+    filter: drop-shadow(0 2px 6px rgba(59, 130, 246, 0.4));
 }
 
 .sidebar-brand-text {
@@ -4124,8 +4124,8 @@ a.chat-list-item:active {
 }
 
 .dark .greeting-text {
-    color: #FAFAFA;
-    -webkit-text-fill-color: #FAFAFA;
+    color: #F8FAFC;
+    -webkit-text-fill-color: #F8FAFC;
     background: none;
 }
 

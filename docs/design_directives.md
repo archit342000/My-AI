@@ -2,7 +2,7 @@
 
 **Architect:** Visual Design System  
 **Compliance Standard:** WCAG 2.1 AA  
-**Philosophy:** Aurora + Obsidian · Atmospheric Glass · Monochrome + Electric Violet · True Dark · Motion-First  
+**Philosophy:** Aurora + Obsidian · Atmospheric Glass · Monochrome + Ocean Blue · True Dark · Motion-First
 **Updated:** March 2026
 
 ---
@@ -28,47 +28,47 @@
 
 ## 2. Design Tokens
 
-### 2.1 Color System — Electric Violet (Accent) & Pure Zinc (Neutral)
+### 2.1 Color System — Ocean Blue (Accent) & Slate (Neutral)
 
-The v2.0.0 Aurora + Obsidian system uses a **single accent color** — Electric Violet — across the entire UI. The full Ocean Blue scale (`--color-primary-*`) is retained only as legacy compatibility aliases; all new code must use the `--accent-*` token family.
+The v2.0.0 Aurora + Obsidian system uses a **single accent color** — Ocean Blue — across the entire UI. The full Ocean Blue scale (`--color-primary-*`) is retained only as legacy compatibility aliases; all new code must use the `--accent-*` token family.
 
 #### Accent Tokens (Canonical)
 
 | Token              | Value                         | Usage                           |
 |--------------------|-------------------------------|---------------------------------|
-| `--accent`         | `#A855F7`                     | Primary action, active states   |
-| `--accent-hover`   | `#9333EA`                     | Hover/pressed states            |
-| `--accent-light`   | `#C084FC`                     | Dark-mode foreground accent     |
-| `--accent-subtle`  | `rgba(168, 85, 247, 0.08)`    | Tinted hover backgrounds        |
-| `--accent-border`  | `rgba(168, 85, 247, 0.15)`    | Accent-tinted borders           |
-| `--accent-glow`    | `rgba(168, 85, 247, 0.25)`    | Glow / ring effects             |
-| `--accent-rgb`     | `168, 85, 247`                | For inline `rgba()` composition |
+| `--accent`         | `#3B82F6`                     | Primary action, active states   |
+| `--accent-hover`   | `#2563EB`                     | Hover/pressed states            |
+| `--accent-light`   | `#60A5FA`                     | Dark-mode foreground accent     |
+| `--accent-subtle`  | `rgba(59, 130, 246, 0.08)`    | Tinted hover backgrounds        |
+| `--accent-border`  | `rgba(59, 130, 246, 0.15)`    | Accent-tinted borders           |
+| `--accent-glow`    | `rgba(59, 130, 246, 0.25)`    | Glow / ring effects             |
+| `--accent-rgb`     | `59, 130, 246`                | For inline `rgba()` composition |
 
-#### Neutral Scale (Pure Zinc)
+#### Neutral Scale (Slate)
 
 | Token                  | Value      |
 |------------------------|------------|
-| `--color-neutral-50`   | `#FAFAFA`  |
-| `--color-neutral-100`  | `#F4F4F5`  |
-| `--color-neutral-200`  | `#E4E4E7`  |
-| `--color-neutral-300`  | `#D4D4D8`  |
-| `--color-neutral-400`  | `#A1A1AA`  |
-| `--color-neutral-500`  | `#71717A`  |
-| `--color-neutral-600`  | `#52525B`  |
-| `--color-neutral-700`  | `#3F3F46`  |
-| `--color-neutral-800`  | `#27272A`  |
-| `--color-neutral-900`  | `#18181B`  |
+| `--color-neutral-50`   | `#F8FAFC`  |
+| `--color-neutral-100`  | `#F1F5F9`  |
+| `--color-neutral-200`  | `#E2E8F0`  |
+| `--color-neutral-300`  | `#CBD5E1`  |
+| `--color-neutral-400`  | `#94A3B8`  |
+| `--color-neutral-500`  | `#64748B`  |
+| `--color-neutral-600`  | `#475569`  |
+| `--color-neutral-700`  | `#334155`  |
+| `--color-neutral-800`  | `#1E293B`  |
+| `--color-neutral-900`  | `#0F172A`  |
 
 #### Legacy Compatibility Aliases
 
-The old `--color-primary-*` tokens are remapped to the violet scale for JS compatibility:
+The old `--color-primary-*` tokens are remapped to the blue scale for JS compatibility:
 
 | Legacy Token            | Mapped Value |
 |-------------------------|--------------|
-| `--color-primary-500`   | `#A855F7`    |
-| `--color-primary-600`   | `#9333EA`    |
-| `--color-primary-400`   | `#C084FC`    |
-| `--color-primary-500-rgb` | `168, 85, 247` |
+| `--color-primary-500`   | `#3B82F6`    |
+| `--color-primary-600`   | `#2563EB`    |
+| `--color-primary-400`   | `#60A5FA`    |
+| `--color-primary-500-rgb` | `59, 130, 246` |
 
 ### 2.2 Glass Surface Tokens
 
@@ -77,7 +77,7 @@ These tokens define the frosted-glass aesthetic central to Aurora + Obsidian. Ev
 | Token                  | Light                              | Dark                              |
 |------------------------|------------------------------------|-----------------------------------|
 | `--glass-bg`           | `rgba(255, 255, 255, 0.85)`        | `rgba(12, 12, 15, 0.92)`         |
-| `--glass-border`       | `rgba(168, 85, 247, 0.08)`         | `rgba(168, 85, 247, 0.08)`       |
+| `--glass-border`       | `rgba(59, 130, 246, 0.08)`         | `rgba(59, 130, 246, 0.08)`       |
 | `--glass-blur`         | `blur(20px) saturate(160%)`        | `blur(20px) saturate(160%)`       |
 | `--glass-blur-sidebar` | `= --glass-blur`                   | `= --glass-blur`                  |
 
@@ -87,8 +87,8 @@ A fixed `#ambient-bg` div renders two large radial gradient orbs that drift slow
 
 | Token             | Light                            | Dark                             |
 |-------------------|----------------------------------|----------------------------------|
-| `--ambient-orb-1` | `rgba(168, 85, 247, 0.6)`        | `rgba(168, 85, 247, 0.35)`      |
-| `--ambient-orb-2` | `rgba(168, 85, 247, 0.5)`        | `rgba(168, 85, 247, 0.3)`       |
+| `--ambient-orb-1` | `rgba(59, 130, 246, 0.6)`        | `rgba(59, 130, 246, 0.35)`      |
+| `--ambient-orb-2` | `rgba(59, 130, 246, 0.5)`        | `rgba(59, 130, 246, 0.3)`       |
 | `--bg-base`       | `#F8F7F4` (warm off-white)       | `var(--bg-dark)` (`#09090B`)     |
 
 ### 2.4 Semantic Aliases
@@ -100,16 +100,16 @@ A fixed `#ambient-bg` div renders two large radial gradient orbs that drift slow
 | `--content-ghost`      | `var(--color-neutral-400)`         | `var(--color-neutral-700)`         |
 | `--surface-secondary`  | `var(--color-neutral-100)`         | `rgba(255, 255, 255, 0.04)`       |
 | `--bg-sidebar`         | `var(--glass-bg)`                  | `var(--glass-bg)`                  |
-| `--sidebar-border-color` | `rgba(168, 85, 247, 0.12)`      | `rgba(255, 255, 255, 0.08)`       |
+| `--sidebar-border-color` | `rgba(59, 130, 246, 0.12)`      | `rgba(255, 255, 255, 0.08)`       |
 | `--bg-header`          | `rgba(248, 247, 244, 0.4)`        | `rgba(9, 9, 11, 0.4)`             |
 | `--border-header`      | `var(--glass-border)`              | `var(--glass-border)`              |
 | `--bg-chat-display`    | `rgba(0, 0, 0, 0.02)`             | `rgba(255, 255, 255, 0.02)`       |
 | `--border-chat-display`| `var(--glass-border)`              | `var(--glass-border)`              |
-| `--border-subtle`      | `rgba(168, 85, 247, 0.08)`        | `rgba(255, 255, 255, 0.06)`       |
+| `--border-subtle`      | `rgba(59, 130, 246, 0.08)`        | `rgba(255, 255, 255, 0.06)`       |
 | `--bg-user-message`    | `var(--glass-bg)`                  | `rgba(255, 255, 255, 0.04)`       |
-| `--text-user-message`  | `var(--content-primary)`           | `#FAFAFA`                          |
+| `--text-user-message`  | `var(--content-primary)`           | `#F8FAFC`                          |
 | `--border-user-message`| `var(--glass-border)`              | `rgba(255, 255, 255, 0.08)`       |
-| `--shadow-user-message`| `0 1px 4px rgba(168, 85, 247, 0.06)` | `none`                          |
+| `--shadow-user-message`| `0 1px 4px rgba(59, 130, 246, 0.06)` | `none`                          |
 | `--bg-input`           | `rgba(255, 255, 255, 0.85)`       | `rgba(255, 255, 255, 0.04)`       |
 | `--border-input`       | `var(--accent)`                    | `var(--accent)`                    |
 
@@ -120,7 +120,7 @@ A fixed `#ambient-bg` div renders two large radial gradient orbs that drift slow
 | Rose        | `#F43F5E`   | Error / Danger   |
 | Emerald     | `#10B981`   | Success / OK     |
 | Amber       | `#F59E0B`   | Warning          |
-| Violet      | `#A855F7`   | Primary Accent   |
+| Blue      | `#3B82F6`   | Primary Accent   |
 
 ---
 
@@ -161,10 +161,10 @@ All sizes use responsive `rem` and `clamp()` units (not fixed `px`). Bold weight
 
 | Token                      | Value                                              |
 |----------------------------|----------------------------------------------------|
-| `--surface-shadow`         | `0 4px 20px -2px rgba(168, 85, 247, 0.06)`         |
-| `--surface-shadow-intense` | `0 10px 25px -5px rgba(168, 85, 247, 0.12)`        |
+| `--surface-shadow`         | `0 4px 20px -2px rgba(59, 130, 246, 0.06)`         |
+| `--surface-shadow-intense` | `0 10px 25px -5px rgba(59, 130, 246, 0.12)`        |
 
-All shadows use violet tinting — never pure black on brand elements.
+All shadows use blue tinting — never pure black on brand elements.
 
 ### 4.3 Z-Index Layers
 | Layer     | Token           | Value  | Usage                                |
@@ -240,12 +240,12 @@ All animations are defined in CSS — never in JS logic:
 ### 6.4 Sidebar & Navigation Rail
 - **Glass Panel**: `var(--bg-sidebar)` with `backdrop-filter: var(--glass-blur-sidebar)`. `border-inline-end: 1px solid var(--sidebar-border-color)`. Dark mode aside → `rgba(12, 12, 15, 0.4)` with white edge inset shadow.
 - **Dimensions**: `16rem` (256px) when expanded (`.sidebar-expanded`), `4.5rem` (72px) when collapsed (`.sidebar-collapsed`). Transition: `400ms --ease-spring`.
-- **Nav Items** (`.nav-item`): Height `48px`, rounded `var(--radius-xl)`. Active → `var(--accent-subtle)` bg, `var(--accent)` text, `3px` violet bar at left via `::before`. Dark active → `rgba(var(--accent-rgb), 0.15)` bg. Danger variant → rose coloring.
-- **Brand Logo** (`.sidebar-logo-icon`): Violet gradient SVG with `drop-shadow` filter using `rgba(168, 85, 247, ...)`.
+- **Nav Items** (`.nav-item`): Height `48px`, rounded `var(--radius-xl)`. Active → `var(--accent-subtle)` bg, `var(--accent)` text, `3px` blue bar at left via `::before`. Dark active → `rgba(var(--accent-rgb), 0.15)` bg. Danger variant → rose coloring.
+- **Brand Logo** (`.sidebar-logo-icon`): Blue gradient SVG with `drop-shadow` filter using `rgba(59, 130, 246, ...)`.
 - **Sidebar Icon Buttons** (`.sidebar-icon-btn`): `2.25rem` square, `0.625rem` radius. Hover → `var(--accent-subtle)` bg, accent-colored border/text.
 - **Sidebar Footer**: `border-top: 1px solid var(--glass-border)`.
 - **Section Labels** (`.sidebar-section-label`): `0.6875rem`, weight 600, `0.15em` letter-spacing, uppercase.
-- **Resize Handle** (`#sidebar-resizer`): `4px` wide, hover → violet gradient line.
+- **Resize Handle** (`#sidebar-resizer`): `4px` wide, hover → blue gradient line.
 - **Dynamic Tags (Pills)**: Chat items display inline status tags:
   - **Vision**: Light Cyan background (`rgba(6,182,212,0.1)`), Cyan border, `-brand-accent-1` text.
   - **Research**: Light Purple background (`rgba(168,85,247,0.1)`), Purple border, `#a855f7` text.
@@ -263,15 +263,15 @@ All animations are defined in CSS — never in JS logic:
 ### 6.6 Deep Research UI (Agents)
 - **Research Plan Card**: `.research-plan-card`, `var(--surface-secondary)` bg, `1px solid var(--accent-border)`. Dark → `rgba(var(--accent-rgb), 0.05)` bg. Plan title uses `var(--accent-hover)` / `var(--accent-light)`.
 - **Activity Feed**: Vertical stream of `.research-activity-item` lines with `activitySlideIn` animation.
-- **Live Indicator**: `.research-live-indicator` — violet-tinted pill with `liveIndicatorPulse` animation. Uses `rgba(var(--accent-rgb), ...)` not blue.
+- **Live Indicator**: `.research-live-indicator` — blue-tinted pill with `liveIndicatorPulse` animation. Uses `rgba(var(--accent-rgb), ...)` not violet.
 - **Activity Icons**: Distinct colors by type:
-  - Search: `rgba(var(--accent-rgb), 0.15)` bg, `var(--accent)` color (Violet)
+  - Search: `rgba(var(--accent-rgb), 0.15)` bg, `var(--accent)` color (Blue)
   - Visit: Emerald (`#10b981`)
   - Status: Amber (`#f59e0b`)
   - Phase: Purple (`#8b5cf6`)
 - **Search Results Pills** (`.activity-search-result-pill`): `9999px` rounded, accent-tinted bg + border. Dark → `var(--accent-light)` text.
 - **Visit Card** (`.activity-visit-card`): Emerald-tinted card with domain tracking and truncated summaries.
-- **Phase/Planning Indicator**: Gradient cells with violet-purple gradients. Active uses `shimmer` text animation, complete → Emerald UI with `checkPop` animation.
+- **Phase/Planning Indicator**: Gradient cells with blue-cyan gradients. Active uses `shimmer` text animation, complete → Emerald UI with `checkPop` animation.
 - **Research Report Card**: Accent-subtle bg, accent-border, centered layout. "View Report" button.
 
 ### 6.7 Thought Process (Reasoning CoT)
@@ -313,7 +313,7 @@ All animations are defined in CSS — never in JS logic:
 
 ### 6.12 Empty State & Hero
 - **Centered Greeting**: Fixed positioned, centered via `translate(-50%, -50%)`. Fades out with scale when hidden.
-- **Greeting Text**: `clamp(3rem, 10vw, 5rem)`, weight 800. Solid color (not gradient fill). Light → `var(--content-primary)`, Dark → `#FAFAFA`.
+- **Greeting Text**: `clamp(3rem, 10vw, 5rem)`, weight 800. Solid color (not gradient fill). Light → `var(--content-primary)`, Dark → `#F8FAFC`.
 - **Greeting Sub**: `clamp(1.5rem, 5vw, 2.5rem)`, weight 500, `opacity: 0.7`.
 - **Research Depth Selector**: Segmented control (§6.9 above) displayed below greeting when Research mode is active. Uses `var(--accent)` indicator pill.
 
@@ -364,7 +364,7 @@ All animations are defined in CSS — never in JS logic:
 
 ### Shadows
 - **Never** use pure black shadows for brand elements.
-- Inject violet tinting: `rgba(168, 85, 247, 0.06)` → `rgba(168, 85, 247, 0.12)`. Never use `rgba(37, 99, 235, ...)` (old blue).
+- Inject blue tinting: `rgba(59, 130, 246, 0.06)` → `rgba(59, 130, 246, 0.12)`. Never use `rgba(168, 85, 247, ...)` (old violet).
 
 ### Glassmorphism (Aurora + Obsidian Core)
 - **Central to all surfaces**: Input container, sidebar, modals, toasts, thought containers, dropdowns, image preview, tools dropdown, research mode selector, canvas, accordions, breadcrumbs, pagination, tooltip proximity.
@@ -373,7 +373,7 @@ All animations are defined in CSS — never in JS logic:
 
 ### Ambient Background
 - Fixed `#ambient-bg` div behind all content (`z-index: -1`), overshooting viewport by 10% (`inset: -10%`).
-- Two violet radial gradient orbs positioned at `85% 15%` and `15% 85%`.
+- Two blue radial gradient orbs positioned at `85% 15%` and `15% 85%`.
 - `ambient-drift` animation: slow 30s translate/scale/rotate cycle. Creates a living, atmospheric feel.
 - Light mode → more opaque orbs on warm off-white (`#F8F7F4`). Dark mode → extremely subtle orbs on deep black (`#09090B`).
 - `body` background set to `transparent` — never a solid color — allowing the ambient layer to show through glass surfaces.
@@ -386,14 +386,14 @@ All animations are defined in CSS — never in JS logic:
 - Use `inset-inline-start`, `inset-inline-end`, `margin-inline-start`, `padding-inline-start` instead of generic Left/Right explicitly, to maintain flow stability with localized layouts.
 
 ### Favicon
-- Updated from blue-teal gradient to violet gradient (`#A855F7` → `#7E22CE`).
+- Updated from blue-teal gradient to blue gradient (`#3B82F6` → `#2563EB`).
 
 ---
 
 ## 9. Anti-Patterns — The "Never" List
 
 1. **No flat borders** on cards without shadow or inner ring.
-2. **No default black shadows** on colored elements — always inject violet (`rgba(168, 85, 247, ...)`) natively.
+2. **No default black shadows** on colored elements — always inject blue (`rgba(59, 130, 246, ...)`) natively.
 3. **No CSS frameworks** (Tailwind, Bootstrap) — vanilla CSS definitions only.
 4. **No UI-Frameworks** (React/Angular/Vue/Svelte) — completely raw vanilla DOM API parsing.
 5. **No un-animated state changes** — every visibility/position change requires transitions (`opacity + transform`).
@@ -401,7 +401,7 @@ All animations are defined in CSS — never in JS logic:
 7. **No hardcoded RGB in JS** — always apply classes to trigger CSS custom property shifts.
 8. **No static inline structural styles in JS** — do not use JS to manually manipulate inline CSS for static structure or pre-defined animations. Always apply or toggle CSS classes (e.g., `.dark`). **Exception**: Dynamic, calculated values (like drag-to-resize pixel widths or fluid heights calculated via JS listeners) may use inline styles.
 9. **No structural delays in transitions** — fallback to `requestAnimationFrame` scaling if needed.
-10. **No blue references** — all `--color-primary-*` usage must map to violet. Never reference `#3B82F6` or the old Ocean Blue palette in new code.
+10. **No violet references** — all `--color-primary-*` usage must map to blue. Never reference `#A855F7` or the old Electric Violet palette in new code.
 11. **No solid body backgrounds** — body must remain transparent to allow ambient layer visibility through glass surfaces.
 
 ---

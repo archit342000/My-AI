@@ -1,5 +1,9 @@
 # CHANGELOG
  
+## v2.2.2
+* **Complete UI Redesign**: Overhauled the application theme, changing the primary accent color from Electric Violet to Ocean Blue (`#3B82F6`) and the neutral scale from Pure Zinc to Slate.
+* **Design Directives Updated**: Updated `docs/design_directives.md` and `AGENTS.md` to reflect the new Ocean Blue standard and deprecate Electric Violet.
+
 ## v2.2.1 (Full Height UI Overlays)
 * **Full Height UI Canvases**: The Research Report and Global Knowledge Base overlays now span the full height of the viewport on all devices.
 * **Mobile Flush Edges**: Added mobile responsiveness to strip the border and border-radius off full-screen canvases for a flush, native full-screen feel on touch devices.

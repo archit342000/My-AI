@@ -434,7 +434,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     headerHtml += ` <span style="font-size: 0.6rem; font-weight: 600; padding: 2px 6px; background: rgba(6, 182, 212, 0.1); color: var(--brand-accent-1); border-radius: 999px; border: 1px solid rgba(6, 182, 212, 0.2); margin-left: 6px; vertical-align: middle;">Vision</span>`;
                 }
                 if (chat.research_mode) {
-                    headerHtml += ` <span style="font-size: 0.6rem; font-weight: 600; padding: 2px 6px; background: rgba(168, 85, 247, 0.1); color: #a855f7; border-radius: 999px; border: 1px solid rgba(168, 85, 247, 0.2); margin-left: 6px; vertical-align: middle;">Research</span>`;
+                    headerHtml += ` <span style="font-size: 0.6rem; font-weight: 600; padding: 2px 6px; background: rgba(59, 130, 246, 0.1); color: #3b82f6; border-radius: 999px; border: 1px solid rgba(59, 130, 246, 0.2); margin-left: 6px; vertical-align: middle;">Research</span>`;
                 }
                 if (chat.search_depth_mode === 'deep') {
                     headerHtml += ` <span style="font-size: 0.6rem; font-weight: 600; padding: 2px 6px; background: rgba(59, 130, 246, 0.1); color: #3B82F6; border-radius: 999px; border: 1px solid rgba(59, 130, 246, 0.2); margin-left: 6px; vertical-align: middle;">Deep Search</span>`;
@@ -969,7 +969,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="chat-list-item-title" style="display: flex; align-items: center; gap: 6px; overflow: hidden; white-space: nowrap; flex: 1; min-width: 0; width: 100%;">
                 <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; flex: 1; min-width: 0;">${escapeHTML(displayTitle)}</span>
                 ${chat.is_vision ? `<span style="font-size: 0.6rem; font-weight: 500; letter-spacing: 0.02em; padding: 1px 4px; background: rgba(6, 182, 212, 0.1); color: var(--brand-accent-1); border-radius: 4px; border: 1px solid rgba(6, 182, 212, 0.2); flex-shrink: 0;">Vision</span>` : ''}
-                ${chat.research_mode ? `<span style="font-size: 0.6rem; font-weight: 500; letter-spacing: 0.02em; padding: 1px 4px; background: rgba(168, 85, 247, 0.1); color: #a855f7; border-radius: 4px; border: 1px solid rgba(168, 85, 247, 0.2); flex-shrink: 0;">Research</span>` : ''}
+                ${chat.research_mode ? `<span style="font-size: 0.6rem; font-weight: 500; letter-spacing: 0.02em; padding: 1px 4px; background: rgba(59, 130, 246, 0.1); color: #3b82f6; border-radius: 4px; border: 1px solid rgba(59, 130, 246, 0.2); flex-shrink: 0;">Research</span>` : ''}
             </div>
         `;
 

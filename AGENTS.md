@@ -73,6 +73,8 @@ If you are an AI agent, you must employ these advanced cognitive strategies to p
         2.  `changelog.md` (Add a new detailed block at the top under the new version header)
         3.  `README.md` (Update the displayed version badge/text)
 
+*   **Color System Shift (v2.2.2)**: The application has been updated to use the Ocean Blue (`#3B82F6`) accent palette and Slate neutral palette. DO NOT revert back to Electric Violet (`#A855F7`) or Pure Zinc palettes.
+
 ### 3.7 When to Update `AGENTS.md` (Strict AI Protocol)
 This document is a living contract and the ultimate source of truth for AI agents operating on this repository.
 
