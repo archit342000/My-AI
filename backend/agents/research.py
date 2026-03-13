@@ -35,6 +35,182 @@ from backend import config
 # All behavior is now controlled via backend.config
 
 
+
+
+async def generate_scout_response(api_url, model, messages, chat_id=None, model_name=None, api_key=None, **kwargs):
+    display_model = model_name or model
+    log_event("research_scout_interactive_start", {"chat_id": chat_id, "model": model})
+
+    current_time = get_current_time()
+
+    scout_prompt = f"""You are the Research Context Scout.
+    Your goal is to gather crystal-clear requirements from the user before launching a deep research task.
+    You MUST ask clarifying questions if the user's request is ambiguous.
+    Once you have absolute certainty about the research goals, scope, and constraints, you MUST call the `finalize_scouting` tool with a comprehensive summary.
+    Current Time: {current_time}
+    """
+
+    system_msg = {"role": "system", "content": scout_prompt}
+
+    # We only send the system prompt and the interactive history (which is pre-filtered by script.js to only show visible things)
+    messages_to_send = [system_msg] + messages
+
+    tools = [{
+        "type": "function",
+        "function": {
+            "name": "finalize_scouting",
+            "description": "Call this tool ONLY when you have fully understood the user's research request and need no further clarification.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "context_summary": {
+                        "type": "string",
+                        "description": "A highly detailed summary of the research topic, scope, constraints, and user preferences."
+                    }
+                },
+                "required": ["context_summary"]
+            }
+        }
+    }]
+
+    payload = {
+        "model": model,
+        "messages": messages_to_send,
+        "tools": tools,
+        "tool_choice": "auto",
+        "stream": True
+    }
+    if api_key:
+        payload["api_key"] = api_key
+
+    full_content = ""
+    full_reasoning = ""
+    current_tool_call = None
+    tool_calls = []
+
+    try:
+        from backend.llm import stream_chat_completion
+        async for chunk_str in stream_chat_completion(api_url, payload):
+            try:
+                chunk = json.loads(chunk_str[6:])
+                delta = chunk['choices'][0]['delta']
+                finish_reason = chunk['choices'][0].get('finish_reason')
+
+                if 'tool_calls' in delta and delta['tool_calls']:
+                    tc_chunk = delta['tool_calls'][0]
+                    if 'id' in tc_chunk:
+                        if current_tool_call: tool_calls.append(current_tool_call)
+                        current_tool_call = {
+                            "id": tc_chunk['id'],
+                            "type": "function",
+                            "function": {"name": tc_chunk['function']['name'], "arguments": ""}
+                        }
+
+                    if 'function' in tc_chunk and 'arguments' in tc_chunk['function']:
+                        current_tool_call['function']['arguments'] += tc_chunk['function']['arguments']
+
+                elif 'content' in delta or 'reasoning_content' in delta:
+                    content_chunk = delta.get('content', '')
+                    reasoning_chunk = delta.get('reasoning_content', '') or delta.get('reasoning', '')
+
+                    if reasoning_chunk:
+                        full_reasoning += reasoning_chunk
+                        yield f"data: {create_chunk(model, reasoning=reasoning_chunk)}\n\n"
+
+                    if content_chunk:
+                        full_content += content_chunk
+                        yield f"data: {create_chunk(model, content=content_chunk)}\n\n"
+
+                if finish_reason == 'tool_calls':
+                    if current_tool_call:
+                        tool_calls.append(current_tool_call)
+                        current_tool_call = None
+            except Exception:
+                pass
+
+        # Handle Tool Call for Finalizing Scouting
+        if tool_calls:
+            for tc in tool_calls:
+                if tc['function']['name'] == 'finalize_scouting':
+                    args_str = tc['function']['arguments']
+                    try:
+                        args = json.loads(args_str)
+                        summary = args.get("context_summary", "Gathered context successfully.")
+                    except:
+                        summary = args_str
+
+                    # 1. Update Database State
+                    from backend.storage import update_chat_research_state
+                    update_chat_research_state(chat_id, 'planning')
+
+                    # 2. Tell Frontend to retroactively hide all scout turns
+                    yield f"data: {json.dumps({'__phase_transition__': True, 'new_state': 'planning'})}\n\n"
+
+                    # 3. Tell Frontend to inject the formal tool call
+                    result_msg = f"## Scout Context Gathered\n\n{summary}"
+                    yield f"data: {json.dumps({'__inject_tool_call__': True, 'tool_call_id': tc['id'], 'name': 'finalize_scouting', 'result': result_msg})}\n\n"
+
+                    yield f"data: {create_chunk(model, content='\n\n**Scouting Complete. Transitioning to Planning phase...**')}\n\n"
+                    break
+
+    except Exception as e:
+        log_event("research_scout_error", {"error": str(e)})
+        yield f"data: {create_chunk(model, content=f'**Error during scouting:** {str(e)}')}\n\n"
+
+    yield "data: [DONE]\n\n"
+
+
+async def generate_planner_response(api_url, model, messages, approved_plan=None, chat_id=None, model_name=None, api_key=None, **kwargs):
+    display_model = model_name or model
+    log_event("research_planner_interactive_start", {"chat_id": chat_id, "model": model})
+
+    current_time = get_current_time()
+
+    planner_prompt = f"""You are the Research Planner.
+    Your goal is to propose a structured `<research_plan>` block based on the gathered context.
+    The user can review your plan, ask for changes, or approve it.
+    If the user asks for changes, update the `<research_plan>` accordingly.
+    You must output a complete, valid `<research_plan>` XML block whenever you propose a strategy.
+    Current Time: {current_time}
+    """
+
+    system_msg = {"role": "system", "content": planner_prompt}
+    messages_to_send = [system_msg] + messages
+
+    payload = {
+        "model": model,
+        "messages": messages_to_send,
+        "stream": True
+    }
+    if api_key:
+        payload["api_key"] = api_key
+
+    try:
+        from backend.llm import stream_chat_completion
+        async for chunk_str in stream_chat_completion(api_url, payload):
+            try:
+                chunk = json.loads(chunk_str[6:])
+                delta = chunk['choices'][0]['delta']
+
+                if 'content' in delta or 'reasoning_content' in delta:
+                    content_chunk = delta.get('content', '')
+                    reasoning_chunk = delta.get('reasoning_content', '') or delta.get('reasoning', '')
+
+                    if reasoning_chunk:
+                        yield f"data: {create_chunk(model, reasoning=reasoning_chunk)}\n\n"
+
+                    if content_chunk:
+                        yield f"data: {create_chunk(model, content=content_chunk)}\n\n"
+            except Exception:
+                pass
+
+    except Exception as e:
+        log_event("research_planner_error", {"error": str(e)})
+        yield f"data: {create_chunk(model, content=f'**Error during planning:** {str(e)}')}\n\n"
+
+    yield "data: [DONE]\n\n"
+
+
 def _extract_json_from_text(text):
     """
     Robustly extracts the first JSON object from a string.
@@ -1189,6 +1365,15 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
     if not playwright_client.session:
         await playwright_client.connect()
 
+    # --- PHASE TRANSITION INJECTION ---
+    # Hide the interactive planning turns and inject the finalized plan
+    if approved_plan and not resume_state:
+        yield f"data: {json.dumps({'__phase_transition__': True, 'new_state': 'executing'})}\n\n"
+
+        result_msg = f"## Approved Research Plan\n\n{approved_plan}"
+        tc_id = "call_plan_" + str(int(time.time()))
+        yield f"data: {json.dumps({'__inject_tool_call__': True, 'tool_call_id': tc_id, 'name': 'finalize_planning', 'result': result_msg})}\n\n"
+
     # ===== PARSE PLAN IF EXECUTING =====
     sections = []
     total_query_count = 0
@@ -2044,6 +2229,9 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
             "sources": len(source_registry),
             "references": len(references_list)
         })
+
+        from backend.storage import update_chat_research_state
+        update_chat_research_state(chat_id, 'completed')
 
     except Exception as e:
         import traceback

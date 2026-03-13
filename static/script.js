@@ -301,7 +301,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 is_vision: currentChatData ? currentChatData.is_vision : false,
                 last_model: currentChatData ? currentChatData.last_model : selectedModelName,
                 max_tokens: samplingParams.max_tokens,
-                folder: currentChatData ? currentChatData.folder : null
+                folder: currentChatData ? currentChatData.folder : null,
+                research_state: currentChatData ? currentChatData.research_state : 'none'
             })
         }).catch(err => console.error('Failed to sync chat state:', err));
     }
@@ -1502,26 +1503,35 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
         // Chat Lockdown Logic
-        // Lock input ONLY if making a deep research run AND the plan is confirmed/executing.
-        // We know research is executing if we are beyond drafting (history has more than the draft plan response + approval message) or if we receive active generation.
-        const isCurrentlyGenerating = typeof isGenerating !== 'undefined' && isGenerating;
-        const indexApproval = chatHistory.findIndex(m => m.content === "Plan Approved. Proceed with research." || m.content === "Proceed with research.");
-        // A deep research run is considered "started" if there is an approval message inside the history OR we got no plan (just generating normally).
-        let hasApprovedResearch = false;
+        // In the new conversational flow, the user can always chat UNLESS the state is explicitly 'executing'
+        const isExecutingOrCompleted = currentChatData && (currentChatData.research_state === 'executing' || currentChatData.research_state === 'completed');
+
+        let shouldLockInput = false;
         if (isResearchMode) {
-            hasApprovedResearch = isCurrentlyGenerating || (indexApproval > -1);
-            // Edge case: Maybe we had no plan? Just started immediately in research mode with some error?
-            if (!currentResearchPlan && chatHistory.length > 2) hasApprovedResearch = true;
+            if (currentChatData && currentChatData.research_state === 'executing') {
+                shouldLockInput = true;
+            }
+            // Also lock during live generation of reports
+            const isCurrentlyGenerating = typeof isGenerating !== 'undefined' && isGenerating;
+            if (isCurrentlyGenerating && currentChatData?.research_state === 'executing') {
+                shouldLockInput = true;
+            }
         }
 
         if (textArea) {
-            textArea.disabled = hasApprovedResearch;
-            textArea.placeholder = hasApprovedResearch ? "Chat is locked during research. Use 'Discard' to restart." : "Start a conversation...";
-            textArea.style.opacity = hasApprovedResearch ? '0.6' : '1';
+            textArea.disabled = shouldLockInput;
+            if (isResearchMode && currentChatData?.research_state === 'completed') {
+                 textArea.placeholder = "Research completed. Continue conversation below...";
+                 textArea.disabled = false;
+                 textArea.style.opacity = '1';
+            } else {
+                 textArea.placeholder = shouldLockInput ? "Chat is locked during research execution. Use 'Discard' to restart." : "Start a conversation...";
+                 textArea.style.opacity = shouldLockInput ? '0.6' : '1';
+            }
         }
 
         if (researchActions) {
-            researchActions.style.display = hasApprovedResearch ? 'flex' : 'none';
+            researchActions.style.display = (shouldLockInput || (currentChatData?.research_state === 'completed')) ? 'flex' : 'none';
         }
 
         // Disable Image Attachment in Research
@@ -1699,7 +1709,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 fetch('/api/chats/save', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ chat_id: currentChatId, title: titleText, messages: chatHistory, memory_mode: isMemoryMode, research_mode: isResearchMode, search_depth_mode: searchDepthMode, max_tokens: samplingParams.max_tokens })
+                    body: JSON.stringify({ chat_id: currentChatId, title: titleText, messages: chatHistory, memory_mode: isMemoryMode, research_mode: isResearchMode, search_depth_mode: searchDepthMode, max_tokens: samplingParams.max_tokens, research_state: currentChatData ? currentChatData.research_state : 'none' })
                 }).then(() => { loadChats(); renderChatList(); });
             }
             updateResearchUI();
@@ -2342,7 +2352,7 @@ document.addEventListener('DOMContentLoaded', () => {
             fetch(`/api/chats/${currentChatId}`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ max_tokens: samplingParams.max_tokens })
+                body: JSON.stringify({ max_tokens: samplingParams.max_tokens, research_state: currentChatData ? currentChatData.research_state : 'none' })
             }).catch(e => console.error("Error updating max_tokens:", e));
         }
     });
@@ -2882,8 +2892,10 @@ document.addEventListener('DOMContentLoaded', () => {
                         memory_mode: isMemoryMode,
                         research_mode: isResearchMode ? 1 : 0,
                         search_depth_mode: searchDepthMode,
-                        is_vision: currentImageBase64 ? 1 : 0
+                        is_vision: currentImageBase64 ? 1 : 0,
+                        research_state: isResearchMode ? 'scouting' : 'none'
                     };
+                    currentChatData = chat;
                     savedChats.push(chat);
                     renderChatList();
 
@@ -2943,7 +2955,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // Add history (last 20 turns)
-        messages.push(...chatHistory.slice(-20));
+        const visibleHistory = chatHistory.filter(m => !m.is_hidden).slice(-20);
+        messages.push(...visibleHistory);
 
         // Clean up image state
         const sentImageBase64 = currentImageBase64;
@@ -3060,6 +3073,63 @@ document.addEventListener('DOMContentLoaded', () => {
                         // Handle Errors sent as data
                         if (json.error) {
                             throw new Error(json.error);
+                        }
+
+                        // Handle phase transitions (hide previous conversational turns)
+                        if (json.__phase_transition__) {
+                            // Find the last visible tool call
+                            let lastBoundary = 1; // Default to 1 to preserve the very first user message!
+                            for (let i = chatHistory.length - 1; i >= 0; i--) {
+                                if (chatHistory[i].role === 'tool' && !chatHistory[i].is_hidden) {
+                                    lastBoundary = i + 1;
+                                    break;
+                                }
+                            }
+
+                            // Hide everything from the boundary up to the current last message
+                            for (let i = lastBoundary; i < chatHistory.length; i++) {
+                                chatHistory[i].is_hidden = true;
+                            }
+
+                            // Update internal state
+                            if (currentChatData) {
+                                currentChatData.research_state = json.new_state;
+                            }
+                            updateResearchUI();
+
+                            if (currentChatId && !isTemporaryChat) {
+                                persistChat();
+                            }
+                            continue;
+                        }
+
+                        // Handle injected tool calls
+                        if (json.__inject_tool_call__) {
+                            chatHistory.push({
+                                role: 'assistant',
+                                content: null,
+                                tool_calls: [{
+                                    id: json.tool_call_id,
+                                    type: "function",
+                                    function: {
+                                        name: json.name,
+                                        arguments: "{}"
+                                    }
+                                }],
+                                is_hidden: false
+                            });
+                            chatHistory.push({
+                                role: 'tool',
+                                tool_call_id: json.tool_call_id,
+                                name: json.name,
+                                content: json.result,
+                                is_hidden: false
+                            });
+
+                            if (currentChatId && !isTemporaryChat) {
+                                persistChat();
+                            }
+                            continue;
                         }
 
                         // Capture the actual model name from the server stream if present
@@ -3285,7 +3355,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 finalCombinedContent = `<think>\n${finalReasoning}\n</think>\n${finalContent}`;
             }
 
-            const assistantMsgObj = { role: 'assistant', content: finalCombinedContent, model: actualModelName };
+            const assistantMsgObj = { role: 'assistant', content: finalCombinedContent, model: actualModelName, is_hidden: false };
             chatHistory.push(assistantMsgObj);
 
             // Update the bot message row to show which model generated this response
