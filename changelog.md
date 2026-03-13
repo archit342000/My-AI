@@ -1,8 +1,16 @@
 # CHANGELOG
- 
+
 ## v2.4.0
 * **Interactive Multi-Phase Research**: Revamped Deep Research agent into an interactive, multi-phase conversational workflow (Scout -> Plan -> Execute).
 * **Context Isolation**: Improved context window management by compressing intermediate research turns into synthesized tool calls while retaining visual history via the new `is_hidden` DB flag.
+
+## v2.3.1
+* **Animation Stability**: Fixed an issue where the "generating" animation and thought process dots would stop prematurely during multi-round tool calls. Animations now correctly persist or re-activate across tool transitions.
+* **UX Refinement**: Optimized the content flow detection logic to be round-aware, ensuring the thinking state is correctly managed for sequential AI reasoning turns.
+* **Favicon Modernization**: Replaced legacy Electric Violet favicons with Ocean Blue SVGs to unify the application's visual identity with the "Aurora + Obsidian" design system.
+* **Documentation Refactor**: Completely rewrote the `README.md` to prioritize technical utility, updating outdated model references (Llama 3.3, Qwen 2.5), and hardening installation instructions.
+* **Variable Renaming**: Renamed `LM_STUDIO_URL` to `AI_URL` and `LM_STUDIO_API_KEY` to `AI_API_KEY` globally to reflect the move towards generic local AI backend orchestration.
+* **Version Bump**: Incremented version globally to v2.3.1.
 
 ## v2.3.0
 * **Site Visit Tool Fallback**: Implemented a new `playwright_mcp` container for the site visit tool using a Playwright headless browser.

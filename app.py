@@ -42,8 +42,8 @@ except Exception as e:
 
 # Initialize components with config
 init_db()
-rag = MemoryRAG(persist_path=config.CHROMA_PATH, api_url=config.LM_STUDIO_URL, api_key=config.LM_STUDIO_API_KEY, embedding_model=embedding_model)
-research_rag = ResearchRAG(persist_path=config.CHROMA_PATH, api_url=config.LM_STUDIO_URL, api_key=config.LM_STUDIO_API_KEY, embedding_model=embedding_model)
+rag = MemoryRAG(persist_path=config.CHROMA_PATH, api_url=config.AI_URL, api_key=config.AI_API_KEY, embedding_model=embedding_model)
+research_rag = ResearchRAG(persist_path=config.CHROMA_PATH, api_url=config.AI_URL, api_key=config.AI_API_KEY, embedding_model=embedding_model)
 task_manager.recover_tasks()
 
 @app.route('/')
@@ -271,14 +271,14 @@ import httpx
 @app.route('/api/v1/models', methods=['GET'])
 @app.route('/v1/models', methods=['GET'])
 def proxy_get_models():
-    """Proxy GET models endpoints to LM Studio, injecting the API key."""
-    api_url = config.LM_STUDIO_URL.rstrip("/")
+    """Proxy GET models endpoints to the local AI backend, injecting the API key."""
+    api_url = config.AI_URL.rstrip("/")
     
     base_url = api_url[:-3] if api_url.endswith('/v1') else api_url
     endpoint = f"{base_url}/v1/models"
     headers = {"Content-Type": "application/json"}
-    if config.LM_STUDIO_API_KEY:
-        headers["Authorization"] = f"Bearer {config.LM_STUDIO_API_KEY}"
+    if config.AI_API_KEY:
+        headers["Authorization"] = f"Bearer {config.AI_API_KEY}"
         
     try:
         response = requests.get(endpoint, headers=headers, timeout=10)
@@ -300,14 +300,14 @@ def get_model_config():
 def proxy_load_model():
     """Proxy POST to llama.cpp /models/load."""
     data = request.json or {}
-    api_url = config.LM_STUDIO_URL.rstrip("/")
+    api_url = config.AI_URL.rstrip("/")
     
     base_url = api_url[:-3] if api_url.endswith('/v1') else api_url
     endpoint = f"{base_url}/models/load"
         
     headers = {"Content-Type": "application/json"}
-    if config.LM_STUDIO_API_KEY:
-        headers["Authorization"] = f"Bearer {config.LM_STUDIO_API_KEY}"
+    if config.AI_API_KEY:
+        headers["Authorization"] = f"Bearer {config.AI_API_KEY}"
         
     try:
         response = requests.post(endpoint, json=data, headers=headers, timeout=60)
@@ -319,14 +319,14 @@ def proxy_load_model():
 def proxy_unload_model():
     """Proxy POST to llama.cpp /models/unload."""
     data = request.json or {}
-    api_url = config.LM_STUDIO_URL.rstrip("/")
+    api_url = config.AI_URL.rstrip("/")
     
     base_url = api_url[:-3] if api_url.endswith('/v1') else api_url
     endpoint = f"{base_url}/models/unload"
         
     headers = {"Content-Type": "application/json"}
-    if config.LM_STUDIO_API_KEY:
-        headers["Authorization"] = f"Bearer {config.LM_STUDIO_API_KEY}"
+    if config.AI_API_KEY:
+        headers["Authorization"] = f"Bearer {config.AI_API_KEY}"
         
     try:
         response = requests.post(endpoint, json=data, headers=headers, timeout=60)
@@ -362,8 +362,8 @@ def chat_completions():
         resume_state = data.get('resumeState')
         last_model_name = data.get('lastModelName', model)
         # Enforce secrets for security and to prevent empty frontend overrides
-        api_url = config.LM_STUDIO_URL
-        api_key = config.LM_STUDIO_API_KEY
+        api_url = config.AI_URL
+        api_key = config.AI_API_KEY
 
         # Blacklist keys that should never be forwarded or overridden by client
         blacklist = [

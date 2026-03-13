@@ -19,10 +19,10 @@ os.makedirs(DATA_DIR, exist_ok=True)
 APP_PASSWORD = get_secret("APP_PASSWORD", None)
 
 # =============================================================================
-# LM STUDIO & INFRASTRUCTURE
+# AI INFERENCE & INFRASTRUCTURE
 # =============================================================================
-LM_STUDIO_URL = get_secret("LM_STUDIO_URL", "http://localhost:1234")
-LM_STUDIO_API_KEY = get_secret("LM_STUDIO_API_KEY", "")
+AI_URL = get_secret("AI_URL", "http://localhost:1234")
+AI_API_KEY = get_secret("AI_API_KEY", "")
 CHROMA_PATH = get_secret("CHROMA_PATH", os.path.abspath(os.path.join(DATA_DIR, "chroma_db")))
 
 # Ensure persistence directories exist

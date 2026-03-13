@@ -3146,6 +3146,11 @@ document.addEventListener('DOMContentLoaded', () => {
                             });
                             historyContentStartIdx = accumulatedContent.length;
                             historyReasoningStartIdx = accumulatedReasoning.length;
+                            
+                            // Reset round-specific flags for tool transitions
+                            contentStarted = false;
+                            botMsgDiv.classList.add('thinking');
+                            
                             continue;
                         }
                         
@@ -3203,6 +3208,25 @@ document.addEventListener('DOMContentLoaded', () => {
                             if (delta.reasoning_content) {
                                 accumulatedReasoning += delta.reasoning_content;
                                 displayReasoning += delta.reasoning_content;
+
+                                // Ensure thought container is visible and active if new reasoning arrives (multi-round support)
+                                if (thoughtWrapper) {
+                                    const tc = thoughtWrapper.querySelector('.thought-container');
+                                    if (tc && !tc.classList.contains('reasoning-active')) {
+                                        tc.classList.add('reasoning-active');
+                                        const titleText = tc.querySelector('.thought-title-text');
+                                        if (titleText) titleText.textContent = 'Thinking';
+                                        if (!tc.querySelector('.thought-progress-dots')) {
+                                            const headerLabel = tc.querySelector('.thought-header-title');
+                                            if (headerLabel) {
+                                                const dots = document.createElement('span');
+                                                dots.className = 'thought-progress-dots';
+                                                dots.innerHTML = '<span></span><span></span><span></span>';
+                                                headerLabel.appendChild(dots);
+                                            }
+                                        }
+                                    }
+                                }
                             }
                             if (delta.content) {
                                 accumulatedContent += delta.content;
@@ -3226,8 +3250,9 @@ document.addEventListener('DOMContentLoaded', () => {
                                 }
                             }
 
-                            // Determine phase: content started
-                            const hasRealContent = accumulatedContent.trim().length > 0;
+                            // Determine phase: content started (checked against current round scope)
+                            const currentRoundContent = accumulatedContent.substring(historyContentStartIdx).trim();
+                            const hasRealContent = currentRoundContent.length > 0;
 
                             if (hasRealContent && !contentStarted) {
                                 contentStarted = true;
