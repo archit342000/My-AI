@@ -1,5 +1,9 @@
 # CHANGELOG
  
+## v2.4.0
+* **Interactive Multi-Phase Research**: Revamped Deep Research agent into an interactive, multi-phase conversational workflow (Scout -> Plan -> Execute).
+* **Context Isolation**: Improved context window management by compressing intermediate research turns into synthesized tool calls while retaining visual history via the new `is_hidden` DB flag.
+
 ## v2.3.0
 * **Site Visit Tool Fallback**: Implemented a new `playwright_mcp` container for the site visit tool using a Playwright headless browser.
 * **Separated MCP Services**: Split the previous `research_mcp` container into two separate, dedicated MCP servers: `tavily_mcp` (for searching and mapping) and `playwright_mcp` (for visiting URLs and fetching images).
