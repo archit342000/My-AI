@@ -88,6 +88,9 @@ async def generate_scout_response(api_url, model, messages, chat_id=None, model_
     current_tool_call = None
     tool_calls = []
 
+
+    full_content = ""
+
     try:
         from backend.llm import stream_chat_completion
         async for chunk_str in stream_chat_completion(api_url, payload):
@@ -143,14 +146,16 @@ async def generate_scout_response(api_url, model, messages, chat_id=None, model_
                     from backend.storage import update_chat_research_state
                     update_chat_research_state(chat_id, 'planning')
 
-                    # 2. Tell Frontend to retroactively hide all scout turns
-                    yield f"data: {json.dumps({'__phase_transition__': True, 'new_state': 'planning'})}\n\n"
+                    # 2. Tell Frontend to transition to planning. We explicitly do NOT hide the scout turns
+                    # because the user requested the scout conversation to remain visible in the main chat.
+                    yield f"data: {json.dumps({'__phase_transition__': True, 'new_state': 'planning', 'hide_previous': False})}\n\n"
 
                     # 3. Tell Frontend to inject the formal tool call
                     result_msg = f"## Scout Context Gathered\n\n{summary}"
                     yield f"data: {json.dumps({'__inject_tool_call__': True, 'tool_call_id': tc['id'], 'name': 'finalize_scouting', 'result': result_msg})}\n\n"
 
-                    yield f"data: {create_chunk(model, content='\n\n**Scouting Complete. Transitioning to Planning phase...**')}\n\n"
+                    # Yield empty content to finish gracefully without polluting context further
+                    yield f"data: {create_chunk(model, content='')}\n\n"
                     break
 
     except Exception as e:
@@ -200,9 +205,27 @@ async def generate_planner_response(api_url, model, messages, approved_plan=None
                         yield f"data: {create_chunk(model, reasoning=reasoning_chunk)}\n\n"
 
                     if content_chunk:
+                        full_content += content_chunk
                         yield f"data: {create_chunk(model, content=content_chunk)}\n\n"
             except Exception:
                 pass
+
+        # If the planner outputs a valid plan, we inject it as a tool call so the main conversation
+        # stays clean. However, the planner is iterative. It shouldn't auto-finalize unless the user approves.
+        # Wait, the prompt says "The user can review your plan, ask for changes, or approve it."
+        # The user approves by clicking the "Approve & Execute" button in the UI, which sends `approved_plan`.
+        # So we only inject finalize_planning when approved_plan is received! But wait, `approved_plan`
+        # is handled in `generate_research_response` via transition injection!
+        # Ah, in `generate_research_response`:
+        # if approved_plan and not resume_state:
+        #    yield f"data: {json.dumps({'__phase_transition__': True, 'new_state': 'executing'})}\n\n"
+        #    yield f"data: {json.dumps({'__inject_tool_call__': True, 'tool_call_id': tc_id, 'name': 'finalize_planning', 'result': result_msg})}\n\n"
+        # Yes, so the Planner itself doesn't need to inject `finalize_planning` here, it just streams the draft plan.
+        # But we need to make sure the draft plan isn't permanently polluting the chat history either.
+        # Actually, the user can ask for changes, which means we *must* keep the planner's draft in history
+        # temporarily while they chat. Then, when they finally approve, the `__phase_transition__` will hide
+        # all of these planner back-and-forth messages retroactively, leaving only the injected tool call.
+        # So no change is strictly needed here for the Planner injection, it is already handled correctly!
 
     except Exception as e:
         log_event("research_planner_error", {"error": str(e)})
@@ -1368,7 +1391,8 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
     # --- PHASE TRANSITION INJECTION ---
     # Hide the interactive planning turns and inject the finalized plan
     if approved_plan and not resume_state:
-        yield f"data: {json.dumps({'__phase_transition__': True, 'new_state': 'executing'})}\n\n"
+        # Hide previous messages specifically because we want to clear the Planner's interactive iterative turns from the main chat history
+        yield f"data: {json.dumps({'__phase_transition__': True, 'new_state': 'executing', 'hide_previous': True})}\n\n"
 
         result_msg = f"## Approved Research Plan\n\n{approved_plan}"
         tc_id = "call_plan_" + str(int(time.time()))
@@ -2221,7 +2245,6 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
 
         # --- 3.7 Stream final report ---
         yield f"data: {_create_activity_chunk(display_model, 'phase', {'message': 'Report complete!', 'icon': '✅'})}\n\n"
-        yield f"data: {create_chunk(display_model, content=f'<final_report>{full_report}</final_report>')}\n\n"
 
         log_event("research_complete", {
             "chat_id": chat_id,
@@ -2232,6 +2255,13 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
 
         from backend.storage import update_chat_research_state
         update_chat_research_state(chat_id, 'completed')
+
+        # Manually transition phase to 'completed' and inject the final report as a tool call
+        yield f"data: {json.dumps({'__phase_transition__': True, 'new_state': 'completed', 'hide_previous': True})}\n\n"
+
+        tc_id = "call_research_" + str(int(time.time()))
+        result_msg = f"<final_report>{full_report}</final_report>"
+        yield f"data: {json.dumps({'__inject_tool_call__': True, 'tool_call_id': tc_id, 'name': 'finalize_research', 'result': result_msg})}\n\n"
 
     except Exception as e:
         import traceback
