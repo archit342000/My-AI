@@ -112,7 +112,8 @@ def save_chat_endpoint():
         vision_model=data.get('vision_model'),
         max_tokens=max_tokens,
         folder=data.get('folder'),
-        search_depth_mode=data.get('search_depth_mode', 'regular')
+        search_depth_mode=data.get('search_depth_mode', 'regular'),
+        research_state=data.get('research_state', 'none')
     )
     
     if messages is not None:
@@ -125,7 +126,8 @@ def save_chat_endpoint():
                 model=msg.get('model'),
                 tool_calls=msg.get('tool_calls'),
                 tool_call_id=msg.get('tool_call_id'),
-                name=msg.get('name')
+                name=msg.get('name'),
+                is_hidden=msg.get('is_hidden', 0)
             )
     
     return jsonify({"success": True})
@@ -428,6 +430,12 @@ def chat_completions():
             else:
                 title = "New Chat"
 
+            # If this is the very first message of a research chat, initialize state to 'scouting'
+            if research_mode and (not existing_chat or existing_chat.get('research_state') in [None, 'none']):
+                current_research_state = 'scouting'
+            else:
+                current_research_state = existing_chat.get('research_state', 'none') if existing_chat else 'none'
+
             save_chat(
                 chat_id,
                 title,
@@ -438,9 +446,10 @@ def chat_completions():
                 last_model=last_model_name,
                 vision_model=vision_model,
                 max_tokens=data.get('max_tokens', 16384),
-                search_depth_mode=search_depth_mode
+                search_depth_mode=search_depth_mode,
+                research_state=current_research_state
             )
-            add_message(chat_id, 'user', user_msg['content'])
+            add_message(chat_id, 'user', user_msg['content'], is_hidden=user_msg.get('is_hidden', 0))
 
         # === 3. Enqueue Background Task ===
         if research_mode:
@@ -449,11 +458,46 @@ def chat_completions():
                 research_rag.embedding_fn.api_url = api_url
             if hasattr(research_rag.embedding_fn, 'api_key'):
                 research_rag.embedding_fn.api_key = api_key
+
+            existing_chat = get_chat(chat_id)
+            current_research_state = existing_chat.get('research_state', 'none') if existing_chat else 'scouting'
             
-            task_manager.start_research_task(
-                model, messages, approved_plan, chat_id, search_depth_mode, vision_model, generate_research_response,
-                model_name=last_model_name, resume_state=resume_state, rag_engine=research_rag, rag=rag, api_url=api_url, api_key=api_key
-            )
+            # If user explicitly sent an approved plan, automatically transition to executing
+            if approved_plan and current_research_state == 'planning':
+                current_research_state = 'executing'
+                from backend.storage import update_chat_research_state
+                update_chat_research_state(chat_id, current_research_state)
+
+            # If the state is completed, just fall back to standard chat handler!
+            if current_research_state == 'completed':
+                has_vision = data.get('hasVision', False)
+                task_manager.start_chat_task(
+                    chat_id,
+                    generate_chat_response,
+                    model=model,
+                    messages=messages,
+                    extra_body=extra_body,
+                    rag=rag,
+                    memory_mode=memory_mode,
+                    search_depth_mode=search_depth_mode,
+                    has_vision=has_vision,
+                    api_url=api_url,
+                    api_key=api_key
+                )
+            else:
+                from backend.agents.research import generate_scout_response, generate_planner_response
+                if current_research_state == 'scouting':
+                    target_func = generate_scout_response
+                elif current_research_state == 'planning':
+                    target_func = generate_planner_response
+                else:
+                    target_func = generate_research_response
+
+                task_manager.start_research_task(
+                    model, messages, approved_plan, chat_id, search_depth_mode, vision_model, target_func,
+                    research_state=current_research_state,
+                    model_name=last_model_name, resume_state=resume_state, rag_engine=research_rag, rag=rag, api_url=api_url, api_key=api_key
+                )
         else:
             # Normal Chat Task
             if hasattr(rag.embedding_fn, 'api_url'):

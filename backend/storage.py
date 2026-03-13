@@ -22,7 +22,8 @@ def init_db():
             max_tokens INTEGER DEFAULT 16384,
             is_custom_title INTEGER DEFAULT 0,
             folder TEXT,
-            search_depth_mode TEXT DEFAULT 'regular'
+            search_depth_mode TEXT DEFAULT 'regular',
+            research_state TEXT DEFAULT 'none'
         )
     ''')
     
@@ -77,6 +78,11 @@ def init_db():
     except sqlite3.OperationalError:
         pass
 
+    try:
+        c.execute("ALTER TABLE chats ADD COLUMN research_state TEXT DEFAULT 'none'")
+    except sqlite3.OperationalError:
+        pass
+
     c.execute('''
         CREATE TABLE IF NOT EXISTS messages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -88,6 +94,7 @@ def init_db():
             tool_calls TEXT,
             tool_call_id TEXT,
             name TEXT,
+            is_hidden INTEGER DEFAULT 0,
             FOREIGN KEY(chat_id) REFERENCES chats(id)
         )
     ''')
@@ -105,6 +112,10 @@ def init_db():
         pass
     try:
         c.execute('ALTER TABLE messages ADD COLUMN name TEXT')
+    except sqlite3.OperationalError:
+        pass
+    try:
+        c.execute('ALTER TABLE messages ADD COLUMN is_hidden INTEGER DEFAULT 0')
     except sqlite3.OperationalError:
         pass
     conn.commit()
@@ -160,17 +171,20 @@ def get_chat(chat_id):
             m['tool_call_id'] = ""
         if m.get('name') is None:
             m['name'] = ""
+
+        # Ensure is_hidden is propagated
+        m['is_hidden'] = m.get('is_hidden', 0)
             
         chat_dict['messages'].append(m)
 
     return chat_dict
 
-def save_chat(chat_id, title, timestamp, memory_mode, research_mode=False, is_vision=False, last_model=None, vision_model=None, max_tokens=16384, folder=None, search_depth_mode='regular'):
+def save_chat(chat_id, title, timestamp, memory_mode, research_mode=False, is_vision=False, last_model=None, vision_model=None, max_tokens=16384, folder=None, search_depth_mode='regular', research_state='none'):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''
-        INSERT INTO chats (id, title, timestamp, memory_mode, research_mode, is_vision, last_model, vision_model, max_tokens, is_custom_title, folder, search_depth_mode)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+        INSERT INTO chats (id, title, timestamp, memory_mode, research_mode, is_vision, last_model, vision_model, max_tokens, is_custom_title, folder, search_depth_mode, research_state)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
             title=CASE WHEN chats.is_custom_title = 1 THEN chats.title ELSE excluded.title END,
             timestamp=excluded.timestamp,
@@ -181,12 +195,13 @@ def save_chat(chat_id, title, timestamp, memory_mode, research_mode=False, is_vi
             vision_model=excluded.vision_model,
             max_tokens=excluded.max_tokens,
             folder=COALESCE(excluded.folder, chats.folder),
-            search_depth_mode=excluded.search_depth_mode
-    ''', (chat_id, title, timestamp, 1 if memory_mode else 0, 1 if research_mode else 0, 1 if is_vision else 0, last_model, vision_model, max_tokens, folder, search_depth_mode))
+            search_depth_mode=excluded.search_depth_mode,
+            research_state=excluded.research_state
+    ''', (chat_id, title, timestamp, 1 if memory_mode else 0, 1 if research_mode else 0, 1 if is_vision else 0, last_model, vision_model, max_tokens, folder, search_depth_mode, research_state))
     conn.commit()
     conn.close()
 
-def add_message(chat_id, role, content, model=None, tool_calls=None, tool_call_id=None, name=None):
+def add_message(chat_id, role, content, model=None, tool_calls=None, tool_call_id=None, name=None, is_hidden=0):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
 
@@ -198,8 +213,8 @@ def add_message(chat_id, role, content, model=None, tool_calls=None, tool_call_i
         tool_calls = json.dumps(tool_calls)
 
     c.execute(
-        "INSERT INTO messages (chat_id, role, content, timestamp, model, tool_calls, tool_call_id, name) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", 
-        (chat_id, role, content, time.time(), model, tool_calls, tool_call_id, name)
+        "INSERT INTO messages (chat_id, role, content, timestamp, model, tool_calls, tool_call_id, name, is_hidden) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (chat_id, role, content, time.time(), model, tool_calls, tool_call_id, name, is_hidden)
     )
     conn.commit()
     conn.close()
@@ -253,6 +268,13 @@ def update_chat_folder(chat_id, folder):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("UPDATE chats SET folder = ? WHERE id = ?", (folder, chat_id))
+    conn.commit()
+    conn.close()
+
+def update_chat_research_state(chat_id, research_state):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("UPDATE chats SET research_state = ? WHERE id = ?", (research_state, chat_id))
     conn.commit()
     conn.close()
 
