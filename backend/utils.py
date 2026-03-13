@@ -79,7 +79,7 @@ async def async_chat_completion(url, payload):
     model = payload.get("model", "unknown")
     
     # Use timeout=None. When executing multiple parallel URL ranking/selection 
-    # requests, LMStudio (or any local Inference server) will queue them. 
+    # requests, a local inference server will queue them. 
     # A short timeout like 180s will cause the client to disconnect before 
     # the server even begins processing the later requests in the queue.
     base_url = url.rstrip("/")
@@ -103,14 +103,14 @@ async def async_chat_completion(url, payload):
                 
             # AGENTS.md compliance: always prioritize gathering all emitted signals.
             # However, for structured output (json_schema or json_object), 
-            # LM Studio quirks mean the JSON is often in reasoning_content.
+            # Local AI backend quirks mean the JSON is often in reasoning_content.
             # We don't wrap in <think> tags if it's the primary payload.
             
             is_json_requested = "response_format" in payload
             final_output = ""
             
             if is_json_requested:
-                # AGENTS.md: For structured output, LM Studio streams the JSON inside 'reasoning_content'.
+                # AGENTS.md: For structured output, local AI backends often stream the JSON inside 'reasoning_content'.
                 # We prioritize it as the primary functional payload. No tags.
                 if reasoning and not content:
                     final_output = reasoning

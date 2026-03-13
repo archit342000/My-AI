@@ -18,7 +18,7 @@ def _cosine_similarity(v1, v2):
         return 0.0
     return dot_product / (norm_a * norm_b)
 
-class LMStudioEmbeddingFunction(embedding_functions.EmbeddingFunction):
+class AIEmbeddingFunction(embedding_functions.EmbeddingFunction):
     def __init__(self, api_url="http://localhost:1234", model_name="text-embedding-embeddinggemma-300m", default_task="document", api_key=None):
         self.api_url = api_url
         self.model_name = model_name
@@ -53,8 +53,8 @@ class LMStudioEmbeddingFunction(embedding_functions.EmbeddingFunction):
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
-        elif config.LM_STUDIO_API_KEY:
-            headers["Authorization"] = f"Bearer {config.LM_STUDIO_API_KEY}"
+        elif config.AI_API_KEY:
+            headers["Authorization"] = f"Bearer {config.AI_API_KEY}"
 
         try:
             start_time = time.time()
@@ -174,10 +174,10 @@ class MemoryRAG:
         self.client = chromadb.PersistentClient(path=persist_path)
 
         # Initialize custom embedding function
-        self.embedding_fn = LMStudioEmbeddingFunction(
+        self.embedding_fn = AIEmbeddingFunction(
             api_url=api_url,
             model_name=embedding_model,
-            api_key=api_key or config.LM_STUDIO_API_KEY
+            api_key=api_key or config.AI_API_KEY
         )
 
         self.collection = self._ensure_cosine_collection(
@@ -317,10 +317,10 @@ class ResearchRAG:
     """Ephemeral per-chat storage for Research passes."""
     def __init__(self, persist_path=config.CHROMA_PATH, api_url="http://localhost:1234", embedding_model="text-embedding-embeddinggemma-300m", dedup_threshold=config.RAG_DEDUP_THRESHOLD, api_key=None):
         self.client = chromadb.PersistentClient(path=persist_path)
-        self.embedding_fn = LMStudioEmbeddingFunction(
+        self.embedding_fn = AIEmbeddingFunction(
             api_url=api_url,
             model_name=embedding_model,
-            api_key=api_key or config.LM_STUDIO_API_KEY
+            api_key=api_key or config.AI_API_KEY
         )
         self.dedup_threshold = dedup_threshold
         self.collection = MemoryRAG._ensure_cosine_collection(

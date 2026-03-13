@@ -1,80 +1,67 @@
-# 🌌 My-AI v2.3.0
+# 🌌 My-AI v2.3.1
 
-A premium, full-stack AI chat interface designed for local inference natively powered by [llama.cpp](https://github.com/ggerganov/llama.cpp). This application provides a high-fidelity atmospheric glass interface for interacting with local LLMs, featuring persistent state, long-term memory, and an advanced deep research agent.
+A high-performance local AI orchestration layer and premium chat interface natively powered by [llama.cpp](https://github.com/ggerganov/llama.cpp). My-AI combines autonomous research capabilities, long-term semantic memory, and multimodal vision into a single, unified workspace running entirely on your local hardware.
 
-## ✨ Features
+## 🛠️ Technical Specifications
 
-*   **Deep Research Agent**: A multi-pass ($n+1$) autonomous research engine that browses the live web using [Tavily](https://tavily.com/), discovers links, and compiles structured reports.
-*   **Intelligent Memory (RAG)**: Long-term semantic memory powered by **ChromaDB**. The AI automatically remembers facts from previous conversations to maintain context.
-*   **Multimodal Vision**: Seamlessly attach and analyze images. Compatible with vision-enabled models (e.g., Llama 3.2 Vision, Qwen 2 VL).
-*   **Persistent SQLite Backend**: All conversations and metadata are stored in a local SQLite database for instant retrieval and management.
-*   **Aurora + Obsidian Design System**:
-    *   **Frosted Glass Surfaces**: Atmospheric glass panels with `backdrop-filter: blur(16px)` and blue-tinted borders.
-    *   **True Dark Mode**: Deep black (#09090B) with subtle blue ambient washes and smooth theme transitions.
-    *   **Monochrome + Blue**: Ocean Blue (#3B82F6) as the single accent on a slate palette.
-    *   **Responsive Motion**: Motion-first interactions and fluid layouts (Mobile, Tablet, Desktop).
-*   **Real-time Logic**: Streaming Markdown rendering with Highlight.js syntax highlighting and interactive "Thought Process" (Reasoning) blocks.
+*   **Inference Engine**: [llama.cpp](https://github.com/ggerganov/llama.cpp) (Server Mode)
+*   **Vector Database**: **ChromaDB** for RAG-based long-term memory.
+*   **Persistent Storage**: **SQLite** for conversation metadata and history.
+*   **Research Infrastructure**: 
+    *   **Tavily API** for high-precision web search and link discovery.
+    *   **MCP Architecture**: Decoupled worker containers for search (`tavily_mcp`) and scraping (`playwright_mcp`).
+*   **Backend**: Python 3.12 (Flask) with asynchronous task management.
+*   **Frontend**: Strictly Vanilla HTML5, CSS3, and ES6+ Javascript.
 
-## 🛠️ Prerequisites
+## ✨ Core Logic & Features
 
-*   **Python 3.10+**
-*   **llama.cpp**: Running with the local server active (default port `8080`).
-*   **Models**: 
-    *   A tool-calling capable chat model (e.g., Llama 3.1+, Mistral, Qwen).
-    *   An embedding model for RAG (e.g., `text-embedding-embeddinggemma-300m`).
-    *   (Optional) A vision model for image analysis.
-*   **Search API**: A [Tavily API Key](https://tavily.com/) is required for Deep Research mode.
+*   **Deep Research Agent**: A multi-pass autonomous engine that scouts context, designs a research plan, executes targeted searches, and performs a self-audit before synthesizing the final report.
+*   **Autonomous Scraping**: Utilizes a headless Playwright browser to navigate complex JS-heavy websites and extract clean markdown content.
+*   **Intelligent RAG**: Automatically embeds and retrieves facts from previous conversations to maintain long-term context without manual prompting.
+*   **Multimodal VLM Support**: Native handling of vision payloads for image analysis, OCR, and scene description.
+*   **Thought Streaming**: Interactive rendering of model "chain-of-thought" blocks with real-time markdown and syntax highlighting.
 
-## 🚀 Installation & Setup (Docker / Containerized)
+## 📋 Prerequisites
 
-This application is fully containerized and runs with user-level permissions for strict security mapping data to a local `user_data` volume. Configuration values and sensitive keys are passed dynamically as Docker Secrets.
+*   **llama.cpp Server**: Must be running and accessible (default port `8080`).
+*   **Recommended Models**:
+    *   **Reasoning/Chat**: `NVIDIA-Nemotron-3-Nano-30B` or `Qwen 3.5`.
+    *   **Coding**: `Qwen 3 Coder Next`.
+    *   **Vision**: `Qwen 3.5 VL`.
+    *   **Embedding**: `embeddinggemma-300M-Q8_0`.
+*   **Tavily API**: Required for web search and deep research functionality.
 
-1.  **Clone the repository**:
-    ```bash
-    git clone https://github.com/your-username/My-AI.git
-    cd My-AI
-    ```
+## 🚀 Installation & Setup
 
-2.  **Configure Environment (Docker Secrets)**:
-    Create a `./secrets/` directory and map your configuration files. You will also need to add your SSH public key to authenticate with the containerized Bastion Host.
-    ```bash
-    mkdir -p secrets
-    echo "http://host.docker.internal:8080" > secrets/LM_STUDIO_URL
-    echo "your_tavily_api_key_here" > secrets/TAVILY_API_KEY
-    echo "your_api_key_here" > secrets/LM_STUDIO_API_KEY  # Optional
-    echo "/app/backend/data" > secrets/DATA_DIR                     # Default container mapped volume
-    echo "your_secret_password" > secrets/APP_PASSWORD              # Optional, enables HTTP Basic Auth
-    cat ~/.ssh/id_rsa.pub > secrets/authorized_keys                 # Add your public key for the Bastion Host
-    ```
-    
-    *Optional Settings via `.env` file (Not Secrets)*
-    You can create an `.env` file in the root for non-sensitive tweaks:
-    ```env
-    EMBEDDING_MODEL=text-embedding-embeddinggemma-300m
-    TAVILY_BASE_URL=https://api.tavily.com
-    ```
+### 1. Repository Setup
+```bash
+git clone https://github.com/archit342000/My-AI.git
+cd My-AI
+mkdir -p secrets
+```
 
-## 🎮 Usage
+### 2. Configuration (Docker Secrets)
+Map your configuration values into the `secrets/` directory. These files are securely injected as Docker Secrets:
+```bash
+echo "http://host.docker.internal:8080" > secrets/AI_URL
+echo "your_tavily_api_key_here" > secrets/TAVILY_API_KEY
+echo "your_mcp_key_here" > secrets/MCP_API_KEY
+echo "your_playwright_key_here" > secrets/PLAYWRIGHT_MCP_API_KEY
+echo "/app/backend/data" > secrets/DATA_DIR
+echo "optional_password" > secrets/APP_PASSWORD
+cat ~/.ssh/id_rsa.pub > secrets/authorized_keys
+# Optional: echo "your_key" > secrets/AI_API_KEY
+```
 
-1.  **Start llama.cpp Server**: Ensure your models are accessible and the `llama.cpp` server is actively running on your host machine.
-2.  **Build and Launch with Docker Compose**:
-    ```bash
-    docker compose up --build -d
-    ```
-3.  **Connect Securely**: The application does not expose ports directly. SSH into the Bastion container from your local machine to establish a secure tunnel and explore at `http://localhost:5000`:
-    ```bash
-    ssh -N -L 5000:app:5000 -p 2222 appuser@YOUR_SERVER_IP
-    ```
-    To stop the container, use `docker compose down`.
+### 3. Deploy Stack
+```bash
+docker compose up --build -d
+```
+The application will be accessible at `http://localhost:5000` (or via the Bastion SSH tunnel on port `2222`).
 
-## 🏗️ Architecture
-
-*   **Frontend**: Vanilla HTML5, CSS3 (Custom Properties), and Modern JS (ES6+). No heavy frameworks.
-*   **Backend**: **Flask** (Python) service orchestrating chat loops, research phases, and file storage.
-*   **Database**: **SQLite** for metadata; **ChromaDB** for vector-based semantic memory.
-*   **Research Engine**: Custom asynchronous planner/reporter architecture utilizing Tavily's Search and Extract APIs.
+## 🏗️ Architecture Note
+My-AI utilizes the **Model Context Protocol (MCP)** to isolate external tool executions. The main Flask app acts as a secure orchestrator, while dedicated containers handle web search, PDF extraction, and browser-level scraping, ensuring high stability and a reduced security surface area.
 
 ## 📄 License & Versioning
-
-This project follows [SemVer v2.0.0](https://semver.org/). Current version: `v2.3.0`.
-See [CHANGELOG.md](./changelog.md) and [docs/versioning_directives.md](./docs/versioning_directives.md) for a detailed history of updates and versioning rules.
+This project follows [SemVer v2.0.0](https://semver.org/).  
+**Current Version**: `v2.3.1` (Favicon modernization & Docs refactor).

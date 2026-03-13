@@ -8,7 +8,7 @@ import httpx
 
 async def stream_chat_completion(url, payload):
     """
-    Streams the chat completion from the LM Studio API (Async).
+    Streams the chat completion from the OpenAI-compatible local AI API (Async).
     Yields parsed chunks and logs the final result.
     """
     start_time = time.time()
@@ -29,8 +29,8 @@ async def stream_chat_completion(url, payload):
     request_payload = dict(payload)
     if "api_key" in request_payload:
         headers["Authorization"] = f"Bearer {request_payload.pop('api_key')}"
-    elif config.LM_STUDIO_API_KEY:
-        headers["Authorization"] = f"Bearer {config.LM_STUDIO_API_KEY}"
+    elif config.AI_API_KEY:
+        headers["Authorization"] = f"Bearer {config.AI_API_KEY}"
 
     try:
         timings = None
@@ -103,8 +103,8 @@ def chat_completion(url, payload):
         }
         if "api_key" in request_payload:
             headers["Authorization"] = f"Bearer {request_payload.pop('api_key')}"
-        elif config.LM_STUDIO_API_KEY:
-            headers["Authorization"] = f"Bearer {config.LM_STUDIO_API_KEY}"
+        elif config.AI_API_KEY:
+            headers["Authorization"] = f"Bearer {config.AI_API_KEY}"
 
         response = requests.post(
             endpoint,
@@ -123,13 +123,13 @@ def chat_completion(url, payload):
         
         # AGENTS.md compliance: always prioritize gathering all emitted signals.
         # However, for structured output (json_schema or json_object), 
-        # LM Studio quirks mean the JSON is often in reasoning_content.
+        # Local AI backend quirks mean the JSON is often in reasoning_content.
         
         is_json_requested = "response_format" in payload
         final_output = ""
         
         if is_json_requested:
-            # AGENTS.md: For structured output, LM Studio streams the JSON inside 'reasoning_content'.
+            # AGENTS.md: For structured output, local AI backends often stream the JSON inside 'reasoning_content'.
             # We prioritize it as the primary functional payload. No tags.
             if reasoning and not content:
                 final_output = reasoning

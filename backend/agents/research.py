@@ -139,7 +139,7 @@ async def _stream_research_call(api_url, payload, display_model, activity_type,
         # Finalize output based on AGENTS.md
         final_output = ""
         if is_json_mode:
-            # Structured output: prioritize reasoning (LM Studio quirk)
+            # Structured output: prioritize reasoning (Local AI backend quirk)
             final_output = full_content or full_reasoning
         else:
             # Standard chat: wrap reasoning in tags

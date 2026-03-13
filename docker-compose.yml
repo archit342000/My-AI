@@ -16,8 +16,8 @@ services:
     secrets:
       - DATA_DIR
       - APP_PASSWORD
-      - LM_STUDIO_URL
-      - LM_STUDIO_API_KEY
+      - AI_URL
+      - AI_API_KEY
       - TAVILY_API_KEY
       - MCP_API_KEY
       - PLAYWRIGHT_MCP_API_KEY
@@ -72,10 +72,10 @@ secrets:
     file: ./secrets/DATA_DIR
   APP_PASSWORD:
     file: ./secrets/APP_PASSWORD
-  LM_STUDIO_URL:
-    file: ./secrets/LM_STUDIO_URL
-  LM_STUDIO_API_KEY:
-    file: ./secrets/LM_STUDIO_API_KEY
+  AI_URL:
+    file: ./secrets/AI_URL
+  AI_API_KEY:
+    file: ./secrets/AI_API_KEY
   TAVILY_API_KEY:
     file: ./secrets/TAVILY_API_KEY
   MCP_API_KEY:

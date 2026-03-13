@@ -117,11 +117,11 @@ class TaskManager:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         
-        lm_studio_url = config.LM_STUDIO_URL
+        ai_url = config.AI_URL
         
         # Build kwargs for execution function
         fn_kwargs = {
-            "api_url": task_info.get("api_url", lm_studio_url),
+            "api_url": task_info.get("api_url", ai_url),
             "model": task_info.get("model"),
             "messages": task_info.get("messages"),
             "chat_id": chat_id
