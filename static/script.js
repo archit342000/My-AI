@@ -456,8 +456,18 @@ document.addEventListener('DOMContentLoaded', () => {
                     } else {
                         appendMessage('User', msg.content, 'user');
                     }
-                } else if (msg.role === 'assistant') {
-                    if (!msg.content && msg.tool_calls) return; // Skip invisible tool-calling turns
+                } else if (msg.role === 'assistant' || msg.role === 'tool') {
+                    if (msg.role === 'assistant' && !msg.content && msg.tool_calls) return; // Skip invisible tool-calling turns
+
+                    // For tools, if it's not a special injected UI tool, we generally skip rendering it as a normal message bubble
+                    let isSpecialTool = false;
+                    if (msg.role === 'tool') {
+                        if (msg.name === 'finalize_planning' || msg.name === 'finalize_research' || msg.name === 'finalize_scouting') {
+                            isSpecialTool = true;
+                        } else {
+                            return; // Skip normal tool logs from history UI
+                        }
+                    }
 
                     const { thoughts, cleaned, plan, report } = parseContent(msg.content || "");
 
@@ -562,7 +572,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             </div>`;
                     }
                     const isRetryVisible = activityObjs.some(obj => obj.type === 'needs_retry');
-                    if (isResearchMode && report && !plan) {
+                    if (report && !plan) {
                         contentHtml += `
                             <div class="research-report-card">
                                 <div class="report-card-icon">
@@ -589,7 +599,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     contentDiv.innerHTML = contentHtml;
 
                     if (plan) {
-                        const mainWrapper = contentDiv.querySelector('.actual-content-wrapper');
+                        const mainWrapper = contentDiv.querySelector('.actual-content-wrapper') || contentDiv;
                         renderResearchPlan(plan, mainWrapper, isApproved);
                     }
 
@@ -3077,18 +3087,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
                         // Handle phase transitions (hide previous conversational turns)
                         if (json.__phase_transition__) {
-                            // Find the last visible tool call
-                            let lastBoundary = 1; // Default to 1 to preserve the very first user message!
-                            for (let i = chatHistory.length - 1; i >= 0; i--) {
-                                if (chatHistory[i].role === 'tool' && !chatHistory[i].is_hidden) {
-                                    lastBoundary = i + 1;
-                                    break;
+                            if (json.hide_previous !== false) {
+                                // Find the last visible tool call
+                                let lastBoundary = 1; // Default to 1 to preserve the very first user message!
+                                for (let i = chatHistory.length - 1; i >= 0; i--) {
+                                    if (chatHistory[i].role === 'tool' && !chatHistory[i].is_hidden) {
+                                        lastBoundary = i + 1;
+                                        break;
+                                    }
                                 }
-                            }
 
-                            // Hide everything from the boundary up to the current last message
-                            for (let i = lastBoundary; i < chatHistory.length; i++) {
-                                chatHistory[i].is_hidden = true;
+                                // Hide everything from the boundary up to the current last message
+                                for (let i = lastBoundary; i < chatHistory.length; i++) {
+                                    chatHistory[i].is_hidden = true;
+                                }
                             }
 
                             // Update internal state
@@ -3125,6 +3137,39 @@ document.addEventListener('DOMContentLoaded', () => {
                                 content: json.result,
                                 is_hidden: false
                             });
+
+                            // Visually render it without requiring a reload
+                            if (json.name === 'finalize_scouting' || json.name === 'finalize_planning' || json.name === 'finalize_research') {
+                                const row = appendMessage('Assistant', '', 'bot', null, actualModelName);
+                                const contentDiv = row.querySelector('.message-content');
+
+                                const { plan, report, cleaned } = parseContent(json.result);
+
+                                if (report) {
+                                    contentDiv.innerHTML = `
+                                        <div class="research-report-card">
+                                            <div class="report-card-icon">
+                                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                                            </div>
+                                            <div class="report-card-text">
+                                                <span class="report-card-title">Research Report Generated</span>
+                                                <span class="report-card-desc">The agent has finished compiling its findings.</span>
+                                            </div>
+                                            <button class="btn-primary view-report-btn" data-report-content="${encodeURIComponent(report)}">
+                                                Open Canvas
+                                            </button>
+                                        </div>
+                                    `;
+                                    setTimeout(() => {
+                                        if (typeof openReportCanvas === 'function') openReportCanvas(report);
+                                    }, 300);
+                                } else if (plan) {
+                                    contentDiv.innerHTML = `<div class="actual-content-wrapper"></div>`;
+                                    renderResearchPlan(plan, contentDiv.querySelector('.actual-content-wrapper'), false);
+                                } else {
+                                    contentDiv.innerHTML = `<div class="actual-content-wrapper">${formatMarkdown(cleaned)}</div>`;
+                                }
+                            }
 
                             if (currentChatId && !isTemporaryChat) {
                                 persistChat();
@@ -3326,62 +3371,76 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             if (!accumulatedContent && !accumulatedReasoning) {
-                botMsgDiv.classList.remove('thinking');
-                mainWrapper.innerHTML = `<span style="color: var(--color-neutral-400); font-style: italic;">[No content received]</span>`;
-            } else {
-                // Parse for plans in the content
-                const { cleaned, plan, report } = parseContent(accumulatedContent);
-                console.log("Stream Ended. Plan:", !!plan, "Report:", !!report);
-
-                if (isResearchMode && report && !plan) {
-                    mainWrapper.innerHTML = `
-                        <div class="research-report-card">
-                            <div class="report-card-icon">
-                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                                    <polyline points="14 2 14 8 20 8"></polyline>
-                                    <line x1="16" y1="13" x2="8" y2="13"></line>
-                                    <line x1="16" y1="17" x2="8" y2="17"></line>
-                                    <polyline points="10 9 9 9 8 9"></polyline>
-                                </svg>
-                            </div>
-                            <div class="report-card-text">
-                                <span class="report-card-title">Research Report Generated</span>
-                                <span class="report-card-desc">The agent has finished compiling its findings.</span>
-                            </div>
-                            <button class="btn-primary view-report-btn" data-report-content="${encodeURIComponent(report)}">
-                                Open Canvas
-                            </button>
-                        </div>
-                    `;
-                    // Auto-open canvas on fresh generation
-                    setTimeout(() => {
-                        if (typeof openReportCanvas === 'function') {
-                            openReportCanvas(report);
-                        }
-                    }, 300);
+                // If it's a phase transition resulting in a tool call injection (which cleared the view),
+                // we check if it was hidden. If we hid the execution blob, just remove the empty thinking bot message.
+                if (isResearchMode && chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'tool') {
+                    botMsgDiv.remove(); // The injected tool already rendered its own UI
                 } else {
-                    mainWrapper.innerHTML = formatMarkdown(cleaned);
+                    botMsgDiv.classList.remove('thinking');
+                    mainWrapper.innerHTML = `<span style="color: var(--color-neutral-400); font-style: italic;">[No content received]</span>`;
                 }
+            } else {
+                // Determine if we should even show this content (if phase transition fired, the content might be meant to be hidden)
+                // In research execution, the backend sends __phase_transition__ right before the end.
+                // The history has been updated. We only save it if it's a standard response.
+                const wasTransitioned = chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'tool' && chatHistory[chatHistory.length - 1].name?.startsWith('finalize');
 
-                // If a plan was found, render the interactive plan card
-                if (plan) {
-                    renderResearchPlan(plan, mainWrapper);
+                if (wasTransitioned) {
+                    // The backend just hid everything and injected a tool call. The injected tool already rendered itself.
+                    // This massive blob is hidden. Don't push it to chatHistory and remove the DOM element.
+                    botMsgDiv.remove();
+                } else {
+                    // Normal text response
+                    const { cleaned, plan, report } = parseContent(accumulatedContent);
+                    console.log("Stream Ended. Plan:", !!plan, "Report:", !!report);
+
+                    if (report && !plan) {
+                        mainWrapper.innerHTML = `
+                            <div class="research-report-card">
+                                <div class="report-card-icon">
+                                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                        <polyline points="14 2 14 8 20 8"></polyline>
+                                        <line x1="16" y1="13" x2="8" y2="13"></line>
+                                        <line x1="16" y1="17" x2="8" y2="17"></line>
+                                        <polyline points="10 9 9 9 8 9"></polyline>
+                                    </svg>
+                                </div>
+                                <div class="report-card-text">
+                                    <span class="report-card-title">Research Report Generated</span>
+                                    <span class="report-card-desc">The agent has finished compiling its findings.</span>
+                                </div>
+                                <button class="btn-primary view-report-btn" data-report-content="${encodeURIComponent(report)}">
+                                    Open Canvas
+                                </button>
+                            </div>
+                        `;
+                        setTimeout(() => {
+                            if (typeof openReportCanvas === 'function') {
+                                openReportCanvas(report);
+                            }
+                        }, 300);
+                    } else {
+                        mainWrapper.innerHTML = formatMarkdown(cleaned);
+                    }
+
+                    if (plan) {
+                        renderResearchPlan(plan, mainWrapper);
+                    }
+
+                    // Combine for history persistence (matches DB format)
+                    let finalContent = accumulatedContent.substring(historyContentStartIdx);
+                    let finalReasoning = accumulatedReasoning.substring(historyReasoningStartIdx);
+
+                    let finalCombinedContent = finalContent;
+                    if (finalReasoning) {
+                        finalCombinedContent = `<think>\n${finalReasoning}\n</think>\n${finalContent}`;
+                    }
+
+                    const assistantMsgObj = { role: 'assistant', content: finalCombinedContent, model: actualModelName, is_hidden: false };
+                    chatHistory.push(assistantMsgObj);
                 }
             }
-
-            // Combine for history persistence (matches DB format)
-            // Build the final message content using ONLY the text after the last tool call
-            let finalContent = accumulatedContent.substring(historyContentStartIdx);
-            let finalReasoning = accumulatedReasoning.substring(historyReasoningStartIdx);
-
-            let finalCombinedContent = finalContent;
-            if (finalReasoning) {
-                finalCombinedContent = `<think>\n${finalReasoning}\n</think>\n${finalContent}`;
-            }
-
-            const assistantMsgObj = { role: 'assistant', content: finalCombinedContent, model: actualModelName, is_hidden: false };
-            chatHistory.push(assistantMsgObj);
 
             // Update the bot message row to show which model generated this response
             const modelLabel = botMsgDiv.querySelector('.bot-model-label');
