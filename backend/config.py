@@ -19,7 +19,7 @@ os.makedirs(DATA_DIR, exist_ok=True)
 APP_PASSWORD = get_secret("APP_PASSWORD", None)
 
 # =============================================================================
-# AI INFERENCE & INFRASTRUCTURE
+# LM STUDIO & INFRASTRUCTURE
 # =============================================================================
 AI_URL = get_secret("AI_URL", "http://localhost:1234")
 AI_API_KEY = get_secret("AI_API_KEY", "")
