@@ -429,7 +429,7 @@ async def _extract_content_for_url(url, search_depth_mode, vision_model, api_url
     # Strategy 1: MCP visit_page (Handles GET, HTML to Markdown, and PDF extraction, with Playwright Fallback)
     content = None
     try:
-        mcp_res = await playwright_client.execute_tool("visit_page_tool", {"url": url, "max_chars": 40000})
+        mcp_res = await playwright_client.execute_tool("visit_page_tool", {"url": url, "max_chars": 40000, "detail_level": "deep"})
         extracted = mcp_res.content[0].text
         if extracted and "Error:" not in extracted and len(extracted.strip()) > (config.RESEARCH_CONTENT_MIN_LENGTH_DEEP if search_depth_mode == 'deep' else config.RESEARCH_CONTENT_MIN_LENGTH_REGULAR):
             # Vision processing for inline images

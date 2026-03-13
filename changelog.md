@@ -1,7 +1,7 @@
 # CHANGELOG
  
 ## v2.3.0
-* **Site Visit Tool Fallback**: Implemented a new `playwright_mcp` container for the site visit tool, which attempts to scrape using requests first and falls back to a Playwright headless browser if it fails.
+* **Site Visit Tool Fallback**: Implemented a new `playwright_mcp` container for the site visit tool using a Playwright headless browser.
 * **Separated MCP Services**: Split the previous `research_mcp` container into two separate, dedicated MCP servers: `tavily_mcp` (for searching and mapping) and `playwright_mcp` (for visiting URLs and fetching images).
 * **Normal Chat Integration**: The robust new `visit_page_tool` is now directly available to the standard Chat agent.
 * **Output Sanitization**: Implemented basic output sanitization (stripping suspicious scripts and remaining HTML) at the MCP layer before returning data to the main server.

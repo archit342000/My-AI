@@ -80,36 +80,61 @@ async def _extract_pdf_content(pdf_bytes: bytes) -> str:
         logger.error(f"PDF extraction failed: {e}")
         return ""
 
-def clean_html_to_markdown(html_content, base_url):
-    """Strips noise from HTML and converts to clean, prioritized markdown."""
+def clean_html_to_markdown(html_content, base_url, detail_level="standard"):
+    """Strips noise from HTML and converts to clean markdown based on detail_level."""
     try:
         parser = LexborHTMLParser(html_content)
 
-        noise_selectors = [
-            "script", "style", "noscript", "svg", "nav", "footer", "header", "aside", "meta",
-            "iframe", "ins.adsbygoogle", ".ad", ".advertisement", ".banner",
-            "[class*='sponsor']", "[id*='taboola']", "[id*='outbrain']"
-        ]
+        if detail_level == "basic":
+            # Aggressive cleanup for basic reading
+            noise_selectors = [
+                "script", "style", "noscript", "svg", "nav", "footer", "header", "aside", "meta",
+                "iframe", "ins.adsbygoogle", ".ad", ".advertisement", ".banner"
+            ]
+        elif detail_level == "deep":
+            # Minimal cleanup for high-fidelity dashboards
+            noise_selectors = ["script", "style", "meta", "iframe"]
+        else: # standard
+            # Balanced cleanup
+            noise_selectors = [
+                "script", "style", "noscript", "meta",
+                "iframe", "ins.adsbygoogle", ".ad", ".advertisement", ".banner"
+            ]
 
         for selector in noise_selectors:
             for node in parser.css(selector):
                 node.decompose()
 
-        content_node = None
-        for wrapper in ["article", "main", ".main-content", ".post-body"]:
-            matches = parser.css(wrapper)
-            if matches:
-                content_node = matches[0]
-                break
-
-        if not content_node:
+        # Selection Strategy
+        if detail_level == "basic":
+            # Semantic heuristic for articles
+            content_node = None
+            for wrapper in ["article", "main", ".main-content", ".post-body"]:
+                matches = parser.css(wrapper)
+                if matches:
+                    content_node = matches[0]
+                    break
+            if not content_node:
+                content_node = parser.body if parser.body else parser.root
+        else:
+            # Full body for data-heavy sites
             content_node = parser.body if parser.body else parser.root
 
         import markdownify
+        
+        # Stripping Strategy
+        if detail_level == "basic":
+            strip_tags = ["img", "a", "script", "style", "table"]
+        else:
+            strip_tags = ["img", "script", "style"] # Keep 'a' and 'table'
+
+        if not content_node:
+            return ""
+
         md_text = markdownify.markdownify(
             content_node.html,
             heading_style="ATX",
-            strip=["img", "a", "script", "style", "table"]
+            strip=strip_tags
         )
 
         md_text = re.sub(r'\n[ \t]+', '\n', md_text)
@@ -144,33 +169,67 @@ async def check_internet_connectivity():
 # Playwright & Fetching Logic
 # =====================================================================
 
-async def fetch_with_playwright(url: str, max_chars: int = 40000) -> str:
-    """Fallback site visit using Playwright."""
+async def fetch_with_playwright(url: str, max_chars: int = 40000, detail_level: str = "standard") -> str:
+    """Site visit using Playwright with level-specific strategies."""
     try:
         async with async_playwright() as p:
-            # Launch chromium. In docker, we usually need --no-sandbox
             browser = await p.chromium.launch(headless=True, args=['--no-sandbox', '--disable-setuid-sandbox'])
-            page = await browser.new_page(user_agent=random.choice(USER_AGENTS))
+            page = await browser.new_page(
+                user_agent=random.choice(USER_AGENTS),
+                viewport={'width': 1920, 'height': 1080}
+            )
 
-            # Wait until network is idle or 15 seconds max
-            response = await page.goto(url, timeout=TIMEOUT_WEB_SCRAPE * 1000, wait_until="networkidle")
+            # Navigation Strategy
+            wait_until = "load" if detail_level == "basic" else "domcontentloaded"
+            logger.info(f"Navigating to {url} (level: {detail_level})...")
+            response = await page.goto(url, timeout=TIMEOUT_WEB_SCRAPE * 1000, wait_until=wait_until)
 
             if not response:
                 await browser.close()
                 return "Error: Playwright could not load the page."
 
-            # Check content type if possible, though Playwright usually handles HTML
-            content_type = response.headers.get('content-type', '').lower()
-            if 'application/pdf' in content_type:
-                # Playwright might not be the best to download PDF directly into memory via page.goto
-                await browser.close()
-                return "Error: URL is a PDF, which failed standard request extraction."
+            # Overlay Hiding Strategy
+            if detail_level != "basic":
+                await page.add_style_tag(content="""
+                    #onetrust-banner-sdk, .cookie-consent, .consent-banner, .modal, .popup, [class*='cookie'], [id*='cookie'] { 
+                        display: none !important; 
+                    }
+                """)
+
+            # Interaction Strategy
+            if detail_level != "basic":
+                scroll_limit = 10000 if detail_level == "deep" else 5000
+                logger.info(f"Scrolling (limit: {scroll_limit})...")
+                await page.evaluate(f"""
+                    async () => {{
+                        await new Promise((resolve) => {{
+                            let totalHeight = 0;
+                            let distance = 200;
+                            let timer = setInterval(() => {{
+                                let scrollHeight = document.body.scrollHeight;
+                                window.scrollBy(0, distance);
+                                totalHeight += distance;
+                                if(totalHeight >= scrollHeight || totalHeight > {scroll_limit}){{
+                                    clearInterval(timer);
+                                    window.scrollTo(0, 0);
+                                    resolve();
+                                }}
+                            }}, 100);
+                        }});
+                    }}
+                """)
+
+            # Settle period Strategy
+            if detail_level == "deep":
+                await asyncio.sleep(5)
+            elif detail_level == "standard":
+                await asyncio.sleep(2)
 
             # Extract raw HTML
             html_content = await page.content()
             await browser.close()
 
-            text = clean_html_to_markdown(html_content, url)
+            text = clean_html_to_markdown(html_content, url, detail_level)
             if not text:
                  return "Error: Playwright visited the page but could not find any valid text content."
 
@@ -180,63 +239,20 @@ async def fetch_with_playwright(url: str, max_chars: int = 40000) -> str:
         return f"Error visiting page with Playwright: {str(e)}"
 
 
-async def visit_page(url: str, max_chars: int = 40000):
+async def visit_page(url: str, max_chars: int = 40000, detail_level: str = "standard"):
     if not is_safe_web_url(url):
         return "Error: URL is forbidden (SSRF protection). Cannot visit local or private IP addresses."
 
-    # 1. First try with httpx
-    extracted_text = ""
-    request_failed = False
+    logger.info(f"Pure Playwright Visit: {url} (level: {detail_level})")
+    
+    # Check internet connectivity
+    is_connected = await check_internet_connectivity()
+    if not is_connected:
+        return "Error: Could not visit page due to general internet connectivity failure on the server."
 
-    try:
-        headers = {'User-Agent': random.choice(USER_AGENTS)}
-        async with httpx.AsyncClient(headers=headers, timeout=TIMEOUT_WEB_SCRAPE, follow_redirects=False) as client:
-            current_url = url
-            response = None
-            for _ in range(URL_FETCH_RETRIES):
-                response = await client.get(current_url)
-                if response.status_code in (301, 302, 303, 307, 308):
-                    next_url = response.headers.get('Location')
-                    if not next_url:
-                        break
-                    next_url = urljoin(current_url, next_url)
-                    if not is_safe_web_url(next_url):
-                        return "Error: Redirected URL is forbidden (SSRF protection)."
-                    current_url = next_url
-                else:
-                    break
-
-            if response and response.status_code == 200:
-                content_type = response.headers.get('Content-Type', '').lower()
-                if 'application/pdf' in content_type or url.lower().endswith('.pdf'):
-                    pdf_text = await _extract_pdf_content(response.content)
-                    if pdf_text:
-                        extracted_text = f"[PDF Document]\n\n{pdf_text}"
-                    else:
-                        extracted_text = "PDF content extracted but appears empty (possibly image-only)."
-                else:
-                    extracted_text = clean_html_to_markdown(response.text, url)
-            else:
-                request_failed = True
-    except Exception as e:
-        logger.warning(f"httpx failed to fetch {url}: {e}")
-        request_failed = True
-
-    # Check if we got useful text
-    if not extracted_text or len(extracted_text.strip()) < 50 or request_failed:
-        logger.info(f"Standard request failed or yielded insufficient text for {url}. Attempting fallback...")
-
-        # Check internet connectivity
-        is_connected = await check_internet_connectivity()
-        if not is_connected:
-            return "Error: Could not visit page due to general internet connectivity failure on the server."
-
-        # Fallback to Playwright
-        extracted_text = await fetch_with_playwright(url, max_chars)
-        if "Error:" in extracted_text and request_failed:
-             # Just return the playwright error if both failed
-             pass
-
+    # Execute extraction
+    extracted_text = await fetch_with_playwright(url, max_chars, detail_level)
+    
     final_text = extracted_text[:max_chars]
     return sanitize_output(final_text)
 
@@ -309,9 +325,9 @@ class AuthMiddleware:
         await self.app(scope, receive, send)
 
 @mcp.tool()
-async def visit_page_tool(url: str, max_chars: int = 40000) -> str:
-    """Visits a specific URL and extracts its visible text content, with a robust headless browser fallback."""
-    res = await visit_page(url, max_chars)
+async def visit_page_tool(url: str, max_chars: int = 40000, detail_level: str = "standard") -> str:
+    """Visits a specific URL and extracts its visible text content using a headless browser. Levels: basic, standard, deep."""
+    res = await visit_page(url, max_chars, detail_level)
     return res
 
 @mcp.tool()

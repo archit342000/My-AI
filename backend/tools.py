@@ -66,13 +66,18 @@ VISIT_PAGE_TOOL = {
     "type": "function",
     "function": {
         "name": "visit_page_tool",
-        "description": "Visits a specific URL and extracts its visible text content. Uses an initial request and falls back to a Playwright headless browser if the request fails.",
+        "description": "Visits a specific URL and extracts its visible text content using a headless browser. Supports different detail levels for optimized extraction.",
         "parameters": {
             "type": "object",
             "properties": {
                 "url": {
                     "type": "string",
                     "description": "The URL to visit."
+                },
+                "detail_level": {
+                    "type": "string",
+                    "enum": ["basic", "standard", "deep"],
+                    "description": "The depth of extraction: 'basic' for clean text (fast), 'standard' for balanced data (includes tables/links), 'deep' for complex real-time dashboards (full render)."
                 }
             },
             "required": ["url"]

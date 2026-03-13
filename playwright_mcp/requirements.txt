@@ -1,10 +1,9 @@
-mcp[cli]==1.2.1
-fastmcp==0.4.1
+mcp[cli]==1.26.0
 uvicorn==0.34.0
 starlette==0.45.3
 httpx==0.28.1
-beautifulsoup4==4.12.3
+beautifulsoup4==4.14.3
 markdownify==0.14.1
-selectolax==0.3.21
-pypdf==5.2.0
+selectolax==0.4.7
+pypdf==6.8.0
 playwright==1.50.0

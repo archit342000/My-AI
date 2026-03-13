@@ -398,6 +398,8 @@ async def generate_chat_response(api_url, model, messages, extra_body, rag=None,
                 yield f"data: {create_chunk(model, reasoning=log)}\n\n"
 
                 mcp_args = {"url": url_arg}
+                if "detail_level" in args:
+                    mcp_args["detail_level"] = args["detail_level"]
                 mcp_res = await playwright_client.execute_tool("visit_page_tool", mcp_args)
                 raw_result = mcp_res.content[0].text
 
