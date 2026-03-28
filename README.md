@@ -1,4 +1,4 @@
-# 🌌 My-AI v2.3.1
+# 🌌 My-AI v2.4.0
 
 A high-performance local AI orchestration layer and premium chat interface natively powered by [llama.cpp](https://github.com/ggerganov/llama.cpp). My-AI combines autonomous research capabilities, long-term semantic memory, and multimodal vision into a single, unified workspace running entirely on your local hardware.
 
@@ -63,5 +63,6 @@ The application will be accessible at `http://localhost:5000` (or via the Bastio
 My-AI utilizes the **Model Context Protocol (MCP)** to isolate external tool executions. The main Flask app acts as a secure orchestrator, while dedicated containers handle web search, PDF extraction, and browser-level scraping, ensuring high stability and a reduced security surface area.
 
 ## 📄 License & Versioning
-This project follows [SemVer v2.0.0](https://semver.org/).  
-**Current Version**: `v2.3.1` (Favicon modernization & Docs refactor).
+
+This project follows [SemVer v2.0.0](https://semver.org/). Current version: `v2.4.0`.
+See [CHANGELOG.md](./changelog.md) and [docs/versioning_directives.md](./docs/versioning_directives.md) for a detailed history of updates and versioning rules.

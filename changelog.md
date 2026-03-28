@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## v2.4.0
+* **Interactive Multi-Phase Research**: Revamped Deep Research agent into an interactive, multi-phase conversational workflow (Scout -> Plan -> Execute).
+* **Context Isolation**: Improved context window management by compressing intermediate research turns into synthesized tool calls while retaining visual history via the new `is_hidden` DB flag.
+
 ## v2.3.1
 * **Animation Stability**: Fixed an issue where the "generating" animation and thought process dots would stop prematurely during multi-round tool calls. Animations now correctly persist or re-activate across tool transitions.
 * **UX Refinement**: Optimized the content flow detection logic to be round-aware, ensuring the thinking state is correctly managed for sequential AI reasoning turns.
