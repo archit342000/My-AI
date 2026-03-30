@@ -284,9 +284,15 @@ document.addEventListener('DOMContentLoaded', () => {
     function persistChat() {
         if (!currentChatId || isTemporaryChat) return;
 
-        let titleObj = chatHistory.find(m => m.role === 'user')?.content;
-        if (Array.isArray(titleObj)) titleObj = titleObj.find(p => p.type === 'text')?.text;
-        const titleText = (typeof titleObj === 'string' ? titleObj.substring(0, 50) : 'New Chat') || 'New Chat';
+        let titleText = 'New Chat';
+        const existingChat = savedChats.find(c => c.id === currentChatId);
+        if (existingChat && existingChat.title) {
+            titleText = existingChat.title;
+        } else {
+            let titleObj = chatHistory.find(m => m.role === 'user')?.content;
+            if (Array.isArray(titleObj)) titleObj = titleObj.find(p => p.type === 'text')?.text;
+            titleText = (typeof titleObj === 'string' ? titleObj.substring(0, 50) : 'New Chat') || 'New Chat';
+        }
 
         fetch('/api/chats/save', {
             method: 'POST',
@@ -1694,8 +1700,16 @@ document.addEventListener('DOMContentLoaded', () => {
             if (tempChatBanner) tempChatBanner.classList.add('hidden');
             if (tempChatBtn) tempChatBtn.classList.remove('active');
             if (chatHistory.length > 0) {
-                const title = chatHistory.find(m => m.role === 'user')?.content || 'New Chat';
-                const titleText = typeof title === 'string' ? title.substring(0, 50) : 'New Chat';
+                let titleText = 'New Chat';
+                const existingChat = savedChats.find(c => c.id === currentChatId);
+                if (existingChat && existingChat.title) {
+                    titleText = existingChat.title;
+                } else {
+                    let titleObj = chatHistory.find(m => m.role === 'user')?.content;
+                    if (Array.isArray(titleObj)) titleObj = titleObj.find(p => p.type === 'text')?.text;
+                    titleText = (typeof titleObj === 'string' ? titleObj.substring(0, 50) : 'New Chat') || 'New Chat';
+                }
+
                 fetch('/api/chats/save', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },

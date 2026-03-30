@@ -385,10 +385,13 @@ def chat_completions():
         # === 2. Persist User Message Immediately (for new turns) ===
         if messages and messages[-1]['role'] == 'user':
             user_msg = messages[-1]
-            title = user_msg['content']
-            
             existing_chat = get_chat(chat_id)
             
+            if existing_chat and existing_chat.get('title'):
+                title = existing_chat.get('title')
+            else:
+                title = user_msg['content']
+
             # --- MODEL LOCKING FOR RESEARCH ---
             # Once a Research conversation starts, the models should not be allowed to change.
             if existing_chat and existing_chat.get('research_mode'):
