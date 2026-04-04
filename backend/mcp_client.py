@@ -4,7 +4,8 @@ from contextlib import AsyncExitStack
 
 from mcp import ClientSession
 from mcp.client.sse import sse_client
-from backend.config import get_secret
+from backend.config import get_secret, CIRCUIT_FAILURE_THRESHOLD, CIRCUIT_RECOVERY_TIMEOUT, CACHE_RETRY_COUNT
+from backend.error_handling import CircuitBreaker, CircuitOpenError
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +18,12 @@ class MCPClient:
         self._loop = None
         self.read_stream = None
         self.write_stream = None
+
+        # Circuit breaker for this MCP client
+        self.circuit_breaker = CircuitBreaker(
+            failure_threshold=CIRCUIT_FAILURE_THRESHOLD,
+            recovery_timeout=CIRCUIT_RECOVERY_TIMEOUT
+        )
 
     async def connect(self):
         """Connect to the MCP server via SSE with retries."""
@@ -36,7 +43,7 @@ class MCPClient:
 
         self._loop = current_loop
 
-        max_retries = 5
+        max_retries = CACHE_RETRY_COUNT
         retry_delay = 2
 
         for attempt in range(max_retries):
@@ -66,13 +73,20 @@ class MCPClient:
         return response.tools
 
     async def execute_tool(self, tool_name: str, arguments: dict):
-        """Execute a tool via the MCP server."""
+        """Execute a tool via the MCP server with circuit breaker protection."""
         if not self.session:
             raise RuntimeError(f"Not connected to MCP server {self.server_url}")
 
-        logger.info(f"Executing MCP Tool '{tool_name}' on {self.server_url}")
-        result = await self.session.call_tool(tool_name, arguments)
-        return result
+        async def _execute():
+            logger.info(f"Executing MCP Tool '{tool_name}' on {self.server_url}")
+            return await self.session.call_tool(tool_name, arguments)
+
+        try:
+            result = await self.circuit_breaker.call_async(_execute)
+            return result
+        except CircuitOpenError:
+            logger.warning(f"Circuit open for MCP server {self.server_url}, rejecting tool '{tool_name}'")
+            raise
 
     async def disconnect(self):
         """Disconnect from the MCP server."""

@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## v3.0.0
+* **Research Agent Overhaul**: Research agent chats can now continue after the report is generated. 
+* **Canvas Mode**: Introduced canvas mode to store text as markdown files. 
+* **Data Layer Overhaul**: Complete overhaul of the data layer to provide consistency across the application. 
+* **Version Bump**: Incremented version globally to v3.0.0.
+
 ## v2.3.1
 * **Animation Stability**: Fixed an issue where the "generating" animation and thought process dots would stop prematurely during multi-round tool calls. Animations now correctly persist or re-activate across tool transitions.
 * **UX Refinement**: Optimized the content flow detection logic to be round-aware, ensuring the thinking state is correctly managed for sequential AI reasoning turns.

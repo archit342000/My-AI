@@ -89,16 +89,26 @@
                 </div>
 
                 <!-- Chat History Section -->
-                <div class="sidebar-section">
+                <!-- Folders Section -->
+                <div id="folders-sidebar-section" class="sidebar-section hidden">
+                    <div class="sidebar-section-label">
+                        <span class="sidebar-text">Folders</span>
+                        <div class="sidebar-section-actions">
+                             <!-- Actions could go here -->
+                        </div>
+                    </div>
+                    <div id="folder-list" class="folder-list">
+                        <!-- Folder items injected here -->
+                    </div>
+                </div>
+
+                <!-- Recent Chats Section -->
+                <div id="recent-chats-sidebar-section" class="sidebar-section">
                     <div class="sidebar-section-label">
                         <span class="sidebar-text">Recent Chats</span>
                     </div>
-                    <div id="folder-list" class="folder-list">
-                        <!-- Folder items will be injected here -->
-                    </div>
-                    <hr id="folder-divider" class="folder-divider hidden">
                     <div id="chat-history-list" class="chat-history-scroll">
-                        <!-- Chat items will be injected here -->
+                        <!-- Chat items injected here -->
                     </div>
                 </div>
             </div>
@@ -131,6 +141,14 @@
                     <span class="sidebar-text">Logs</span>
                     <span class="nav-tooltip">Network Logs</span>
                 </a>
+                <button id="nav-files-btn" class="sidebar-footer-btn" title="View Files / Artifacts">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                        <polyline points="14 2 14 8 20 8"></polyline>
+                    </svg>
+                    <span class="sidebar-text">Files</span>
+                    <span class="nav-tooltip">Files / Artifacts</span>
+                </button>
             </div>
         </aside>
 
@@ -270,6 +288,24 @@
                                     </div>
                                 </div>
                                 <div class="toggle-switch" id="ui-deep-search-toggle">
+                                    <div class="toggle-handle"></div>
+                                </div>
+                            </div>
+
+                            <!-- Canvas Mode Toggle -->
+                            <div class="tool-option" id="canvas-mode-option">
+                                <div class="tool-label-group">
+                                    <div class="tool-icon-circle">
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                            <path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+                                        </svg>
+                                    </div>
+                                    <div class="tool-text">
+                                        <span class="tool-name">Canvas Mode</span>
+                                        <span class="tool-desc">Dynamic side-panel for artifacts</span>
+                                    </div>
+                                </div>
+                                <div class="toggle-switch" id="canvas-mode-toggle">
                                     <div class="toggle-handle"></div>
                                 </div>
                             </div>
@@ -421,22 +457,38 @@
 
                     <!-- Research Mode Settings (Hardcoded config) -->
                     <div id="research-model-settings" class="hardware-surface" style="padding: 1.5rem; display: none;">
-                        <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary-500)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1.5rem;">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                                 <path d="M6 3h12M12 3v11M9 21h6a4 4 0 0 0 4-4V10a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v7a4 4 0 0 0 4 4z"/>
                             </svg>
                             <h3 class="text-h2" style="font-size: 1.1rem; margin: 0;">Research Configuration</h3>
                         </div>
-                        <p style="font-size: 0.85rem; color: var(--content-muted); margin-bottom: 1rem;">Research mode models are pre-configured to ensure optimal autonomous agent execution.</p>
                         
-                        <div style="display: flex; flex-direction: column; gap: 0.75rem;">
-                            <div style="background: rgba(0,0,0,0.2); padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);">
-                                <span style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--content-muted); display: block; margin-bottom: 0.2rem;">Core Reasoning Agent</span>
-                                <span id="research-main-display" style="font-weight: 500; font-family: var(--font-mono); font-size: 0.85rem; color: var(--color-primary-100);">Loading...</span>
+                        <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+                            <!-- Vision Model Toggle Row -->
+                            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem;">
+                                <div style="flex: 1;">
+                                    <span class="text-label" style="display: block; margin-bottom: 0.5rem; color: var(--content-muted);">Vision Intelligence</span>
+                                    <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem;">
+                                        <span id="research-vision-status" class="badge" style="background: var(--accent-subtle); color: var(--accent); padding: 2px 8px; font-size: 0.7rem;">Enabled</span>
+                                    </div>
+                                    <p style="font-size: 0.8rem; color: var(--content-muted); margin: 0; line-height: 1.5;">Analyzes images extracted during web research. Skip analysis to save time when images aren't needed.</p>
+                                </div>
+                                <div class="toggle-switch" id="vision-toggle" title="Enable/Disable vision model for research">
+                                    <div class="toggle-handle"></div>
+                                </div>
                             </div>
-                            <div style="background: rgba(0,0,0,0.2); padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);">
-                                <span style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--content-muted); display: block; margin-bottom: 0.2rem;">Vision Extraction Agent</span>
-                                <span id="research-vision-display" style="font-weight: 500; font-family: var(--font-mono); font-size: 0.85rem; color: var(--color-primary-100);">Loading...</span>
+
+                            <!-- Agent Readouts -->
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; padding-top: 1.5rem; border-top: 1px solid var(--border-subtle);">
+                                <div class="tool-option" style="flex-direction: column; align-items: flex-start; cursor: default; background: var(--surface-secondary); padding: 1rem;">
+                                    <span class="text-label" style="margin-bottom: 0.5rem;">Reasoning Agent</span>
+                                    <span id="research-main-display" style="font-weight: 700; font-family: var(--font-mono); font-size: 0.85rem; color: var(--accent);">Loading...</span>
+                                </div>
+                                <div class="tool-option" style="flex-direction: column; align-items: flex-start; cursor: default; background: var(--surface-secondary); padding: 1rem;">
+                                    <span class="text-label" style="margin-bottom: 0.5rem;">Vision Extraction</span>
+                                    <span id="research-vision-display" style="font-weight: 700; font-family: var(--font-mono); font-size: 0.85rem; color: var(--accent);">Loading...</span>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -456,6 +508,20 @@
                 <!-- Tab Content: Tuning -->
                 <div id="tab-tuning" class="tab-content hidden">
                     <div style="display: flex; flex-direction: column; gap: 1.25rem;">
+                        <!-- Thinking Process -->
+                        <div class="hardware-surface" style="padding: 1.25rem;">
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <div>
+                                    <span class="text-xs" style="color: var(--content-muted); font-weight: 700;">THINKING PROCESS</span>
+                                    <p style="font-size: 0.75rem; color: var(--content-muted); margin: 0.25rem 0 0 0;">
+                                        Enables the model to reason before responding.
+                                    </p>
+                                </div>
+                                <div class="toggle-switch active" id="thinking-toggle">
+                                    <div class="toggle-handle"></div>
+                                </div>
+                            </div>
+                        </div>
                         <!-- Temperature -->
                         <div class="hardware-surface" style="padding: 1.25rem;">
                             <div
@@ -485,20 +551,6 @@
                                 <span id="max-tokens-val" class="badge">16384</span>
                             </div>
                             <input type="range" id="max-tokens-slider" min="0" max="32768" step="128" value="16384">
-                        </div>
-                        <!-- Other Params -->
-                        <div class="hardware-surface" style="padding: 1.25rem;">
-                            <div
-                                style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
-                                <span class="text-xs" style="color: var(--content-muted); font-weight: 700;">REASONING
-                                    LEVEL</span>
-                                <span id="reasoning-level-val" class="badge">Medium</span>
-                            </div>
-                            <input type="range" id="reasoning-level-slider" min="0" max="3" step="1" value="2">
-                            <div
-                                style="display: flex; justify-content: space-between; margin-top: 0.5rem; font-size: 0.625rem; color: var(--content-muted); font-weight: 600;">
-                                <span>NONE</span><span>LOW</span><span>MEDIUM</span><span>HIGH</span>
-                            </div>
                         </div>
                         <div class="hardware-surface" style="padding: 1.25rem;">
                             <div
@@ -608,6 +660,11 @@
                 <p id="confirm-message"
                     style="color: var(--content-muted); font-size: 0.9375rem; line-height: 1.6; margin-bottom: 2rem;">
                     Are you sure you want to proceed?</p>
+                <div id="confirm-input-container" class="hidden" style="margin-bottom: 2rem;">
+                    <input type="text" id="confirm-input" class="modern-input" 
+                        style="width: 100%; height: 3.5rem; border-radius: 14px; background: var(--bg-secondary); border: 2px solid var(--border-subtle); padding: 0 1.25rem; font-size: 1rem; color: var(--content-primary); transition: all 0.2s;"
+                        placeholder="Enter value...">
+                </div>
 
                 <div style="display: flex; gap: 0.75rem;">
                     <button id="confirm-cancel-btn" class="btn-secondary"
@@ -620,50 +677,6 @@
     </div>
 
     <!-- Report Canvas Overlay -->
-    <div id="report-canvas-overlay" class="canvas-backdrop hidden">
-        <div class="canvas-content">
-            <div class="canvas-header">
-                <h2 class="canvas-title font-heading">Research Report</h2>
-                <div class="canvas-actions">
-                    <button id="canvas-approve-btn" class="utility-btn primary glass hidden"
-                        title="Approve & Execute Plan">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                            stroke-width="2.5">
-                            <path d="M20 6L9 17l-5-5" stroke-linecap="round" stroke-linejoin="round" />
-                        </svg>
-                        <span>Approve</span>
-                    </button>
-                    <button id="canvas-edit-btn" class="utility-btn glass hidden" title="Toggle Edit Mode">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                            stroke-width="2.5">
-                            <path
-                                d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z">
-                            </path>
-                        </svg>
-                        <span>Edit</span>
-                    </button>
-                    <button id="canvas-copy-btn" class="utility-btn glass" title="Copy Content">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                            stroke-width="2.5">
-                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                        </svg>
-                        <span>Copy</span>
-                    </button>
-                    <button id="close-canvas-btn" class="btn-ghost" title="Close Canvas">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                            stroke-width="2.5">
-                            <path d="M18 6L6 18M6 6l12 12" stroke-linecap="round" stroke-linejoin="round" />
-                        </svg>
-                    </button>
-                </div>
-            </div>
-            <div class="canvas-body custom-scroll">
-                <div id="report-canvas-content" class="actual-content-wrapper"></div>
-                <div id="report-canvas-editor" class="canvas-editor hidden"></div>
-            </div>
-        </div>
-    </div>
 
     <!-- Memory Management Overlay -->
     <div id="memory-canvas-overlay" class="canvas-backdrop hidden" style="z-index: var(--z-overlay);">
@@ -712,7 +725,181 @@
         </div>
     </div>
 
-    <script src="/script.js?v=3"></script>
+    <!-- File Sidebar (Right Sidebar) -->
+    <aside id="right-sidebar" class="right-sidebar collapsed">
+        <div id="right-sidebar-resizer" class="resize-handle start"></div>
+        <div class="sidebar-header">
+            <div class="sidebar-brand">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2.5">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                    <polyline points="14 2 14 8 20 8"></polyline>
+                </svg>
+                <span class="sidebar-brand-text font-heading">File</span>
+            </div>
+            <div class="sidebar-header-actions">
+                <button id="new-canvas-folder-btn" class="sidebar-icon-btn" title="New Folder">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                        <line x1="12" y1="11" x2="12" y2="17"></line>
+                        <line x1="9" y1="14" x2="15" y2="14"></line>
+                    </svg>
+                </button>
+                <button id="right-sidebar-toggle" class="sidebar-icon-btn" title="Toggle sidebar">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <path d="M4 12v6a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M4 6v6a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </button>
+                <button id="right-sidebar-close" class="sidebar-icon-btn" title="Close sidebar">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <path d="M18 6L6 18M6 6l12 12" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                </button>
+            </div>
+        </div>
+        
+        <div class="sidebar-content custom-scroll">
+            <div class="sidebar-section" style="padding: 1rem;">
+                <!-- Search and Filter (Added in Refinement Task) -->
+                <div class="canvas-search-wrapper" style="margin-bottom: 1rem; position: relative;">
+                    <svg style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--content-muted);" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                    <input type="text" id="canvas-search-input" class="input-luminous" placeholder="Search artifacts..." style="width: 100%; padding-left: 2rem; height: 36px; min-height: 36px; font-size: 0.85rem; border-radius: 10px;">
+                    <button id="canvas-search-clear" class="btn-ghost hidden" style="position: absolute; right: 5px; top: 50%; transform: translateY(-50%); width: 24px; height: 24px; padding: 0;">&times;</button>
+                </div>
+
+                <div id="canvas-filter-row" class="canvas-filter-row" style="display: flex; gap: 0.5rem; margin-bottom: 1.25rem; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none;">
+                    <button class="filter-chip active" data-type="all">All</button>
+                    <button class="filter-chip" data-type="plan">Plans</button>
+                    <button class="filter-chip" data-type="report">Reports</button>
+                    <button class="filter-chip" data-type="section">Sections</button>
+                </div>
+
+                <div id="canvas-list" class="canvas-list">
+                    <!-- Canvas items will be injected here -->
+                    <div class="empty-canvas-state" style="text-align: center; color: var(--content-muted); padding: 2rem 1rem;">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="margin-bottom: 1rem; opacity: 0.5;">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                            <polyline points="14 2 14 8 20 8"></polyline>
+                        </svg>
+                        <p style="font-size: 0.85rem;">No artifacts yet</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="sidebar-footer" style="padding: 1rem; border-top: 1px solid var(--border-subtle);">
+            <button id="new-canvas-btn" class="btn-primary" style="width: 100%; height: 40px; font-size: 0.85rem; border-radius: 10px;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-right: 8px;">
+                    <path d="M12 5v14M5 12h14" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+                New File
+            </button>
+        </div>
+    </aside>
+
+    <!-- Universal Canvas Panel -->
+    <div id="canvas-panel" class="hidden">
+        <div id="canvas-resizer"></div>
+        <div class="canvas-panel-content">
+            <div class="canvas-header" style="height: 4.5rem; flex-shrink: 0; padding: 0 1.5rem 0 2rem; border-bottom: 1px solid var(--border-subtle); display: flex; align-items: center; justify-content: space-between; background: var(--bg-primary);">
+                <div style="display: flex; align-items: center; gap: 1rem; overflow: hidden; flex: 1;">
+                    <h2 id="canvas-panel-title" class="canvas-title font-heading" style="margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 1.15rem;">Untitled File</h2>
+                    <div id="version-badge" class="badge hidden" style="background: var(--accent-subtle); color: var(--accent); border: 1px solid var(--accent-border); font-size: 0.65rem; padding: 1px 6px;">V1</div>
+                </div>
+                
+                <div class="canvas-actions" style="display: flex; align-items: center; gap: 0.5rem; height: 100%;">
+                    <button id="canvas-panel-approve-btn" class="utility-btn primary glass hidden" style="background: var(--color-primary-600); color: white; border-radius: 8px; padding: 0 12px; font-weight: 600; font-size: 0.85rem; height: 32px; align-items: center; gap: 6px; margin-right: 4px;">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                        <span>Approve</span>
+                    </button>
+
+                    <div id="canvas-export-wrapper" style="position: relative;">
+                        <button id="canvas-panel-export-btn" class="utility-btn glass" title="Export Artifact">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                        </button>
+                        <div id="canvas-export-menu" class="hidden" style="position: absolute; top: 100%; right: 0; margin-top: 8px; background: var(--glass-bg); backdrop-filter: var(--glass-blur); border: 1px solid var(--glass-border); border-radius: 12px; box-shadow: var(--surface-shadow-intense); padding: 4px; z-index: 1000; min-width: 160px;">
+                            <button class="export-option" data-format="markdown">Markdown (.md)</button>
+                            <button class="export-option" data-format="html">HTML (.html)</button>
+                            <button class="export-option" data-format="pdf">PDF (.pdf)</button>
+                        </div>
+                    </div>
+
+                    <button id="canvas-panel-undo-btn" class="utility-btn glass" title="Undo" disabled>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg>
+                    </button>
+
+                    <button id="canvas-panel-redo-btn" class="utility-btn glass" title="Redo" disabled>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 17v-6h-6"/><path d="M3 7a9 9 0 0 0 9 9 9 9 0 0 0 6-2.3L21 13"/></svg>
+                    </button>
+
+                    <button id="canvas-panel-history-btn" class="utility-btn glass" title="Version History">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="9"/></svg>
+                    </button>
+
+                    <button id="canvas-panel-toggle-btn" class="utility-btn glass" title="Toggle Preview">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                    </button>
+
+                    <button id="canvas-panel-copy-btn" class="utility-btn glass" title="Copy Content">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                    </button>
+
+                    <div style="width: 1px; height: 24px; background: var(--border-subtle); margin: 0 4px;"></div>
+
+                    <button id="close-canvas-panel" class="btn-ghost" title="Close Artifact" style="width: 2.25rem; height: 2.25rem; padding: 0;">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                    </button>
+                </div>
+            </div>
+            
+             <div class="canvas-body custom-scroll" style="flex: 1; overflow-y: auto; background: var(--bg-primary); position: relative;">
+                <div id="canvas-panel-body" class="actual-content-wrapper" style="display: none;"></div>
+                <textarea id="canvas-panel-editor" class="canvas-editor"></textarea>
+                <div id="autosave-indicator" style="position: absolute; bottom: 10px; right: 15px; font-size: 0.75rem; color: var(--content-muted); background: var(--glass-bg); backdrop-filter: var(--glass-blur); padding: 4px 10px; border-radius: 8px; display: none; border: 1px solid var(--border-subtle);">
+                    <span id="autosave-status">Saving...</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Version History Overlay (Modal Style) -->
+    <div id="version-history-modal" class="modal-backdrop" style="z-index: 12000;">
+        <div class="modal-content" style="max-width: 800px; height: 80vh; display: flex; flex-direction: column;">
+            <div class="modal-header">
+                <div style="display: flex; align-items: center; justify-content: space-between;">
+                    <div>
+                        <h2 class="font-heading" style="font-size: 1.25rem; margin: 0;">Version History</h2>
+                        <p id="version-history-canvas-name" style="font-size: 0.85rem; color: var(--content-muted); margin: 4px 0 0 0;">Artifact Name</p>
+                    </div>
+                    <button id="close-version-history" class="btn-ghost" style="width: 2.5rem; height: 2.5rem; padding: 0;">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                    </button>
+                </div>
+            </div>
+            <div class="modal-body" style="flex: 1; display: flex; gap: 1.5rem; overflow: hidden; padding: 1.5rem;">
+                <div id="version-list-loading" class="hidden" style="position: absolute; inset: 0; background: rgba(0,0,0,0.3); z-index: 10; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(4px);">
+                    <div class="spinner"></div>
+                </div>
+                <div id="version-list" class="custom-scroll" style="width: 240px; border-right: 1px solid var(--border-subtle); padding-right: 1rem; display: flex; flex-direction: column; gap: 0.5rem;">
+                    <!-- Versions injected here -->
+                </div>
+                <div id="version-diff-panel" class="hidden" style="flex: 1; display: flex; flex-direction: column; overflow: hidden;">
+                    <div id="version-diff-title" style="font-size: 0.9rem; font-weight: 600; margin-bottom: 0.75rem; color: var(--accent);">Version Preview</div>
+                    <div id="version-diff-body" class="custom-scroll" style="flex: 1; border-radius: 12px; background: rgba(0,0,0,0.2); padding: 1.5rem; font-family: var(--font-mono); font-size: 0.85rem; line-height: 1.6; white-space: pre-wrap; overflow-y: auto;">
+                        <!-- Content injected here -->
+                    </div>
+                </div>
+                <div id="version-preview-placeholder" style="flex: 1; display: flex; align-items: center; justify-content: center; color: var(--content-muted); font-size: 0.9rem;">
+                    Select a version to preview
+                </div>
+            </div>
+            <div class="modal-footer" style="padding: 1rem 1.5rem; border-top: 1px solid var(--border-subtle); display: flex; justify-content: flex-end; gap: 1rem;">
+                <button id="version-restore-btn" class="btn-primary" disabled>Restore this version</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/script.js?v=4"></script>
 </body>
 
 </html>

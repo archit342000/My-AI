@@ -55,6 +55,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const messagesContainer = document.getElementById('messages');
     const welcomeHero = document.getElementById('welcome-hero');
     const mainElement = document.querySelector('main');
+    const appRoot = document.getElementById('app-root');
     const chatInputArea = document.getElementById('chat-input-area');
 
     // Theme Selector
@@ -111,8 +112,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const visionModelSelectDropdown = document.getElementById('vision-model-select-dropdown');
     const currentModelDisplay = modelSelectDropdown; // Alias for compatibility
     const currentVisionModelDisplay = visionModelSelectDropdown; // Alias for compatibility
-    const reasoningLevelSlider = document.getElementById('reasoning-level-slider');
-    const reasoningLevelVal = document.getElementById('reasoning-level-val');
+    const thinkingToggle = document.getElementById('thinking-toggle');
 
     // Carousel Selectors
     const carouselTrack = document.querySelector('.carousel-track');
@@ -138,9 +138,29 @@ document.addEventListener('DOMContentLoaded', () => {
     const toolsButton = document.getElementById('tools-button');
     const toolsDropdown = document.getElementById('tools-dropdown');
     const activeToolIconContainer = document.getElementById('active-tool-icon');
-    
+    const canvasModeToggle = document.getElementById('canvas-mode-toggle');
+    const canvasPanel = document.getElementById('canvas-panel');
+    const canvasPanelTitle = document.getElementById('canvas-panel-title');
+    const closeCanvasPanelBtn = document.getElementById('close-canvas-panel');
+    const canvasPanelResizer = document.getElementById('canvas-resizer');
+    const canvasPanelCopyBtn = document.getElementById('canvas-panel-copy-btn');
+    const canvasPanelEditor = document.getElementById('canvas-panel-editor');
+    const canvasPanelBody = document.getElementById('canvas-panel-body');
+    const canvasPanelToggleBtn = document.getElementById('canvas-panel-toggle-btn');
+
     const chatTitleHeader = document.getElementById('chat-title-header');
     const chatTitleDisplay = document.getElementById('chat-title-display');
+    const navFilesBtn = document.getElementById('nav-files-btn');
+    const rightSidebarResizer = document.getElementById('right-sidebar-resizer');
+    
+    // Universal Canvas Panel & Sidebar Selectors
+    const canvasPanelApproveBtn = document.getElementById('canvas-panel-approve-btn');
+    const rightSidebar = document.getElementById('right-sidebar');
+    const rightSidebarToggle = document.getElementById('right-sidebar-toggle');
+    const rightSidebarClose = document.getElementById('right-sidebar-close');
+    const canvasListContainer = document.getElementById('canvas-list');
+    const filesBtn = document.getElementById('files-btn');
+
     // Deprecated hero toggles (can remain null safe)
     const toggleRegularSearchBtn = document.getElementById('toggle-regular-search');
     const toggleDeepSearchBtn = document.getElementById('toggle-deep-search');
@@ -156,17 +176,41 @@ document.addEventListener('DOMContentLoaded', () => {
     // New State for Chat Management
     let savedChats = [];
     let currentChatId = null;
+    let currentCanvasId = null;
+    let currentCanvasContentRaw = '';
     let currentAbortController = null;
     let isTemporaryChat = false;
     let isMemoryMode = true;
-    let isResearchMode = false;
-    let searchDepthMode = 'regular'; // 'regular' or 'deep'
+    let isResearchMode = localStorage.getItem('my_ai_is_research_mode') === 'true';
+    let isResearchCompleted = false;
+    let searchDepthMode = localStorage.getItem('my_ai_search_depth_mode') || 'regular'; // 'regular' or 'deep'
+    let canvasMode = false;
+    let canvasPanelVisible = false; // Track panel visibility separately from mode
+    let isCanvasRendered = false; // Toggle state between Raw (false) and Preview (true)
     let wasMemoryMode = true; // Track previous memory state - default to true
     let currentResearchPlan = null; // Store current unapproved plan text
+    let isSavingCanvas = false;
+    let isFetchingCanvases = false;
+    let _allCanvases = [];          // master list — never filter in-place
+    let _canvasSearchQuery = '';    // current search string
+    let _canvasTypeFilter = 'all';  // current type filter
+    let _currentFolderFilter = '';  // current folder filter
     let chatFolders = JSON.parse(localStorage.getItem('chatFolders') || '[]');
+    // Track which chats have canvases (persisted in sessionStorage for this session)
+    const chatsWithCanvases = new Set(); // chatIds that have canvases
+    let artifactFoldersExpanded = JSON.parse(localStorage.getItem('artifactFoldersExpanded') || '{}');
+    let chatArtifactFolders = JSON.parse(localStorage.getItem('chatArtifactFolders') || '{}'); // { chatId -> [ folderNames... ] }
+    let currentChatArtifactFolders = []; // Folders specifically in the current chat
 
     function saveFolders() {
         localStorage.setItem('chatFolders', JSON.stringify(chatFolders));
+    }
+    function saveArtifactFoldersExpanded() {
+        localStorage.setItem('artifactFoldersExpanded', JSON.stringify(artifactFoldersExpanded));
+    }
+
+    function saveChatArtifactFolders() {
+        localStorage.setItem('chatArtifactFolders', JSON.stringify(chatArtifactFolders));
     }
 
 
@@ -174,13 +218,14 @@ document.addEventListener('DOMContentLoaded', () => {
     let selectedModelName = localStorage.getItem('my_ai_selected_model_name') || 'Select a Model';
     let selectedVisionModel = localStorage.getItem('my_ai_selected_vision_model') || '';
     let selectedVisionModelName = localStorage.getItem('my_ai_selected_vision_model_name') || 'Select a Vision Model';
+    let isVisionEnabled = localStorage.getItem('my_ai_vision_enabled') !== 'false'; // Default to true if not set
     let availableModels = [];
     let currentChatData = null; // Track full data of loaded chat
 
 
 
     // Default Parameters (Sampling Sync)
-    let samplingParams = {
+    let samplingParams = JSON.parse(localStorage.getItem('my_ai_sampling_params')) || {
         temperature: 1.0,
         top_p: 1.0,
         max_tokens: 16384,
@@ -188,12 +233,26 @@ document.addEventListener('DOMContentLoaded', () => {
         min_p: 0.05,
         presence_penalty: 0.0,
         frequency_penalty: 0.0,
-        reasoning_level: 'medium'
+        enable_thinking: true
     };
 
+    function saveSamplingParams() {
+        localStorage.setItem('my_ai_sampling_params', JSON.stringify(samplingParams));
+        
+        if (currentChatId && !isTemporaryChat) {
+            fetch(`/api/chats/${currentChatId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(samplingParams)
+            }).catch(e => console.error("Error updating sampling parameters:", e));
+        }
+    }
+
     let isGenerating = false;
+    let pendingEditIndex = null; // Fix E: stores the chatHistory index to truncate when user submits an edited message
 
     // Load session
+    updateResearchUI();
     fetchModels();
 
     loadChats();
@@ -282,28 +341,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Force synchronization of a modified chat state back to the SQLite layer (e.g. after message edits/deletions)
     function persistChat() {
+        // NOP: We now use Action-Based APIs for all state changes.
+        // This prevents stale tabs from overwriting newer DB entries.
+        console.debug("persistChat() - No-op (Redirected to Action-Based APIs)");
+    }
+
+    async function patchChat(updates) {
         if (!currentChatId || isTemporaryChat) return;
-
-        let titleObj = chatHistory.find(m => m.role === 'user')?.content;
-        if (Array.isArray(titleObj)) titleObj = titleObj.find(p => p.type === 'text')?.text;
-        const titleText = (typeof titleObj === 'string' ? titleObj.substring(0, 50) : 'New Chat') || 'New Chat';
-
-        fetch('/api/chats/save', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                chat_id: currentChatId,
-                title: titleText,
-                messages: chatHistory,
-                memory_mode: isMemoryMode,
-                research_mode: isResearchMode,
-                search_depth_mode: searchDepthMode,
-                is_vision: currentChatData ? currentChatData.is_vision : false,
-                last_model: currentChatData ? currentChatData.last_model : selectedModelName,
-                max_tokens: samplingParams.max_tokens,
-                folder: currentChatData ? currentChatData.folder : null
-            })
-        }).catch(err => console.error('Failed to sync chat state:', err));
+        try {
+            const response = await fetch(`/api/chats/${currentChatId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(updates)
+            });
+            if (!response.ok) {
+                console.error("Failed to patch chat:", await response.text());
+            }
+        } catch (error) {
+            console.error("Error patching chat:", error);
+        }
     }
 
     function generateId() {
@@ -316,6 +372,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         isGenerating = false;
         currentAbortController = null;
+        currentCanvasId = null;
         if (sendBtn) {
             sendBtn.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
             sendBtn.classList.remove('stop-mode');
@@ -328,6 +385,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (typeof imageInput !== 'undefined' && imageInput) imageInput.value = '';
         if (typeof imagePreview !== 'undefined' && imagePreview) imagePreview.src = '';
         if (typeof imagePreviewContainer !== 'undefined' && imagePreviewContainer) imagePreviewContainer.classList.add('hidden');
+
+        // Update canvas lock state
+        updateCanvasLockState();
     }
 
     function startNewChat(temporary = false, updateUrl = true, folder = null) {
@@ -347,7 +407,21 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         isResearchMode = false;
+        isResearchCompleted = false;
         searchDepthMode = 'regular';
+        // Issue 3.1/3.2/3.3 fix: reset canvas mode and close panel on new chat
+        canvasMode = false;
+        canvasPanelVisible = false;
+        if (canvasModeToggle) {
+            canvasModeToggle.classList.remove('active');
+            canvasModeToggle.classList.remove('locked');
+            canvasModeToggle.title = 'Enable Canvas Mode';
+        }
+        closeCanvasPanel();
+        if (rightSidebar) rightSidebar.classList.add('collapsed');
+        currentCanvasContentRaw = '';
+        currentCanvasId = null;
+
         updateResearchUI();
         updateSearchDepthUI();
 
@@ -359,6 +433,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Hide chat title header for new chats until first message
         if (chatTitleHeader) chatTitleHeader.classList.add('hidden');
+
+        fetchCanvases(null);
 
         // Show/hide temp chat banner
         if (tempChatBanner) {
@@ -387,6 +463,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function loadChat(id, pushState = true) {
         resetGenerationState();
+        pendingEditIndex = null;
         try {
             const response = await fetch(`/api/chats/${id}`);
             if (!response.ok) {
@@ -400,21 +477,95 @@ document.addEventListener('DOMContentLoaded', () => {
             isTemporaryChat = false;
             if (tempChatBanner) tempChatBanner.classList.add('hidden');
             if (tempChatBtn) tempChatBtn.classList.remove('active');
-            chatHistory = chat.messages || [];
+            chatHistory = (chat.messages || []).map(msg => {
+                try {
+                    if (typeof msg.content === 'string' && (msg.content.startsWith('[') || msg.content.startsWith('{'))) {
+                        return { ...msg, content: JSON.parse(msg.content) };
+                    }
+                } catch (e) {}
+                return msg;
+            });
             currentResearchPlan = null;
             isMemoryMode = !!chat.memory_mode;
             isResearchMode = !!chat.research_mode;
+            isResearchCompleted = !!chat.research_completed;
+
+            // Restore last used model for this chat
+            if (chat.last_model) {
+                const modelDef = (window.availableModels || availableModels).find(m => m.key === chat.last_model);
+                if (modelDef) {
+                    console.log("Restoring model context for chat:", chat.last_model);
+                    // use isManual = false to avoid confirm dialogs and redundant unloads
+                    selectModel(modelDef.key, modelDef.display_name, modelDef.capabilities.vision, false);
+                }
+            }
+
+   // Issue 3.1/3.2/3.3 fix: reset canvas state on every chat switch
+            // But restore canvasMode from database if it was enabled
+            canvasMode = !!chat.canvas_mode;
+            // Track this chat as having canvases if canvasMode is enabled
+            if (canvasMode) {
+                chatsWithCanvases.add(id);
+                if (canvasModeToggle) {
+                    canvasModeToggle.classList.add('active');
+                    canvasModeToggle.classList.add('locked');
+                    canvasModeToggle.title = 'Canvas mode is permanently enabled for this chat';
+                }
+                // Restore panel visibility for chats with canvas mode enabled
+                if (rightSidebar && window.innerWidth > 768) rightSidebar.classList.remove('collapsed');
+            } else {
+                if (canvasModeToggle) {
+                    canvasModeToggle.classList.remove('active');
+                    canvasModeToggle.classList.remove('locked');
+                    canvasModeToggle.title = 'Enable Canvas Mode';
+                }
+            }
+            currentCanvasContentRaw = '';
+            currentCanvasId = null;
+
             searchDepthMode = chat.search_depth_mode || 'regular';
 
-            // Restore max_tokens setting
-            if (chat.max_tokens !== undefined && chat.max_tokens !== null) {
-                samplingParams.max_tokens = chat.max_tokens;
-                maxTokensSlider.value = chat.max_tokens;
-                maxTokensVal.textContent = chat.max_tokens;
-            } else {
-                samplingParams.max_tokens = 16384;
-                maxTokensSlider.value = 16384;
-                maxTokensVal.textContent = 16384;
+            // Restore sampling parameters
+            if (chat.max_tokens !== undefined && chat.max_tokens !== null) samplingParams.max_tokens = chat.max_tokens;
+            if (chat.temperature !== undefined && chat.temperature !== null) samplingParams.temperature = chat.temperature;
+            if (chat.top_p !== undefined && chat.top_p !== null) samplingParams.top_p = chat.top_p;
+            if (chat.top_k !== undefined && chat.top_k !== null) samplingParams.top_k = chat.top_k;
+            if (chat.min_p !== undefined && chat.min_p !== null) samplingParams.min_p = chat.min_p;
+            if (chat.presence_penalty !== undefined && chat.presence_penalty !== null) samplingParams.presence_penalty = chat.presence_penalty;
+            if (chat.frequency_penalty !== undefined && chat.frequency_penalty !== null) samplingParams.frequency_penalty = chat.frequency_penalty;
+            if (chat.enable_thinking !== undefined && chat.enable_thinking !== null) samplingParams.enable_thinking = !!chat.enable_thinking;
+
+            // Sync UI elements
+            if (maxTokensSlider) {
+                maxTokensSlider.value = samplingParams.max_tokens;
+                maxTokensVal.textContent = samplingParams.max_tokens;
+            }
+            if (tempSlider) {
+                tempSlider.value = samplingParams.temperature;
+                tempVal.textContent = samplingParams.temperature.toFixed(1);
+            }
+            if (topPSlider) {
+                topPSlider.value = samplingParams.top_p;
+                topPVal.textContent = samplingParams.top_p.toFixed(2);
+            }
+            if (topKSlider) { // Assuming topKSlider exists, check initialization
+                topKSlider.value = samplingParams.top_k;
+                topKVal.textContent = samplingParams.top_k;
+            }
+            if (minPSlider) {
+                minPSlider.value = samplingParams.min_p;
+                minPVal.textContent = samplingParams.min_p.toFixed(2);
+            }
+            if (presencePenaltySlider) {
+                presencePenaltySlider.value = samplingParams.presence_penalty;
+                presencePenaltyVal.textContent = samplingParams.presence_penalty.toFixed(1);
+            }
+            if (frequencyPenaltySlider) {
+                frequencyPenaltySlider.value = samplingParams.frequency_penalty;
+                frequencyPenaltyVal.textContent = samplingParams.frequency_penalty.toFixed(1);
+            }
+            if (thinkingToggle) {
+                thinkingToggle.classList.toggle('active', samplingParams.enable_thinking);
             }
 
             updateResearchUI();
@@ -442,8 +593,31 @@ document.addEventListener('DOMContentLoaded', () => {
                 chatTitleDisplay.innerHTML = headerHtml;
             }
 
-            chatHistory.forEach((msg, index) => {
-                if (msg.role === 'user') {
+            // Load canvases for this chat
+            fetchCanvases(id).then(canvasCount => {
+                // Gaurd check: ensure we are still on the same chat
+                if (id !== currentChatId) return;
+                
+                // If canvasMode wasn't set from database and canvases exist, enable it as fallback
+                if (!chat.canvas_mode && canvasCount > 0) {
+                    canvasMode = true;
+                    chatsWithCanvases.add(id);
+                    if (canvasModeToggle) canvasModeToggle.classList.add('active');
+                    // Open right sidebar
+                    if (rightSidebar && window.innerWidth > 768) rightSidebar.classList.remove('collapsed');
+                }
+                // Lock canvas mode if chat has canvases - user cannot turn it off
+                if (canvasCount > 0 && canvasModeToggle && !canvasModeToggle.classList.contains('locked')) {
+                    canvasModeToggle.classList.add('locked');
+                    canvasModeToggle.title = 'Canvas mode is permanently enabled for this chat';
+                }
+            });
+
+            const messageGroups = getLogicalMessageGroups(chatHistory);
+
+            messageGroups.forEach(group => {
+                if (group.role === 'user') {
+                    const msg = group.messages[0];
                     if (Array.isArray(msg.content)) {
                         let text = "";
                         let img = null;
@@ -451,90 +625,127 @@ document.addEventListener('DOMContentLoaded', () => {
                             if (part.type === 'text') text = part.text;
                             if (part.type === 'image_url') img = part.image_url.url;
                         });
-                        appendMessage('User', text, 'user', img);
+                        appendMessage('User', text, 'user', img, null, msg._originalIndex);
                     } else {
-                        appendMessage('User', msg.content, 'user');
+                        appendMessage('User', msg.content, 'user', null, null, msg._originalIndex);
                     }
-                } else if (msg.role === 'assistant') {
-                    if (!msg.content && msg.tool_calls) return; // Skip invisible tool-calling turns
+                } else if (group.role === 'bot') {
+                    // Group Bot messages (Assistant + Tool)
+                    let combinedThoughts = "";
+                    let combinedCleaned = "";
+                    let finalPlan = null;
+                    let finalReport = null;
+                    let combinedActivityObjs = [];
+                    let combinedActivityStrs = [];
+                    let lastModel = null;
+                    let planIndex = -1;
 
-                    const { thoughts, cleaned, plan, report } = parseContent(msg.content || "");
+                    group.messages.forEach(msg => {
+                        if (msg.role === 'assistant') {
+                            const { thoughts, cleaned, plan, report } = parseContent(msg.content || "");
+                            if (thoughts) combinedThoughts += (combinedThoughts ? '\n' : '') + thoughts;
+                            if (cleaned) combinedCleaned += (combinedCleaned ? '\n\n' : '') + cleaned;
+                            if (plan) {
+                                finalPlan = plan;
+                                planIndex = msg._originalIndex;
+                            }
+                            if (report) finalReport = report;
+                            if (msg.model) lastModel = msg.model;
+                            // Handle tool calls in history (tool call info displayed via __assistant_tool_calls__ SSE)
 
-                    // Persistence Fix: Check if this plan was already approved in the following turn
-                    let isApproved = false;
-                    const nextMsg = chatHistory[index + 1];
-                    if (plan && nextMsg && nextMsg.role === 'user' && nextMsg.content === "Plan Approved. Proceed with research.") {
-                        isApproved = true;
-                    }
+                            // Handle JSON Activities
+                            if (isResearchMode && thoughts && thoughts.includes('__research_activity__')) {
+                                // Extract JSON activities from thoughts
+                                let str = thoughts;
+                                let inString = false;
+                                let escape = false;
+                                let depth = 0;
+                                let start = -1;
 
-                    const row = appendMessage('Assistant', '', 'bot', null, msg.model || null);
-                    const contentDiv = row.querySelector('.message-content');
-                    let isJsonActivities = false;
-                    let activityObjs = [];
-                    let activityStrs = [];
-                    if (isResearchMode && thoughts && thoughts.includes('__research_activity__')) {
-                        let str = thoughts;
-                        let inString = false;
-                        let escape = false;
-                        let depth = 0;
-                        let start = -1;
+                                for (let i = 0; i < str.length; i++) {
+                                    let char = str[i];
+                                    if (escape) { escape = false; continue; }
+                                    if (char === '\\') { escape = true; continue; }
+                                    if (char === '"') { inString = !inString; continue; }
 
-                        for (let i = 0; i < str.length; i++) {
-                            let char = str[i];
-                            if (escape) { escape = false; continue; }
-                            if (char === '\\') { escape = true; continue; }
-                            if (char === '"') { inString = !inString; continue; }
-
-                            if (!inString) {
-                                if (char === '{') {
-                                    if (depth === 0) start = i;
-                                    depth++;
-                                } else if (char === '}') {
-                                    depth--;
-                                    if (depth === 0 && start !== -1) {
-                                        try {
-                                            let jsonStr = str.substring(start, i + 1);
-                                            let parsed = JSON.parse(jsonStr);
-                                            if (parsed.__research_activity__) {
-                                                activityObjs.push(parsed);
-                                                activityStrs.push(jsonStr);
+                                    if (!inString) {
+                                        if (char === '{') {
+                                            if (depth === 0) start = i;
+                                            depth++;
+                                        } else if (char === '}') {
+                                            depth--;
+                                            if (depth === 0 && start !== -1) {
+                                                try {
+                                                    let jsonStr = str.substring(start, i + 1);
+                                                    let parsed = JSON.parse(jsonStr);
+                                                    if (parsed.__research_activity__) {
+                                                        combinedActivityObjs.push(parsed);
+                                                        combinedActivityStrs.push(jsonStr);
+                                                    }
+                                                } catch (e) { }
+                                                start = -1;
                                             }
-                                        } catch (e) { }
-                                        start = -1;
+                                        }
                                     }
                                 }
                             }
+                        } else if (msg.role === 'tool') {
+                            // Tool result is handled via __tool_result__ SSE, not in combined thoughts
                         }
+                    });
 
-                        if (activityObjs.length > 0) {
-                            isJsonActivities = true;
+                    if (combinedCleaned === "" && combinedActivityObjs.length === 0 && !combinedThoughts && !finalPlan && !finalReport) return;
+
+                    // Persistence Fix check for Plan
+                    let isApproved = false;
+                    let isSuperseded = false;
+
+                    if (finalPlan && planIndex !== -1) {
+                        for (let i = planIndex + 1; i < chatHistory.length; i++) {
+                            const m = chatHistory[i];
+                            if (m.role === 'user' && (m.content === "Plan Approved. Proceed with research." || m.content === "Proceed with research.")) {
+                                isApproved = true;
+                                break;
+                            }
+                            if (m.role === 'assistant') {
+                                const { plan: laterPlan } = parseContent(m.content || "");
+                                if (laterPlan) {
+                                    isSuperseded = true;
+                                    break;
+                                }
+                            }
                         }
                     }
+                    const planDisabled = isApproved || isSuperseded;
 
+                    const row = appendMessage('Assistant', '', 'bot', null, lastModel, group.messages[0]._originalIndex);
+                    const contentDiv = row.querySelector('.message-content');
+                    
+                    let isJsonActivities = combinedActivityObjs.length > 0;
                     let contentHtml = '';
+                    
                     if (isJsonActivities) {
                         contentHtml += `
-                            <details class="research-activity-wrapper">
+                            <details class="research-activity-wrapper" open>
                                 <summary class="research-activity-summary">
                                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><polyline points="12 16 16 12 12 8"></polyline><line x1="8" y1="12" x2="16" y2="12"></line></svg>
                                     <span class="summary-text">Research Activity (Completed)</span>
                                 </summary>
-                                <div class="deep-research-activity-feed"></div>
+                                <div class="research-activity-feed"></div>
                             </details>
+                            <div class="research-status-bars"></div>
                         `;
                     }
 
-                    let plainThoughts = thoughts || '';
+                    let plainThoughts = combinedThoughts || '';
                     if (isJsonActivities) {
-                        activityStrs.forEach(s => {
+                        combinedActivityStrs.forEach(s => {
                             plainThoughts = plainThoughts.replace(s, '');
                         });
                         plainThoughts = plainThoughts.replace(/<think>|<\/think>/g, '').trim();
 
-                        // If no plain-text reasoning remains but we have planning activity messages,
-                        // reconstruct a readable thought process from the activity data
                         if (!plainThoughts) {
-                            const planningMessages = activityObjs
+                            const planningMessages = combinedActivityObjs
                                 .filter(o => o.type === 'planning' && o.data && o.data.message)
                                 .map(o => o.data.message);
                             if (planningMessages.length > 0) {
@@ -560,8 +771,9 @@ document.addEventListener('DOMContentLoaded', () => {
                                 </div>
                             </div>`;
                     }
-                    const isRetryVisible = activityObjs.some(obj => obj.type === 'needs_retry');
-                    if (isResearchMode && report && !plan) {
+
+                    const isRetryVisible = combinedActivityObjs.some(obj => obj.type === 'needs_retry');
+                    if (isResearchMode && finalReport && !finalPlan) {
                         contentHtml += `
                             <div class="research-report-card">
                                 <div class="report-card-icon">
@@ -577,35 +789,37 @@ document.addEventListener('DOMContentLoaded', () => {
                                     <span class="report-card-title">Research Report Generated</span>
                                     <span class="report-card-desc">The agent has finished compiling its findings.</span>
                                 </div>
-                                <button class="btn-primary view-report-btn" data-report-content="${encodeURIComponent(report)}">
+                                <button class="btn-primary view-report-btn" data-report-content="${encodeURIComponent(finalReport)}">
                                     Open Canvas
                                 </button>
                             </div>
                         `;
                     } else {
-                        contentHtml += `<div class="actual-content-wrapper">${formatMarkdown(cleaned)}</div>`;
+                        contentHtml += `<div class="actual-content-wrapper">${formatMarkdown(combinedCleaned)}</div>`;
                     }
                     contentDiv.innerHTML = contentHtml;
 
-                    if (plan) {
+                    if (finalPlan) {
                         const mainWrapper = contentDiv.querySelector('.actual-content-wrapper');
-                        renderResearchPlan(plan, mainWrapper, isApproved);
+                        renderResearchPlan(finalPlan, mainWrapper, planDisabled);
                     }
 
                     if (isJsonActivities) {
-                        const feed = contentDiv.querySelector('.deep-research-activity-feed');
-                        activityObjs.forEach(obj => renderResearchActivity(feed, obj.type, obj.data));
+                        const feed = contentDiv.querySelector('.research-activity-feed');
+                        combinedActivityObjs.forEach(obj => renderResearchActivity(feed, obj.type, obj.data));
                     }
 
-                    // Render any plain-text LLM thoughts (even if JSON activities exist)
                     if (plainThoughts) {
                         const contentBody = contentDiv.querySelector('.thought-body-content');
                         if (contentBody) {
-                            contentBody.innerHTML = formatMarkdown(plainThoughts);
+                                contentBody.innerHTML = formatMarkdown(plainThoughts);
                         }
                     }
-                    // Catch for ungraceful backend halts (like silent process crashes)
-                    if (isResearchMode && index === chatHistory.length - 1 && !report && !plan && !isRetryVisible && !chat.is_research_running) {
+
+                    // Fallback Resume Logic (Check last message in group)
+                    const lastMsgInGroup = group.messages[group.messages.length - 1];
+                    const isLastTurnInHistory = lastMsgInGroup._originalIndex === chatHistory.length - 1;
+                    if (isResearchMode && isLastTurnInHistory && !finalReport && !finalPlan && !isRetryVisible && !chat.is_research_running) {
                         const fallbackResume = document.createElement('div');
                         fallbackResume.innerHTML = `
                             <div style="margin-top: 1rem; padding: 1rem; border: 1px solid rgba(255,100,100,0.3); border-radius: 8px; background: rgba(255,50,50,0.05);">
@@ -639,7 +853,9 @@ document.addEventListener('DOMContentLoaded', () => {
             if (chat.is_research_running) {
                 // If running, we resume stream.
                 // We pass 'true' to indicate resume, preventing duplication of user message.
-                sendMessage(null, null, true);
+                // We also pass 'section_execution' as resumeState to ensure the backend 
+                // preserves the WAL history if a restart occurred.
+                sendMessage(null, null, true, 'section_execution');
             }
 
             if (pushState && window.location.pathname !== `/chat/${id}`) {
@@ -699,7 +915,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function renameFolder(oldFolderName, event) {
         if (event) event.stopPropagation();
-        
+
         const newFolderName = await showPromptModal("Rename Folder", "Enter new name for folder:", oldFolderName);
         if (newFolderName !== null && newFolderName.trim() !== "" && newFolderName.trim() !== oldFolderName) {
             const finalFolderName = newFolderName.trim();
@@ -736,7 +952,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const oldTitle = chat ? (chat.title || 'Untitled Chat') : titleSpan.textContent;
 
         const newTitle = await showPromptModal("Rename Chat", "Enter a new name:", oldTitle);
-        
+
         if (newTitle !== null && newTitle.trim() !== "" && newTitle.trim() !== oldTitle) {
             try {
                 const finalTitle = newTitle.trim();
@@ -762,7 +978,8 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderChatList() {
         if (!chatHistoryList) return;
         const folderListEl = document.getElementById('folder-list');
-        const folderDivider = document.getElementById('folder-divider');
+        const foldersSection = document.getElementById('folders-sidebar-section');
+        const recentChatsSection = document.getElementById('recent-chats-sidebar-section');
 
         chatHistoryList.innerHTML = '';
         if (folderListEl) folderListEl.innerHTML = '';
@@ -798,19 +1015,26 @@ document.addEventListener('DOMContentLoaded', () => {
             const folderHeader = document.createElement('div');
             folderHeader.className = 'folder-header';
 
-            // Avoid XSS by using textContent for user input
-            const chevronSvg = `<svg class="folder-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+            // Folder Icon + Name
+            const folderIconSvg = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="opacity: 0.7;"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>`;
+            const chevronSvg = `<svg class="folder-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 
+            const nameWrapper = document.createElement('div');
+            nameWrapper.style.cssText = "display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0;";
+            
             const nameSpan = document.createElement('span');
-            nameSpan.style.cssText = "flex:1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.8125rem; font-weight: 600;";
+            nameSpan.style.cssText = "overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.8125rem; font-weight: 600; color: var(--content-primary);";
             nameSpan.textContent = folder.name;
 
+            nameWrapper.innerHTML = folderIconSvg;
+            nameWrapper.appendChild(nameSpan);
+
             const countSpan = document.createElement('span');
-            countSpan.style.cssText = "font-size: 0.65rem; color: var(--content-muted);";
+            countSpan.style.cssText = "font-size: 0.7rem; color: var(--content-muted); background: var(--surface-secondary); padding: 1px 6px; border-radius: 6px; font-weight: 500;";
             countSpan.textContent = grouped[folder.name].length;
 
             folderHeader.innerHTML = chevronSvg;
-            folderHeader.appendChild(nameSpan);
+            folderHeader.appendChild(nameWrapper);
             folderHeader.appendChild(countSpan);
 
             let fLongPressTimer;
@@ -898,13 +1122,24 @@ document.addEventListener('DOMContentLoaded', () => {
             chatHistoryList.appendChild(item);
         });
 
-        if (folderDivider) {
-            if (chatFolders.length > 0 && grouped['uncategorized'].length > 0) {
-                folderDivider.classList.remove('hidden');
+        // Show/Hide sections
+        if (foldersSection) {
+            if (chatFolders.length > 0) {
+                foldersSection.classList.remove('hidden');
             } else {
-                folderDivider.classList.add('hidden');
+                foldersSection.classList.add('hidden');
             }
         }
+
+        if (recentChatsSection) {
+            if (sorted.length > 0) {
+                recentChatsSection.classList.remove('hidden');
+            } else {
+                recentChatsSection.classList.add('hidden');
+            }
+        }
+
+        // We don't need the old folderDivider logic
     }
 
     async function moveChatToFolder(chatId, folderName) {
@@ -1062,6 +1297,17 @@ document.addEventListener('DOMContentLoaded', () => {
                     <button id="ctx-cancel-btn" class="btn-ghost" style="margin-top: 16px; width: 100%; justify-content: center;">Cancel</button>
                 </div>
             `;
+        } else if (type === 'canvas') {
+            modal.innerHTML = `
+                <div class="modal-content hardware-surface" style="max-width: 320px; text-align: center; padding: 24px;">
+                    <h3 class="text-h2" style="margin-bottom: 24px; font-size: 1.25rem;">File Actions</h3>
+                    <div style="display: flex; flex-direction: column; gap: 12px;">
+                        <button id="ctx-move-btn" class="btn-secondary" style="width: 100%; justify-content: center; padding: 12px;">Move to Folder</button>
+                        <button id="ctx-delete-btn" class="btn-primary" style="width: 100%; justify-content: center; padding: 12px; background: var(--color-rose-500); border-color: var(--color-rose-500);">Delete File</button>
+                    </div>
+                    <button id="ctx-cancel-btn" class="btn-ghost" style="margin-top: 16px; width: 100%; justify-content: center;">Cancel</button>
+                </div>
+            `;
         }
 
         const closeModal = () => {
@@ -1071,31 +1317,48 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const deleteBtn = document.getElementById('ctx-delete-btn');
         const cancelBtn = document.getElementById('ctx-cancel-btn');
-        cancelBtn.onclick = closeModal;
+        if (cancelBtn) cancelBtn.onclick = closeModal;
 
         if (type === 'chat') {
             const renameBtn = document.getElementById('ctx-rename-btn');
             const moveBtn = document.getElementById('ctx-move-btn');
-
-            renameBtn.onclick = () => { closeModal(); renameChat(id, e); };
-            moveBtn.onclick = async () => {
-                closeModal();
-                const folderName = await showPromptModal("Move to Folder", "Select a folder or create a new one:", extraData || "", chatFolders);
-                if (folderName !== null) {
-                    const finalFolder = folderName.trim() === "" ? null : folderName.trim();
-                    await moveChatToFolder(id, finalFolder);
-                }
-            };
-            deleteBtn.onclick = () => { closeModal(); deleteChat(id, e); };
+            if (renameBtn) renameBtn.onclick = () => { closeModal(); renameChat(id, e); };
+            if (moveBtn) {
+                moveBtn.onclick = async () => {
+                    closeModal();
+                    const folderName = await showPromptModal("Move to Folder", "Select a folder or create a new one:", extraData || "", chatFolders);
+                    if (folderName !== null) {
+                        const finalFolder = folderName.trim() === "" ? null : folderName.trim();
+                        await moveChatToFolder(id, finalFolder);
+                    }
+                };
+            }
+            if (deleteBtn) deleteBtn.onclick = () => { closeModal(); deleteChat(id, e); };
+        } else if (type === 'canvas') {
+            const moveBtn = document.getElementById('ctx-move-btn');
+            if (moveBtn) {
+                moveBtn.onclick = async () => {
+                    closeModal();
+                    const existingFolders = currentChatArtifactFolders.map(f => ({ name: f }));
+                    const folderName = await showPromptModal("Move to Folder", "Select a folder or create a new one:", extraData || "", existingFolders);
+                    if (folderName !== null) {
+                        const finalFolder = folderName.trim() === "" ? null : folderName.trim();
+                        await moveCanvasToFolder(id, finalFolder);
+                    }
+                };
+            }
+            if (deleteBtn) deleteBtn.onclick = () => { closeModal(); deleteCanvas(id); };
         } else if (type === 'folder') {
             const renameFolderBtn = document.getElementById('ctx-rename-folder-btn');
             if (renameFolderBtn) {
                 renameFolderBtn.onclick = () => { closeModal(); renameFolder(id, e); };
             }
-            deleteBtn.onclick = () => {
-                closeModal();
-                deleteFolder(id, e);
-            };
+            if (deleteBtn) {
+                deleteBtn.onclick = () => {
+                    closeModal();
+                    deleteFolder(id, e);
+                };
+            }
         }
 
         modal.onclick = (eEvent) => {
@@ -1150,7 +1413,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             titleEl.textContent = title;
             msgEl.textContent = message;
-            
+
             // Reset to default folder icon
             const iconSvg = document.getElementById('prompt-icon-svg');
             if (iconSvg) {
@@ -1244,15 +1507,18 @@ document.addEventListener('DOMContentLoaded', () => {
      */
     async function showModal(title, message, options = {}) {
         const {
-            type = 'confirm',
+            type = 'confirm', // 'confirm', 'alert', or 'prompt'
             isDanger = false,
             confirmText = type === 'alert' ? 'OK' : 'Confirm',
-            cancelText = 'Cancel'
+            cancelText = 'Cancel',
+            placeholder = 'Enter value...',
+            defaultValue = ''
         } = options;
 
         const ICONS = {
             confirm: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>`,
             alert: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>`,
+            prompt: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`,
             danger: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`
         };
 
@@ -1264,9 +1530,13 @@ document.addEventListener('DOMContentLoaded', () => {
             const cancelBtn = document.getElementById('confirm-cancel-btn');
             const iconContainer = document.getElementById('confirm-icon-container');
             const iconSvg = document.getElementById('confirm-icon-svg');
+            const inputContainer = document.getElementById('confirm-input-container');
+            const inputField = document.getElementById('confirm-input');
 
             if (!modal || !titleEl || !messageEl || !confirmBtn || !cancelBtn || !iconSvg) {
-                if (type === 'alert') {
+                if (type === 'prompt') {
+                    resolve(prompt(message));
+                } else if (type === 'alert') {
                     alert(message);
                     resolve(true);
                 } else {
@@ -1284,7 +1554,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (isDanger) {
                 iconSvg.innerHTML = ICONS.danger;
             } else {
-                iconSvg.innerHTML = type === 'confirm' ? ICONS.confirm : ICONS.alert;
+                iconSvg.innerHTML = ICONS[type] || ICONS.confirm;
             }
 
             cancelBtn.style.display = type === 'alert' ? 'none' : 'flex';
@@ -1298,7 +1568,28 @@ document.addEventListener('DOMContentLoaded', () => {
                 confirmBtn.style.background = '';
                 confirmBtn.style.borderColor = '';
                 confirmBtn.style.color = '';
-                iconContainer.style.color = 'var(--color-primary-600)';
+                iconContainer.style.color = 'var(--accent)';
+            }
+
+            // Handle Input Visibility
+            if (inputContainer && inputField) {
+                if (type === 'prompt') {
+                    inputContainer.classList.remove('hidden');
+                    inputField.placeholder = placeholder;
+                    inputField.value = defaultValue;
+                    setTimeout(() => inputField.focus(), 100);
+
+                    // Add Enter key listener
+                    inputField.onkeydown = (e) => {
+                        if (e.key === 'Enter') {
+                            e.preventDefault();
+                            confirmBtn.click();
+                        }
+                    };
+                } else {
+                    inputContainer.classList.add('hidden');
+                    inputField.onkeydown = null;
+                }
             }
 
             const cleanup = () => {
@@ -1308,8 +1599,9 @@ document.addEventListener('DOMContentLoaded', () => {
             };
 
             const onConfirm = () => {
+                const value = (type === 'prompt' && inputField) ? inputField.value : true;
                 cleanup();
-                resolve(true);
+                resolve(value);
             };
 
             const onCancel = () => {
@@ -1320,7 +1612,20 @@ document.addEventListener('DOMContentLoaded', () => {
             confirmBtn.addEventListener('click', onConfirm, { once: true });
             cancelBtn.addEventListener('click', onCancel, { once: true });
 
+            // Keyboard support for cancel (Escape)
+            const onEsc = (e) => {
+                if (e.key === 'Escape') onCancel();
+            };
+            document.addEventListener('keydown', onEsc, { once: true });
+
             modal.classList.add('open');
+        });
+    }
+
+    async function showPrompt(title, message, options = {}) {
+        return await showModal(title, message, {
+            type: 'prompt',
+            ...options
         });
     }
 
@@ -1334,15 +1639,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function updateResearchUI() {
         const isChatStarted = chatHistory.length > 0;
+        document.body.classList.toggle('research-agent-active', isResearchMode);
 
         // 1. Research Agent Toggle
         if (uiResearchToggle) {
             uiResearchToggle.classList.toggle('active', isResearchMode);
-            
-            // Block Research if:
-            // - Chat started (locked for this conversation)
-            // - Deep Search is currently ON (user must disable it first)
-            const shouldBlockResearch = isChatStarted || (searchDepthMode === 'deep' && !isResearchMode);
+
+            const shouldBlockResearch = (searchDepthMode === 'deep' && !isResearchMode);
 
             if (shouldBlockResearch) {
                 uiResearchToggle.parentElement.style.opacity = '0.5';
@@ -1354,7 +1657,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 uiResearchToggle.parentElement.style.cursor = 'pointer';
             }
         }
-        
+
         // 2. Deep Search Toggle
         if (uiDeepSearchToggle) {
             const isDeepSearch = (searchDepthMode === 'deep');
@@ -1377,17 +1680,17 @@ document.addEventListener('DOMContentLoaded', () => {
         if (uiResearchDepthSelector) {
             uiResearchDepthSelector.classList.toggle('hidden', !isResearchMode);
             uiResearchDepthSelector.setAttribute('data-mode', searchDepthMode);
-            
+
             // Research depth can be changed mid-chat for active agents
             uiResearchDepthSelector.style.opacity = '1';
             uiResearchDepthSelector.style.pointerEvents = 'auto';
-            
+
             const btns = uiResearchDepthSelector.querySelectorAll('.mode-btn');
             btns.forEach(btn => {
                 btn.classList.toggle('active', btn.getAttribute('data-mode') === searchDepthMode);
             });
         }
-        
+
         // Update the Tools Button icon based on active states
         if (activeToolIconContainer) {
             if (isResearchMode) {
@@ -1401,17 +1704,20 @@ document.addEventListener('DOMContentLoaded', () => {
                                              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
                                          </svg>`;
                 toolsButton.classList.add('active');
+            } else if (canvasMode && typeof canvasMode !== 'undefined') {
+                activeToolIconContainer.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>`;
+                toolsButton.classList.add('active');
             } else {
-                activeToolIconContainer.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                activeToolIconContainer.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                                              <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.77 3.77z"/>
                                          </svg>`;
                 toolsButton.classList.remove('active');
             }
         }
 
-        // Disable Memory Toggle in Research or Temporary Chat Mode
+        // Disable Memory Toggle in Temporary Chat Mode (Research now supports memory)
         if (memoryToggleSwitch) {
-            if (isResearchMode || isTemporaryChat) {
+            if (isTemporaryChat) {
                 // Save current state before disabling
                 wasMemoryMode = isMemoryMode;
                 isMemoryMode = false;
@@ -1419,7 +1725,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 memoryToggleSwitch.classList.remove('active');
                 memoryToggleSwitch.style.pointerEvents = 'none';
                 memoryToggleSwitch.style.opacity = '0.5';
-                memoryToggleSwitch.title = isResearchMode ? "Memory mode is disabled in Research." : "Memory mode is disabled for Temporary Chats.";
+                memoryToggleSwitch.title = "Memory mode is disabled for Temporary Chats.";
             } else {
                 // Restore previous memory state if we were in a restricted mode formerly
                 if (memoryToggleSwitch.style.pointerEvents === 'none') {
@@ -1436,12 +1742,21 @@ document.addEventListener('DOMContentLoaded', () => {
         // Toggle Chat Settings Containers
         const generalSettingsContainer = document.getElementById('general-model-settings');
         const researchSettingsContainer = document.getElementById('research-model-settings');
-        
+
         if (generalSettingsContainer) {
             generalSettingsContainer.style.display = isResearchMode ? 'none' : 'block';
         }
         if (researchSettingsContainer) {
             researchSettingsContainer.style.display = isResearchMode ? 'block' : 'none';
+        }
+
+        // Update Vision Toggle UI
+        const visionToggle = document.getElementById('vision-toggle');
+        const visionStatus = document.getElementById('research-vision-status');
+        if (visionToggle && visionStatus) {
+            visionToggle.classList.toggle('active', isVisionEnabled);
+            visionStatus.textContent = isVisionEnabled ? 'Enabled' : 'Disabled';
+            visionStatus.style.color = isVisionEnabled ? 'var(--accent)' : 'var(--content-muted)';
         }
 
         // Disable Model Selection if Research has started
@@ -1470,7 +1785,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // Disable ALL Sampling Sliders and Parameter Inputs
-        const sliders = [tempSlider, topPSlider, maxTokensSlider, presencePenaltySlider, frequencyPenaltySlider, reasoningLevelSlider, minPSlider, topKSlider];
+        const sliders = [tempSlider, topPSlider, maxTokensSlider, presencePenaltySlider, frequencyPenaltySlider, thinkingToggle, minPSlider, topKSlider];
         sliders.forEach(slider => {
             if (slider) {
                 slider.disabled = isResearchMode;
@@ -1502,16 +1817,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
         // Chat Lockdown Logic
-        // Lock input ONLY if making a deep research run AND the plan is confirmed/executing.
-        // We know research is executing if we are beyond drafting (history has more than the draft plan response + approval message) or if we receive active generation.
-        const isCurrentlyGenerating = typeof isGenerating !== 'undefined' && isGenerating;
+        // Lock input ONLY if plan is confirmed/executing.
         const indexApproval = chatHistory.findIndex(m => m.content === "Plan Approved. Proceed with research." || m.content === "Proceed with research.");
-        // A deep research run is considered "started" if there is an approval message inside the history OR we got no plan (just generating normally).
         let hasApprovedResearch = false;
         if (isResearchMode) {
-            hasApprovedResearch = isCurrentlyGenerating || (indexApproval > -1);
-            // Edge case: Maybe we had no plan? Just started immediately in research mode with some error?
-            if (!currentResearchPlan && chatHistory.length > 2) hasApprovedResearch = true;
+            // Fallback unlock for older sessions that don't have the research_completed flag set in the DB.
+            // If an assistant message exists after the research was approved, then the research is essentially concluded.
+            const hasFinalMessage = chatHistory.some((m, i) => i > indexApproval && m.role === 'assistant');
+            hasApprovedResearch = (indexApproval > -1) && !isResearchCompleted && !hasFinalMessage;
         }
 
         if (textArea) {
@@ -1534,6 +1847,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Update Temporary Chat Button State
         updateTempChatBtnState();
+
+        // 4. Files nav button (Left Panel)
+        if (navFilesBtn) {
+            if (canvasMode) {
+                navFilesBtn.classList.remove('disabled');
+                navFilesBtn.style.opacity = '1';
+                navFilesBtn.style.pointerEvents = 'auto';
+                navFilesBtn.title = "View Files / Artifacts";
+            } else {
+                navFilesBtn.classList.add('disabled');
+                navFilesBtn.style.opacity = '0.35';
+                navFilesBtn.style.pointerEvents = 'none';
+                navFilesBtn.title = "Enable Canvas Mode to view files";
+            }
+        }
     }
 
     function updateTempChatBtnState() {
@@ -1580,37 +1908,61 @@ document.addEventListener('DOMContentLoaded', () => {
             // Find the parent row to attach click event (better UX)
             uiResearchToggle.parentElement.addEventListener('click', (e) => {
                 e.stopPropagation(); // Prevent dropdown from closing immediately
-                if (chatHistory.length > 0) return; // Locked
-                
                 // Toggle Research Mode
                 isResearchMode = !isResearchMode;
-                
+                localStorage.setItem('my_ai_is_research_mode', isResearchMode);
+
                 // Default search depth to regular if enabling research
                 if (isResearchMode) {
                     searchDepthMode = 'regular';
+                    localStorage.setItem('my_ai_search_depth_mode', searchDepthMode);
                 }
-                
+
                 updateResearchUI();
                 checkSendButtonCompatibility();
-                fetchModels();
+                // If research is turning ON, force load the specialized models
+                fetchModels(isResearchMode);
+
+                // Sync to backend mid-chat
+                if (chatHistory.length > 0) {
+                    patchChat({
+                        research_mode: isResearchMode,
+                        search_depth_mode: searchDepthMode
+                    });
+                }
             });
         }
-        
+
+        // Vision Toggle Click Handler
+        const visionToggleRef = document.getElementById('vision-toggle');
+        if (visionToggleRef) {
+            visionToggleRef.addEventListener('click', (e) => {
+                e.stopPropagation();
+                isVisionEnabled = !isVisionEnabled;
+                localStorage.setItem('my_ai_vision_enabled', isVisionEnabled ? 'true' : 'false');
+                updateResearchUI();
+                if (chatHistory.length > 0) {
+                    patchChat({ is_vision: isVisionEnabled });
+                }
+            });
+        }
+
         if (uiDeepSearchToggle) {
             uiDeepSearchToggle.parentElement.addEventListener('click', (e) => {
                 e.stopPropagation();
                 // Standalone Deep Search can be toggled mid-chat
-                
+
                 if (searchDepthMode === 'deep') {
                     searchDepthMode = 'regular';
                 } else {
                     searchDepthMode = 'deep';
                 }
+                localStorage.setItem('my_ai_search_depth_mode', searchDepthMode);
                 updateResearchUI();
-                
+
                 // Only sync to backend if the chat already has content
                 if (chatHistory.length > 0) {
-                    persistChat();
+                    patchChat({ search_depth_mode: searchDepthMode });
                 }
             });
         }
@@ -1621,10 +1973,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 btn.addEventListener('click', () => {
                     searchDepthMode = btn.getAttribute('data-mode');
                     updateResearchUI();
-                    
+
                     // Only sync to backend if the chat already has content
                     if (chatHistory.length > 0) {
-                        persistChat();
+                        patchChat({ search_depth_mode: searchDepthMode });
                     }
                 });
             });
@@ -1699,7 +2051,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 fetch('/api/chats/save', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ chat_id: currentChatId, title: titleText, messages: chatHistory, memory_mode: isMemoryMode, research_mode: isResearchMode, search_depth_mode: searchDepthMode, max_tokens: samplingParams.max_tokens })
+                    body: JSON.stringify({ 
+                        chat_id: currentChatId, 
+                        title: titleText, 
+                        messages: chatHistory, 
+                        memory_mode: isMemoryMode, 
+                        research_mode: isResearchMode, 
+                        search_depth_mode: searchDepthMode, 
+                        ...samplingParams 
+                    })
                 }).then(() => { loadChats(); renderChatList(); });
             }
             updateResearchUI();
@@ -1748,30 +2108,45 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    async function fetchModels() {
+    async function fetchModels(forceLoad = false) {
         if (modelSelectDropdown) {
-            modelSelectDropdown.innerHTML = '<option value="" disabled selected>Fetching config...</option>';
+            modelSelectDropdown.innerHTML = '<option value="" disabled selected>Loading config...</option>';
         }
         if (visionModelSelectDropdown) {
-            visionModelSelectDropdown.innerHTML = '<option value="" disabled selected>Fetching config...</option>';
+            visionModelSelectDropdown.innerHTML = '<option value="" disabled selected>Loading config...</option>';
         }
 
         try {
             const response = await fetch('/api/models/config');
             if (!response.ok) throw new Error('Failed to fetch model config');
             const config = await response.json();
-            
+
+            const getModelDisplayName = (key, value) => {
+                let base = key.charAt(0).toUpperCase() + key.slice(1);
+                if (key === 'main') base = "Research Main";
+                if (key === 'text') base = "General Text";
+                if (key === 'vision') base = "General Vision";
+                if (key === 'vision2') base = "General Vision (High)";
+                if (key === 'coder') base = "General Coder";
+                
+                const modelName = value.split('/').pop() || value;
+                return `${base} (${modelName})`;
+            };
+
             if (isResearchMode) {
-                availableModels = [
-                    { key: config.research.main, display_name: "Research Main (Nemotron-3)", capabilities: { vision: false }, category: 'research' },
-                    { key: config.research.vision, display_name: "Research Vision (Qwen3.5-4B)", capabilities: { vision: true }, category: 'research' }
-                ];
+                availableModels = Object.entries(config.research).map(([key, value]) => ({
+                    key: value,
+                    display_name: getModelDisplayName(key, value),
+                    capabilities: { vision: key.toLowerCase().includes('vision') },
+                    category: 'research'
+                }));
             } else {
-                availableModels = [
-                    { key: config.general.text, display_name: "General Text (Nemotron-3)", capabilities: { vision: false }, category: 'general' },
-                    { key: config.general.vision, display_name: "General Vision (Qwen3.5-35B)", capabilities: { vision: true }, category: 'general' },
-                    { key: config.general.coder, display_name: "General Coder (Qwen3-Coder)", capabilities: { vision: false }, category: 'general' }
-                ];
+                availableModels = Object.entries(config.general).map(([key, value]) => ({
+                    key: value,
+                    display_name: getModelDisplayName(key, value),
+                    capabilities: { vision: key.toLowerCase().includes('vision') },
+                    category: 'general'
+                }));
             }
 
             // Sync global config state for potential future use
@@ -1791,12 +2166,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 const defaultModel = isResearchMode ? config.research.main : config.general.text;
                 const modelDef = availableModels.find(m => m.key === defaultModel);
                 if (modelDef) {
-                    selectModel(modelDef.key, modelDef.display_name, modelDef.capabilities.vision, false);
+                    // isManual = forceLoad (if forceLoad is true, it triggers loading screen but we bypass manual checks in selectModel if possible)
+                    selectModel(modelDef.key, modelDef.display_name, modelDef.capabilities.vision, forceLoad);
                 }
-                
+
                 if (isResearchMode) {
                     // Pre-select vision model for research automatically
-                    selectVisionModel(config.research.vision, "Research Vision (Qwen3.5-4B)");
+                    const visionName = `Research Vision (${config.research.vision.split('/').pop()})`;
+                    selectVisionModel(config.research.vision, visionName);
                 }
             } else if (selectedModel) {
                 const model = availableModels.find(m => m.key === selectedModel);
@@ -1839,6 +2216,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Preserve current selection
         const currentSelected = selectedModel;
+
+        // Locking Logic: Block UI interaction if research is/was active
+        const isLocked = (isResearchMode || (currentChatData && currentChatData.had_research)) && chatHistory.length > 0;
+        if (modelSelectDropdown) {
+            modelSelectDropdown.disabled = isLocked;
+            modelSelectDropdown.title = isLocked ? "Model is locked for Research consistency" : "Select main model";
+        }
+        if (visionModelSelectDropdown) {
+            visionModelSelectDropdown.disabled = isLocked;
+            visionModelSelectDropdown.title = isLocked ? "Vision model is locked for Research consistency" : "Select vision model";
+        }
 
         // Model Selection Dropdown
         modelSelectDropdown.innerHTML = '';
@@ -1918,7 +2306,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             if (!res.ok) return;
             const data = await res.json();
-            
+
             // Map: modelId -> statusValue
             const modelStatuses = {};
             if (Array.isArray(data.data)) {
@@ -1950,14 +2338,14 @@ document.addEventListener('DOMContentLoaded', () => {
             if (isResearchMode) {
                 const researchMainDisplay = document.getElementById('research-main-display');
                 const researchVisionDisplay = document.getElementById('research-vision-display');
-                
+
                 if (researchMainDisplay && window.modelConfig && window.modelConfig.research) {
                     const status = modelStatuses[window.modelConfig.research.main] || 'unloaded';
                     const statusLabel = getStatusText(status);
                     let baseText = researchMainDisplay.textContent.replace(/\s\((Active|Inactive|Loading\.\.\.)\)$/, '');
                     researchMainDisplay.textContent = `${baseText} (${statusLabel})`;
                 }
-                
+
                 if (researchVisionDisplay && window.modelConfig && window.modelConfig.research) {
                     const status = modelStatuses[window.modelConfig.research.vision] || 'unloaded';
                     const statusLabel = getStatusText(status);
@@ -2028,7 +2416,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             // Ensure excludeIds is an array
             const exclusions = Array.isArray(excludeIds) ? excludeIds : [excludeIds];
-            
+
             // Add embedding model to exclusions by default to prevent RAG breakage
             if (window.modelConfig && window.modelConfig.embedding && !exclusions.includes(window.modelConfig.embedding)) {
                 exclusions.push(window.modelConfig.embedding);
@@ -2038,7 +2426,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch(`/api/v1/models`);
             if (!response.ok) return;
             const data = await response.json();
-            
+
             const modelsArray = data.data || [];
             // Unload anything except the ones we want to keep
             const activeModels = modelsArray.filter(m => {
@@ -2088,7 +2476,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     let pollData = await pollResp.json();
                     let modelsArray = pollData.data || [];
                     let targetModel = modelsArray.find(m => m.id === modelKey);
-                    
+
                     if (targetModel && targetModel.status && targetModel.status.value === 'loaded') {
                         console.log(`Model ${modelKey} is now fully loaded in VRAM.`);
                         return true;
@@ -2105,16 +2493,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function selectModel(id, name, hasVision, isManual = true) {
         if (isManual) {
-            // New Requirement: Block model switch for Research chats that have started
-            if (isResearchMode && chatHistory.length > 0) {
+            // Check if this is one of the mandatory research models
+            const isResearchModel = window.modelConfig &&
+                (id === window.modelConfig.research.main || id === window.modelConfig.research.vision);
+
+            // Block non-research models if research is active or ever used
+            const hadResearchOnce = currentChatData && currentChatData.had_research;
+            if ((isResearchMode || hadResearchOnce) && chatHistory.length > 0 && !isResearchModel) {
                 await showAlert('Model Locked', 'Model cannot be changed once a Research conversation has started to ensure research consistency.');
                 if (modelSelectDropdown) modelSelectDropdown.value = selectedModel || "";
                 renderModelOptions();
                 return;
             }
 
-            // New Requirement: Block non-vision model switch if chat is vision-restricted
-            // ONLY applies to regular chats
+            // Block non-vision models for image-intensive chats
             if (!isResearchMode && currentChatData?.is_vision && !hasVision) {
                 await showAlert('Incompatible Model', 'This conversation contains images. You must use a Vision-capable model to continue this chat.');
                 if (modelSelectDropdown) modelSelectDropdown.value = selectedModel || "";
@@ -2122,15 +2514,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            const confirmed = await showConfirm('Switch Model', `Switch to ${name}? This will unload the current model and load the new one into memory, which may take a few moments.`);
-            if (!confirmed) {
-                if (modelSelectDropdown) modelSelectDropdown.value = selectedModel || "";
-                renderModelOptions();
-                return;
+            // Ask for confirmation UNLESS it's the mandatory research model switch during toggle
+            if (!isResearchModel || !isResearchMode) {
+                const confirmed = await showConfirm('Switch Model', `Switch to ${name}? This will unload the current model and load the new one into memory, which may take a few moments.`);
+                if (!confirmed) {
+                    if (modelSelectDropdown) modelSelectDropdown.value = selectedModel || "";
+                    renderModelOptions();
+                    return;
+                }
             }
         }
+
+        // From here on, if we are loading (manual trigger or forced auto-load), show overlay
         if (isManual) {
-            // Check if it's already loaded
+            // Check if already loaded...
             let isLoadedInLlama = false;
             let currentModelsData = null;
             try {
@@ -2301,6 +2698,35 @@ document.addEventListener('DOMContentLoaded', () => {
             sidebar.classList.remove('resizing');
             document.body.style.cursor = 'default';
         }
+        if (isResizingRight) {
+            isResizingRight = false;
+            rightSidebar.classList.remove('resizing');
+            document.body.style.cursor = 'default';
+        }
+    });
+
+    // ─── Right Sidebar Resizing ───
+    let isResizingRight = false;
+    rightSidebarResizer?.addEventListener('mousedown', (e) => {
+        isResizingRight = true;
+        rightSidebar.classList.add('resizing');
+        document.body.style.cursor = 'col-resize';
+        e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', (e) => {
+        if (!isResizingRight) return;
+        
+        let newWidth = window.innerWidth - e.clientX;
+        
+        if (newWidth < 120) {
+            rightSidebar.classList.add('collapsed');
+            rightSidebar.style.width = '';
+        } else if (newWidth >= 240 && newWidth <= window.innerWidth * 0.8) {
+            rightSidebar.classList.remove('collapsed');
+            rightSidebar.style.width = `${newWidth}px`;
+            document.documentElement.style.setProperty('--right-sidebar-width', `${newWidth}px`);
+        }
     });
 
     [sidebarToggle, mobileToggle].forEach(btn => {
@@ -2322,6 +2748,10 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // 4. Configuration Event Listeners
+    [tempSlider, topPSlider, maxTokensSlider, presencePenaltySlider, frequencyPenaltySlider, topKSlider, minPSlider].forEach(slider => {
+        slider?.addEventListener('change', saveSamplingParams);
+    });
+
     tempSlider.addEventListener('input', (e) => {
         samplingParams.temperature = parseFloat(e.target.value);
         tempVal.textContent = samplingParams.temperature.toFixed(1);
@@ -2335,16 +2765,6 @@ document.addEventListener('DOMContentLoaded', () => {
     maxTokensSlider.addEventListener('input', (e) => {
         samplingParams.max_tokens = parseInt(e.target.value);
         maxTokensVal.textContent = samplingParams.max_tokens;
-    });
-
-    maxTokensSlider.addEventListener('change', (e) => {
-        if (currentChatId && !isTemporaryChat) {
-            fetch(`/api/chats/${currentChatId}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ max_tokens: samplingParams.max_tokens })
-            }).catch(e => console.error("Error updating max_tokens:", e));
-        }
     });
 
     presencePenaltySlider.addEventListener('input', (e) => {
@@ -2367,11 +2787,10 @@ document.addEventListener('DOMContentLoaded', () => {
         minPVal.textContent = samplingParams.min_p.toFixed(2);
     });
 
-    const reasoningLevels = ['none', 'low', 'medium', 'high'];
-    reasoningLevelSlider.addEventListener('input', (e) => {
-        const idx = parseInt(e.target.value);
-        samplingParams.reasoning_level = reasoningLevels[idx];
-        reasoningLevelVal.textContent = reasoningLevels[idx].charAt(0).toUpperCase() + reasoningLevels[idx].slice(1);
+    thinkingToggle.addEventListener('click', () => {
+        samplingParams.enable_thinking = !samplingParams.enable_thinking;
+        thinkingToggle.classList.toggle('active', samplingParams.enable_thinking);
+        saveSamplingParams();
     });
 
 
@@ -2617,7 +3036,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             titleEl.textContent = isEdit ? 'Edit Memory' : 'Add Memory';
             msgEl.textContent = "Provide the fact and select its category:";
-            
+
             confirmBtn.textContent = "Save Memory";
             cancelBtn.textContent = "Cancel";
 
@@ -2808,18 +3227,42 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 5. Chat Interaction Core (Backend API with RAG)
     async function sendMessage(authOverride = null, approvedPlanPayload = null, isResume = false, resumeState = null) {
-        if (isGenerating || !selectedModel) return;
+        if (isGenerating || (!selectedModel && !isResume)) return;
 
         // If approvedPlanPayload is present, we are approving. Content might be empty or "Plan Approved".
         const content = textArea.value.trim();
 
+        // Fix E: If the user clicked Edit on a previous message, pendingEditIndex holds the
+        // DB/chatHistory index to truncate at. We defer this until the user actually submits
+        // a replacement, so that a tab-close or refresh before submission does NOT destroy data.
+        if (pendingEditIndex !== null && !isResume && !approvedPlanPayload) {
+            const editIdx = pendingEditIndex;
+            pendingEditIndex = null;
+            // Truncate the DB
+            if (currentChatId && !isTemporaryChat) {
+                try {
+                    await fetch(`/api/chats/${currentChatId}/messages/truncate`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ index: editIdx })
+                    });
+                } catch (e) {
+                    console.error("Failed to apply deferred edit truncate:", e);
+                }
+            }
+            // Truncate the in-memory chatHistory to match
+            chatHistory.splice(editIdx);
+        }
+
         if (!isResume && !content && !currentImageBase64 && !approvedPlanPayload && !resumeState) return;
 
-        // Block follow-up messages in Research mode
-        // Block follow-up messages in Research mode if research has already started/confirmed
-        const hasExistingApproval = chatHistory.some(m => m.content === "Plan Approved. Proceed with research." || m.content === "Proceed with research.");
-        if (isResearchMode && hasExistingApproval && !isResume && !approvedPlanPayload && !resumeState) {
-            await showAlert('Research Completed', 'This Research session is finished. Please start a new chat for another research query.');
+        // Block follow-up messages in Research mode ONLY if an active execution is underway
+        // Research is "executing" if plan was approved but research is not yet completed
+        const indexApproval = chatHistory.findIndex(m => m.content === "Plan Approved. Proceed with research." || m.content === "Proceed with research.");
+        const isExecuting = isResearchMode && (indexApproval > -1) && !isResearchCompleted;
+
+        if (isResearchMode && isExecuting && !isResume && !approvedPlanPayload && !resumeState) {
+            await showAlert('Research in Progress', 'Research is currently executing. You can chat once the final report is generated.');
             return;
         }
 
@@ -2829,7 +3272,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // Proactive VRAM Cleanup before inference
-        if (isResearchMode) {
+        // SKIP cleanup if we are just resuming an existing task, as it's already using its model!
+        if (isResume) {
+            console.log("Resuming existing task, skipping VRAM cleanup.");
+        } else if (isResearchMode) {
             // In Research Mode, keep Main + Vision + Embedding
             const exclusions = [];
             if (window.modelConfig?.research?.main) exclusions.push(window.modelConfig.research.main);
@@ -2844,8 +3290,17 @@ document.addEventListener('DOMContentLoaded', () => {
         isGenerating = true;
         currentAbortController = new AbortController();
         updateUIState(true);
+        // Lock canvas during generation
+        updateCanvasLockState();
+
+        // botMsgDiv will be created lower down, but we track the 'thinking' state via classList.add('thinking') 
+        // when appending the message row.
 
         if (!isResume && !resumeState) {
+            if (isResearchMode) {
+                isResearchCompleted = false;
+                updateResearchUI();
+            }
             textArea.value = '';
             textArea.style.height = 'auto';
 
@@ -2859,7 +3314,25 @@ document.addEventListener('DOMContentLoaded', () => {
                 currentResearchPlan = null; // Clear draft state
             } else {
                 // Normal User Message
-                appendMessage('User', content, 'user', currentImageBase64);
+                // If in research mode, an incoming user message implies a plan revision/edit request.
+                // Immediately disable (grey out) any pending approval buttons to prevent concurrent actions.
+                if (isResearchMode) {
+                    const approveBtns = document.querySelectorAll('.btn-approve');
+                    approveBtns.forEach(btn => {
+                        if (!btn.disabled) {
+                            btn.disabled = true;
+                            btn.style.background = 'var(--color-neutral-400)';
+                            btn.style.cursor = 'not-allowed';
+                            btn.style.opacity = '0.6';
+                            btn.style.boxShadow = 'none';
+                            // Update text to reflect that the plan is being revised
+                            if (btn.innerText.trim().includes('Approve')) {
+                                btn.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke-linecap="round" stroke-linejoin="round"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke-linecap="round" stroke-linejoin="round"/></svg> Revising Plan...`;
+                            }
+                        }
+                    });
+                }
+                appendMessage('User', content, 'user', currentImageBase64, null, chatHistory.length);
                 const userMsgObj = { role: 'user', content: content };
                 if (currentImageBase64) {
                     userMsgObj.content = [
@@ -2901,11 +3374,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Bot Message Row
         const botMsgDiv = appendMessage('Assistant', '', 'bot');
+        botMsgDiv.classList.add('thinking'); // Restore rotating square animation on the avatar
         const contentDiv = botMsgDiv.querySelector('.message-content');
 
         // Setup content wrappers — different layout for deep research vs standard chat
-        if (isResearchMode) {
-            // Research: use activity feed and thought container
+        if (isResearchMode && (approvedPlanPayload || (resumeState && resumeState.includes('section_execution')) || isResume)) {
+            // Research Execution phase: use activity feed and thought container
             contentDiv.innerHTML = `
                 <details class="research-activity-wrapper" open>
                     <summary class="research-activity-summary">
@@ -2913,16 +3387,14 @@ document.addEventListener('DOMContentLoaded', () => {
                         <span class="summary-text">Live Research Activity</span>
                     </summary>
                     <div class="research-activity-feed" style="display: flex; flex-direction: column;">
-                        <div class="research-live-indicator" style="order: 9999;">
-                            <span class="processing-spinner"></span>
-                            <span class="live-indicator-text">Agent is thinking...</span>
-                        </div>
                     </div>
                 </details>
+                <div class="research-status-bars"></div>
                 <div class="thought-container-wrapper"></div>
                 <div class="actual-content-wrapper"></div>
             `;
         } else {
+            // Planning or Standard Chat: no research activity wrapper
             contentDiv.innerHTML = `
                 <div class="thought-container-wrapper"></div>
                 <div class="actual-content-wrapper"></div>
@@ -2933,7 +3405,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const mainWrapper = contentDiv.querySelector('.actual-content-wrapper');
 
         // Initial Thinking State
-        botMsgDiv.classList.add('thinking');
+        // botMsgDiv.classList.add('thinking'); // Removed per user request
 
         // Construct Messages for Backend
         const messages = [];
@@ -2943,7 +3415,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // Add history (last 20 turns)
-        messages.push(...chatHistory.slice(-20));
+        messages.push(...chatHistory);
 
         // Clean up image state
         const sentImageBase64 = currentImageBase64;
@@ -2991,16 +3463,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 researchMode: isResearchMode,
                 searchDepthMode: searchDepthMode,
                 visionModel: reqVisionModel,
+                visionEnabled: isVisionEnabled,
                 approvedPlan: approvedPlanPayload || undefined,
                 resumeState: resumeState || undefined,
                 chatId: currentChatId,
+                folder: currentChatData ? currentChatData.folder : null,
                 stream: true,
                 stream_options: { include_usage: true },
+                canvasMode: canvasMode,
+                activeCanvasContext: currentCanvasContentRaw ? {
+                    id: currentCanvasId,
+                    content: currentCanvasContentRaw
+                } : null
             };
 
             // Only include sampling params for normal chat (deep research uses its own)
             if (!isResearchMode) {
-                requestBody.reasoning = samplingParams.reasoning_level === 'none' ? 'off' : samplingParams.reasoning_level;
+                requestBody.enable_thinking = samplingParams.enable_thinking;
                 requestBody.temperature = samplingParams.temperature;
                 requestBody.top_p = samplingParams.top_p;
                 requestBody.max_tokens = samplingParams.max_tokens;
@@ -3034,6 +3513,7 @@ document.addEventListener('DOMContentLoaded', () => {
             let usageCounted = false;
             let isReasoningPhase = true; // Track if we're still in reasoning-only mode
             let contentStarted = false;  // Track if actual content has started
+            let assistantMessagePushed = false; // Track if assistant message was already pushed to chatHistory
             let actualModelName = selectedModelName; // Fallback
 
             while (true) {
@@ -3066,7 +3546,16 @@ document.addEventListener('DOMContentLoaded', () => {
                         if (json.model) {
                             actualModelName = json.model;
                         }
-                        
+
+                        // Handle clarification request from Scout
+                        if (json.clarification && activityFeed) {
+                            const question = json.choices?.[0]?.delta?.content || "";
+                            renderResearchActivity(activityFeed, 'clarification', { question });
+                            // Also append to reasoning so it appears in the thought process
+                            displayReasoning += `\n\n**Clarification Required:** ${question}\n`;
+                            continue;
+                        }
+
                         // Handle Intermediate Sync for Tool calls
                         if (json.__assistant_tool_calls__) {
                             chatHistory.push({
@@ -3074,38 +3563,69 @@ document.addEventListener('DOMContentLoaded', () => {
                                 content: json.content || null,
                                 tool_calls: json.tool_calls
                             });
+
                             historyContentStartIdx = accumulatedContent.length;
                             historyReasoningStartIdx = accumulatedReasoning.length;
-                            
+                            assistantMessagePushed = true; // Mark that we've already pushed the assistant message
+
                             // Reset round-specific flags for tool transitions
                             contentStarted = false;
-                            botMsgDiv.classList.add('thinking');
-                            
+                            botMsgDiv.classList.add('thinking'); // Restore logo animation for multi-turn research steps
+
                             continue;
                         }
-                        
+
                         // Handle tool completions
                         if (json.__tool_result__) {
+                            // Ensure content is always a string (tool results may be dicts)
+                            const content = typeof json.result === 'string' ? json.result : JSON.stringify(json.result);
                             chatHistory.push({
                                 role: 'tool',
                                 tool_call_id: json.tool_call_id,
                                 name: json.name,
-                                content: json.result
+                                content: content
                             });
+
                             continue;
                         }
 
-                        // Handle redaction (validation detected formatting issues, correcting...)
+                        // Handle permanent lockdown of research mode
+                        if (json.__research_finished__) {
+                            isResearchCompleted = true;
+                            isResearchMode = false;
+                            updateResearchUI();
+                            patchChat({ research_completed: 1, research_mode: 0 });
+                            fetchModels(); // Revert to standard models
+                            continue;
+                        }
+                        
+                        // Handle Canvas Updates
+                        if (json.__canvas_update__) {
+                            handleCanvasUpdate(json.__canvas_update__);
+                            // Persist AI-generated canvas changes to backend
+                            if (json.__canvas_update__.id && currentChatId) {
+                                persistCanvasChange(json.__canvas_update__.id, json.__canvas_update__.content);
+                            }
+                            continue;
+                        }
+
+                        // Handle redaction (validation detected formatting issues, or transaction failure)
                         if (json.__redact__) {
                             // Clear current content and show fixing indicator
                             accumulatedContent = '';
                             accumulatedReasoning = '';
 
                             if (mainWrapper) {
-                                mainWrapper.innerHTML = `<div class="validation-fixing" style="display: flex; align-items: center; gap: 0.75rem; padding: 1rem; color: var(--content-secondary); font-style: italic;">
-                                    <span class="processing-spinner"></span>
-                                    <span>${json.message || 'Correcting formatting...'}</span>
-                                </div>`;
+                                if (json.message && json.message.includes('Database transaction')) {
+                                    // Transaction failure - show error
+                                    mainWrapper.innerHTML = `<span style="color: var(--color-rose-500)">Database transaction failed: ${json.message}</span>`;
+                                } else {
+                                    // Validation fix - show correcting indicator
+                                    mainWrapper.innerHTML = `<div class="validation-fixing" style="display: flex; align-items: center; gap: 0.75rem; padding: 1rem; color: var(--content-secondary); font-style: italic;">
+                                        <span class="processing-spinner"></span>
+                                        <span>${json.message || 'Correcting formatting...'}</span>
+                                    </div>`;
+                                }
                             }
 
                             // Clear thought container if it exists
@@ -3310,6 +3830,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 finalCombinedContent = `<think>\n${finalReasoning}\n</think>\n${finalContent}`;
             }
 
+            // Persistence fix: 
+            // We always want to push the final response. 
+            // If tools were called, assistantMessagePushed is true, but that only pushed the turn leading to tools.
+            // This final push captures the actual answer after tools.
             const assistantMsgObj = { role: 'assistant', content: finalCombinedContent, model: actualModelName };
             chatHistory.push(assistantMsgObj);
 
@@ -3378,6 +3902,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 const liveInd = activityFeed.querySelector('.research-live-indicator');
                 if (liveInd) liveInd.remove();
             }
+            // Unlock canvas after generation
+            updateCanvasLockState();
         }
     }
 
@@ -3403,8 +3929,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const copyBtn = e.target.closest('.copy-msg-btn');
         if (copyBtn) {
             const row = copyBtn.closest('.message-row');
-            const allRows = Array.from(messagesContainer.querySelectorAll('.message-row'));
-            const index = allRows.indexOf(row);
+            const index = row.dataset.historyIndex !== undefined ? parseInt(row.dataset.historyIndex, 10) : -1;
             let textToCopy = '';
 
             if (index !== -1 && chatHistory[index]) {
@@ -3447,33 +3972,58 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     async function deleteMessageAction(btn) {
+        if (isGenerating) {
+            await showAlert('Generation in Progress', 'Please wait for the current response to finish before deleting messages.');
+            return;
+        }
+        const row = btn.closest('.message-row');
+
+        // Fix C: Read the true DB/chatHistory index stamped at render time instead of counting
+        // DOM rows. DOM row count is unreliable because getLogicalMessageGroups collapses
+        // multiple DB rows (assistant + tool + assistant) into a single DOM row.
+        const index = row.dataset.historyIndex !== undefined ? parseInt(row.dataset.historyIndex, 10) : -1;
+        if (index === -1) {
+            console.error("deleteMessageAction: could not resolve historyIndex from row. Aborting.");
+            return;
+        }
+
         const confirmed = await showConfirm('Delete Message', 'Are you sure you want to delete this message? All subsequent messages will also be permanently deleted.');
         if (!confirmed) return;
 
-        const row = btn.closest('.message-row');
-        const allRows = Array.from(messagesContainer.querySelectorAll('.message-row'));
-        const index = allRows.indexOf(row);
-
-        if (index !== -1 && index < chatHistory.length) {
+        if (currentChatId && !isTemporaryChat) {
+            try {
+                const response = await fetch(`/api/chats/${currentChatId}/messages/truncate`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ index: index })
+                });
+                if (response.ok) {
+                    await loadChat(currentChatId);
+                }
+            } catch (error) {
+                console.error("Failed to truncate for delete:", error);
+            }
+        } else {
             chatHistory.splice(index);
-            while (row.nextSibling) {
-                row.nextSibling.remove();
-            }
+            while (row.nextSibling) row.nextSibling.remove();
             row.remove();
-
-            if (currentChatId) persistChat();
             updateActionVisibility();
-            if (chatHistory.length === 0) {
-                if (welcomeHero) welcomeHero.classList.remove('hidden');
-                if (clearChatBtn) clearChatBtn.classList.remove('visible');
-            }
         }
     }
 
-    function editMessageAction(btn) {
+    async function editMessageAction(btn) {
+        if (isGenerating) {
+            await showAlert('Generation in Progress', 'Please wait for the current response to finish before editing messages.');
+            return;
+        }
         const row = btn.closest('.message-row');
-        const allRows = Array.from(messagesContainer.querySelectorAll('.message-row'));
-        const index = allRows.indexOf(row);
+
+        // Fix D: Same data-history-index approach as delete — immune to DOM collapsing.
+        const index = row.dataset.historyIndex !== undefined ? parseInt(row.dataset.historyIndex, 10) : -1;
+        if (index === -1) {
+            console.error("editMessageAction: could not resolve historyIndex from row. Aborting.");
+            return;
+        }
 
         if (index !== -1 && chatHistory[index]) {
             const content = chatHistory[index].content;
@@ -3483,7 +4033,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (textObj) textToEdit = textObj.text;
                 const imgObj = content.find(i => i.type === 'image_url');
                 if (imgObj && imgObj.image_url && imgObj.image_url.url) {
-                    // Update external image tracking state
                     currentImageBase64 = imgObj.image_url.url;
                     const imagePreview = document.getElementById('image-preview');
                     const imagePreviewContainer = document.getElementById('image-preview-container');
@@ -3501,22 +4050,37 @@ document.addEventListener('DOMContentLoaded', () => {
             textArea.style.height = textArea.scrollHeight + 'px';
             textArea.focus();
 
-            chatHistory.splice(index);
-            while (row.nextSibling) {
-                row.nextSibling.remove();
-            }
-            row.remove();
+            // Fix E: Defer the destructive truncate until the user actually hits Send.
+            // Previously, truncation happened immediately here — before the user typed a
+            // replacement — so a tab-close or refresh would permanently destroy the original.
+            // Now we store the pending index and let sendMessage handle the truncation.
+            pendingEditIndex = index;
 
-            if (currentChatId) persistChat();
-            updateActionVisibility();
-            if (chatHistory.length === 0) {
-                if (welcomeHero) welcomeHero.classList.remove('hidden');
-                if (clearChatBtn) clearChatBtn.classList.remove('visible');
+            // Optimistic UI: remove everything from this row onwards so the user sees
+            // the textarea in context, but we haven't touched the DB yet.
+            if (isTemporaryChat) {
+                // For temp chats there is no DB, so truncate memory immediately.
+                chatHistory.splice(index);
+                while (row.nextSibling) row.nextSibling.remove();
+                row.remove();
+                updateActionVisibility();
+                pendingEditIndex = null; // no deferred DB call needed
+            } else {
+                // For persisted chats: remove DOM rows visually only.
+                while (row.nextSibling) row.nextSibling.remove();
+                row.remove();
+                updateActionVisibility();
+                // chatHistory and DB truncation happen in sendMessage via pendingEditIndex.
             }
         }
     }
 
+
     async function retryMessageAction(btn) {
+        if (isGenerating) {
+            await showAlert('Generation in Progress', 'Please wait for the current response to finish before retrying messages.');
+            return;
+        }
         const retryConfirmed = await showRetryModelDialog();
         if (!retryConfirmed) return;
 
@@ -3529,18 +4093,27 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (lastUserIdx !== -1) {
-            const allRows = Array.from(messagesContainer.querySelectorAll('.message-row'));
-            const userRow = allRows[lastUserIdx];
-
-            chatHistory.splice(lastUserIdx + 1);
-            if (userRow) {
-                while (userRow.nextSibling) {
-                    userRow.nextSibling.remove();
+            if (currentChatId && !isTemporaryChat) {
+                try {
+                    await fetch(`/api/chats/${currentChatId}/messages/truncate`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ index: lastUserIdx + 1 })
+                    });
+                    await loadChat(currentChatId);
+                    sendMessage(null, null, true);
+                } catch (error) {
+                    console.error("Failed to truncate for retry:", error);
                 }
+            } else {
+                chatHistory.splice(lastUserIdx + 1);
+                // Fix: Find the DOM row by data-history-index instead of assuming 1:1 DOM array index
+                const userRow = messagesContainer.querySelector(`[data-history-index="${lastUserIdx}"]`);
+                if (userRow) {
+                    while (userRow.nextSibling) userRow.nextSibling.remove();
+                }
+                sendMessage(null, null, true);
             }
-
-            if (currentChatId) persistChat();
-            sendMessage(null, null, true);
         }
     }
 
@@ -3635,9 +4208,14 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function appendMessage(sender, text, type, imageData = null, modelName = null) {
+    function appendMessage(sender, text, type, imageData = null, modelName = null, historyIndex = null) {
         const row = document.createElement('div');
         row.className = `message-row ${type}-message`;
+        // Stamp the chatHistory / DB index for reliable delete/edit targeting.
+        // Falls back to -1 if not provided (live bot streams don't need explicit deletion support mid-stream).
+        if (historyIndex !== null) {
+            row.dataset.historyIndex = historyIndex;
+        }
 
         let avatarMarkup = '';
         if (type === 'bot') {
@@ -3699,7 +4277,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         ${imageMarkup}
                         ${formatMarkdown(text)}
                     </div>
-                    <div class="bot-message-footer" style="display: ${modelName ? 'flex' : 'none'}; align-items: center; margin-top: 4px; padding: 0 4px;">
+                    <div class="bot-message-footer" style="display: ${modelName ? 'flex' : 'none'}; align-items: center; margin-top: 2px; padding: 0 4px;">
                         <span class="bot-model-label" style="font-size: 0.65rem; font-weight: 500; color: var(--content-muted); user-select: none; opacity: 0.8;">${modelName || ''}</span>
                     </div>
                     ${actionsMarkup}
@@ -3729,7 +4307,7 @@ document.addEventListener('DOMContentLoaded', () => {
         userRows.forEach((r, i) => {
             const editBtn = r.querySelector('.edit-msg-btn');
             const deleteBtn = r.querySelector('.delete-msg-btn');
-            if (isResearchMode) {
+            if (isResearchMode || isGenerating) {
                 if (editBtn) editBtn.style.display = 'none';
                 if (deleteBtn) deleteBtn.style.display = 'none';
             } else {
@@ -3740,7 +4318,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         botRows.forEach((r, i) => {
             const retryBtn = r.querySelector('.retry-msg-btn');
-            if (isResearchMode) {
+            if (isResearchMode || isGenerating) {
                 if (retryBtn) retryBtn.style.display = 'none'; // Research has its own retry activity
             } else {
                 if (retryBtn) retryBtn.style.display = (i === botRows.length - 1) ? 'flex' : 'none';
@@ -3782,6 +4360,18 @@ document.addEventListener('DOMContentLoaded', () => {
             chatHistory.splice(lastUserIdx);
         }
 
+        // Fix A: Sync the DB to match the in-memory state immediately.
+        // The /stop endpoint only kills the stream; it does NOT truncate the DB.
+        // Without this call, DB still contains the aborted user+assistant rows,
+        // causing every subsequent delete/edit to compute an offset against the wrong DB length.
+        if (currentChatId && !isTemporaryChat && lastUserIdx !== -1) {
+            fetch(`/api/chats/${currentChatId}/messages/truncate`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ index: lastUserIdx })
+            }).catch(e => console.error("Failed to sync DB after stop:", e));
+        }
+
         // 2. DOM: Find the last user message element and remove it + all following elements
         const allUserMessages = messagesContainer.querySelectorAll('.message-row.user-message');
         if (allUserMessages.length > 0) {
@@ -3798,8 +4388,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // 3. Show a visual-only "stopped" indicator (NOT added to chatHistory)
+        // NOTE: Uses 'stopped-message-row' intentionally — NOT '.message-row' — so that
+        // deleteMessageAction / editMessageAction DOM index counts are not skewed.
         const stoppedRow = document.createElement('div');
-        stoppedRow.className = 'message-row bot-message stopped-message';
+        stoppedRow.className = 'stopped-message-row';
         stoppedRow.innerHTML = `
             <div class="avatar-wrapper">
                 <div class="avatar" style="display: flex; align-items: center; justify-content: center; color: white; font-weight: 800; font-size: 0.75rem;">
@@ -3829,8 +4421,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function formatMarkdown(text) {
         if (!text) return '';
+        // Defensive: convert to string if it's an object/array
+        const textStr = (typeof text === 'string') ? text : (typeof text === 'object' ? JSON.stringify(text) : String(text));
+
         // Final safety: ensure any lingering <think> tags are stripped for main display
-        const { cleaned } = parseContent(text);
+        const { cleaned } = parseContent(textStr);
         // Convert any literal \n sequences (backslash + n) to real newlines
         const normalized = cleaned.replace(/\\n/g, '\n');
 
@@ -3850,9 +4445,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function parseContent(text) {
-        if (!text || typeof text !== 'string') return { thoughts: '', cleaned: text || '', plan: null };
+        let textStr = text;
+        if (!textStr) return { thoughts: '', cleaned: '', plan: null, report: null };
+        if (typeof textStr !== 'string') textStr = JSON.stringify(textStr);
+
         let thoughts = "";
-        let cleaned = text;
+        let cleaned = textStr;
         let plan = null;
 
         // Extract Thoughts (<think>)
@@ -3886,21 +4484,50 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        // Extract Final Report (<final_report>)
         let report = null;
-        let reportStart = cleaned.indexOf('<final_report>');
+        let reportStart = cleaned.indexOf('<research_report>');
         if (reportStart !== -1) {
-            let reportEnd = cleaned.indexOf('</final_report>');
+            let reportEnd = cleaned.indexOf('</research_report>');
             if (reportEnd !== -1) {
-                report = cleaned.substring(reportStart + 14, reportEnd);
-                cleaned = cleaned.substring(0, reportStart) + cleaned.substring(reportEnd + 15).trim();
+                report = cleaned.substring(reportStart + 17, reportEnd);
+                cleaned = cleaned.substring(0, reportStart) + cleaned.substring(reportEnd + 18);
             } else {
-                report = cleaned.substring(reportStart + 14);
+                report = cleaned.substring(reportStart + 17);
                 cleaned = cleaned.substring(0, reportStart);
             }
         }
 
-        return { thoughts: thoughts.trim(), cleaned: cleaned, plan: plan, report: report };
+        return { thoughts: thoughts.trim(), cleaned: cleaned.trim(), plan, report };
+    }
+
+    /**
+     * Clean reasoning content for persistence.
+     * Previously removed "Calling: ..." and "Result: ..." text that was only for display.
+     * These are no longer streamed as reasoning chunks, so this now returns reasoning unchanged.
+     */
+    function cleanReasoningForPersistence(reasoning) {
+        return reasoning || '';
+    }
+
+    function getLogicalMessageGroups(history) {
+        const groups = [];
+        let currentGroup = null;
+
+        history.forEach((msg, index) => {
+            if (msg.role === 'user') {
+                if (currentGroup) groups.push(currentGroup);
+                groups.push({ role: 'user', messages: [{ ...msg, _originalIndex: index }] });
+                currentGroup = null;
+            } else {
+                if (!currentGroup) {
+                    currentGroup = { role: 'bot', messages: [] };
+                }
+                currentGroup.messages.push({ ...msg, _originalIndex: index });
+            }
+        });
+
+        if (currentGroup) groups.push(currentGroup);
+        return groups;
     }
 
     function parseResearchPlan(planXml) {
@@ -4034,6 +4661,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderResearchActivity(feed, type, data) {
+        if (!feed) return;
         const item = document.createElement('div');
 
         if (type === 'planning') {
@@ -4101,7 +4729,57 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Trigger sendMessage with resumeState
                 sendMessage(null, null, false, rs);
             });
-            feed.appendChild(item);
+            // If this is a retry/alert, we want it OUTSIDE the collapsible activity feed
+            // so it remains visible even if the user has closed the activity view.
+            const statusContainer = feed.closest('.message-content')?.querySelector('.research-status-bars');
+            if (statusContainer) {
+                statusContainer.appendChild(item);
+            } else {
+                feed.appendChild(item);
+            }
+            return;
+        }
+
+        if (type === 'clarification') {
+            item.className = 'mechanical-clarification-card';
+            item.innerHTML = `
+                <div class="clarification-header">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                    <span>Clarification Required</span>
+                </div>
+                <div class="clarification-question">${escapeHtml(data.question)}</div>
+                <div class="clarification-input-wrapper">
+                    <textarea class="clarification-input" placeholder="Type your answer here..." rows="3"></textarea>
+                    <button class="clarification-submit-btn">Send Answer</button>
+                </div>
+            `;
+            const submitBtn = item.querySelector('.clarification-submit-btn');
+            const textarea = item.querySelector('textarea');
+
+            submitBtn.addEventListener('click', () => {
+                const answer = textarea.value.trim();
+                if (!answer) return;
+
+                submitBtn.disabled = true;
+                textarea.disabled = true;
+                submitBtn.textContent = 'Processing...';
+
+                // Mechanical flow: sync to main textarea and send
+                const textareaMain = document.getElementById('chat-textarea');
+                if (textareaMain) {
+                    textareaMain.value = answer;
+                    sendMessage(null, null, false, "resume_research_scout");
+                    textareaMain.value = "";
+                }
+            });
+
+            // Ensure visibility above/outside collapsed activity
+            const statusContainer = feed.closest('.message-content')?.querySelector('.research-status-bars');
+            if (statusContainer) {
+                statusContainer.appendChild(item);
+            } else {
+                feed.appendChild(item);
+            }
             return;
         }
 
@@ -4338,60 +5016,1528 @@ document.addEventListener('DOMContentLoaded', () => {
         window.visualViewport.addEventListener('scroll', syncViewport);
     }
 
-    // Report Canvas Logic
-    const reportCanvasOverlay = document.getElementById('report-canvas-overlay');
-    const closeCanvasBtn = document.getElementById('close-canvas-btn');
-    const canvasCopyBtn = document.getElementById('canvas-copy-btn');
-    const canvasApproveBtn = document.getElementById('canvas-approve-btn');
-    const canvasEditBtn = document.getElementById('canvas-edit-btn');
-    const reportCanvasContent = document.getElementById('report-canvas-content');
-    const reportCanvasEditor = document.getElementById('report-canvas-editor');
-    const canvasTitle = document.querySelector('.canvas-title');
-    let currentCanvasContentRaw = '';
 
-    window.openReportCanvas = function (content, mode = 'report', isFinalized = false) {
-        if (!reportCanvasOverlay || !reportCanvasContent) return;
-        currentCanvasContentRaw = content;
-
-        if (mode === 'plan') {
-            if (canvasTitle) canvasTitle.textContent = 'Stage 1: Research Strategy' + (isFinalized ? ' (Finalized)' : '');
-            if (canvasApproveBtn) canvasApproveBtn.classList.add('hidden');
-            if (canvasEditBtn) canvasEditBtn.classList.add('hidden');
-            if (reportCanvasEditor) reportCanvasEditor.classList.add('hidden');
-            reportCanvasContent.innerHTML = formatMarkdown(currentResearchPlan || '');
-        } else {
-            if (canvasTitle) canvasTitle.textContent = 'Research Report';
-            if (canvasApproveBtn) canvasApproveBtn.classList.add('hidden');
-            if (canvasEditBtn) canvasEditBtn.classList.add('hidden');
-            if (reportCanvasEditor) reportCanvasEditor.classList.add('hidden');
-            reportCanvasContent.innerHTML = formatMarkdown(content);
+    function hashContent(str) {
+        if (!str) return 'empty';
+        let hash = 0;
+        for (let i = 0; i < str.length; i++) {
+            const char = str.charCodeAt(i);
+            hash = ((hash << 5) - hash) + char;
+            hash = hash & hash;
         }
+        return Math.abs(hash).toString(36);
+    }
 
-        // Re-run highlighting for code blocks in canvas
-        reportCanvasContent.querySelectorAll('pre code').forEach((block) => {
-            if (window.hljs) hljs.highlightElement(block);
+    window.openReportCanvas = async function (content, mode = 'report', isFinalized = false, canvasId = null, title = null) {
+        handleCanvasUpdate({
+            action: 'create',
+            id: canvasId || (mode === 'plan' ? 'plan' : 'report'),
+            title: title || (mode === 'plan' ? 'Research Strategy' : 'Research Report'),
+            content: content
         });
-
-        reportCanvasContent.classList.remove('hidden');
-        reportCanvasOverlay.classList.remove('hidden');
-        setTimeout(() => reportCanvasOverlay.classList.add('open'), 10);
     };
 
-    if (closeCanvasBtn) {
-        closeCanvasBtn.addEventListener('click', () => {
-            reportCanvasOverlay.classList.remove('open');
-            setTimeout(() => reportCanvasOverlay.classList.add('hidden'), 300);
+
+    async function fetchCanvases(chatId) {
+        if (!canvasListContainer) return 0;
+        if (isFetchingCanvases) return 0;
+        if (!chatId) {
+            _allCanvases = [];
+            canvasListContainer.innerHTML = '<div style="padding: 1.5rem; color: var(--content-muted); font-size: 0.85rem; text-align: center;">New chat started</div>';
+            return 0;
+        }
+        // Open right sidebar if not already open
+        if (rightSidebar && rightSidebar.classList.contains('collapsed')) {
+            rightSidebar.classList.remove('collapsed');
+            canvasPanelVisible = true;
+        }
+        isFetchingCanvases = true;
+        try {
+            const res = await fetch(`/api/chats/${chatId}/canvases`);
+            const data = await res.json();
+            if (data.success) {
+                _allCanvases = data.canvases;
+                applyCanvasFilter();
+                renderFolderTree();
+                return data.canvases.length; // Issue 3.5: return count for canvasMode auto-inference
+            }
+            return 0;
+        } catch (e) {
+            console.error("Failed to fetch canvases:", e);
+            return 0;
+        } finally {
+            isFetchingCanvases = false;
+        }
+    }
+
+    // Extract canvas type string from its ID
+    function getCanvasType(canvasId) {
+        if (canvasId.startsWith('plan_')) return 'plan';
+        if (canvasId.startsWith('research_')) return 'research';
+        if (canvasId.startsWith('section_')) return 'section';
+        return 'custom';
+    }
+
+    // Apply current search query + type filter, then re-render
+    function applyCanvasFilter() {
+        const q = _canvasSearchQuery.trim().toLowerCase();
+        const type = _canvasTypeFilter;
+        const folder = _currentFolderFilter;
+
+        let filtered = _allCanvases;
+
+        // Type filter
+        if (type !== 'all') {
+            filtered = filtered.filter(c => getCanvasType(c.id) === type);
+        }
+
+        // Folder filter
+        if (folder) {
+            filtered = filtered.filter(c => {
+                const cFolder = c.title.includes('/') ? c.title.split('/')[0] : '';
+                return cFolder === folder;
+            });
+        }
+
+        // Search filter — match title or snippet
+        if (q) {
+            filtered = filtered.filter(c => {
+                const titleMatch = c.title.toLowerCase().includes(q);
+                const contentMatch = (c.content && c.content.toLowerCase().includes(q)) || (c.preview && c.preview.toLowerCase().includes(q));
+                return titleMatch || contentMatch;
+            });
+        }
+
+        renderFilteredCanvasList(filtered, q);
+    }
+
+    // Keep the old name as an alias so callers outside still work
+    function renderCanvasList(canvases) {
+        _allCanvases = canvases;
+        applyCanvasFilter();
+    }
+
+    // Build a single canvas item DOM node
+    function buildCanvasItem(canvas, highlightQuery) {
+        const item = document.createElement('div');
+        item.className = `canvas-item ${currentCanvasId === canvas.id ? 'active' : ''}`;
+        item.dataset.canvasId = canvas.id;
+
+        // Extract type from canvas_id
+        let typeBadge = '';
+        const canvasType = getCanvasType(canvas.id);
+        if (canvasType === 'plan') {
+            typeBadge = '<span class="type-badge type-plan">Plan</span>';
+        } else if (canvasType === 'research') {
+            typeBadge = '<span class="type-badge type-research">Report</span>';
+        } else if (canvasType === 'section') {
+            typeBadge = '<span class="type-badge type-section">Section</span>';
+        }
+
+        // Build snippet — highlight search match if present
+        let snippet = '';
+        if (canvas.content && canvas.content.length > 0) {
+            let previewContent = canvas.content.replace(/\n/g, ' ');
+            if (highlightQuery) {
+                // Find match position, center snippet around it
+                const matchIdx = previewContent.toLowerCase().indexOf(highlightQuery);
+                if (matchIdx !== -1) {
+                    const start = Math.max(0, matchIdx - 40);
+                    const end = Math.min(previewContent.length, matchIdx + highlightQuery.length + 60);
+                    const raw = previewContent.substring(start, end);
+                    const escaped = escapeHtml(raw);
+                    const escapedQuery = escapeHtml(highlightQuery);
+                    const highlighted = escaped.replace(
+                        new RegExp(escapedQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'),
+                        m => `<mark class="canvas-highlight">${m}</mark>`
+                    );
+                    snippet = `<div class="canvas-snippet">${start > 0 ? '…' : ''}${highlighted}${end < previewContent.length ? '…' : ''}</div>`;
+                } else {
+                    const sub = previewContent.substring(0, 120);
+                    snippet = `<div class="canvas-snippet">${escapeHtml(sub)}${previewContent.length > 120 ? '…' : ''}</div>`;
+                }
+            } else {
+                const sub = previewContent.substring(0, 120);
+                snippet = `<div class="canvas-snippet">${escapeHtml(sub)}${previewContent.length > 120 ? '…' : ''}</div>`;
+            }
+        }
+
+        const dateStr = new Date(canvas.timestamp * 1000).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' });
+        const displayTitle = canvas.title.includes('/') ? canvas.title.split('/').slice(1).join('/') : canvas.title;
+
+        item.innerHTML = `
+            <div class="canvas-item-header">
+                <div class="canvas-item-title">${escapeHtml(displayTitle)}</div>
+                <div class="canvas-item-badges">${typeBadge}</div>
+            </div>
+            ${snippet}
+            <div class="canvas-item-meta">${dateStr}</div>
+            <div class="canvas-item-actions">
+                <div class="canvas-export-inline" title="Export as…">
+                    <button class="canvas-action-btn export-btn" data-format="markdown" title="Export Markdown (.md)">MD</button>
+                    <button class="canvas-action-btn export-btn" data-format="html" title="Export HTML">HTML</button>
+                    <button class="canvas-action-btn export-btn" data-format="pdf" title="Export PDF">PDF</button>
+                </div>
+                <button class="canvas-action-btn delete-btn" title="Delete">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2"><path d="M3 6h18"></path><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"></path></svg>
+                </button>
+            </div>
+        `;
+
+        item.addEventListener('click', () => loadCanvas(canvas.id));
+
+        // Canvas context menu / Long press support
+        let cLongPressTimer;
+        let cIsLongPress = false;
+        let cStartY = 0;
+        let cStartX = 0;
+
+        item.addEventListener('touchstart', (e) => {
+            cIsLongPress = false;
+            cStartY = e.touches[0].clientY;
+            cStartX = e.touches[0].clientX;
+            cLongPressTimer = setTimeout(() => {
+                cIsLongPress = true;
+                if (navigator.vibrate) navigator.vibrate(50);
+                showContextMenu('canvas', canvas.id, canvas.folder || '', e);
+            }, 600);
+        }, { passive: true });
+
+        item.addEventListener('touchmove', (e) => {
+            if (Math.abs(e.touches[0].clientY - cStartY) > 10 || Math.abs(e.touches[0].clientX - cStartX) > 10) {
+                clearTimeout(cLongPressTimer);
+            }
+        }, { passive: true });
+
+        item.addEventListener('touchend', (e) => {
+            clearTimeout(cLongPressTimer);
+            if (cIsLongPress) {
+                if (e.cancelable) e.preventDefault();
+            }
+        }, { passive: false });
+
+        item.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            showContextMenu('canvas', canvas.id, canvas.folder || '', e);
+        });
+
+        item.querySelectorAll('.export-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => { e.stopPropagation(); exportCanvas(canvas.id, btn.dataset.format); });
+        });
+        item.querySelector('.delete-btn')?.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const confirmed = await new Promise((resolve) => {
+                if (confirm('Are you sure you want to delete this file? This action cannot be undone.')) {
+                    resolve(true);
+                } else {
+                    resolve(false);
+                }
+            });
+            if (confirmed) {
+                await deleteCanvas(canvas.id);
+            }
+        });
+
+        return item;
+    }
+
+    // Render filtered list with folder grouping
+    function renderFilteredCanvasList(canvases, highlightQuery) {
+        if (!canvasListContainer) return;
+        canvasListContainer.innerHTML = '';
+
+        if (canvases.length === 0) {
+            const q = (_canvasSearchQuery || '').trim();
+            canvasListContainer.innerHTML = `<div class="canvas-list-empty-state">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="opacity:0.35;">
+                    ${q ? '<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>' : '<rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-4 0v2"/>'}
+                </svg>
+                <p>${q ? `No artifacts match "${escapeHtml(q)}"` : 'No saved artifacts yet'}</p>
+            </div>`;
+            return;
+        }
+
+        // Group by folder
+        const grouped = { uncategorized: [] };
+        const folderNames = new Set();
+        canvases.forEach(canvas => {
+            const folder = canvas.folder || (canvas.title.includes('/') ? canvas.title.split('/')[0] : null);
+            if (folder) {
+                if (!grouped[folder]) {
+                    grouped[folder] = [];
+                    folderNames.add(folder);
+                }
+                grouped[folder].push(canvas);
+            } else {
+                grouped.uncategorized.push(canvas);
+            }
+        });
+
+        // Add explicit empty folders created by user for this chat
+        if (currentChatId && chatArtifactFolders[currentChatId]) {
+            chatArtifactFolders[currentChatId].forEach(name => {
+                if (!grouped[name]) {
+                    grouped[name] = [];
+                    folderNames.add(name);
+                }
+            });
+        }
+
+        // Update scoped folders for move suggestions
+        currentChatArtifactFolders = Array.from(folderNames);
+
+        // Sort folders alphabetically
+        const sortedFolderNames = currentChatArtifactFolders.sort();
+
+        // Render each folder group
+        sortedFolderNames.forEach(folderName => {
+            const isExpanded = artifactFoldersExpanded[folderName] !== false; // Default to true
+            
+            const folderDiv = document.createElement('div');
+            folderDiv.className = `folder-item ${isExpanded ? 'expanded' : ''}`;
+            
+            const folderHeader = document.createElement('div');
+            folderHeader.className = 'folder-header';
+            
+            const folderIconSvg = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="opacity: 0.7;"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>`;
+            const chevronSvg = `<svg class="folder-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+
+            const nameWrapper = document.createElement('div');
+            nameWrapper.style.cssText = "display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0;";
+            const nameSpan = document.createElement('span');
+            nameSpan.style.cssText = "overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.8125rem; font-weight: 600; color: var(--content-primary);";
+            nameSpan.textContent = folderName;
+            nameWrapper.innerHTML = folderIconSvg;
+            nameWrapper.appendChild(nameSpan);
+
+            const countSpan = document.createElement('span');
+            countSpan.style.cssText = "font-size: 0.7rem; color: var(--content-muted); background: var(--surface-secondary); padding: 1px 6px; border-radius: 6px; font-weight: 500;";
+            countSpan.textContent = grouped[folderName].length;
+
+            folderHeader.innerHTML = chevronSvg;
+            folderHeader.appendChild(nameWrapper);
+            folderHeader.appendChild(countSpan);
+
+            folderHeader.onclick = () => {
+                const expanding = !folderDiv.classList.contains('expanded');
+                folderDiv.classList.toggle('expanded', expanding);
+                artifactFoldersExpanded[folderName] = expanding;
+                saveArtifactFoldersExpanded();
+            };
+
+            const folderContent = document.createElement('div');
+            folderContent.className = 'folder-content';
+            
+            grouped[folderName].forEach(canvas => {
+                folderContent.appendChild(buildCanvasItem(canvas, highlightQuery));
+            });
+
+            folderDiv.appendChild(folderHeader);
+            folderDiv.appendChild(folderContent);
+            canvasListContainer.appendChild(folderDiv);
+        });
+
+        // Render Uncategorized at the bottom
+        grouped.uncategorized.forEach(canvas => {
+            canvasListContainer.appendChild(buildCanvasItem(canvas, highlightQuery));
         });
     }
 
-    if (canvasCopyBtn) {
-        canvasCopyBtn.addEventListener('click', () => {
+    async function loadCanvas(canvasId) {
+        try {
+            const res = await fetch(`/api/canvases/${canvasId}?chat_id=${currentChatId}`);
+            const data = await res.json();
+            if (data.success) {
+                // Initialize version state for undo/redo
+                if (currentChatId) {
+                    await loadVersionsWithCurrentState(canvasId, currentChatId);
+                }
+                // Call openReportCanvas but prevent auto-save-loop by passing the ID
+                openReportCanvas(data.content, 'report', true, data.id, data.title);
+            }
+        } catch (e) {
+            console.error("Failed to load canvas:", e);
+        }
+    }
+
+    // Enhanced canvas preview: Export canvas to file
+    async function exportCanvas(canvasId, format = 'markdown') {
+        try {
+            const res = await fetch(`/api/canvases/${canvasId}/export/${format}?chat_id=${currentChatId}`);
+            if (!res.ok) {
+                console.error("Failed to export canvas");
+                return;
+            }
+            const blob = await res.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            const contentDisposition = res.headers.get('content-disposition');
+            let filename = `canvas.${format}`;
+            if (contentDisposition) {
+                const match = contentDisposition.match(/filename="([^"]+)"/);
+                if (match) filename = match[1];
+            }
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+        } catch (e) {
+            console.error("Failed to export canvas:", e);
+        }
+    }
+
+    // Enhanced canvas preview: Delete canvas from sidebar
+    async function deleteCanvas(canvasId) {
+        if (isGenerating) {
+            await showAlert('Generation in Progress', 'Please wait for the AI to finish before deleting artifacts.');
+            return;
+        }
+        const confirmed = await showModal('Delete Artifact', 'Are you sure you want to permanently delete this artifact?', {
+            isDanger: true,
+            confirmText: 'Delete'
+        });
+
+        if (confirmed) {
+            try {
+                const res = await fetch(`/api/canvases/${canvasId}?chat_id=${currentChatId}`, { method: 'DELETE' });
+                const data = await res.json();
+                if (data.success) {
+                    if (currentCanvasId === canvasId) {
+                        currentCanvasId = null;
+                        closeCanvasPanel();
+                    }
+                    if (currentChatId) fetchCanvases(currentChatId);
+                }
+            } catch (e) {
+                console.error("Failed to delete canvas:", e);
+            }
+        }
+    }
+
+    // ─── Right Sidebar Open / Close ────────────────────────────────────────────
+    // Files button click handler - opens right sidebar
+    if (filesBtn) {
+        filesBtn.addEventListener('click', () => {
+            rightSidebar.classList.toggle('collapsed');
+            if (!rightSidebar.classList.contains('collapsed') && currentChatId) {
+                fetchCanvases(currentChatId);
+            }
+        });
+    }
+      // Files nav button - always visible, click opens right sidebar
+    if (navFilesBtn) {
+        navFilesBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            rightSidebar?.classList.toggle('collapsed');
+            if (!rightSidebar?.classList.contains('collapsed') && currentChatId) {
+                fetchCanvases(currentChatId);
+            }
+        });
+    }
+    // Right sidebar close button
+    if (rightSidebarClose && rightSidebar) {
+        rightSidebarClose.addEventListener('click', () => {
+            rightSidebar.classList.add('collapsed');
+        });
+    }
+
+    // ─── New Canvas Button ─────────────────────────────────────────────
+    const newCanvasBtn = document.getElementById('new-canvas-btn');
+    if (newCanvasBtn) {
+        newCanvasBtn.addEventListener('click', async () => {
+            if (!currentChatId) {
+                await showModal('Cannot Create Canvas', 'Please start a chat first before creating a canvas.', { type: 'alert' });
+                return;
+            }
+
+            const title = await showPrompt('Create New File', 'Enter file name:', {
+                placeholder: 'e.g., project_overview.md',
+                confirmText: 'Create File'
+            });
+            
+            if (!title) return;
+
+            // For new canvases, default to 'report' type and initial content
+            const content = '# ' + title + '\n\nStart writing...';
+            const type = 'report';
+
+            try {
+                const res = await fetch('/api/canvases', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        chat_id: currentChatId,
+                        title: title,
+                        content: '# ' + title + '\n\nStart writing...'
+                    })
+                });
+
+                const data = await res.json();
+                if (data.success) {
+                    fetchCanvases(currentChatId);
+                } else {
+                    await showModal('Error', data.error || 'Failed to create canvas', { type: 'alert' });
+                }
+            } catch (e) {
+                console.error('Failed to create canvas:', e);
+                await showModal('Error', 'An error occurred while creating the canvas.', { type: 'alert' });
+            }
+        });
+    }
+
+    const newCanvasFolderBtn = document.getElementById('new-canvas-folder-btn');
+    if (newCanvasFolderBtn) {
+        newCanvasFolderBtn.addEventListener('click', async () => {
+            if (!currentChatId) {
+                await showModal('Cannot Create Folder', 'Please start a chat first before creating a folder.', { type: 'alert' });
+                return;
+            }
+            const folderName = await showPromptModal("Create Folder", "Enter a folder name for artifacts in this chat:");
+            if (folderName && folderName.trim()) {
+                const name = folderName.trim();
+                if (!chatArtifactFolders[currentChatId]) chatArtifactFolders[currentChatId] = [];
+                if (!chatArtifactFolders[currentChatId].includes(name)) {
+                    chatArtifactFolders[currentChatId].push(name);
+                    saveChatArtifactFolders();
+                    // Re-render
+                    fetchCanvases(currentChatId);
+                }
+            }
+        });
+    }
+
+    // ─── Sidebar Search & Filter ─────────────────────────────────────────────
+    const canvasSearchInput = document.getElementById('canvas-search-input');
+    const canvasSearchClear = document.getElementById('canvas-search-clear');
+    const canvasFilterRow = document.getElementById('canvas-filter-row');
+
+    if (canvasSearchInput) {
+        canvasSearchInput.addEventListener('input', () => {
+            _canvasSearchQuery = canvasSearchInput.value;
+            if (canvasSearchClear) {
+                canvasSearchClear.classList.toggle('hidden', !_canvasSearchQuery);
+            }
+            applyCanvasFilter();
+        });
+    }
+
+    if (canvasSearchClear) {
+        canvasSearchClear.addEventListener('click', () => {
+            if (canvasSearchInput) canvasSearchInput.value = '';
+            _canvasSearchQuery = '';
+            _currentFolderFilter = '';  // Clear folder filter when clearing search
+            canvasSearchClear.classList.add('hidden');
+            applyCanvasFilter();
+            updateFolderTreeActiveState();
+        });
+    }
+
+    if (canvasFilterRow) {
+        canvasFilterRow.addEventListener('click', (e) => {
+            const pill = e.target.closest('.canvas-filter-pill');
+            if (!pill) return;
+            // Update active pill
+            canvasFilterRow.querySelectorAll('.canvas-filter-pill').forEach(p => p.classList.remove('active'));
+            pill.classList.add('active');
+            _canvasTypeFilter = pill.dataset.filter;
+            _currentFolderFilter = '';  // Clear folder filter when changing type
+            applyCanvasFilter();
+            updateFolderTreeActiveState();
+        });
+    }
+
+    // ─── Folder Tree View ─────────────────────────────────────────────
+    let _folderTreeExpanded = true;
+    let _folderTreeCanvasCount = {};  // folder -> count mapping
+    async function deleteCanvas(canvasId) {
+        if (isGenerating) {
+            await showAlert('Generation in Progress', 'Please wait for the AI to finish before deleting artifacts.');
+            return;
+        }
+        if (!currentChatId) return;
+        try {
+            const res = await fetch(`/api/canvases/${canvasId}?chat_id=${currentChatId}`, { method: 'DELETE' });
+            if (res.ok) {
+                await fetchCanvases(currentChatId);
+                if (currentCanvasId === canvasId) {
+                    closeCanvasPanel();
+                }
+            }
+        } catch (e) {
+            console.error("Error deleting canvas:", e);
+        }
+    }
+
+    async function moveCanvasToFolder(canvasId, folderName) {
+        if (isGenerating) {
+            await showAlert('Generation in Progress', 'Please wait for the AI to finish before moving artifacts.');
+            return;
+        }
+        if (!currentChatId) return;
+        try {
+            const res = await fetch(`/api/canvases/${canvasId}?chat_id=${currentChatId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ folder: folderName })
+            });
+            if (res.ok) {
+                await fetchCanvases(currentChatId);
+            }
+        } catch (e) {
+            console.error("Error moving canvas to folder:", e);
+        }
+    }
+
+    function renderFolderTree() {
+        const folderTreeContainer = document.getElementById('folder-tree-container');
+        const folderTreeList = document.getElementById('folder-tree-list');
+        const folderTreeExpandBtn = document.getElementById('folder-tree-expand-all');
+
+        if (!folderTreeContainer || !folderTreeList) return;
+
+        // Count canvases per folder
+        _folderTreeCanvasCount = {};
+        _allCanvases.forEach(canvas => {
+            const folder = canvas.folder || '';
+            if (folder) {
+                _folderTreeCanvasCount[folder] = (_folderTreeCanvasCount[folder] || 0) + 1;
+            }
+        });
+
+        const folders = Object.keys(_folderTreeCanvasCount).sort();
+
+        if (folders.length === 0) {
+            folderTreeList.innerHTML = '<div class="folder-tree-list empty"><span>No folders yet</span></div>';
+            folderTreeContainer.classList.add('has-folders', 'collapsed');
+            if (folderTreeExpandBtn) folderTreeExpandBtn.classList.add('expanded');
+            return;
+        }
+
+        folderTreeContainer.classList.remove('collapsed');
+        folderTreeContainer.classList.add('has-folders');
+
+        let html = '';
+        folders.forEach(folder => {
+            const count = _folderTreeCanvasCount[folder];
+            const isActive = _currentFolderFilter === folder;
+            html += `
+                <div class="folder-tree-item ${isActive ? 'active' : ''}" data-folder="${folder}">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                    </svg>
+                    <span class="folder-tree-name">${escapeHtml(folder)}</span>
+                    <span class="folder-tree-item-count">${count}</span>
+                </div>
+            `;
+        });
+
+        folderTreeList.innerHTML = html;
+
+        // Add click handlers
+        folderTreeList.querySelectorAll('.folder-tree-item').forEach(item => {
+            item.addEventListener('click', () => {
+                const folder = item.dataset.folder;
+                _currentFolderFilter = folder;
+                applyCanvasFilter();
+                // Update active state
+                folderTreeList.querySelectorAll('.folder-tree-item').forEach(i => i.classList.remove('active'));
+                item.classList.add('active');
+            });
+        });
+
+        // Expand/collapse toggle
+        if (folderTreeExpandBtn) {
+            folderTreeExpandBtn.addEventListener('click', () => {
+                _folderTreeExpanded = !_folderTreeExpanded;
+                folderTreeContainer.classList.toggle('collapsed');
+                folderTreeExpandBtn.classList.toggle('expanded');
+            });
+        }
+    }
+
+    // Update folder tree active state without re-rendering
+    function updateFolderTreeActiveState() {
+        const folderTreeList = document.getElementById('folder-tree-list');
+        if (!folderTreeList) return;
+
+        folderTreeList.querySelectorAll('.folder-tree-item').forEach(item => {
+            const isActive = _currentFolderFilter === item.dataset.folder;
+            item.classList.toggle('active', isActive);
+        });
+    }
+
+    // Apply folder filter in applyCanvasFilter
+    function applyCanvasFilter() {
+        const q = _canvasSearchQuery.trim().toLowerCase();
+        const type = _canvasTypeFilter;
+        const folder = _currentFolderFilter;
+
+        let filtered = _allCanvases;
+
+        // Folder filter
+        if (folder) {
+            filtered = filtered.filter(c => (c.folder || '') === folder);
+        }
+
+        // Type filter
+        if (type !== 'all') {
+            filtered = filtered.filter(c => getCanvasType(c.id) === type);
+        }
+
+        // Search filter — match title or snippet
+        if (q) {
+            filtered = filtered.filter(c => {
+                const titleMatch = c.title.toLowerCase().includes(q);
+                const contentMatch = c.content && c.content.toLowerCase().includes(q);
+                return titleMatch || contentMatch;
+            });
+        }
+
+        renderFilteredCanvasList(filtered, q);
+    }
+
+
+    /* ═══════════════════════════════════════════
+       UNIVERSAL CANVAS SYSTEM (Phase 4 Logic)
+       ═══════════════════════════════════════════ */
+
+    function handleCanvasUpdate(data) {
+        // Set current canvas ID for autosave to work
+        currentCanvasId = data.id;
+
+        // Update content
+        if (data.title && canvasPanelTitle) {
+            canvasPanelTitle.textContent = data.title;
+        }
+        
+        // Correctly synchronize canvasMode state (Issue fix)
+        canvasMode = true; 
+        if (canvasModeToggle && !canvasModeToggle.classList.contains('active')) {
+            canvasModeToggle.classList.add('active');
+        }
+
+        if (data.action === 'create' || data.action === 'replace') {
+            currentCanvasContentRaw = data.content;
+            // Lock canvas mode once a canvas is created - prevent turning off
+            // Track this chat as having a canvas
+            if (currentChatId) {
+                chatsWithCanvases.add(currentChatId);
+            }
+
+            if (canvasModeToggle && !canvasModeToggle.classList.contains('locked')) {
+                canvasModeToggle.classList.add('locked');
+                canvasModeToggle.title = 'Canvas mode is permanently enabled for this chat';
+            }
+        } else if (data.action === 'append') {
+            currentCanvasContentRaw += '\n\n' + data.content;
+        } else if (data.action === 'patch') {
+            currentCanvasContentRaw = data.content;
+        }
+
+        // Update editors with new content
+        if (canvasPanelEditor) {
+            canvasPanelEditor.value = currentCanvasContentRaw;
+            canvasPanelEditor.placeholder = ''; // Clear placeholder when content exists
+            
+            // Sync preview if currently rendered
+            if (isCanvasRendered && canvasPanelBody) {
+                canvasPanelBody.innerHTML = formatMarkdown(currentCanvasContentRaw);
+            }
+        }
+
+        // Handle the "Approve" button visibility for research plans
+        const isPlan = data.id === 'plan' || data.id.startsWith('research_strategy') || data.id.startsWith('plan_');
+        // If it's a plan being viewed in ANY mode
+        if (isPlan && canvasPanelApproveBtn) {
+            canvasPanelApproveBtn.classList.remove('hidden');
+
+            // If it's already approved, update button state
+            const isApprovedPlan = data.content && (data.content.includes('<research_plan status="approved"') || data.content.includes('<research_plan status="executed"'));
+            if (isApprovedPlan) {
+                canvasPanelApproveBtn.disabled = true;
+                canvasPanelApproveBtn.style.opacity = '0.7';
+                canvasPanelApproveBtn.querySelector('span').textContent = 'Executed';
+            } else {
+                canvasPanelApproveBtn.disabled = false;
+                canvasPanelApproveBtn.style.opacity = '1';
+                canvasPanelApproveBtn.querySelector('span').textContent = 'Approve';
+            }
+        } else if (canvasPanelApproveBtn) {
+            canvasPanelApproveBtn.classList.add('hidden');
+        }
+
+        // Lock research plan canvas from editing
+        const isPlanCanvas = data.id && (data.id.startsWith('plan_') || data.id === 'plan');
+        if (canvasPanelEditor) {
+            if (isPlanCanvas) {
+                canvasPanelEditor.setAttribute('data-editable', 'false');
+                canvasPanelEditor.readOnly = true;
+                canvasPanelEditor.placeholder = 'Research plan is locked for editing';
+            } else {
+                canvasPanelEditor.removeAttribute('data-editable');
+                canvasPanelEditor.readOnly = isGenerating;
+                canvasPanelEditor.placeholder = isGenerating ? 'AI is generating content, please wait...' : '';
+            }
+        }
+
+        // Open canvas panel for everything (Phase 4 Unification)
+        if (canvasPanel) {
+            canvasPanel.classList.remove('hidden');
+            mainElement.classList.add('canvas-open');
+            if (appRoot) appRoot.classList.add('canvas-open');
+            
+            // Sync current width to CSS variable for side-by-side transition
+            const currentWidth = canvasPanel.offsetWidth;
+            if (currentWidth > 0) {
+                document.documentElement.style.setProperty('--canvas-panel-width', `${currentWidth}px`);
+            }
+        }
+        canvasPanelVisible = true;
+        
+        // Open right sidebar if closed (Desktop only)
+        if (rightSidebar && rightSidebar.classList.contains('collapsed') && window.innerWidth > 768) {
+            rightSidebar.classList.remove('collapsed');
+        }
+
+        // Immediate sidebar refresh for new canvas creation, debounced for updates
+        if (currentChatId) {
+            if (data.action === 'create') {
+                // Refresh immediately for new canvas
+                fetchCanvases(currentChatId);
+                // Also initialize version history state
+                loadVersionsWithCurrentState(data.id, currentChatId);
+            } else {
+                // Use debounce for updates to avoid spam
+                debouncedFetchCanvases(currentChatId);
+                // Also refresh version state (for UNDO/REDO buttons)
+                loadVersionsWithCurrentState(data.id, currentChatId);
+            }
+        }
+    }
+
+    function updateCanvasLockState() {
+        if (canvasPanelEditor) {
+            canvasPanelEditor.readOnly = isGenerating;
+            canvasPanelEditor.placeholder = isGenerating ? 'AI is generating content, please wait...' : '';
+        }
+    }
+    // Debounce helper used by handleCanvasUpdate to avoid network spam during research
+    let _fetchCanvasesDebounceTimer = null;
+    function debouncedFetchCanvases(chatId) {
+        clearTimeout(_fetchCanvasesDebounceTimer);
+        _fetchCanvasesDebounceTimer = setTimeout(() => fetchCanvases(chatId), 2500);
+    }
+
+    function closeCanvasPanel() {
+        if (!canvasPanel) return;
+        canvasPanel.classList.add('hidden');
+        mainElement.classList.remove('canvas-open');
+        if (appRoot) appRoot.classList.remove('canvas-open');
+        canvasPanelVisible = false;
+    }
+
+    if (closeCanvasPanelBtn) {
+        closeCanvasPanelBtn.addEventListener('click', closeCanvasPanel);
+    }
+
+    // Toggle Preview/Source View
+    function toggleCanvasView() {
+        if (!canvasPanelEditor || !canvasPanelBody || !canvasPanelToggleBtn) return;
+        
+        isCanvasRendered = !isCanvasRendered;
+        canvasPanelToggleBtn.classList.toggle('active', isCanvasRendered);
+        
+        if (isCanvasRendered) {
+            // Populate and show the rendered body
+            canvasPanelBody.innerHTML = formatMarkdown(currentCanvasContentRaw || '');
+            canvasPanelBody.style.display = 'block';
+            canvasPanelEditor.style.display = 'none';
+            // Update icon and title to "Code" view
+            canvasPanelToggleBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>`;
+            canvasPanelToggleBtn.title = 'Switch to Editor';
+        } else {
+            // Show editor and hide preview
+            canvasPanelBody.style.display = 'none';
+            canvasPanelEditor.style.display = 'flex';
+            // Update icon and title back to "Eye" view
+            canvasPanelToggleBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`;
+            canvasPanelToggleBtn.title = 'Switch to Preview';
+        }
+    }
+
+    if (canvasPanelToggleBtn) {
+        canvasPanelToggleBtn.addEventListener('click', toggleCanvasView);
+    }
+    
+    // Unified "Approve & Execute Plan" Handler
+    if (canvasPanelApproveBtn) {
+        canvasPanelApproveBtn.addEventListener('click', () => {
+             if (!currentCanvasContentRaw || !currentCanvasId) return;
+             if (currentCanvasId !== 'plan' && !currentCanvasId.startsWith('research_strategy')) return;
+             
+             // Extract plan XML to send
+             const planToSend = currentCanvasContentRaw;
+             
+             // Update UI to show execution started
+             canvasPanelApproveBtn.disabled = true;
+             canvasPanelApproveBtn.style.opacity = '0.7';
+             canvasPanelApproveBtn.querySelector('span').textContent = 'Executing...';
+             
+             // Trigger AI execution
+             sendMessage("Plan Approved. Proceed with research.", planToSend);
+        });
+    }
+
+    if (canvasModeToggle) {
+        canvasModeToggle.addEventListener('click', () => {
+            // Don't allow toggling when locked (chat has canvases)
+            if (canvasModeToggle.classList.contains('locked')) {
+                return; // Prevent any toggle action when locked
+            }
+            canvasMode = !canvasMode;
+            canvasModeToggle.classList.toggle('active', canvasMode);
+            if (chatHistory.length > 0) {
+                patchChat({ canvas_mode: canvasMode });
+            }
+            // Open/close right sidebar based on canvas mode
+            if (rightSidebar) {
+                if (canvasMode) {
+                    rightSidebar.classList.remove('collapsed');
+                    canvasPanelVisible = true;
+                } else {
+                    rightSidebar.classList.add('collapsed');
+                    canvasPanelVisible = false;
+                    closeCanvasPanel();
+                }
+            }
+            // Visual feedback - update active tool icon
+            updateResearchUI();
+        });
+    }
+    
+    if (canvasPanelCopyBtn) {
+        canvasPanelCopyBtn.addEventListener('click', () => {
             if (currentCanvasContentRaw) {
                 navigator.clipboard.writeText(currentCanvasContentRaw).then(() => {
-                    const originalHTML = canvasCopyBtn.innerHTML;
-                    canvasCopyBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg> <span>Copied</span>`;
-                    setTimeout(() => canvasCopyBtn.innerHTML = originalHTML, 2000);
+                    const originalBtn = canvasPanelCopyBtn.innerHTML;
+                    canvasPanelCopyBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+                    setTimeout(() => canvasPanelCopyBtn.innerHTML = originalBtn, 2000);
                 });
+            }
+        });
+    }
+
+   // Autosave indicator element
+    const autosaveIndicator = document.getElementById('autosave-indicator');
+    const autosaveStatus = document.getElementById('autosave-status');
+
+    // Debounced save function for canvas content with autosave indicator
+    let _saveDebouncedTimer = null;
+    function saveDebounced(canvasId, content) {
+        // Show "Saving..." indicator
+        if (autosaveIndicator) {
+            autosaveIndicator.style.display = 'block';
+            autosaveIndicator.className = 'saving';
+            autosaveStatus.textContent = 'Saving...';
+        }
+
+        clearTimeout(_saveDebouncedTimer);
+        _saveDebouncedTimer = setTimeout(() => {
+            fetch(`/api/canvases/${canvasId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ chat_id: currentChatId, content: content })
+            })
+            .then(res => res.json())
+            .then(result => {
+                // Show "Saved" indicator on success
+                if (autosaveIndicator) {
+                    autosaveIndicator.className = 'saved';
+                    autosaveStatus.textContent = 'Saved';
+                    setTimeout(() => {
+                        autosaveIndicator.style.display = 'none';
+                        autosaveIndicator.className = '';
+                    }, 1500);
+                }
+                
+                // Refresh version state
+                if (result.success && currentCanvasId && currentChatId) {
+                    loadVersionsWithCurrentState(currentCanvasId, currentChatId);
+                }
+            })
+            .catch(err => {
+                console.error('Failed to persist canvas edit:', err);
+                // Show error state
+                if (autosaveIndicator) {
+                    autosaveIndicator.className = '';
+                    autosaveStatus.textContent = 'Error saving';
+                    setTimeout(() => {
+                        autosaveIndicator.style.display = 'none';
+                        autosaveIndicator.className = '';
+                    }, 2000);
+                }
+            });
+        }, 2500); // Save 2.5 seconds after user stops typing
+    }
+
+    // Persist AI-generated canvas changes to backend
+    function persistCanvasChange(canvasId, content) {
+        fetch(`/api/canvases/${canvasId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ chat_id: currentChatId, content: content })
+        }).catch(err => console.error('Failed to persist AI canvas change:', err));
+    }
+
+    // Auto-save on input for canvas panel and report canvas
+    if (canvasPanelEditor) {
+        canvasPanelEditor.addEventListener('input', () => {
+            // Update current content
+            currentCanvasContentRaw = canvasPanelEditor.value;
+
+            // Handle version branching when editing after navigating
+            handleVersionEdit();
+
+            // Debounced save to backend
+            if (currentCanvasId) {
+                saveDebounced(currentCanvasId, currentCanvasContentRaw);
+            }
+        });
+    }
+
+
+    /* ═══════════════════════════════════════════
+       VERSION HISTORY SYSTEM
+       ═══════════════════════════════════════════ */
+
+   // Undo/Redo buttons
+    const canvasPanelUndoBtn = document.getElementById('canvas-panel-undo-btn');
+    const canvasPanelRedoBtn = document.getElementById('canvas-panel-redo-btn');
+
+    const versionHistoryModal = document.getElementById('version-history-modal');
+    const closeVersionHistoryBtn = document.getElementById('close-version-history');
+    const versionHistoryCanvasName = document.getElementById('version-history-canvas-name');
+    const versionListLoading = document.getElementById('version-list-loading');
+    // Fix: ID mismatch between index.html ('version-list') and script.js ('version-list-items')
+    const versionListItems = document.getElementById('version-list');
+    const versionDiffPanel = document.getElementById('version-diff-panel');
+    const versionDiffBackBtn = document.getElementById('version-diff-back-btn');
+    const versionDiffTitle = document.getElementById('version-diff-title');
+    const versionDiffBody = document.getElementById('version-diff-body');
+    const versionRestoreBtn = document.getElementById('version-restore-btn');
+    const canvasPanelHistoryBtn = document.getElementById('canvas-panel-history-btn');
+
+    let _versionHistoryCanvasId = null;
+    let _versionHistoryVersions = [];
+    let _selectedVersionNumber = null;
+
+    // Undo/Redo state
+    let _currentVersionNumber = null;   // Current active version number for the canvas
+    let _versionHistoryCache = null;    // Cached versions list
+
+    // Get current version number for a canvas
+    async function getCurrentVersionNumber(canvasId, chatId) {
+        try {
+            const res = await fetch(`/api/canvases/${canvasId}/current-version?chat_id=${chatId}`);
+            if (res.ok) {
+                const data = await res.json();
+                if (data.success && data.current_version) {
+                    return data.current_version;
+                }
+            }
+        } catch (err) {
+            console.error('Failed to get current version:', err);
+        }
+        return null;
+    }
+
+    // Update undo/redo button states
+    function updateUndoRedoButtons() {
+        if (!_currentVersionNumber || !_versionHistoryCache) return;
+
+        const versions = _versionHistoryCache;
+        const isFirstVersion = _currentVersionNumber <= 1;
+        const isLastVersion = _currentVersionNumber >= versions.length;
+
+        if (canvasPanelUndoBtn) {
+            canvasPanelUndoBtn.disabled = isFirstVersion;
+        }
+        if (canvasPanelRedoBtn) {
+            canvasPanelRedoBtn.disabled = isLastVersion;
+        }
+    }
+
+    // Load versions and set current version
+    async function loadVersionsWithCurrentState(canvasId, chatId) {
+        try {
+            const res = await fetch(`/api/canvases/${canvasId}/versions?chat_id=${chatId}`);
+            if (!res.ok) {
+                throw new Error('Failed to load versions');
+            }
+            const data = await res.json();
+            if (!data.success) throw new Error(data.error || 'Failed to load versions');
+
+            // Sort by version number ascending
+            _versionHistoryCache = data.versions.sort((a, b) => a.version_number - b.version_number);
+
+            // Get current version number
+            _currentVersionNumber = await getCurrentVersionNumber(canvasId, chatId);
+            if (!_currentVersionNumber) {
+                _currentVersionNumber = _versionHistoryCache.length;
+            }
+
+            updateUndoRedoButtons();
+            return _versionHistoryCache;
+        } catch (err) {
+            console.error('Failed to load versions:', err);
+            return [];
+        }
+    }
+
+    // Navigate to a specific version
+    async function navigateToVersion(versionNumber) {
+        if (!_versionHistoryCache) return;
+
+        const version = _versionHistoryCache.find(v => v.version_number === versionNumber);
+        if (!version) return;
+
+        try {
+            const res = await fetch(`/api/canvases/${currentCanvasId}/navigate-version`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    chat_id: currentChatId,
+                    version_number: versionNumber
+                })
+            });
+
+            if (res.ok) {
+                const data = await res.json();
+                if (data.success) {
+                    // Update current version
+                    _currentVersionNumber = versionNumber;
+                    currentCanvasContentRaw = data.content || version.content;
+
+                    // Update UI
+                    if (canvasPanelEditor) {
+                        canvasPanelEditor.value = data.content || version.content;
+                    }
+                    // Fixed: Simplified badge update - no longer nested under canvasPanelTitle check
+                    const badge = document.getElementById('version-badge');
+                    if (badge) {
+                        badge.textContent = `V${versionNumber}`;
+                        badge.classList.remove('hidden');
+                    }
+
+                    updateUndoRedoButtons();
+                }
+            }
+        } catch (err) {
+            console.error('Failed to navigate to version:', err);
+        }
+    }
+
+    // Undo: go to previous version
+    async function handleUndo() {
+        if (!_currentVersionNumber || _currentVersionNumber <= 1) return;
+
+        const newVersion = _currentVersionNumber - 1;
+        await navigateToVersion(newVersion);
+    }
+
+    // Redo: go to next version
+    async function handleRedo() {
+        if (!_versionHistoryCache || !_currentVersionNumber) return;
+
+        const maxVersion = _versionHistoryCache.length;
+        if (_currentVersionNumber >= maxVersion) return;
+
+        const newVersion = _currentVersionNumber + 1;
+        await navigateToVersion(newVersion);
+    }
+
+    // Handle version navigation after navigating away and editing
+    async function handleVersionEdit() {
+        if (!_currentVersionNumber || !_versionHistoryCache) return;
+
+        // Check if we're not at the last version
+        const maxVersion = _versionHistoryCache.length;
+        if (_currentVersionNumber < maxVersion) {
+            // Need to delete future versions
+            try {
+                const res = await fetch(`/api/canvases/${currentCanvasId}/delete-future-versions`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        chat_id: currentChatId,
+                        up_to_version: _currentVersionNumber
+                    })
+                });
+
+                if (res.ok) {
+                    // Update local state immediately
+                    _versionHistoryCache = _versionHistoryCache.slice(0, _currentVersionNumber);
+                    if (_versionHistoryVersions) {
+                        _versionHistoryVersions = _versionHistoryVersions.filter(v => v.version_number <= _currentVersionNumber);
+                    }
+                    
+                    // Force UI update
+                    updateUndoRedoButtons();
+                    
+                    // If history modal is open, refresh it
+                    if (versionHistoryOverlay && !versionHistoryOverlay.classList.contains('hidden')) {
+                        renderVersionList(_versionHistoryVersions);
+                    }
+                }
+            } catch (err) {
+                console.error('Failed to delete future versions:', err);
+            }
+        }
+    }
+
+    async function openVersionHistory() {
+        if (!currentCanvasId || !currentChatId) return;
+
+        _versionHistoryCanvasId = currentCanvasId;
+        _versionHistoryVersions = [];
+        _selectedVersionNumber = null;
+
+        // Load current version state and versions
+        await loadVersionsWithCurrentState(currentCanvasId, currentChatId);
+
+        // Show modal
+        versionHistoryModal.classList.add('open');
+
+        // Update canvas name subtitle
+        if (versionHistoryCanvasName) {
+            versionHistoryCanvasName.textContent = canvasPanelTitle?.textContent || currentCanvasId;
+        }
+
+        // Reset to list view
+        if (versionDiffPanel) versionDiffPanel.classList.add('hidden');
+        const placeholder = document.getElementById('version-preview-placeholder');
+        if (placeholder) placeholder.classList.remove('hidden');
+        if (versionListItems) versionListItems.innerHTML = '';
+        if (versionListLoading) versionListLoading.classList.remove('hidden');
+
+        try {
+            const res = await fetch(`/api/canvases/${currentCanvasId}/versions?chat_id=${currentChatId}`);
+            if (!res.ok) {
+                throw new Error('No versions found');
+            }
+            const data = await res.json();
+            if (!data.success) throw new Error(data.error || 'Failed to load versions');
+
+            // Sort newest first for display
+            _versionHistoryVersions = data.versions.sort((a, b) => b.version_number - a.version_number);
+            renderVersionList(_versionHistoryVersions);
+        } catch (err) {
+            if (versionListItems) {
+                versionListItems.innerHTML = `<div class="version-list-empty">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="opacity:0.4;margin-bottom:0.5rem;">
+                        <polyline points="12 8 12 12 14 14" stroke-linecap="round" stroke-linejoin="round"></polyline>
+                        <path d="M3.05 11a9 9 0 1 0 .5-4" stroke-linecap="round"></path>
+                    </svg>
+                    <p>No version history yet.<br>Versions are saved automatically when content changes.</p>
+                </div>`;
+            }
+        } finally {
+            if (versionListLoading) versionListLoading.classList.add('hidden');
+        }
+    }
+
+    function renderVersionList(versions) {
+        if (!versionListItems) return;
+        versionListItems.innerHTML = '';
+        const latestVersion = versions.length > 0 ? versions[0].version_number : null;
+
+        versions.forEach((v, idx) => {
+            const item = document.createElement('div');
+            item.className = `version-item${v.version_number === latestVersion ? ' current-version' : ''}`;
+            item.dataset.versionNumber = v.version_number;
+
+            const date = new Date(v.timestamp * 1000);
+            const dateStr = date.toLocaleString([], { dateStyle: 'short', timeStyle: 'short' });
+            const author = v.author || 'system';
+            const comment = v.comment || 'Auto-saved';
+
+            const isCurrentBadge = v.version_number === latestVersion
+                ? `<span class="version-current-badge">Current</span>`
+                : '';
+
+            item.innerHTML = `
+                <div style="display: flex; align-items: center; gap: 0.4rem;">
+                    <span class="version-item-number">v${v.version_number}</span>
+                    ${isCurrentBadge}
+                </div>
+                <div class="version-item-comment">${escapeHtml(comment)}</div>
+                <div class="version-item-meta">
+                    <span class="version-item-author">${escapeHtml(author)}</span>
+                    <span>·</span>
+                    <span>${dateStr}</span>
+                </div>
+            `;
+
+            item.addEventListener('click', () => openVersionDiff(v.version_number, v));
+            versionListItems.appendChild(item);
+        });
+    }
+
+    async function openVersionDiff(versionNumber, versionMeta) {
+        if (!versionDiffPanel || !versionDiffBody || !versionRestoreBtn) return;
+
+        _selectedVersionNumber = versionNumber;
+
+        // Show diff panel
+        versionDiffPanel.classList.remove('hidden');
+        const placeholder = document.getElementById('version-preview-placeholder');
+        if (placeholder) placeholder.classList.add('hidden');
+
+        // Mark item as active in list
+        document.querySelectorAll('.version-item').forEach(el => el.classList.remove('active'));
+        const activeItem = document.querySelector(`.version-item[data-version-number="${versionNumber}"]`);
+        if (activeItem) activeItem.classList.add('active');
+
+        const versions = _versionHistoryVersions;
+        const latestVersion = versions.length > 0 ? versions[0].version_number : null;
+        const isLatest = versionNumber === latestVersion;
+
+        // Update diff panel header
+        const dateStr = new Date(versionMeta.timestamp * 1000).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' });
+        if (versionDiffTitle) {
+            versionDiffTitle.textContent = `v${versionNumber} — ${dateStr}`;
+        }
+
+        // Hide restore button for current version
+        if (versionRestoreBtn) {
+            versionRestoreBtn.style.display = isLatest ? 'none' : '';
+            versionRestoreBtn.dataset.versionNumber = versionNumber;
+        }
+
+        versionDiffBody.innerHTML = `<div class="version-list-loading" style="height:100%;justify-content:center;"><div class="spinner" style="width:24px;height:24px;"></div><span>Loading version…</span></div>`;
+
+        try {
+            // Fetch the version content preview
+            const contentRes = await fetch(`/api/canvases/${_versionHistoryCanvasId}/versions/${versionNumber}?chat_id=${currentChatId}`);
+            if (!contentRes.ok) throw new Error('Failed to load version content');
+            const contentData = await contentRes.json();
+            const thisContent = contentData.content || '';
+
+            versionDiffBody.innerHTML = '';
+
+            // Show full content preview
+            const pre = document.createElement('div');
+            pre.className = 'version-preview-content';
+            pre.textContent = thisContent;
+            versionDiffBody.appendChild(pre);
+
+        } catch (err) {
+            versionDiffBody.innerHTML = `<div class="diff-no-changes"><p>Failed to load version content. Please try again.</p></div>`;
+        }
+    }
+
+    async function restoreVersion(versionNumber) {
+        if (!_versionHistoryCanvasId || !versionNumber) return;
+
+        const confirmed = await showModal(
+            'Restore Version',
+            `Restore to v${versionNumber}? The current content will be saved as a new version before restoring.`,
+            { confirmText: 'Restore' }
+        );
+
+        if (!confirmed) return;
+
+        try {
+            const res = await fetch(`/api/canvases/${_versionHistoryCanvasId}/versions/${versionNumber}/restore`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                // Reload canvas content in the panel
+                const contentRes = await fetch(`/api/canvases/${_versionHistoryCanvasId}?chat_id=${currentChatId}`);
+                const contentData = await contentRes.json();
+
+                if (contentData.success) {
+                    currentCanvasContentRaw = contentData.content;
+                    if (canvasPanelEditor) canvasPanelEditor.value = currentCanvasContentRaw;
+                    canvasPanelEditor.placeholder = ''; // Clear placeholder when content exists
+                }
+
+                // Close the modal
+                versionHistoryModal.classList.remove('open');
+
+                // Refresh sidebar
+                if (currentChatId) fetchCanvases(currentChatId);
+
+                // Toast feedback
+                const toast = document.createElement('div');
+                toast.className = 'toast-notification';
+                toast.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5"><path d="M20 6L9 17l-5-5" stroke-linecap="round" stroke-linejoin="round"/></svg> Restored to v${versionNumber}`;
+                document.body.appendChild(toast);
+                setTimeout(() => toast.classList.add('show'), 10);
+                setTimeout(() => { toast.classList.remove('show'); setTimeout(() => toast.remove(), 300); }, 3000);
+            } else {
+                await showModal('Restore Failed', data.error || 'Could not restore this version.', { type: 'alert' });
+            }
+        } catch (err) {
+            await showModal('Restore Failed', 'A network error occurred.', { type: 'alert' });
+        }
+    }
+
+    // Wire up history button
+    if (canvasPanelHistoryBtn) {
+        canvasPanelHistoryBtn.addEventListener('click', openVersionHistory);
+    }
+
+    // Wire up undo/redo buttons
+    if (canvasPanelUndoBtn) {
+        canvasPanelUndoBtn.addEventListener('click', handleUndo);
+    }
+    if (canvasPanelRedoBtn) {
+        canvasPanelRedoBtn.addEventListener('click', handleRedo);
+    }
+
+    // Close version history modal
+    if (closeVersionHistoryBtn) {
+        closeVersionHistoryBtn.addEventListener('click', () => {
+            versionHistoryModal.classList.remove('open');
+        });
+    }
+
+    // Backdrop click to close
+    if (versionHistoryModal) {
+        versionHistoryModal.addEventListener('click', (e) => {
+            if (e.target === versionHistoryModal) {
+                versionHistoryModal.classList.remove('open');
+            }
+        });
+    }
+
+    // Back button in diff pane
+    if (versionDiffBackBtn) {
+        versionDiffBackBtn.addEventListener('click', () => {
+            if (versionDiffPanel) versionDiffPanel.classList.add('hidden');
+            document.querySelectorAll('.version-item').forEach(el => el.classList.remove('active'));
+            _selectedVersionNumber = null;
+        });
+    }
+
+    // Restore button
+    if (versionRestoreBtn) {
+        versionRestoreBtn.addEventListener('click', () => {
+            const vNum = parseInt(versionRestoreBtn.dataset.versionNumber, 10);
+            if (vNum) restoreVersion(vNum);
+        });
+    }
+
+
+
+    /* ═══════════════════════════════════════════
+       EXPORT DROPDOWN (Canvas Panel Header)
+       ═══════════════════════════════════════════ */
+
+    const canvasPanelExportBtn = document.getElementById('canvas-panel-export-btn');
+    const canvasExportMenu = document.getElementById('canvas-export-menu');
+    const canvasExportWrapper = document.getElementById('canvas-export-wrapper');
+
+    function toggleExportMenu(open) {
+        if (!canvasExportMenu) return;
+        if (open === undefined) open = canvasExportMenu.classList.contains('hidden');
+        if (open) {
+            canvasExportMenu.classList.remove('hidden');
+            // Animate in
+            requestAnimationFrame(() => canvasExportMenu.classList.add('open'));
+        } else {
+            canvasExportMenu.classList.remove('open');
+            // Wait for transition, then hide
+            setTimeout(() => canvasExportMenu.classList.add('hidden'), 200);
+        }
+    }
+
+    if (canvasPanelExportBtn) {
+        canvasPanelExportBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (!currentCanvasId) return;
+            toggleExportMenu();
+        });
+    }
+
+    // Format menu options
+    if (canvasExportMenu) {
+        canvasExportMenu.addEventListener('click', async (e) => {
+            const btn = e.target.closest('.canvas-export-option');
+            if (!btn || !currentCanvasId) return;
+            const format = btn.dataset.format;
+            
+            toggleExportMenu(false);
+
+            // Give visual feedback on the trigger button
+            if (canvasPanelExportBtn) {
+                const orig = canvasPanelExportBtn.innerHTML;
+                canvasPanelExportBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="spin-anim"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>`;
+                await exportCanvas(currentCanvasId, format);
+                canvasPanelExportBtn.innerHTML = orig;
+            }
+        });
+    }
+
+    // Close export menu when clicking outside
+    document.addEventListener('click', (e) => {
+        if (canvasExportWrapper && !canvasExportWrapper.contains(e.target)) {
+            if (canvasExportMenu && !canvasExportMenu.classList.contains('hidden')) {
+                toggleExportMenu(false);
+            }
+        }
+    });
+
+    // Close export menu on Escape
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && canvasExportMenu && !canvasExportMenu.classList.contains('hidden')) {
+            toggleExportMenu(false);
+        }
+    });
+
+    if (canvasPanelResizer) {
+        let isResizing = false;
+        const baseWidth = 50; // Base width as percentage
+        const minWidth = 200;
+        const maxWidth = window.innerWidth * 0.8;
+
+        canvasPanelResizer.addEventListener('mousedown', (e) => {
+            isResizing = true;
+            document.body.style.cursor = 'col-resize';
+            canvasPanelResizer.classList.add('resizing');
+            e.preventDefault();
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (!isResizing) return;
+            // The canvas is on the right, so width is (innerWidth - mouseX)
+            const width = window.innerWidth - e.clientX;
+
+            if (width > minWidth && width < maxWidth) {
+                canvasPanel.style.width = `${width}px`;
+                // Sync to CSS variable for app-root shrinking
+                document.documentElement.style.setProperty('--canvas-panel-width', `${width}px`);
+                
+                // Scale content based on panel width
+                const scale = width / 500; // Reference width of 500px
+                const minScale = 0.85;
+                const maxScale = 1.1;
+                const clampedScale = Math.min(maxScale, Math.max(minScale, scale));
+                canvasPanel.style.setProperty('--panel-scale', clampedScale);
+            }
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (isResizing) {
+                isResizing = false;
+                document.body.style.cursor = '';
+                canvasPanelResizer.classList.remove('resizing');
             }
         });
     }
@@ -4439,20 +6585,21 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // === 3D BACKGROUND ANIMATION (Antigravity Inspired) ===
+    (function() {
     function initBackgroundAnimation() {
         const canvas = document.getElementById('bg-stars');
         if (!canvas) return;
         const ctx = canvas.getContext('2d');
-        
+
         let width, height;
         let particles = [];
-        const count = 900; 
+        const count = 900;
         let radius = 350;
         const perspective = 800;
-        
+
         let mouseX = 0, mouseY = 0;
         let mouseX_lerp = 0, mouseY_lerp = 0;
-        
+
         // Follow / Drift State
         let targetX = window.innerWidth / 2;
         let targetY = window.innerHeight / 2;
@@ -4463,7 +6610,7 @@ document.addEventListener('DOMContentLoaded', () => {
         let rippleX = 0;
         let rippleY = 0;
         let rippleStrength = 0;
-        
+
         const colors = [
             '#2563EB', // Higher contrast Blue
             '#3B82F6', // Brighter Blue
@@ -4479,7 +6626,7 @@ document.addEventListener('DOMContentLoaded', () => {
             canvas.style.width = window.innerWidth + 'px';
             canvas.style.height = window.innerHeight + 'px';
             ctx.scale(dpr, dpr);
-            
+
             const minDim = Math.min(window.innerWidth, window.innerHeight);
             if (window.innerWidth <= 768) {
                 radius = minDim * 0.38; // Slightly smaller on mobile
@@ -4496,10 +6643,10 @@ document.addEventListener('DOMContentLoaded', () => {
             for (let i = 0; i < count; i++) {
                 const phi = Math.acos(-1 + (2 * i) / count);
                 const theta = Math.sqrt(count * Math.PI) * phi;
-                
-                const dispersion = radius * 0.9; 
+
+                const dispersion = radius * 0.9;
                 const r = radius + (Math.random() - 0.5) * dispersion;
-                
+
                 const ux = Math.cos(theta) * Math.sin(phi);
                 const uy = Math.sin(theta) * Math.sin(phi);
                 const uz = Math.cos(phi);
@@ -4525,45 +6672,45 @@ document.addEventListener('DOMContentLoaded', () => {
 
         function animate() {
             ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
-            
+
             const time = Date.now();
-            
+
             mouseX_lerp += (mouseX - mouseX_lerp) * 0.05;
             mouseY_lerp += (mouseY - mouseY_lerp) * 0.05;
-            
+
             // Smoother but faster responsive following
             followX += (targetX - followX) * 0.06;
             followY += (targetY - followY) * 0.06;
-            
+
             const driftX = Math.sin(time * 0.0006) * 40;
             const driftY = Math.cos(time * 0.0008) * 30;
-            
+
             const finalCenterX = followX + driftX;
             const finalCenterY = followY + driftY;
-            
+
             const currentRotX = -mouseY_lerp * 0.3;
             const currentRotY = (time * 0.0001) + (mouseX_lerp * 0.4);
 
             // Update Ripple Burst (Fine-tuned for Antigravity)
             if (rippleStrength > 0.01) {
-                rippleStrength *= 0.99; 
+                rippleStrength *= 0.99;
                 rippleX += 2.5; // Slightly faster than before but still "slow"
             } else {
                 rippleStrength = 0;
                 rippleX = 0;
             }
-            
+
             const projected = [];
             for (let i = 0; i < particles.length; i++) {
                 const p = particles[i];
-                
+
                 const wavePattern = Math.sin(time * 0.0015 + (p.ux * 2) + (p.uy * 2) + (p.uz * 2)) * 15;
                 const rBase = p.dist + wavePattern;
-                
+
                 let rx = p.ux * rBase;
                 let ry = p.uy * rBase;
                 let rz = p.uz * rBase;
-                
+
                 if (rippleStrength > 0) {
                     const diff = Math.abs(rBase - rippleX);
                     if (diff < 160) {
@@ -4575,11 +6722,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 }
 
-                const r = rotatePoint({x: rx, y: ry, z: rz}, currentRotX, currentRotY);
+                const r = rotatePoint({ x: rx, y: ry, z: rz }, currentRotX, currentRotY);
                 const scale = perspective / (perspective + r.z);
-                
+
                 if (scale < 0) continue;
-                
+
                 projected.push({
                     x: r.x * scale + finalCenterX,
                     y: r.y * scale + finalCenterY,
@@ -4597,7 +6744,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const alpha = Math.min(isDark ? 0.98 : 0.92, Math.max(0.1, (p.z + radius) / (2 * radius) + 0.18));
                 ctx.globalAlpha = alpha;
                 ctx.fillStyle = p.color;
-                
+
                 ctx.beginPath();
                 ctx.ellipse(p.x, p.y, p.size, p.size * 0.65, Math.PI / 4, 0, Math.PI * 2);
                 ctx.fill();
@@ -4609,10 +6756,10 @@ document.addEventListener('DOMContentLoaded', () => {
             // Instant position push to eliminate visual lag
             followX += (x - followX) * 0.15;
             followY += (y - followY) * 0.15;
-            
+
             targetX = x;
             targetY = y;
-            
+
             rippleX = radius * 0.3; // Start even deeper to hidden particles hit sooner
             rippleStrength = 1.3;   // Stronger initial impact
         }
@@ -4639,4 +6786,5 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     initBackgroundAnimation();
+    })();
 });

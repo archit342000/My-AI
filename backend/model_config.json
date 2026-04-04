@@ -1,12 +1,13 @@
 {
   "research": {
-    "main": "NVIDIA/NVIDIA-Nemotron-3-Nano-30B-A3B-Q4_K_M",
-    "vision": "Qwen/Qwen3.5-4B-Q4_K_M"
+    "main": "NVIDIA/NVIDIA-Nemotron-3-Nano-30B-A3B-UD-Q4_K_XL",
+    "vision": "Qwen/Qwen3.5-4B-UD-Q4_K_XL"
   },
   "general": {
-    "text": "NVIDIA/NVIDIA-Nemotron-3-Nano-30B-A3B-Q4_K_M",
-    "vision": "Qwen/Qwen3.5-35B-A3B-Q4_K_M",
-    "coder": "Qwen/Qwen3-Coder-Next-Q3_K_S"
+    "text": "NVIDIA/NVIDIA-Nemotron-3-Nano-30B-A3B-UD-Q4_K_XL",
+    "vision": "Qwen/Qwen3.5-35B-A3B-UD-Q4_K_XL",
+    "vision2": "Qwen/Qwen3.5-122B-A10B-UD-Q2_K_XL",
+    "coder": "Qwen/Qwen3-Coder-Next-UD-Q4_K_XL"
   },
   "embedding": "embeddinggemma/embeddinggemma-300M-Q8_0"
 }

@@ -74,7 +74,7 @@ def is_safe_web_url(url):
     except Exception:
         return False
 
-async def async_chat_completion(url, payload):
+async def async_chat_completion(url, payload, chat_id=None):
     start_time = time.time()
     model = payload.get("model", "unknown")
     
@@ -101,23 +101,16 @@ async def async_chat_completion(url, payload):
                 content = msg.get("content", "")
                 reasoning = msg.get("reasoning_content", "")
                 
-            # AGENTS.md compliance: always prioritize gathering all emitted signals.
-            # However, for structured output (json_schema or json_object), 
-            # Local AI backend quirks mean the JSON is often in reasoning_content.
-            # We don't wrap in <think> tags if it's the primary payload.
+            # docs/llama_cpp_integration.md compliance:
+            # For structured output (json_schema or json_object), treat 'content' as the sole source of truth.
+            # reasoning_content is strictly for internal thinking.
             
             is_json_requested = "response_format" in payload
             final_output = ""
             
             if is_json_requested:
-                # AGENTS.md: For structured output, local AI backends often stream the JSON inside 'reasoning_content'.
-                # We prioritize it as the primary functional payload. No tags.
-                if reasoning and not content:
-                    final_output = reasoning
-                elif content:
-                    final_output = content
-                elif reasoning:
-                    final_output = reasoning
+                # docs/llama_cpp_integration.md: Treat 'content' as the ONLY source of truth for JSON.
+                final_output = content
             else:
                 # Standard chat: Preserving reasoning in history via <think> tags, 
                 # but functional logic in research.py will ignore it.
@@ -126,10 +119,10 @@ async def async_chat_completion(url, payload):
                 if content:
                     final_output += content
                 
-            log_llm_call(payload, final_output, model, duration_s=time.time()-start_time, call_type="async_blocking")
+            log_llm_call(payload, final_output, model, chat_id=chat_id, duration_s=time.time()-start_time, call_type="async_blocking")
             return final_output
         except Exception as e:
-            log_llm_call(payload, f"Error: {str(e)}", model, duration_s=time.time()-start_time, call_type="async_blocking_error")
+            log_llm_call(payload, f"Error: {str(e)}", model, chat_id=chat_id, duration_s=time.time()-start_time, call_type="async_blocking_error")
             return ""
 
 def estimate_tokens(msgs):
@@ -145,7 +138,7 @@ def estimate_tokens(msgs):
         total += 4  # overhead per message (role, formatting tokens)
     return total
 
-def create_chunk(model, content=None, reasoning=None, finish_reason=None):
+def create_chunk(model, content=None, reasoning=None, finish_reason=None, **kwargs):
     delta = {}
     if content: delta["content"] = content
     if reasoning: delta["reasoning_content"] = reasoning
@@ -153,29 +146,15 @@ def create_chunk(model, content=None, reasoning=None, finish_reason=None):
         "object": "chat.completion.chunk",
         "created": int(time.time()),
         "model": model,
-        "choices": [{"index": 0, "delta": delta, "finish_reason": finish_reason}]
+        "choices": [{"index": 0, "delta": delta, "finish_reason": finish_reason}],
+        **kwargs
     })
 
 def validate_research_plan(content):
     """
-    Validates and extracts clean Research Plan XML from potentially noisy model output.
-    
-    Expected format (section-based):
-    <research_plan>
-      <title>...</title>
-      <section>
-        <heading>...</heading>
-        <description>...</description>
-        <query>...</query>
-        <query topic="news" time_range="week">...</query>
-      </section>
-      ...
-    </research_plan>
-    
-    Returns (clean_xml_string, error_message). One will always be None.
+    Validates the research plan JSON against constraints.
+    Returns (clean_json_str, error_message).
     """
-    import re
-    
     if not content or not content.strip():
         return None, "Empty content received."
     
@@ -187,78 +166,162 @@ def validate_research_plan(content):
     raw = re.sub(r'<think>.*?</think>', '', raw, flags=re.DOTALL).strip()
     
     # 2. Strip markdown code fences
-    raw = re.sub(r'```(?:xml)?\s*\n?', '', raw).strip()
+    raw = re.sub(r'```(?:json)?\s*\n?', '', raw).strip()
+    raw = raw.replace('```', '')
     
-    # 3. Fix malformed <query ... </query> tags where the opening tag is missing the closing '>'
-    # This happens when the AI tries to put search text into the opening tag like an attribute.
-    raw = re.sub(r'<query([^>]*?)</query>', r'<query>\1</query>', raw)
-    
-    # 4. Locate the XML block
-    start_tag = "<research_plan>"
-    end_tag = "</research_plan>"
-    
-    start_index = raw.find(start_tag)
-    if start_index == -1:
-        start_index_orig = content.find(start_tag)
-        if start_index_orig == -1:
-            return None, "Missing <research_plan> opening tag."
-        raw = content
-        start_index = start_index_orig
-    
-    end_index = raw.find(end_tag, start_index)
-    if end_index == -1:
-        return None, "Missing </research_plan> closing tag (XML may be truncated)."
-    
-    xml_candidate = raw[start_index : end_index + len(end_tag)]
-    
-    # 4. Parse and validate structure
+    # 3. Parse JSON
     try:
-        soup = BeautifulSoup(xml_candidate, 'html.parser')
+        # Find first '{' and last '}' to handle potential leading/trailing garbage
+        start_idx = raw.find('{')
+        end_idx = raw.rfind('}')
+        if start_idx == -1 or end_idx == -1:
+             return None, "No JSON object found."
+        
+        json_str = raw[start_idx:end_idx+1]
+        plan = json.loads(json_str)
     except Exception as e:
-        return None, f"XML parsing failed: {str(e)}"
+        return None, f"JSON parsing failed: {str(e)}"
     
-    plan_tag = soup.find('research_plan')
-    if not plan_tag:
-        return None, "Failed to parse <research_plan> structure."
+    # 4. Validate structure
+    if not isinstance(plan, dict):
+        return None, "Root must be a JSON object."
     
-    # 5. Validate title
-    title_tag = plan_tag.find('title')
-    if not title_tag or not title_tag.get_text(strip=True):
-        return None, "Plan is missing a valid <title>."
+    title = plan.get('title')
+    if not title:
+        return None, "Plan is missing a valid 'title'."
     
-    # 6. Validate sections
-    sections = plan_tag.find_all('section')
-    if not sections:
-        return None, "Plan must have at least one <section>."
+    sections = plan.get('sections')
+    if not isinstance(sections, list) or not sections:
+        return None, "Plan must have at least one section in 'sections' array."
     
     total_queries = 0
     max_per_section = config.RESEARCH_MAX_QUERIES_PER_SECTION
     max_total = config.RESEARCH_MAX_TOTAL_QUERIES
     
     for i, sec in enumerate(sections):
-        heading = sec.find('heading')
-        if not heading or not heading.get_text(strip=True):
-            return None, f"Section {i+1} is missing a valid <heading>."
+        heading = sec.get('heading')
+        if not heading:
+            return None, f"Section {i+1} is missing a 'heading'."
         
-        desc = sec.find('description')
-        if not desc or not desc.get_text(strip=True):
-            return None, f"Section {i+1} ('{heading.get_text(strip=True)}') is missing a <description>."
+        desc = sec.get('description')
+        if not desc:
+            return None, f"Section {i+1} ('{heading}') is missing a 'description'."
         
-        queries = sec.find_all('query')
-        if not queries:
-            return None, f"Section {i+1} ('{heading.get_text(strip=True)}') has no <query> elements."
+        queries = sec.get('queries')
+        if not isinstance(queries, list) or not queries:
+            return None, f"Section {i+1} ('{heading}') has no 'queries'."
         
         if len(queries) > max_per_section:
             return None, f"Section {i+1} has {len(queries)} queries (max {max_per_section})."
         
         for j, q in enumerate(queries):
-            if not q.get_text(strip=True):
-                return None, f"Section {i+1}, query {j+1} is empty."
+             q_text = q.get('query') if isinstance(q, dict) else str(q)
+             if not q_text or not q_text.strip():
+                 return None, f"Section {i+1}, query {j+1} is empty."
         
         total_queries += len(queries)
     
     if total_queries > max_total:
         return None, f"Plan has {total_queries} total queries (max {max_total})."
     
-    # 7. Return the clean extracted XML
-    return xml_candidate, None
+    # Convert validated plan to XML for frontend compatibility
+    import html
+    xml_output = [f"<research_plan>\n  <title>{html.escape(title)}</title>"]
+    for sec in sections:
+        xml_output.append("  <section>")
+        xml_output.append(f"    <heading>{html.escape(sec.get('heading', ''))}</heading>")
+        xml_output.append(f"    <description>{html.escape(sec.get('description', ''))}</description>")
+        for q in sec.get('queries', []):
+            q_text = q.get('query') if isinstance(q, dict) else str(q)
+            topic = q.get('topic') if isinstance(q, dict) else None
+            time_range = q.get('time_range') if isinstance(q, dict) else None
+            start_date = q.get('start_date') if isinstance(q, dict) else None
+            end_date = q.get('end_date') if isinstance(q, dict) else None
+            
+            attr_str = ""
+            if topic: attr_str += f' topic="{html.escape(topic)}"'
+            if time_range: attr_str += f' time_range="{html.escape(time_range)}"'
+            if start_date: attr_str += f' start_date="{html.escape(start_date)}"'
+            if end_date: attr_str += f' end_date="{html.escape(end_date)}"'
+            
+            xml_output.append(f"    <query{attr_str}>{html.escape(q_text)}</query>")
+        xml_output.append("  </section>")
+    xml_output.append("</research_plan>")
+    
+    return "\n".join(xml_output), None
+
+def _apply_canvas_patch(existing_content, target_section, new_content):
+    """Replace a section identified by target_section heading with new_content.
+
+    Returns:
+        (patched_content, was_replaced): was_replaced is False when the heading
+        was not found and the content was silently appended instead.
+    """
+    import re
+    lines = existing_content.split('\n')
+    result = []
+    target_level = None
+    in_target = False
+    replaced = False
+
+    for line in lines:
+        heading_match = re.match(r'^(#{1,6})\s+(.*)', line)
+        if heading_match:
+            level = len(heading_match.group(1))
+            heading_text = heading_match.group(2).strip()
+
+            if heading_text == target_section.strip():
+                # Start of target section
+                target_level = level
+                in_target = True
+                replaced = True
+                result.append(new_content)
+                continue
+            elif in_target and level <= target_level:
+                # Reached next section of equal or higher level — stop replacing
+                in_target = False
+
+        if not in_target:
+            result.append(line)
+
+    # If target was never found, append and signal misfire to caller
+    if not replaced:
+        result.append('\n\n' + new_content)
+
+def strip_images_from_messages(messages):
+    """
+    Deep copies messages while replacing base64-encoded image data with placeholders.
+
+    This is necessary because image data (typically base64 encoded) can be very large
+    and would unnecessarily bloat JSON files on disk and the database.
+    """
+    cleaned = []
+    if not messages:
+        return cleaned
+
+    for msg in messages:
+        msg_copy = dict(msg)
+        content = msg_copy.get('content')
+
+        # Handle content that is a list (multimodal messages with text and images)
+        if isinstance(content, list):
+            new_parts = []
+            for part in content:
+                if isinstance(part, dict) and part.get('type') == 'image_url':
+                    # Replace actual image data with a placeholder to save space
+                    new_parts.append({
+                        'type': 'image_url',
+                        'image_url': {'url': '[image_data_stripped]'}
+                    })
+                else:
+                    new_parts.append(part)
+            msg_copy['content'] = new_parts
+        
+        # Ensure tool_calls are handled if they are not already strings
+        if 'tool_calls' in msg_copy and isinstance(msg_copy['tool_calls'], (list, dict)):
+             import json
+             msg_copy['tool_calls'] = json.dumps(msg_copy['tool_calls'])
+
+        cleaned.append(msg_copy)
+
+    return cleaned

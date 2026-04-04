@@ -60,35 +60,32 @@ When `tools` are provided and `stream: true`, the model accumulates tool argumen
 
 ## 3. Structured JSON Output (Streaming: `stream: true`)
 
-**🚨 CRITICAL QUIRK IDENTIFIED 🚨**
-
-When a strict JSON schema is enforced using OpenAI's structured output parameter (`response_format`), local integrations via llama.cpp exhibit a major deviation from standard behavior.
-
-**Instead of returning the structured JSON in the `"content"` key, it streams the entire generated JSON object inside the `"reasoning_content"` key.**
+When a strict JSON schema is enforced using OpenAI's structured output parameter (`response_format`), `llama.cpp` follows standard behavior.
 
 ### Sequential Flow:
-1. **JSON Generation Phase (`reasoning_content`)**:
-   The model streams the entire valid JSON object strictly adhering to the requested schema. **The standard `"content"` key is completely missing or empty.**
+1. **The Reasoning Phase (`reasoning_content`)**: Identical to standard chat. The model may explain its approach here.
+2. **JSON Generation Phase (`content`)**:
+   The model streams the entire valid JSON object strictly adhering to the requested schema using the standard `"content"` key.
    ```json
-   data: {"choices":[{"delta":{"reasoning_content":"{\n  \"name\": \"Elena\"\n}"}}]}
+   data: {"choices":[{"delta":{"content":"{\n  \"name\": \"Elena\"\n}"}}]}
    ```
-2. **Completion**: `"finish_reason": "stop"`.
+3. **Completion**: `"finish_reason": "stop"`.
 
 ## 4. Structured JSON Output (Non-Streaming: `stream: false`)
 
-Even without streaming, the quirk persists. When `response_format` is provided, the primary output location is swapped.
+Standard behavior applies. The JSON payload is found in the primary `content` field.
 
 ### Response Structure:
-1. **`choices[0].message.content`**: Set to an empty string (`""`).
-2. **`choices[0].message.reasoning_content`**: Contains the **entire valid JSON payload**.
+1. **`choices[0].message.content`**: Contains the **entire valid JSON payload**.
+2. **`choices[0].message.reasoning_content`**: Contains the model's internal reasoning (if applicable).
    ```json
    {
      "choices": [
        {
          "message": {
            "role": "assistant",
-           "content": "",
-           "reasoning_content": "{ \"name\": \"Eleanor Whitaker\", \"age\": 34 }",
+           "content": "{ \"name\": \"Eleanor Whitaker\", \"age\": 34 }",
+           "reasoning_content": "Thinking...",
            "tool_calls": []
          },
          "finish_reason": "stop"
@@ -122,7 +119,7 @@ Models are managed dynamically by the server.
 ### Automatic Loading:
 When a request is sent to `/v1/chat/completions` or `/v1/embeddings` for a model that is currently `"unloaded"`, the server automatically initiates the loading process.
 *   **Behavior**: The request will block/wait while the status transitions from `"unloaded"` -> `"loading"` -> `"loaded"`.
-*   **Timeout Handling**: If a model is large, the initial request may exceed standard client timeouts (like the 5s default in `httpx`).
+*   **Timeout Handling**: If a model is large, the initial request may exceed standard client timeouts (like the 5s default in `httpx`). **Recommendation**: Set `TIMEOUT_LLM_ASYNC` in `backend/config.py` to a higher value (e.g., 300 seconds) for large model loading scenarios.
 
 ### Manual Loading:
 The server allows manual triggering of a model load, which is useful when switching models via chat settings or preparing a model for inference ahead of time.
@@ -182,32 +179,39 @@ The server provides a standard OpenAI-compatible embeddings endpoint.
 ```
 
 
-## 8. Summary for Backend Implementation
+## 8. Meandering Mitigation & Handover Rules
 
-Any backend client or utility function designed to handle llama.cpp MUST account for these deviations:
+Reasoning models can sometimes "meander" (reach thought limits or produce excessive reasoning compared to final content). 
+
+### 8.1 Disabling Reasoning Fallback
+If a model persists in meandering during a structured output task (Scout, Planner, etc.), the backend can force it to skip the reasoning phase entirely. This is achieved by passing a custom parameter to the llama.cpp server.
+
+**Implementation:**
+```json
+{
+  "chat_template_kwargs": {
+    "enable_thinking": false
+  }
+}
+```
+When this is active, `reasoning_content` will be empty, and the model will jump straight to the `content` (JSON) phase.
+
+### 8.2 Safe Message History & Handovers
+1. **Internal History**: Always preserve the `<think>` blocks in the conversation history within a specific agent loop (e.g., Scout iterating). This allows the model to maintain context.
+2. **Inter-Agent Handovers**: Always **strip** `<think>` blocks when passing one agent's output as a prompt to another (e.g., Scout results to Planner). This prevents the next agent from being influenced or confused by the previous agent's internal monologue.
+
+### 8.3 Summary for Backend Implementation
 
 1. **Stateful Parsers**: Accumulate both `content` and `reasoning_content`.
-2. **Empty Content Bug Avoidance**: Never wait for or assume that the `"content"` key will eventually populate if `response_format` (JSON Schema) is requested. It frequently resolves to `""` or `None`.
-3. **Finish Reason Maturity**: Do not trigger `json.loads(arguments)` or `execute_tool()` logic until `finish_reason` explicitly changes to `"tool_calls"`.
-4. **Structured Mapping / Safe Extraction**: When extracting non-streaming payloads or finalized streamed payloads with strict formats enforced, the ultimate source of truth must default to `reasoning_content` if `content` fails.
+2. **Always Wrap Reasoning**: The backend must wrap `reasoning_content` in `<think>` tags for both logging and history to ensure UI consistency and model context.
+3. **Strict JSON Field**: Treat `content` as the only source of truth for the final JSON payload when `response_format` is requested. `reasoning_content` is exclusively for the thinking process.
+4. **chat_template_kwargs Support**: The backend's `stream_chat_completion()` and `chat_completion()` functions accept an optional `chat_template_kwargs` parameter. This allows passing custom parameters to the Llama.cpp chat template, such as `{"enable_thinking": False}` to skip the reasoning phase entirely. This is useful as a fallback when a model persists in meandering during structured output tasks.
+
+### 8.4 Timeout Configuration
+
+For model loading operations, the default 5-second timeout may be insufficient for large models. Configure the timeout via `backend/config.py`:
 
 ```python
-# Universal Safe Extraction (CRITICAL IMPLEMENTATION):
-try:
-    # 1. Check primary content block
-    content_payload = getattr(message, 'content', '') or ''
-    # 2. Check reasoning block (quirk fallback)
-    reasoning_payload = getattr(message, 'reasoning_content', '') or ''
-
-    # 3. Aggressive extraction
-    final_raw_string = content_payload if len(content_payload) > 5 else reasoning_payload
-
-    # 4. Safe Parse
-    if is_json_requested:
-        final_result = json.loads(final_raw_string)
-        return final_result
-
-except json.JSONDecodeError as e:
-    log_event("json_parse_error", {"raw": final_raw_string, "error": str(e)})
-    return None # Prevent background task crash
+TIMEOUT_LLM_ASYNC = 300  # 5 minutes for large model loading
+TIMEOUT_LLM_BLOCKING = None  # None = infinite for local queue
 ```

@@ -177,6 +177,30 @@
             border: 1px solid rgba(244, 63, 94, 0.2);
         }
 
+        .pill-debug {
+            background: rgba(147, 197, 253, 0.15);
+            color: #60a5fa;
+            border: 1px solid rgba(147, 197, 253, 0.2);
+        }
+
+        .pill-info {
+            background: rgba(59, 130, 246, 0.15);
+            color: #3b82f6;
+            border: 1px solid rgba(59, 130, 246, 0.2);
+        }
+
+        .pill-warning {
+            background: rgba(251, 191, 33, 0.15);
+            color: #fbbf24;
+            border: 1px solid rgba(251, 191, 33, 0.2);
+        }
+
+        .pill-error-lg {
+            background: rgba(239, 68, 68, 0.15);
+            color: #ef4444;
+            border: 1px solid rgba(239, 68, 68, 0.2);
+        }
+
         .log-timestamp {
             font-family: var(--font-mono);
             font-size: 0.7rem;
@@ -511,6 +535,7 @@
             <nav class="nav-tabs sidebar-text">
                 <div class="nav-tab active" id="tab-network" onclick="switchMode('network')">Network</div>
                 <div class="nav-tab" id="tab-events" onclick="switchMode('events')">Events</div>
+                <div class="nav-tab" id="tab-app" onclick="switchMode('app')">App Logs</div>
             </nav>
 
             <div class="list-container custom-scroll sidebar-text" id="log-list">
@@ -548,6 +573,7 @@
         let currentMode = 'network';
         let networkLogs = [];
         let eventLogs = [];
+        let appLogs = [];
         let selectedId = null;
 
         // Initialize Resizable Sidebar
@@ -652,18 +678,31 @@
         async function loadData(force = false) {
             const listDiv = document.getElementById('log-list');
 
-            if (!force && ((currentMode === 'network' && networkLogs.length > 0) || (currentMode === 'events' && eventLogs.length > 0))) {
+            const networkReady = currentMode === 'network' && networkLogs.length > 0;
+            const eventsReady = currentMode === 'events' && eventLogs.length > 0;
+            const appReady = currentMode === 'app' && appLogs.length > 0;
+
+            if (!force && (networkReady || eventsReady || appReady)) {
                 renderList();
                 return;
             }
 
             try {
-                const endpoint = currentMode === 'network' ? '/api/logs' : '/api/logs/events';
+                let endpoint;
+                if (currentMode === 'network') {
+                    endpoint = '/api/logs';
+                } else if (currentMode === 'events') {
+                    endpoint = '/api/logs/events';
+                } else if (currentMode === 'app') {
+                    endpoint = '/api/logs/app';
+                }
+
                 const res = await fetch(endpoint);
                 const data = await res.json();
 
                 if (currentMode === 'network') networkLogs = data;
-                else eventLogs = data;
+                else if (currentMode === 'events') eventLogs = data;
+                else if (currentMode === 'app') appLogs = data.logs || [];
 
                 renderList();
             } catch (err) {
@@ -716,63 +755,129 @@
             const searchTerm = document.getElementById('log-search').value.toLowerCase();
             listDiv.innerHTML = '';
 
-            const logs = currentMode === 'network' ? networkLogs : eventLogs;
+            if (currentMode === 'network') {
+                renderNetworkLogs(searchTerm);
+            } else if (currentMode === 'events') {
+                renderEventLogs(searchTerm);
+            } else if (currentMode === 'app') {
+                renderAppLogs(searchTerm);
+            }
+        }
+
+        function renderNetworkLogs(searchTerm) {
+            const logs = networkLogs;
 
             const filtered = logs.filter(log => {
-                if (currentMode === 'network') {
-                    return log.model_tool.toLowerCase().includes(searchTerm) || log.category.toLowerCase().includes(searchTerm);
-                } else {
-                    return log.type.toLowerCase().includes(searchTerm) || JSON.stringify(log.data).toLowerCase().includes(searchTerm);
-                }
+                return log.model_tool.toLowerCase().includes(searchTerm) || log.category.toLowerCase().includes(searchTerm);
             });
 
+            const listDiv = document.getElementById('log-list');
+            listDiv.innerHTML = '';
+
             filtered.forEach((log, index) => {
-                if (currentMode === 'network') {
-                    const card = document.createElement('div');
-                    card.className = `log-card ${selectedId === log.log_file ? 'active' : ''}`;
-                    card.onclick = () => {
-                        showNetworkDetail(log, card);
-                        if (window.innerWidth <= 768) {
-                            sidebar.classList.remove('sidebar-expanded');
-                            sidebar.classList.add('sidebar-collapsed');
-                        }
-                    };
+                const card = document.createElement('div');
+                card.className = `log-card ${selectedId === log.log_file ? 'active' : ''}`;
+                card.onclick = () => {
+                    showNetworkDetail(log, card);
+                    if (window.innerWidth <= 768) {
+                        sidebar.classList.remove('sidebar-expanded');
+                        sidebar.classList.add('sidebar-collapsed');
+                    }
+                };
 
-                    const time = new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                const time = new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
-                    card.innerHTML = `
-                        <div class="log-meta">
-                            <span class="pill pill-${log.category}">${log.category}</span>
-                            <span class="log-timestamp">${time}</span>
-                        </div>
-                        <div class="log-title">${escapeHtml(log.model_tool)}</div>
-                        <div class="log-subtitle">${log.type || 'blocking'}</div>
-                    `;
-                    listDiv.appendChild(card);
-                } else {
-                    const card = document.createElement('div');
-                    const id = log.timestamp + index;
-                    card.className = `event-card ${selectedId === id ? 'active' : ''}`;
-                    card.onclick = () => {
-                        showEventDetail(log, id, card);
-                        if (window.innerWidth <= 768) {
-                            sidebar.classList.remove('sidebar-expanded');
-                            sidebar.classList.add('sidebar-collapsed');
-                        }
-                    };
+                card.innerHTML = `
+                    <div class="log-meta">
+                        <span class="pill pill-${log.category}">${log.category}</span>
+                        <span class="log-timestamp">${time}</span>
+                    </div>
+                    <div class="log-title">${escapeHtml(log.model_tool)}</div>
+                    <div class="log-subtitle">${log.type || 'blocking'}</div>
+                `;
+                listDiv.appendChild(card);
+            });
+        }
 
-                    const time = new Date(log.timestamp).toLocaleTimeString();
-                    const dataStr = JSON.stringify(log.data);
+        function renderEventLogs(searchTerm) {
+            const logs = eventLogs;
 
-                    card.innerHTML = `
-                        <div class="event-top">
-                            <span class="event-name">${log.type}</span>
-                            <span class="log-timestamp">${time}</span>
-                        </div>
-                        <div class="event-data-preview">${escapeHtml(dataStr)}</div>
-                    `;
-                    listDiv.appendChild(card);
+            const filtered = logs.filter(log => {
+                return log.type.toLowerCase().includes(searchTerm) || JSON.stringify(log.data).toLowerCase().includes(searchTerm);
+            });
+
+            const listDiv = document.getElementById('log-list');
+            listDiv.innerHTML = '';
+
+            filtered.forEach((log, index) => {
+                const card = document.createElement('div');
+                const id = log.timestamp + index;
+                card.className = `event-card ${selectedId === id ? 'active' : ''}`;
+                card.onclick = () => {
+                    showEventDetail(log, id, card);
+                    if (window.innerWidth <= 768) {
+                        sidebar.classList.remove('sidebar-expanded');
+                        sidebar.classList.add('sidebar-collapsed');
+                    }
+                };
+
+                const time = new Date(log.timestamp).toLocaleTimeString();
+                const dataStr = JSON.stringify(log.data);
+
+                card.innerHTML = `
+                    <div class="event-top">
+                        <span class="event-name">${log.type}</span>
+                        <span class="log-timestamp">${time}</span>
+                    </div>
+                    <div class="event-data-preview">${escapeHtml(dataStr)}</div>
+                `;
+                listDiv.appendChild(card);
+            });
+        }
+
+        function renderAppLogs(searchTerm) {
+            const logs = appLogs;
+
+            const filtered = logs.filter(log => log.toLowerCase().includes(searchTerm));
+
+            const listDiv = document.getElementById('log-list');
+            listDiv.innerHTML = '';
+
+            filtered.forEach((log, index) => {
+                const card = document.createElement('div');
+                card.className = `event-card ${selectedId === index ? 'active' : ''}`;
+                card.onclick = () => {
+                    showAppLogDetail(log, index, card);
+                    if (window.innerWidth <= 768) {
+                        sidebar.classList.remove('sidebar-expanded');
+                        sidebar.classList.add('sidebar-collapsed');
+                    }
+                };
+
+                // Parse log format: timestamp | level | name | message
+                const parts = log.split(' | ');
+                const time = parts.length > 0 ? parts[0] : '';
+                const level = parts.length > 1 ? parts[1] : '';
+                const message = parts.slice(2).join(' | '); // Rest is the message
+
+                // Determine pill class based on log level
+                let pillClass = 'pill-info';
+                if (level) {
+                    const levelLower = level.toLowerCase();
+                    if (levelLower.includes('debug')) pillClass = 'pill-debug';
+                    else if (levelLower.includes('info')) pillClass = 'pill-info';
+                    else if (levelLower.includes('warning') || levelLower.includes('warn')) pillClass = 'pill-warning';
+                    else if (levelLower.includes('error') || levelLower.includes('exception')) pillClass = 'pill-error-lg';
                 }
+
+                card.innerHTML = `
+                    <div class="event-top">
+                        <span class="pill ${pillClass}">${escapeHtml(level || 'LOG')}</span>
+                        <span class="log-timestamp">${escapeHtml(time)}</span>
+                    </div>
+                    <div class="event-data-preview">${escapeHtml(message)}</div>
+                `;
+                listDiv.appendChild(card);
             });
         }
 
@@ -801,7 +906,7 @@
                 const res = await fetch(`/api/logs/detail?path=${encodeURIComponent(log.log_file)}`);
                 const fullLog = await res.json();
 
-                renderDualPane(escapeHtml(log.model_tool), fullLog.timestamp, fullLog.duration_s, (log.type || 'blocking'), fullLog.request, fullLog.response, fullLog.timings);
+                renderDualPane(escapeHtml(log.model_tool), fullLog.timestamp, fullLog.duration_s, (log.type || 'blocking'), fullLog.request, fullLog.response, fullLog.timings, fullLog.tool_calls);
             } catch (err) {
                 detailView.innerHTML = `
                 <button id="mobile-toggle" class="btn-secondary glass" title="Menu" style="position: fixed; z-index: 50;" onclick="toggleMobileMenu()">
@@ -821,12 +926,25 @@
             renderDualPane(log.type, new Date(log.timestamp).toLocaleString(), 0, 'EVENT', {}, log.data);
         }
 
-        function renderDualPane(title, time, duration, mode, req, res, timings) {
+        function renderDualPane(title, time, duration, mode, req, res, timings, toolCalls = null) {
             const detailView = document.getElementById('detail-view');
 
             const reqStr = JSON.stringify(req, null, 2);
             let resStr = typeof res === 'string' ? res : JSON.stringify(res, null, 2);
             let isJson = typeof res !== 'string';
+            
+            let toolCallsHtml = '';
+            if (toolCalls && Array.isArray(toolCalls) && toolCalls.length > 0) {
+                const tcStr = JSON.stringify(toolCalls, null, 2);
+                toolCallsHtml = `
+                    <div style="margin-top: 24px;">
+                        <div class="pane-header" style="padding: 8px 0; background: transparent; border-bottom: 1px solid var(--border-subtle); margin-bottom: 12px;">
+                            <span class="pane-title" style="color: var(--color-primary-500);">Tool Calls</span>
+                        </div>
+                        <pre><code id="tool-calls-code" style="background:transparent;" class="language-json">${escapeHtml(tcStr)}</code></pre>
+                    </div>
+                `;
+            }
 
             detailView.innerHTML = `
                 <button id="mobile-toggle" class="btn-secondary glass" title="Menu" style="position: fixed; z-index: 50;" onclick="toggleMobileMenu()">
@@ -862,6 +980,7 @@
                         </div>
                         <div class="pane-content">
                             <pre><code id="res-code" style="background:transparent;" class="${isJson ? 'language-json' : 'language-markdown'}">${escapeHtml(resStr)}</code></pre>
+                            ${toolCallsHtml}
                         </div>
                     </section>
                 </div>
@@ -876,6 +995,50 @@
             const old = btn.innerText;
             btn.innerText = 'Copied';
             setTimeout(() => btn.innerText = old, 1500);
+        }
+
+        function showAppLogDetail(log, index, element) {
+            selectedId = index;
+            document.querySelectorAll('.event-card').forEach(i => i.classList.remove('active'));
+            element.classList.add('active');
+
+            // Parse log format: timestamp | level | name | message
+            const parts = log.split(' | ');
+            const time = parts.length > 0 ? parts[0] : '';
+            const level = parts.length > 1 ? parts[1] : '';
+            const name = parts.length > 2 ? parts[2] : '';
+            const message = parts.length > 3 ? parts.slice(3).join(' | ') : '';
+
+            const detailView = document.getElementById('detail-view');
+            detailView.innerHTML = `
+                <button id="mobile-toggle" class="btn-secondary glass" title="Menu" style="position: fixed; z-index: 50;" onclick="toggleMobileMenu()">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <path d="M3 12h18M3 6h18M3 18h18" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                </button>
+                <header class="detail-header" style="padding-left: 72px;">
+                    <div>
+                        <h2 style="font-family: var(--font-mono); color: var(--accent); font-size: 1.1rem; margin:0;">${escapeHtml(name || 'App Log')}</h2>
+                        <p style="margin: 5px 0 0; font-size: 0.75rem; color: var(--content-muted); font-family: var(--font-mono);">${escapeHtml(time)}</p>
+                    </div>
+                    <div style="display: flex; gap: 30px;">
+                        <div style="text-align:right"><span style="display:block;font-size:0.6rem;color:var(--content-muted);text-transform:uppercase;font-weight:700;">Level</span><span style="font-family:var(--font-mono);font-size:0.9rem; color: var(--content-primary);">${escapeHtml(level)}</span></div>
+                    </div>
+                </header>
+                <div class="panes-container">
+                    <section class="pane">
+                        <div class="pane-header">
+                            <span class="pane-title">Log Entry</span>
+                            <button class="copy-btn" onclick="copyText('log-content', this)">Copy</button>
+                        </div>
+                        <div class="pane-content">
+                            <pre><code id="log-content" style="background:transparent;" class="language-text">${escapeHtml(log)}</code></pre>
+                        </div>
+                    </section>
+                </div>
+            `;
+
+            document.querySelectorAll('pre code').forEach(hljs.highlightElement);
         }
 
         // Init

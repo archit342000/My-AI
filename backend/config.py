@@ -33,6 +33,7 @@ os.makedirs(os.path.join(DATA_DIR, "tasks"), exist_ok=True)
 # =============================================================================
 # SEARCH (Tavily API)
 # =============================================================================
+# TAVILY_API_KEY is loaded from environment/secrets for documentation compliance
 TAVILY_API_KEY = get_secret("TAVILY_API_KEY", "")
 TAVILY_BASE_URL = os.getenv("TAVILY_BASE_URL", "https://api.tavily.com")
 
@@ -107,9 +108,10 @@ RESEARCH_MAX_TOKENS_SCOUT = int(os.getenv("RESEARCH_MAX_TOKENS_SCOUT", 8192))
 RESEARCH_MAX_TOKENS_PLANNING = int(os.getenv("RESEARCH_MAX_TOKENS_PLANNING", 8192))
 RESEARCH_MAX_TOKENS_REFLECTION = int(os.getenv("RESEARCH_MAX_TOKENS_REFLECTION", 8192))
 RESEARCH_MAX_TOKENS_STEP_WRITER = int(os.getenv("RESEARCH_MAX_TOKENS_STEP_WRITER", 16384))
-RESEARCH_MAX_TOKENS_SUMMARY = int(os.getenv("RESEARCH_MAX_TOKENS_SUMMARY", 4096))
+RESEARCH_MAX_TOKENS_SUMMARY = int(os.getenv("RESEARCH_MAX_TOKENS_SUMMARY", 8192))
 RESEARCH_MAX_TOKENS_SYNTHESIS = int(os.getenv("RESEARCH_MAX_TOKENS_SYNTHESIS", 16384))
-RESEARCH_MAX_TOKENS_VISION = int(os.getenv("RESEARCH_MAX_TOKENS_VISION", 2048))
+RESEARCH_MAX_TOKENS_TRIAGE = int(os.getenv("RESEARCH_MAX_TOKENS_TRIAGE", 16384))
+RESEARCH_MAX_TOKENS_VISION = int(os.getenv("RESEARCH_MAX_TOKENS_VISION", 8192))
 RESEARCH_MAX_TOKENS_RAG_CONTEXT = int(os.getenv("RESEARCH_MAX_TOKENS_RAG_CONTEXT", 30000))
 
 # Audit max tokens = same as step writer (surgeon patches one section at a time)
@@ -118,10 +120,12 @@ RESEARCH_MAX_TOKENS_AUDIT = int(os.getenv("RESEARCH_MAX_TOKENS_AUDIT", RESEARCH_
 # =============================================================================
 # RESEARCH: SECTION-BASED PLANNING & EXECUTION
 # =============================================================================
+RESEARCH_MAX_RETRIES = int(os.getenv("RESEARCH_MAX_RETRIES", 3))        # General research retry limit
 RESEARCH_MAX_PLAN_RETRIES = 3              # Planner retries on validation failure
 RESEARCH_MAX_QUERIES_PER_SECTION = 2       # Max search queries per report section
 RESEARCH_MAX_TOTAL_QUERIES = 10            # Cap across all sections in a plan
 RESEARCH_MAX_GAPS_PER_SECTION = int(os.getenv("RESEARCH_MAX_GAPS_PER_SECTION", 2))
+RESEARCH_TRIAGE_MAX_FACTS = int(os.getenv("RESEARCH_TRIAGE_MAX_FACTS", 25))
 RESEARCH_MIN_SECTION_LEN = 300             # Min chars for a written section to be accepted
 
 # Per-query content budget (tokens, estimated as chars / 4)
@@ -130,21 +134,23 @@ RESEARCH_CONTENT_BUDGET_DEEP = 80000       # Tokens per query, deep mode
 
 # =============================================================================
 # RESEARCH: MEANDER DETECTION
-# Limits on <think> block length (chars). If reasoning exceeds the limit AND
+# Limits on <think> block length (TOKENS). If reasoning exceeds the limit AND
 # content output is below CONTENT_THRESHOLD, the response is considered
 # "meandering" and gets retried or truncated.
 # =============================================================================
-RESEARCH_MEANDER_CONTENT_THRESHOLD = 500
+RESEARCH_MEANDER_CONTENT_THRESHOLD_TOKENS = 125
 
-RESEARCH_MEANDER_THOUGHT_LIMIT_SCOUT = 6000
-RESEARCH_MEANDER_THOUGHT_LIMIT_PLANNING = 10000
-RESEARCH_MEANDER_THOUGHT_LIMIT_REFLECTION = 10000
-RESEARCH_MEANDER_THOUGHT_LIMIT_STEP_WRITER = 20000
-RESEARCH_MEANDER_THOUGHT_LIMIT_SUMMARY = 6000
-RESEARCH_MEANDER_THOUGHT_LIMIT_SYNTHESIS = 15000
+RESEARCH_MEANDER_THOUGHT_LIMIT_SCOUT_TOKENS = 1500
+RESEARCH_MEANDER_THOUGHT_LIMIT_PLANNING_TOKENS = 2500
+RESEARCH_MEANDER_THOUGHT_LIMIT_REFLECTION_TOKENS = 2500
+RESEARCH_MEANDER_THOUGHT_LIMIT_TRIAGE_TOKENS = 2500
+RESEARCH_MEANDER_THOUGHT_LIMIT_STEP_WRITER_TOKENS = 5000
+RESEARCH_MEANDER_THOUGHT_LIMIT_SUMMARY_TOKENS = 1500
+RESEARCH_MEANDER_THOUGHT_LIMIT_SYNTHESIS_TOKENS = 3750
+RESEARCH_MEANDER_THOUGHT_LIMIT_VISION_TOKENS = 1000
 
 # Audit meander limit = same as step writer (surgeon produces one section)
-RESEARCH_MEANDER_THOUGHT_LIMIT_AUDIT = RESEARCH_MEANDER_THOUGHT_LIMIT_STEP_WRITER
+RESEARCH_MEANDER_THOUGHT_LIMIT_AUDIT_TOKENS = RESEARCH_MEANDER_THOUGHT_LIMIT_STEP_WRITER_TOKENS
 
 # =============================================================================
 # RESEARCH: SEARCH & SOURCE SELECTION
@@ -159,17 +165,19 @@ TAVILY_MAP_MAX_DEPTH = 3                   # Crawl depth for Tavily Map
 TAVILY_MAP_MAX_BREADTH = 10                # Crawl breadth for Tavily Map
 
 # =============================================================================
-# RESEARCH: LLM TEMPERATURE & SAMPLING
+# RESEARCH: LLM TEMPERATURE & SAMPLING (Reasoning Optimized)
 # =============================================================================
-RESEARCH_TEMPERATURE_SCOUT = float(os.getenv("RESEARCH_TEMPERATURE_SCOUT", 0.1))
-RESEARCH_TEMPERATURE_PLANNING = float(os.getenv("RESEARCH_TEMPERATURE_PLANNING", 0.4))
-RESEARCH_TEMPERATURE_REFLECTION = float(os.getenv("RESEARCH_TEMPERATURE_REFLECTION", 0.2))
-RESEARCH_TEMPERATURE_STEP_WRITER = float(os.getenv("RESEARCH_TEMPERATURE_STEP_WRITER", 0.4))
-RESEARCH_TEMPERATURE_SUMMARY = float(os.getenv("RESEARCH_TEMPERATURE_SUMMARY", 0.2))
-RESEARCH_TEMPERATURE_VISION = float(os.getenv("RESEARCH_TEMPERATURE_VISION", 0.1))
-RESEARCH_TEMPERATURE_SYNTHESIS = float(os.getenv("RESEARCH_TEMPERATURE_SYNTHESIS", 0.4))
-RESEARCH_TEMPERATURE_AUDIT = float(os.getenv("RESEARCH_TEMPERATURE_AUDIT", 0.2))
-RESEARCH_TOP_P_PLANNING = float(os.getenv("RESEARCH_TOP_P_PLANNING", 0.9))
+RESEARCH_SAMPLING_TEMPERATURE = 0.7
+RESEARCH_SAMPLING_MIN_P = 0.1
+RESEARCH_SAMPLING_DRY_MULTIPLIER = 0.8
+RESEARCH_SAMPLING_DRY_BASE = 1.75
+RESEARCH_SAMPLING_DRY_ALLOWED_LENGTH = 3
+RESEARCH_SAMPLING_XTC_PROBABILITY = 0.1
+RESEARCH_SAMPLING_REPEAT_PENALTY = 1.1
+
+# Fallback temperature used on retry attempts (reflection, writer, surgeon)
+RESEARCH_TEMPERATURE_RETRY_FALLBACK = 0.1
+RESEARCH_SAMPLING_DRY_RETRIAL_BOOST = 0.2
 
 # =============================================================================
 # RESEARCH: FINAL AUDIT & REFINEMENT
@@ -179,9 +187,6 @@ RESEARCH_AUDIT_MAX_HIGH_SEVERITY = 999     # Fix all citation/contradiction issu
 RESEARCH_AUDIT_MAX_MEDIUM_SEVERITY = 5     # Cap rewrites for medium issues
 RESEARCH_AUDIT_MAX_LOW_SEVERITY = 3        # Cap rewrites for low issues
 RESEARCH_SURGEON_MAX_RETRIES = 2           # Max attempts per section before structured fallback
-
-# Fallback temperature used on retry attempts (reflection, writer, surgeon)
-RESEARCH_TEMPERATURE_RETRY_FALLBACK = 0.1
 
 # =============================================================================
 # RESEARCH: VISION & IMAGE PROCESSING
@@ -200,3 +205,36 @@ RESEARCH_CONTEXT_HISTORY_PLANNING = 10     # Messages passed to planner
 # LOCALIZATION & TIME
 # =============================================================================
 USER_TIMEZONE = os.getenv("TZ", "Asia/Kolkata")
+
+# =============================================================================
+# CANVAS SYSTEM
+# =============================================================================
+# Max characters of canvas content injected into the system prompt as active
+# canvas context. Large research reports easily exceed 20k chars; 32k covers
+# most reports while keeping the system prompt manageable.
+CANVAS_ACTIVE_CONTEXT_CHAR_LIMIT = 32000
+
+# =============================================================================
+# CACHE TTL CONFIGURATION
+# =============================================================================
+CACHE_ENTRY_TTL_SECONDS = int(os.getenv("CACHE_ENTRY_TTL_SECONDS", 3600))      # 1 hour default
+DEFAULT_TTL_SECONDS = CACHE_ENTRY_TTL_SECONDS  # Alias for config_directives.md compliance
+CACHE_CLEANUP_INTERVAL = int(os.getenv("CACHE_CLEANUP_INTERVAL", 300))         # 5 min
+CACHE_RETRY_COUNT = int(os.getenv("CACHE_RETRY_COUNT", 2))                     # Retry attempts
+
+# =============================================================================
+# ERROR HANDLING CONFIGURATION
+# =============================================================================
+ERROR_RETRY_BASE_DELAY = float(os.getenv("ERROR_RETRY_BASE_DELAY", 0.1))       # Base delay for retry backoff
+CIRCUIT_FAILURE_THRESHOLD = int(os.getenv("CIRCUIT_FAILURE_THRESHOLD", 5))     # Failures before opening circuit
+CIRCUIT_RECOVERY_TIMEOUT = float(os.getenv("CIRCUIT_RECOVERY_TIMEOUT", 30))    # Seconds before attempting recovery
+
+# =============================================================================
+# RETRY CONFIGURATION
+# =============================================================================
+RETRY_COUNT = int(os.getenv("RETRY_COUNT", 2))
+
+# =============================================================================
+# TOOL CONFIGURATION
+# =============================================================================
+MAX_TOOL_ROUNDS = int(os.getenv("MAX_TOOL_ROUNDS", 8))  # Maximum tool rounds per conversation

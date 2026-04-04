@@ -6,6 +6,7 @@ __pycache__/
 .Python
 env/
 venv/
+venv_check/
 pip-log.txt
 pip-delete-this-directory.txt
 .tox/
@@ -29,6 +30,7 @@ secrets/
 # Databases
 backend/*.db
 backend/chroma_db/
+data/*
 
 # Logs & Temporary Files
 *.log
@@ -54,3 +56,8 @@ app.log
 # OS
 .DS_Store
 Thumbs.db
+
+# Claude
+plans/
+.claude/
+reports/

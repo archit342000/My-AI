@@ -55,8 +55,9 @@ def validate_output_format(full_content, full_reasoning=""):
             errors.append({
                 "code": "EMPTY_RESPONSE",
                 "message": (
-                    "Your response contains a reasoning block but no actual user-facing "
-                    "content after the </think> tag. Please provide substantive content."
+                    "Your response contains a reasoning block but is missing the final user-facing "
+                    "answer after the </think> tag. You must provide a clear output for the user "
+                    "after you have processed the tool results."
                 ),
             })
     elif full_reasoning and len(combined.strip()) < 1:
@@ -64,8 +65,8 @@ def validate_output_format(full_content, full_reasoning=""):
         errors.append({
             "code": "EMPTY_RESPONSE",
             "message": (
-                "Your response contains a reasoning block but no actual user-facing "
-                "content. Please provide substantive content."
+                "Your response contains a reasoning block but no user-facing content. "
+                "Please provide a substantive response based on the information gathered."
             ),
         })
     
@@ -73,7 +74,11 @@ def validate_output_format(full_content, full_reasoning=""):
     if not combined.strip() and not (full_reasoning or "").strip():
         errors.append({
             "code": "NO_OUTPUT",
-            "message": "Your response was completely empty. Please generate a response."
+            "message": (
+                "Your response was completely empty. If you just received tool results, "
+                "you must now provide a final answer or a summary to the user. Do not "
+                "return an empty message."
+            )
         })
     
     return errors

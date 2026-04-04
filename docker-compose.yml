@@ -10,7 +10,7 @@ services:
       - tavily_mcp
       - playwright_mcp
     volumes:
-      - /home/archit-anand/My-AI-data:/app/backend/data
+      - /home/archit-anand/docker-data/shared/My-AI-data:/app/backend/data
     environment:
       - TZ=Asia/Kolkata
     secrets:

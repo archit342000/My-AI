@@ -1,4 +1,4 @@
-# 🌌 My-AI v2.3.1
+# 🌌 My-AI v3.0.0
 
 A high-performance local AI orchestration layer and premium chat interface natively powered by [llama.cpp](https://github.com/ggerganov/llama.cpp). My-AI combines autonomous research capabilities, long-term semantic memory, and multimodal vision into a single, unified workspace running entirely on your local hardware.
 
@@ -16,6 +16,7 @@ A high-performance local AI orchestration layer and premium chat interface nativ
 ## ✨ Core Logic & Features
 
 *   **Deep Research Agent**: A multi-pass autonomous engine that scouts context, designs a research plan, executes targeted searches, and performs a self-audit before synthesizing the final report.
+*   **Canvas Mode**: A mode that allows you to store text as markdown files.
 *   **Autonomous Scraping**: Utilizes a headless Playwright browser to navigate complex JS-heavy websites and extract clean markdown content.
 *   **Intelligent RAG**: Automatically embeds and retrieves facts from previous conversations to maintain long-term context without manual prompting.
 *   **Multimodal VLM Support**: Native handling of vision payloads for image analysis, OCR, and scene description.
@@ -64,4 +65,4 @@ My-AI utilizes the **Model Context Protocol (MCP)** to isolate external tool exe
 
 ## 📄 License & Versioning
 This project follows [SemVer v2.0.0](https://semver.org/).  
-**Current Version**: `v2.3.1` (Favicon modernization & Docs refactor).
+**Current Version**: `v3.0.0` (Research Persistence Audit & Task Recovery).

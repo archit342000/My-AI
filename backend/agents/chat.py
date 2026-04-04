@@ -1,20 +1,87 @@
 
+import asyncio
 import json
-from backend.logger import log_event, log_tool_call
+import re
+from backend.logger import log_event, log_tool_call, log_llm_call
 import time
-from backend.prompts import BASE_SYSTEM_PROMPT, MEMORY_SYSTEM_PROMPT
-from backend.tools import MANAGE_CORE_MEMORY_TOOL, GET_TIME_TOOL, VALIDATE_OUTPUT_FORMAT_TOOL
+from backend.prompts import (
+    BASE_SYSTEM_PROMPT,
+    MEMORY_SYSTEM_PROMPT,
+    CANVAS_MODE_GUIDANCE
+)
+from backend.tools import (
+    MANAGE_CORE_MEMORY_TOOL,
+    GET_TIME_TOOL,
+    VALIDATE_OUTPUT_FORMAT_TOOL,
+    INITIATE_RESEARCH_PLAN_TOOL,
+    MANAGE_CANVAS_TOOL,
+    PREVIEW_CANVASES_TOOL,
+    CREATE_CANVAS_TOOL,
+    READ_CANVAS_TOOL
+)
 from backend.utils import create_chunk, get_current_time
+from backend.canvas_manager import (
+    create_canvas,
+    get_canvas_content,
+    update_canvas_content,
+    append_to_canvas,
+    patch_canvas_section,
+    delete_section,
+    validate_patch_action,
+    get_chat_canvases_with_details,
+    read_canvas_section
+)
+from backend.db_wrapper import db
 from backend import config
 from backend.mcp_client import tavily_client, playwright_client
 from backend.llm import stream_chat_completion, chat_completion
+import datetime
 from backend.validation import (
     validate_output_format, parse_fixes, find_fix_locations, apply_fixes,
     build_fix_messages, build_regeneration_messages
 )
+from backend.error_handling import classify_error, create_error_response, is_retryable, execute_with_retry
 
 
-async def _stream_and_accumulate(api_url, model, payload):
+async def execute_with_retry_async(func, max_retries: int = None, backoff_base: float = 1.0):
+    """
+    Execute an async function with exponential backoff retry.
+
+    Args:
+        func: The async function to execute
+        max_retries: Maximum retry attempts (default from config)
+        backoff_base: Base backoff time in seconds
+
+    Returns:
+        Result from func if successful
+
+    Raises:
+        Exception: From func if all retries exhausted
+    """
+    if max_retries is None:
+        max_retries = config.CACHE_RETRY_COUNT
+
+    for attempt in range(max_retries + 1):
+        try:
+            return await func()
+        except Exception as e:
+            error_type = classify_error(e)
+
+            # Check if retryable
+            if not is_retryable(error_type):
+                raise  # Non-retryable, fail immediately
+
+            if attempt == max_retries:
+                raise  # Exhausted retries
+
+            # Calculate and apply backoff with jitter
+            delay = backoff_base * (2 ** attempt)
+            import random
+            delay += random.uniform(0, 0.5)  # Add jitter
+            await asyncio.sleep(delay)
+
+
+async def _stream_and_accumulate(api_url, model, payload, chat_id=None, chat_template_kwargs=None):
     """
     Streams a chat completion call, yielding (sse_chunk_string, final_state) tuples.
     
@@ -26,12 +93,12 @@ async def _stream_and_accumulate(api_url, model, payload):
     full_content = ""
     full_reasoning = ""
     
-    async for chunk_str in stream_chat_completion(api_url, payload):
+    async for chunk_str in stream_chat_completion(api_url, payload, chat_id=chat_id, chat_template_kwargs=chat_template_kwargs):
         try:
             chunk = json.loads(chunk_str[6:])
             delta = chunk['choices'][0]['delta']
             finish_reason = chunk['choices'][0].get('finish_reason')
-            
+
             if 'tool_calls' in delta and delta['tool_calls']:
                 tc_chunk = delta['tool_calls'][0]
                 if 'id' in tc_chunk:
@@ -41,22 +108,28 @@ async def _stream_and_accumulate(api_url, model, payload):
                         "type": "function",
                         "function": {"name": tc_chunk['function']['name'], "arguments": ""}
                     }
-                    
+
                 if 'function' in tc_chunk and 'arguments' in tc_chunk['function']:
-                    current_tool_call['function']['arguments'] += tc_chunk['function']['arguments']
-            
+                    # Ensure arguments is a string before accumulating
+                    arg_value = tc_chunk['function']['arguments']
+                    if isinstance(arg_value, str):
+                        current_tool_call['function']['arguments'] += arg_value
+                    else:
+                        # If arguments is not a string, convert to string representation
+                        current_tool_call['function']['arguments'] += str(arg_value)
+
             elif 'content' in delta or 'reasoning_content' in delta:
                 content = delta.get('content', '')
                 reasoning = delta.get('reasoning_content', '') or delta.get('reasoning', '')
-                
+
                 if reasoning:
                     full_reasoning += reasoning
                     yield (f"data: {create_chunk(model, reasoning=reasoning)}\n\n", None)
-                
+
                 if content:
                     full_content += content
                     yield (f"data: {create_chunk(model, content=content)}\n\n", None)
-            
+
             if finish_reason == 'tool_calls':
                 if current_tool_call:
                     tool_calls.append(current_tool_call)
@@ -87,7 +160,7 @@ def _stream_corrected_content(model, fixed_content, fixed_reasoning=""):
         yield f"data: {create_chunk(model, content=chunk_text)}\n\n"
 
 
-async def generate_chat_response(api_url, model, messages, extra_body, rag=None, memory_mode=False, search_depth_mode='regular', chat_id=None, has_vision=False, api_key=None):
+async def generate_chat_response(api_url, model, messages, extra_body, rag=None, memory_mode=False, search_depth_mode='regular', chat_id=None, has_vision=False, api_key=None, research_mode=False, research_completed=False, initial_tool_calls=None, resume_state=None, canvas_mode=False, active_canvas_context=None, enable_thinking=True):
     """
     Handles standard chat interaction with validation and self-healing.
     
@@ -106,6 +179,44 @@ async def generate_chat_response(api_url, model, messages, extra_body, rag=None,
     # Ensure MCP clients are connected
     await tavily_client.connect()
     await playwright_client.connect()
+
+    def strip_research_artifacts(msgs):
+        """
+        Strips <think>, <research_plan>, and <research_report> tags from 
+        assistant messages that executed research tools, preventing context bloat.
+        """
+        import copy
+        import re
+        import json
+        cleaned = []
+        for msg in msgs:
+            msg_copy = copy.copy(msg)
+            if msg_copy.get('role') == 'assistant' and msg_copy.get('content'):
+                content = msg_copy['content']
+                tool_calls = msg_copy.get('tool_calls', [])
+                if isinstance(tool_calls, str):
+                    try:
+                        tool_calls = json.loads(tool_calls)
+                    except:
+                        tool_calls = []
+                
+                is_research = False
+                for tc in (tool_calls or []):
+                    if isinstance(tc, dict):
+                        fn_name = tc.get('function', {}).get('name')
+                        if fn_name in ('initiate_research_plan', 'execute_research_plan'):
+                            is_research = True
+                            break
+                
+                if is_research:
+                    content = re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL)
+                    content = re.sub(r'<research_plan>.*?</research_plan>', '', content, flags=re.DOTALL)
+                    content = re.sub(r'<research_report>.*?</research_report>', '', content, flags=re.DOTALL)
+                    msg_copy['content'] = content.strip()
+            cleaned.append(msg_copy)
+        return cleaned
+
+    chat_template_kwargs = {"enable_thinking": enable_thinking}
 
     # Fetch tools from MCP Servers
     tavily_tools_raw = await tavily_client.get_available_tools()
@@ -132,6 +243,9 @@ async def generate_chat_response(api_url, model, messages, extra_body, rag=None,
     # If deep search is enabled, the search_web tool automatically returns raw content.
     # We remove the audit_tavily_search tool to prevent redundancy/hallucination logic.
     tools = [GET_TIME_TOOL, VALIDATE_OUTPUT_FORMAT_TOOL]
+
+    if research_mode and not research_completed:
+        tools.append(INITIATE_RESEARCH_PLAN_TOOL)
 
     if search_depth_mode == 'deep':
         # Find search_web from MCP and modify description, omit audit_search
@@ -165,23 +279,47 @@ async def generate_chat_response(api_url, model, messages, extra_body, rag=None,
     else:
         v_note += "You CAN process images. The search tool will automatically return images where relevant."
     system_prompt += v_note
-        
-    # 2. Context Management
-    messages_to_send = [{"role": "system", "content": system_prompt}]
-    
-    user_system_msgs = [m for m in messages if m['role'] == 'system']
-    history = [m for m in messages if m['role'] != 'system']
-    
-    if user_system_msgs:
-        combined = "\n\n".join([m['content'] for m in user_system_msgs])
-        messages_to_send.append({"role": "system", "content": f"### User Instructions ###\n{combined}"})
 
-    messages_to_send.extend(history[-20:]) 
+    today_date = datetime.date.today().strftime("%A, %B %d, %Y")
+    system_prompt = f"Today's date is: {today_date}.\n\n" + system_prompt
+
+    # Research mode guidance removed - research mode is now controlled by tool availability
+    
+    if canvas_mode:
+        tools.append(CREATE_CANVAS_TOOL)
+        tools.append(MANAGE_CANVAS_TOOL)
+        tools.append(READ_CANVAS_TOOL)
+        tools.append(PREVIEW_CANVASES_TOOL)
+        system_prompt += f"\n\n{CANVAS_MODE_GUIDANCE}"
+
+    messages_to_send = [{"role": "system", "content": system_prompt}]
+
+    # Filter out system messages from history as they are now dynamically regenerated
+    history = [m for m in messages if m['role'] != 'system']
+
+    # Filter out initiate_research_plan if research is completed
+    if research_completed:
+        tools = [t for t in tools if t.get('function', {}).get('name') != 'initiate_research_plan']
+
+    messages_to_send.extend(history) 
 
     # 3. First LLM Call
+    start_time = time.time()
+    full_content = ""
+    full_reasoning = ""
+    current_content = ""
+    current_reasoning = ""
+    tool_calls = initial_tool_calls or []
+    tool_flow_prefix = ""  # Preserved for redact reconstruction
+    reasoning_flow_prefix = ""
+
+    # Inject previews before sending to LLM
+    if chat_id and canvas_mode:
+        messages_to_send = await inject_previews_before_latest_user(messages_to_send, chat_id)
+
     payload = {
         "model": model,
-        "messages": list(messages_to_send),
+        "messages": strip_research_artifacts(list(messages_to_send)),
         "stream": True,
         **extra_body
     }
@@ -191,29 +329,23 @@ async def generate_chat_response(api_url, model, messages, extra_body, rag=None,
     if api_key:
         payload["api_key"] = api_key
 
-    full_content = ""
-    full_reasoning = ""
-    current_content = ""
-    current_reasoning = ""
-    tool_calls = []
-    tool_flow_prefix = ""  # Preserved for redact reconstruction
-    reasoning_flow_prefix = ""
-
-    async for sse_chunk, final_state in _stream_and_accumulate(api_url, model, payload):
-        if final_state is not None:
-            current_content, current_reasoning, tool_calls = final_state
-        elif sse_chunk is not None:
-            yield sse_chunk
-            
-    full_content += current_content
-    full_reasoning += current_reasoning
+    if not tool_calls:
+        async for chunk_str, final_state in _stream_and_accumulate(api_url, model, payload, chat_id=chat_id, chat_template_kwargs=chat_template_kwargs):
+            if chunk_str:
+                yield chunk_str
+            else:
+                current_content, current_reasoning, tool_calls = final_state
+                
+        full_content += current_content
+        full_reasoning += current_reasoning
 
     # In the no-tool-call path, validatable_content is the same as current_content.
     validatable_content = current_content
 
     # 4. Tool Execution Loop
-    MAX_TOOL_ROUNDS = 5
+    MAX_TOOL_ROUNDS = config.MAX_TOOL_ROUNDS
     tool_round = 0
+    assistant_for_history = None  # Track assistant content for LLM history (not for persistence)
     while tool_calls and tool_round < MAX_TOOL_ROUNDS:
         tool_round += 1
         # Reconstruct full assistant message for history (with tags if reasoning exists)
@@ -221,7 +353,7 @@ async def generate_chat_response(api_url, model, messages, extra_body, rag=None,
         if current_reasoning:
             assistant_content_for_history = f"<think>\n{current_reasoning}\n</think>\n{current_content}"
 
-        # Build LLM history with the closed content
+        # Track assistant content for LLM history (add to messages_to_send to preserve turn sequence)
         messages_to_send.append({
             "role": "assistant",
             "content": assistant_content_for_history if assistant_content_for_history else "",
@@ -229,7 +361,28 @@ async def generate_chat_response(api_url, model, messages, extra_body, rag=None,
         })
         
         if tool_calls:
-            yield f"data: {json.dumps({'__assistant_tool_calls__': True, 'content': assistant_content_for_history if assistant_content_for_history else '', 'tool_calls': tool_calls})}\n\n"
+            try:
+                yield f"data: {json.dumps({'__assistant_tool_calls__': True, 'content': assistant_content_for_history if assistant_content_for_history else '', 'tool_calls': tool_calls})}\n\n"
+            except TypeError as e:
+                # Handle non-serializable tool call arguments
+                error_msg = f"JSON serialization error: {str(e)}"
+                log_event("tool_call_serialization_error", {"error": error_msg, "chat_id": chat_id})
+                # Try to serialize with sanitized arguments
+                sanitized_tool_calls = []
+                for tc in tool_calls:
+                    try:
+                        sanitized_tc = {
+                            "id": tc.get("id", ""),
+                            "type": tc.get("type", "function"),
+                            "function": {
+                                "name": tc.get("function", {}).get("name", ""),
+                                "arguments": str(tc.get("function", {}).get("arguments", ""))
+                            }
+                        }
+                        sanitized_tool_calls.append(sanitized_tc)
+                    except Exception:
+                        sanitized_tool_calls.append({"error": "Unable to serialize tool call"})
+                yield f"data: {json.dumps({'__assistant_tool_calls__': True, 'content': assistant_content_for_history if assistant_content_for_history else '', 'tool_calls': sanitized_tool_calls})}\n\n"
         
         has_real_tools = False
         for tc in tool_calls:
@@ -251,6 +404,17 @@ async def generate_chat_response(api_url, model, messages, extra_body, rag=None,
                 has_real_tools = True
                 continue
 
+            # Handle forbidden system-only tool
+            if fn_name == "execute_research_plan":
+                messages_to_send.append({
+                    "role": "tool",
+                    "tool_call_id": tc['id'],
+                    "name": fn_name,
+                    "content": "ERROR: You are FORBIDDEN from calling this tool directly. It is invoked automatically by the system after a research plan is approved. Continue with your normal response."
+                })
+                has_real_tools = True
+                continue
+
             if fn_name == "manage_core_memory" and rag:
                 t0 = time.time()
 
@@ -263,10 +427,6 @@ async def generate_chat_response(api_url, model, messages, extra_body, rag=None,
                 edits = edits[:config.MEMORY_MAX_EDIT_PER_TURN]
                 deletions = deletions[:config.MEMORY_MAX_DELETE_PER_TURN]
 
-                log = f"Calling: manage_core_memory(adding: {len(additions)}, editing: {len(edits)}, deleting: {len(deletions)})\n"
-                current_reasoning += log
-                yield f"data: {create_chunk(model, reasoning=log)}\n\n"
-                
                 results = []
 
                 for item in additions:
@@ -313,9 +473,6 @@ async def generate_chat_response(api_url, model, messages, extra_body, rag=None,
                 
                 duration = time.time() - t0
                 log_tool_call(fn_name, args, context_result, duration_s=duration, chat_id=chat_id)
-                res_log = f"Result: Memory operations completed.\n"
-                current_reasoning += res_log
-                yield f"data: {create_chunk(model, reasoning=res_log)}\n\n"
                 yield f"data: {json.dumps({'__tool_result__': True, 'tool_call_id': tc['id'], 'name': fn_name, 'result': f'<tool_result>{context_result}</tool_result>'})}\n\n"
                 has_real_tools = True
             elif fn_name == "search_web":
@@ -326,101 +483,468 @@ async def generate_chat_response(api_url, model, messages, extra_body, rag=None,
                 end_date = args.get("end_date")
                 include_images = has_vision
                 
-                log = f"Calling: MCP search_web(\"{query}\")\n"
-                current_reasoning += log
-                yield f"data: {create_chunk(model, reasoning=log)}\n\n"
-                
                 t0 = time.time()
                 mcp_args = {
                     "query": query, "topic": topic, "time_range": time_range,
                     "start_date": start_date, "end_date": end_date,
                     "include_images": include_images, "chat_id": chat_id
                 }
-                mcp_res = await tavily_client.execute_tool("search_web", mcp_args)
-                
-                # Parse JSON string from MCP tool result
                 try:
-                    res_json = json.loads(mcp_res.content[0].text)
-                    search_result = res_json.get("standard_output", "")
-                    raw_result = res_json.get("raw_output", "")
-                except:
-                    search_result = mcp_res.content[0].text
-                    raw_result = ""
+                    async def do_search():
+                        return await tavily_client.execute_tool("search_web", mcp_args)
 
-                duration = time.time() - t0
-                log_tool_call("mcp_search_web", mcp_args, search_result, duration_s=duration, chat_id=chat_id)
+                    mcp_res = await execute_with_retry_async(do_search)
+
+                    # Parse JSON string from MCP tool result
+                    try:
+                        res_json = json.loads(mcp_res.content[0].text)
+                        search_result = res_json.get("standard_output", "")
+                        raw_result = res_json.get("raw_output", "")
+                    except:
+                        search_result = mcp_res.content[0].text
+                        raw_result = ""
+
+                    duration = time.time() - t0
+                    log_tool_call("mcp_search_web", mcp_args, search_result, duration_s=duration, chat_id=chat_id)
+                except Exception as e:
+                    duration = time.time() - t0
+                    error_type = classify_error(e)
+                    retryable = is_retryable(error_type)
+                    error_response = create_error_response(e, error_type, retryable=retryable, details={"chat_id": chat_id})
+                    search_result = f"ERROR: MCP Tool 'search_web' failed: {error_response['error']}"
+                    raw_result = ""
+                    log_tool_call("mcp_search_web", mcp_args, search_result, duration_s=duration, chat_id=chat_id)
+                    log_event("tool_execution_error", {"tool": "search_web", "error_type": error_type, "retryable": retryable, "error": str(e), "chat_id": chat_id})
 
                 # If Deep Search mode is on, append raw content immediately
                 if search_depth_mode == 'deep':
-                    log_audit = "Deep Search Mode: Automatically auditing search results via MCP...\n"
-                    current_reasoning += log_audit
-                    yield f"data: {create_chunk(model, reasoning=log_audit)}\n\n"
-                    
                     search_result = f"Summary:\n{search_result}\n\n==== RAW PAGE CONTENT ====\n{raw_result}"
 
                 messages_to_send.append({
                     "role": "tool", "tool_call_id": tc['id'], "name": fn_name,
                     "content": search_result
                 })
-                
-                res_log = "Result: Search completed via MCP.\n"
-                current_reasoning += res_log
-                yield f"data: {create_chunk(model, reasoning=res_log)}\n\n"
+
                 yield f"data: {json.dumps({'__tool_result__': True, 'tool_call_id': tc['id'], 'name': fn_name, 'result': search_result})}\n\n"
                 has_real_tools = True
             elif fn_name == "audit_search":
                 t0 = time.time()
-                log = "Calling: MCP audit_search()\n"
-                current_reasoning += log
-                yield f"data: {create_chunk(model, reasoning=log)}\n\n"
-                
                 mcp_args = {"chat_id": chat_id}
-                mcp_res = await tavily_client.execute_tool("audit_search", mcp_args)
-                raw_result = mcp_res.content[0].text
+                try:
+                    async def do_audit():
+                        return await tavily_client.execute_tool("audit_search", mcp_args)
 
+                    mcp_res = await execute_with_retry_async(do_audit)
+                    raw_result = mcp_res.content[0].text
+
+                    duration = time.time() - t0
+                    log_tool_call(fn_name, args, raw_result, duration_s=duration, chat_id=chat_id)
+                except Exception as e:
+                    duration = time.time() - t0
+                    error_type = classify_error(e)
+                    retryable = is_retryable(error_type)
+                    error_response = create_error_response(e, error_type, retryable=retryable, details={"chat_id": chat_id})
+                    raw_result = f"ERROR: MCP Tool 'audit_search' failed: {error_response['error']}"
+                    log_tool_call(fn_name, args, raw_result, duration_s=duration, chat_id=chat_id)
+                    log_event("tool_execution_error", {"tool": "audit_search", "error_type": error_type, "retryable": retryable, "error": str(e), "chat_id": chat_id})
+                
                 messages_to_send.append({
                     "role": "tool", "tool_call_id": tc['id'], "name": fn_name,
                     "content": raw_result
                 })
-                
-                duration = time.time() - t0
-                log_tool_call(fn_name, args, raw_result, duration_s=duration, chat_id=chat_id)
-                res_log = "Result: Audit available via MCP.\n"
-                current_reasoning += res_log
-                yield f"data: {create_chunk(model, reasoning=res_log)}\n\n"
                 yield f"data: {json.dumps({'__tool_result__': True, 'tool_call_id': tc['id'], 'name': fn_name, 'result': raw_result})}\n\n"
 
             elif fn_name == "visit_page_tool":
                 url_arg = args.get("url", "...")
                 t0 = time.time()
-                log = f"Calling: MCP visit_page_tool(\"{url_arg}\")\n"
-                current_reasoning += log
-                yield f"data: {create_chunk(model, reasoning=log)}\n\n"
 
                 mcp_args = {"url": url_arg}
                 if "detail_level" in args:
                     mcp_args["detail_level"] = args["detail_level"]
-                mcp_res = await playwright_client.execute_tool("visit_page_tool", mcp_args)
-                raw_result = mcp_res.content[0].text
+                try:
+                    async def do_visit():
+                        return await playwright_client.execute_tool("visit_page_tool", mcp_args)
+
+                    mcp_res = await execute_with_retry_async(do_visit)
+                    raw_result = mcp_res.content[0].text
+
+                    duration = time.time() - t0
+                    log_tool_call(fn_name, args, raw_result, duration_s=duration, chat_id=chat_id)
+                except Exception as e:
+                    duration = time.time() - t0
+                    error_type = classify_error(e)
+                    retryable = is_retryable(error_type)
+                    error_response = create_error_response(e, error_type, retryable=retryable, details={"chat_id": chat_id})
+                    raw_result = f"ERROR: MCP Tool 'visit_page_tool' failed: {error_response['error']}"
+                    log_tool_call(fn_name, args, raw_result, duration_s=duration, chat_id=chat_id)
+                    log_event("tool_execution_error", {"tool": "visit_page_tool", "error_type": error_type, "retryable": retryable, "error": str(e), "chat_id": chat_id})
+                
+                # Truncate content to safe limit for LLM history (default 8000 from config)
+                truncated_result = raw_result
+                if len(raw_result) > config.MAX_CHARS_VISIT_PAGE:
+                    truncated_result = raw_result[:config.MAX_CHARS_VISIT_PAGE] + "\n\n... (content truncated for length) ..."
+                
+                messages_to_send.append({
+                    "role": "tool", "tool_call_id": tc['id'], "name": fn_name,
+                    "content": truncated_result
+                })
+                yield f"data: {json.dumps({'__tool_result__': True, 'tool_call_id': tc['id'], 'name': fn_name, 'result': raw_result})}\n\n"
+                has_real_tools = True
+            elif fn_name == "manage_canvas":
+                t0 = time.time()
+                action = args.get("action", "create")
+                canvas_id = args.get("id", None)  # Let canvas_manager generate if None
+                title = args.get("title", "Untitled Canvas")
+                content = args.get("content", "")
+                target_section = args.get("target_section")
+
+                # Validate target_section is provided for patch action (Rule 17)
+                is_valid, error_msg = validate_patch_action(action, target_section)
+                if not is_valid:
+                    raw_result = {"success": False, "error": error_msg}
+                    # Always append a tool reply so the assistant turn is not orphaned
+                    messages_to_send.append({
+                        "role": "tool", "tool_call_id": tc['id'], "name": fn_name,
+                        "content": json.dumps(raw_result)
+                    })
+                    yield f"data: {json.dumps({'__tool_result__': True, 'tool_call_id': tc['id'], 'name': fn_name, 'result': json.dumps(raw_result)})}\n\n"
+                    has_real_tools = True
+                    continue
+
+                # Use centralized canvas manager
+                try:
+                    if action == "create":
+                        result = await create_canvas(
+                            chat_id=chat_id,
+                            canvas_id=canvas_id,
+                            title=title,
+                            content=content,
+                            author="system"
+                        )
+                        final_content = content
+                        sse_action = "create"
+
+                    elif action == "append":
+                        existing_content = await get_canvas_content(canvas_id, chat_id) or ""
+                        result = await append_to_canvas(
+                            canvas_id,
+                            chat_id,
+                            content,
+                            author="system"
+                        )
+                        final_content = result.get("content", content)
+                        sse_action = "append"
+
+                    elif action == "patch" and target_section:
+                        result = await patch_canvas_section(
+                            canvas_id,
+                            chat_id,
+                            target_section,
+                            content,
+                            author="system"
+                        )
+                        final_content = await get_canvas_content(canvas_id, chat_id) or ""
+                        sse_action = "replace"
+                        patch_heading_found = result.get("section_replaced", True)
+
+                    elif action == "delete_section" and target_section:
+                        result = await delete_section(
+                            canvas_id,
+                            chat_id,
+                            target_section,
+                            author="system"
+                        )
+                        final_content = await get_canvas_content(canvas_id, chat_id) or ""
+                        sse_action = "replace"
+                        section_removed = result.get("section_removed", False)
+
+                    elif action == "replace":
+                        result = await update_canvas_content(
+                            canvas_id,
+                            chat_id,
+                            content,
+                            author="system"
+                        )
+                        final_content = content
+                        sse_action = "replace"
+
+                    else:
+                        # Default to create if action is unknown
+                        result = await create_canvas(
+                            chat_id=chat_id,
+                            canvas_id=canvas_id,
+                            title=title,
+                            content=content,
+                            author="system"
+                        )
+                        final_content = content
+                        sse_action = "create"
+
+                    # Yield the __canvas_update__ SSE event for the frontend
+                    yield f"data: {json.dumps({
+                        '__canvas_update__': {
+                            'action': sse_action,
+                            'id': result.get("canvas_id", canvas_id),
+                            'title': title,
+                            'content': final_content
+                        }
+                    })}\n\n"
+
+                    # Special handling for delete_section result message
+                    if action == "delete_section":
+                        section_removed = result.get("section_removed", False)
+                        if section_removed:
+                            tool_result = f"Section '{target_section}' deleted from canvas '{title}' successfully."
+                        else:
+                            tool_result = f"Section '{target_section}' not found in canvas '{title}'. No changes made."
+                    else:
+                        tool_result = f"Canvas '{title}' ({result.get('canvas_id', canvas_id)}) {action}d successfully."
+                    messages_to_send.append({
+                        "role": "tool", "tool_call_id": tc['id'], "name": fn_name,
+                        "content": tool_result
+                    })
+
+                except Exception as e:
+                    final_content = content
+                    sse_action = "replace"
+                    error_type = classify_error(e)
+                    retryable = is_retryable(error_type)
+                    error_response = create_error_response(e, error_type, retryable=retryable, details={"chat_id": chat_id, "action": action})
+                    tool_result = f"ERROR: Failed to manage canvas: {error_response['error']}"
+                    yield f"data: {json.dumps({
+                        '__canvas_update__': {
+                            'action': sse_action,
+                            'id': canvas_id,
+                            'title': title,
+                            'content': final_content
+                        }
+                    })}\n\n"
+                    messages_to_send.append({
+                        "role": "tool", "tool_call_id": tc['id'], "name": fn_name,
+                        "content": tool_result
+                    })
+
+                duration = time.time() - t0
+                log_tool_call(fn_name, args, tool_result, duration_s=duration, chat_id=chat_id)
+                yield f"data: {json.dumps({'__tool_result__': True, 'tool_call_id': tc['id'], 'name': fn_name, 'result': tool_result})}\n\n"
+                has_real_tools = True
+            elif fn_name == "create_canvas":
+                # Handle the new dedicated create_canvas tool
+                t0 = time.time()
+                title = args.get("title", "Untitled Canvas")
+                content = args.get("content", "")
+
+                # Validate required fields
+                if not title or not content:
+                    raw_result = {"success": False, "error": "title and content are required for create_canvas"}
+                    # Always append a tool reply so the assistant turn is not orphaned
+                    messages_to_send.append({
+                        "role": "tool", "tool_call_id": tc['id'], "name": fn_name,
+                        "content": json.dumps(raw_result)
+                    })
+                    yield f"data: {json.dumps({'__tool_result__': True, 'tool_call_id': tc['id'], 'name': fn_name, 'result': json.dumps(raw_result)})}\n\n"
+                    has_real_tools = True
+                    continue
+
+                # Create canvas without ID - backend will auto-generate
+                try:
+                    result = await create_canvas(
+                        chat_id=chat_id,
+                        canvas_id=None,  # Explicitly None to trigger auto-generation
+                        title=title,
+                        content=content,
+                        author="system"
+                    )
+
+                    # Yield the __canvas_update__ SSE event for the frontend
+                    yield f"data: {json.dumps({
+                        '__canvas_update__': {
+                            'action': 'create',
+                            'id': result.get("canvas_id"),
+                            'title': title,
+                            'content': content
+                        }
+                    })}\n\n"
+
+                    # Return the generated ID prominently for AI to use
+                    tool_result = f"Canvas '{title}' created successfully with ID: {result.get('canvas_id')}"
+                    messages_to_send.append({
+                        "role": "tool", "tool_call_id": tc['id'], "name": fn_name,
+                        "content": tool_result
+                    })
+
+                except Exception as e:
+                    error_type = classify_error(e)
+                    retryable = is_retryable(error_type)
+                    error_response = create_error_response(e, error_type, retryable=retryable, details={"chat_id": chat_id, "action": "create"})
+                    tool_result = f"ERROR: Failed to create canvas: {error_response['error']}"
+                    messages_to_send.append({
+                        "role": "tool", "tool_call_id": tc['id'], "name": fn_name,
+                        "content": tool_result
+                    })
+
+                duration = time.time() - t0
+                log_tool_call(fn_name, args, tool_result, duration_s=duration, chat_id=chat_id)
+                yield f"data: {json.dumps({'__tool_result__': True, 'tool_call_id': tc['id'], 'name': fn_name, 'result': tool_result})}\n\n"
+                has_real_tools = True
+            elif fn_name == "read_canvas":
+                # Handle the read_canvas tool
+                t0 = time.time()
+                canvas_id = args.get("id", None)
+                target_section = args.get("target_section")
+
+                if not canvas_id:
+                    tool_result = {"success": False, "error": "canvas id is required"}
+                    messages_to_send.append({
+                        "role": "tool", "tool_call_id": tc['id'], "name": fn_name,
+                        "content": json.dumps(tool_result)
+                    })
+                    duration = time.time() - t0
+                    log_tool_call(fn_name, args, tool_result, duration_s=duration, chat_id=chat_id)
+                    continue
+
+                try:
+                    result = await read_canvas_section(canvas_id, chat_id, target_section)
+
+                    if not result.get("section_found"):
+                        tool_result = {
+                            "success": False,
+                            "error": f"Section '{target_section}' not found in canvas {canvas_id}"
+                        }
+                    else:
+                        tool_result = {
+                            "success": True,
+                            "id": result["canvas_id"],
+                            "section": result["section_read"],
+                            "char_count": result["char_count"],
+                            "content": result.get("content", ""),
+                            "message": "Content available for current turn only. Call read_canvas again to reference in later turns."
+                        }
+
+                    # Store content separately (not in conversation history)
+                    read_content = result.get("content", "")
+
+                except Exception as e:
+                    tool_result = {"success": False, "error": str(e)}
+                    read_content = ""
+
+                # Log completion
+                duration = time.time() - t0
+                log_tool_call(fn_name, args, tool_result, duration_s=duration, chat_id=chat_id)
+                yield f"data: {json.dumps({'__tool_result__': True, 'tool_call_id': tc['id'], 'name': fn_name, 'result': tool_result})}\n\n"
+
+                messages_to_send.append({
+                    "role": "tool",
+                    "tool_call_id": tc['id'],
+                    "name": fn_name,
+                    "content": json.dumps(tool_result) if isinstance(tool_result, dict) else str(tool_result)
+                })
+
+                # Store content in a special key for frontend handling (not persisted)
+                yield f"data: {json.dumps({'__read_canvas_content__': read_content, 'tool_call_id': tc['id']})}\n\n"
+                has_real_tools = True
+            elif fn_name == "initiate_research_plan":
+                topic = args.get("topic")
+                edits = args.get("edits")
+                t0 = time.time()
+
+                # Import locally to avoid circular dependencies
+                from backend.agents.research import generate_research_response
+                
+                # We call generate_research_response with approved_plan=None.
+                # It will run Scout and Planner, then stop and return the XML plan.
+                research_gen = generate_research_response(
+                    api_url=api_url,
+                    model=model,
+                    messages=messages, # Original messages for context
+                    approved_plan=None,
+                    chat_id=chat_id,
+                    search_depth_mode=search_depth_mode,
+                    vision_model=extra_body.get("visionModel"),
+                    model_name=model,
+                    api_key=api_key,
+                    edits=edits,
+                    topic_override=topic,
+                    resume_state=resume_state,
+                    vision_enabled=extra_body.get("visionEnabled", True)
+                )
+                plan_result = ""
+                plan_reasoning = ""
+                async for chunk in research_gen:
+                    # Intercept planning activities to show them in the thought process wrapper 
+                    # instead of the live activity feed.
+                    if chunk.startswith("data: "):
+                        try:
+                            chunk_data = json.loads(chunk[6:])
+                            delta = chunk_data['choices'][0]['delta']
+                            if 'reasoning_content' in delta:
+                                plan_reasoning += delta['reasoning_content']
+                                try:
+                                    parsed_act = json.loads(delta['reasoning_content'])
+                                    if parsed_act.get('__research_activity__') and parsed_act.get('type') == 'planning':
+                                        msg = parsed_act['data'].get('message', '')
+                                        # Yield as standard reasoning to show in thought bubble
+                                        yield f"data: {create_chunk(model, reasoning=f'\n🔍 {msg}\n')}\n\n"
+                                        continue
+                                except:
+                                    pass
+                        except:
+                            pass
+                    if chunk.startswith("data: "):
+                        try:
+                            # Direct manipulation of the raw JSON string to be fast
+                            chunk = chunk.replace('"choices":', '"internal": true, "choices":')
+                        except:
+                            pass
+                    yield chunk
+                    
+                    # Accumulate for tool result (we only care about the final XML or result)
+                    try:
+                        if chunk.startswith("data: "):
+                            chunk_data = json.loads(chunk[6:])
+                            delta = chunk_data['choices'][0]['delta']
+                            content = delta.get('content', '')
+                            if content:
+                                plan_result += content
+                    except:
+                        pass
 
                 messages_to_send.append({
                     "role": "tool", "tool_call_id": tc['id'], "name": fn_name,
-                    "content": raw_result
+                    "content": plan_result
                 })
-
+                
                 duration = time.time() - t0
-                log_tool_call(fn_name, args, raw_result, duration_s=duration, chat_id=chat_id)
-                res_log = "Result: Page visit completed via MCP.\n"
-                current_reasoning += res_log
-                yield f"data: {create_chunk(model, reasoning=res_log)}\n\n"
-                yield f"data: {json.dumps({'__tool_result__': True, 'tool_call_id': tc['id'], 'name': fn_name, 'result': raw_result})}\n\n"
-                has_real_tools = True
+                log_tool_call(fn_name, args, plan_result, duration_s=duration, chat_id=chat_id)
+                yield f"data: {json.dumps({'__tool_result__': True, 'tool_call_id': tc['id'], 'name': fn_name, 'result': plan_result})}\n\n"
+                
+                # 5. FINALIZATION: Sync the manual research result into full_content 
+                # and stop the turn. We don't want the AI to "render" the plan again.
+                full_content += plan_result
+                full_reasoning += current_reasoning
+                
+                yield "data: [DONE]\n\n"
+                
+                # Persistence Fix: Update the assistant message that made the tool call with the plan result
+                # since it was streamed directly to the frontend under that assistant bubble
+                for m in reversed(messages_to_send):
+                    if m.get('role') == 'assistant' and tc in m.get('tool_calls', []):
+                        m_content = m.get('content') or ""
+                        if plan_reasoning:
+                            m_content += f"\n<think>\n{plan_reasoning}\n</think>\n"
+                        m_content += plan_result
+                        m['content'] = m_content
+                        break
+                
+                # Persistence Fix: We must yield the transaction messages to save the tool result!
+                clean_messages = filter_bloated_tool_results(messages_to_send)
+                for msg in clean_messages:
+                    if msg.get('role') == 'assistant' and 'model' not in msg:
+                        msg['model'] = model
+                yield f"__TRANSACTION_MESSAGES__:{json.dumps(clean_messages)}"
+                return
             elif fn_name == "get_time":
                 t0 = time.time()
-                log = "Calling: get_time()\n"
-                current_reasoning += log
-                yield f"data: {create_chunk(model, reasoning=log)}\n\n"
-                
                 current_time = get_current_time()
                 messages_to_send.append({
                     "role": "tool", "tool_call_id": tc['id'], "name": fn_name,
@@ -429,9 +953,6 @@ async def generate_chat_response(api_url, model, messages, extra_body, rag=None,
                 
                 duration = time.time() - t0
                 log_tool_call(fn_name, args, current_time, duration_s=duration, chat_id=chat_id)
-                res_log = f"Result: {current_time}\n"
-                current_reasoning += res_log
-                yield f"data: {create_chunk(model, reasoning=res_log)}\n\n"
                 yield f"data: {json.dumps({'__tool_result__': True, 'tool_call_id': tc['id'], 'name': fn_name, 'result': current_time})}\n\n"
                 has_real_tools = True
             else:
@@ -439,7 +960,7 @@ async def generate_chat_response(api_url, model, messages, extra_body, rag=None,
                 # message history stays valid (every tool_call needs a result).
                 log_event("tool_call_unrecognized", {"fn_name": fn_name, "chat_id": chat_id})
                 err_log = f"Unrecognized tool: {fn_name}\n"
-                current_reasoning += err_log
+                # Stream to UI, do not append to history
                 yield f"data: {create_chunk(model, reasoning=err_log)}\n\n"
                 messages_to_send.append({
                     "role": "tool",
@@ -455,24 +976,27 @@ async def generate_chat_response(api_url, model, messages, extra_body, rag=None,
 
         # --- 4e. Send follow-up request ---
         if has_real_tools:
-            payload["messages"] = list(messages_to_send)
+            payload["messages"] = strip_research_artifacts(list(messages_to_send))
             if tool_round >= MAX_TOOL_ROUNDS:
                 payload.pop("tools", None)
                 payload.pop("tool_choice", None)
             
+            # 5. Second LLM Call (Validation & Response)
+            start_time_val = time.time()
             current_content = ""
             current_reasoning = ""
             tool_calls = []
 
-            async for sse_chunk, final_state in _stream_and_accumulate(api_url, model, payload):
-                if final_state is not None:
+            async for chunk_str, final_state in _stream_and_accumulate(api_url, model, payload, chat_id=chat_id, chat_template_kwargs=chat_template_kwargs):
+                if chunk_str:
+                    yield chunk_str
+                else:
                     current_content, current_reasoning, tool_calls = final_state
-                    full_content += current_content
-                    full_reasoning += current_reasoning
-                    # Only the final LLM call's content is subject to validation
-                    validatable_content = current_content
-                elif sse_chunk is not None:
-                    yield sse_chunk
+
+            full_content += current_content
+            full_reasoning += current_reasoning
+            # Only the final LLM call's content is subject to validation
+            validatable_content = current_content
         else:
             break
 
@@ -511,48 +1035,56 @@ async def generate_chat_response(api_url, model, messages, extra_body, rag=None,
             current_tools = []
         combined_tools = current_tools + validation_tool_schema
 
-        # --- Phase 2: Ask AI for contextual splice fixes (non-streaming) ---
-        fix_messages = build_fix_messages(messages_to_send, validatable_content, validation_errors)
-        fix_payload = {
-            "model": model,
-            "messages": fix_messages,
-            "tools": combined_tools,
-            **extra_body
-        }
-        log_event("validation_fix_attempt", {"chat_id": chat_id, "strategy": "contextual_splice"})
-        fix_response = chat_completion(api_url, fix_payload)
+        # Skip Splice attempt if response was completely empty (nothing to splice into)
+        can_splice = 'NO_OUTPUT' not in error_codes and validatable_content.strip()
         
+        # --- Phase 2: Ask AI for contextual splice fixes (non-streaming) ---
         fix_applied = False
-        if fix_response:
-            fixes = parse_fixes(fix_response)
-            if fixes:
-                log_event("validation_fixes_parsed", {"chat_id": chat_id, "count": len(fixes)})
-                locations = find_fix_locations(validatable_content, fixes)
-                if locations:
-                    fixed_content = apply_fixes(validatable_content, locations)
-                    
-                    # Re-validate the fixed content
-                    recheck_errors = validate_output_format(fixed_content, current_reasoning)
-                    if not recheck_errors:
-                        log_event("validation_fix_success", {"chat_id": chat_id})
-                        validatable_content = fixed_content
-                        full_content = tool_flow_prefix + fixed_content
-                        fix_applied = True
+        if can_splice:
+            fix_messages = build_fix_messages(strip_research_artifacts(list(messages_to_send)), validatable_content, validation_errors)
+            fix_payload = {
+                "model": model,
+                "messages": fix_messages,
+                "tools": combined_tools,
+                **extra_body
+            }
+            log_event("validation_fix_attempt", {"chat_id": chat_id, "strategy": "contextual_splice"})
+            t0 = time.time()
+            fix_response = chat_completion(api_url, fix_payload, chat_id=chat_id)
+            # Log is handled inside chat_completion
+            
+            if fix_response:
+                fixes = parse_fixes(fix_response)
+                if fixes:
+                    log_event("validation_fixes_parsed", {"chat_id": chat_id, "count": len(fixes)})
+                    locations = find_fix_locations(validatable_content, fixes)
+                    if locations:
+                        fixed_content = apply_fixes(validatable_content, locations)
                         
-                        # Stream the corrected second response
-                        for chunk in _stream_corrected_content(model, fixed_content, fixed_reasoning=current_reasoning):
-                            yield chunk
+                        # Re-validate the fixed content
+                        recheck_errors = validate_output_format(fixed_content, current_reasoning)
+                        if not recheck_errors:
+                            log_event("validation_fix_success", {"chat_id": chat_id})
+                            validatable_content = fixed_content
+                            full_content = tool_flow_prefix + fixed_content
+                            fix_applied = True
+                            
+                            # Stream the corrected second response
+                            for chunk in _stream_corrected_content(model, fixed_content, fixed_reasoning=current_reasoning):
+                                yield chunk
+                        else:
+                            log_event("validation_fix_failure", {"chat_id": chat_id, "reason": "recheck_failed", "errors": [e['code'] for e in recheck_errors]})
                     else:
-                        log_event("validation_fix_failure", {"chat_id": chat_id, "reason": "recheck_failed", "errors": [e['code'] for e in recheck_errors]})
+                        log_event("validation_fix_failure", {"chat_id": chat_id, "reason": "splice_points_not_found"})
                 else:
-                    log_event("validation_fix_failure", {"chat_id": chat_id, "reason": "splice_points_not_found"})
-            else:
-                log_event("validation_fix_failure", {"chat_id": chat_id, "reason": "no_fixes_parsed"})
+                    log_event("validation_fix_failure", {"chat_id": chat_id, "reason": "no_fixes_parsed"})
+        else:
+            log_event("validation_skip_splice", {"chat_id": chat_id, "reason": "no_output_for_anchor"})
         
         # --- Phase 3: Fallback — full regeneration ---
         if not fix_applied:
             log_event("validation_fallback", {"chat_id": chat_id, "strategy": "full_regeneration"})
-            regen_messages = build_regeneration_messages(messages_to_send, validation_errors)
+            regen_messages = build_regeneration_messages(strip_research_artifacts(list(messages_to_send)), validation_errors)
             regen_payload = {
                 "model": model,
                 "messages": regen_messages,
@@ -563,7 +1095,7 @@ async def generate_chat_response(api_url, model, messages, extra_body, rag=None,
             
             validatable_content = ""
             
-            async for sse_chunk, final_state in _stream_and_accumulate(api_url, model, regen_payload):
+            async for sse_chunk, final_state in _stream_and_accumulate(api_url, model, regen_payload, chat_template_kwargs=chat_template_kwargs):
                 if final_state is not None:
                     validatable_content, regen_reasoning, _ = final_state
                     full_content = tool_flow_prefix + validatable_content
@@ -588,5 +1120,252 @@ async def generate_chat_response(api_url, model, messages, extra_body, rag=None,
                 log_event("validation_final_success", {"chat_id": chat_id})
 
     yield "data: [DONE]\n\n"
+
+    # Append final assistant message with current turn's reasoning + content to messages_to_send
+    final_assistant_content = current_content
+    if current_reasoning:
+        final_assistant_content = f"<think>\n{current_reasoning}\n</think>\n{current_content}"
+
+    # Only append if we have content
+    if final_assistant_content:
+        # Check if the last message in messages_to_send is an assistant message
+        # that we just added in the tool loop but didn't have content for yet.
+        if messages_to_send and messages_to_send[-1].get('role') == 'assistant' and not messages_to_send[-1].get('content') and not messages_to_send[-1].get('tool_calls'):
+             # Replace the empty placeholder with real content
+             messages_to_send[-1]['content'] = final_assistant_content
+        else:
+            messages_to_send.append({
+                "role": "assistant",
+                "content": final_assistant_content,
+                "tool_calls": []
+            })
+
+    # Prepare messages for atomic persistence (clean filtering for DB)
+    clean_messages = filter_bloated_tool_results(messages_to_send)
+
+    # Add model field to assistant messages if not present
+    for msg in clean_messages:
+        if msg.get('role') == 'assistant' and 'model' not in msg:
+            msg['model'] = model
+
+    # Yield messages for atomic persistence
+    yield f"__TRANSACTION_MESSAGES__:{json.dumps(clean_messages)}"
+
+
+async def inject_previews_before_latest_user(messages, chat_id):
+    """
+    Inject preview_canvases tool call and response before latest user message.
+
+    Args:
+        messages: List of conversation messages
+        chat_id: The chat identifier
+
+    Returns:
+        Messages with preview tool call/response injected before latest user
+    """
+    if not chat_id:
+        return messages
+
+    try:
+        canvases = await get_chat_canvases_with_details(chat_id, include_content=False)
+    except Exception:
+        return messages
+
+    if not canvases:
+        return messages
+
+    # Format as tool response (inventory_data format)
+    inventory_data = []
+    for c in canvases:
+        inventory_data.append({
+            "id": c['id'],
+            "title": c['title'],
+            "preview": c.get('preview', '')
+        })
+
+    # Find the LAST user message
+    latest_user_index = -1
+    for i in range(len(messages) - 1, -1, -1):
+        if messages[i].get('role') == 'user':
+            latest_user_index = i
+            break
+
+    call_id = f"auto_preview_{int(time.time())}"
+
+    # If no user message found, inject at the beginning (new chat case)
+    if latest_user_index == -1:
+        messages.insert(0, {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [{
+                "id": call_id,
+                "type": "function",
+                "function": {
+                    "name": "preview_canvases",
+                    "arguments": "{}"
+                }
+            }]
+        })
+        messages.insert(1, {
+            "role": "tool",
+            "tool_call_id": call_id,
+            "name": "preview_canvases",
+            "content": json.dumps(inventory_data)
+        })
+    else:
+        # Insert tool call (assistant role) before user message
+        messages[latest_user_index:latest_user_index] = [{
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [{
+                "id": call_id,
+                "type": "function",
+                "function": {
+                    "name": "preview_canvases",
+                    "arguments": "{}"
+                }
+            }]
+        }]
+
+        # Insert tool response after the tool call
+        messages[latest_user_index + 1:latest_user_index + 1] = [{
+            "role": "tool",
+            "tool_call_id": call_id,
+            "name": "preview_canvases",
+            "content": json.dumps(inventory_data)
+        }]
+    return messages
+
+
+def filter_preview_canvases_tool(messages):
+    """
+    Step 1 of the persistence cleanup: Identify preview and read_canvas tool IDs.
+    Returns (skip_ids, read_canvas_ids).
+    """
+    skip_ids = set()
+    read_canvas_ids = set()
+    for msg in messages:
+        if msg.get('role') == 'assistant':
+            tool_calls = msg.get('tool_calls')
+            if not tool_calls:
+                continue
+            
+            # Robustly handle stringified tool_calls from history
+            if isinstance(tool_calls, str):
+                try: 
+                    tool_calls = json.loads(tool_calls)
+                except (json.JSONDecodeError, TypeError): 
+                    tool_calls = []
+                
+            if isinstance(tool_calls, list):
+                for tc in tool_calls:
+                    if not isinstance(tc, dict):
+                        continue
+                    tc_id = tc.get('id')
+                    fn_name = tc.get('function', {}).get('name')
+                    if tc_id:
+                        if fn_name == 'preview_canvases':
+                            skip_ids.add(tc_id)
+                        elif fn_name == 'read_canvas':
+                            read_canvas_ids.add(tc_id)
+                            
+    return skip_ids, read_canvas_ids
+
+def filter_bloated_tool_results(messages):
+    """
+    Handles all filtering and redaction for database persistence.
+    """
+    import copy
+    import json
+    
+    filtered = []
+    skip_ids, read_canvas_ids = filter_preview_canvases_tool(messages)
+    placeholder = ""
+
+    # Step 2: Filter and Redact
+    for msg in messages:
+        role = msg.get('role')
+        
+        # 1. Skip system messages
+        if role == 'system':
+            continue
+            
+        # 2. Handle assistant messages (filter out individual preview tool-call metadata)
+        if role == 'assistant':
+            tool_calls = msg.get('tool_calls')
+            if tool_calls:
+                # Robustly handle stringified tool_calls from history
+                if isinstance(tool_calls, str):
+                    try:
+                        tool_calls = json.loads(tool_calls)
+                    except (json.JSONDecodeError, TypeError):
+                        tool_calls = []
+                
+                # Filter out preview calls from this specific assistant message
+                if isinstance(tool_calls, list):
+                    new_calls = [tc for tc in tool_calls if isinstance(tc, dict) and tc.get('id') not in skip_ids]
+                    
+                    # Skip entire message if it was ONLY previews and had no text content
+                    if not new_calls and not msg.get('content'):
+                        continue
+                    
+                    msg_copy = dict(msg)
+                    msg_copy['tool_calls'] = new_calls
+                    filtered.append(msg_copy)
+                    continue
+            
+        # 3. Handle tool result messages
+        if role == 'tool':
+            call_id = msg.get('tool_call_id')
+            msg_name = str(msg.get('name') or "")
+            
+            # A. Skip preview results entirely (they are transient and recreated every turn)
+            if call_id in skip_ids or msg_name == 'preview_canvases':
+                continue
+            
+            # B. Redact read_canvas results (unconditional preservation)
+            # We preserve these because every tool call MUST have a corresponding result in history
+            if call_id in read_canvas_ids or "read_canvas" in msg_name:
+                msg_copy = copy.copy(msg)
+                content = msg.get('content')
+                
+                try:
+                    # Redaction logic (handles JSON strings, dicts, or raw text)
+                    if isinstance(content, str):
+                        try:
+                            # Try parsing as JSON first
+                            data = json.loads(content)
+                            if isinstance(data, dict) and 'content' in data:
+                                data['content'] = placeholder
+                                msg_copy['content'] = json.dumps(data)
+                            elif not content.strip():
+                                msg_copy['content'] = placeholder
+                            else:
+                                msg_copy['content'] = placeholder
+                        except (json.JSONDecodeError, TypeError):
+                            if content.strip():
+                                msg_copy['content'] = placeholder
+                    elif isinstance(content, dict):
+                        content_copy = copy.copy(content)
+                        if 'content' in content_copy:
+                            content_copy['content'] = placeholder
+                        msg_copy['content'] = json.dumps(content_copy)
+                    elif content:
+                        msg_copy['content'] = placeholder
+                except Exception:
+                    msg_copy['content'] = placeholder
+                
+                filtered.append(msg_copy)
+                continue
+            
+            # C. Safety Preserve: Any other tool result (like manage_core_memory) MUST be preserved
+            # A tool result should NEVER be dropped unless it is a preview.
+            filtered.append(msg)
+            continue
+
+        # 4. Final catch-all for all other messages
+        filtered.append(msg)
+        
+    return filtered
 
 

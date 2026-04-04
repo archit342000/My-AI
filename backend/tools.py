@@ -123,3 +123,155 @@ VALIDATE_OUTPUT_FORMAT_TOOL = {
         }
     }
 }
+
+INITIATE_RESEARCH_PLAN_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "initiate_research_plan",
+        "description": "Starts the internal Research Scout and Planning sub-process to prepare a comprehensive research strategy. This tool manages the fact-finding (scouting) and strategy design (planning) phases. Use this tool when the user provides a topic or query that requires deep research. The tool may return clarifying questions if the topic is ambiguous, or a detailed research plan if the topic is clear.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "topic": {
+                    "type": "string",
+                    "description": "The primary research topic or question to investigate."
+                },
+                "edits": {
+                    "type": "string",
+                    "description": "OPTIONAL: Specific edits or feedback from the user to apply to a previously generated research plan. Use this when the user asks for changes to the strategy."
+                }
+            },
+            "required": ["topic"]
+        }
+    }
+}
+
+EXECUTE_RESEARCH_PLAN_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "execute_research_plan",
+        "description": "SYSTEM-ONLY TOOL — you are FORBIDDEN from calling this tool directly. This tool is invoked automatically by the system after a research plan is approved. Do not attempt to call this tool.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "topic": {
+                    "type": "string",
+                    "description": "The research topic."
+                },
+                "plan": {
+                    "type": "string",
+                    "description": "The approved XML research plan."
+                }
+            },
+            "required": ["topic", "plan"]
+        }
+    }
+}
+
+CREATE_CANVAS_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "create_canvas",
+        "description": (
+            "Creates a new persistent side-panel canvas for writing or editing long-form content such as documents, reports, code, articles, plans, or structured data. "
+            "The system automatically generates a unique ID for the canvas. "
+            "Use this tool only for creating new canvases, not for editing existing ones. "
+            "After creation, use the returned canvas_id with manage_canvas for subsequent operations."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "title": {
+                    "type": "string",
+                    "description": "Display title for the canvas tab header."
+                },
+                "content": {
+                    "type": "string",
+                    "description": "The initial Markdown content for the canvas."
+                }
+            },
+            "required": ["title", "content"]
+        }
+    }
+}
+
+MANAGE_CANVAS_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "manage_canvas",
+        "description": (
+            "Manages a persistent side-panel canvas for writing or editing long-form content such as documents, reports, code, articles, plans, or structured data. "
+            "Use this tool when the user requests content that benefits from an editable, persistent document view rather than inline chat response. "
+            "Actions: 'replace' overwrites the entire canvas content, 'patch' replaces a targeted section identified by 'target_section', 'append' adds content to the end, 'delete_section' removes a targeted section identified by 'target_section'. "
+            "Use create_canvas for creating new canvases."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["replace", "patch", "append", "delete_section"],
+                    "description": "The type of modification. 'replace' to overwrite all content, 'patch' to replace a specific section, 'append' to add to the end, 'delete_section' to remove a specific section."
+                },
+                "id": {
+                    "type": "string",
+                    "description": "A stable, unique identifier for the canvas (e.g., 'market_report', 'code_review_1'). Reuse the same ID to edit an existing canvas. Get this ID from create_canvas response."
+                },
+                "title": {
+                    "type": "string",
+                    "description": "Display title for the canvas tab header."
+                },
+                "content": {
+                    "type": "string",
+                    "description": "The Markdown content to write, append, or use as a replacement."
+                },
+                "target_section": {
+                    "type": "string",
+                    "description": "Required for 'patch' and 'delete_section' actions: the exact heading text or unique string that identifies the section to replace or delete. The section is identified by the heading and extends to the next heading of equal or higher level."
+                }
+            },
+            "required": ["action", "id", "content"]
+        }
+    }
+}
+
+PREVIEW_CANVASES_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "preview_canvases",
+        "description": "SYSTEM-ONLY TOOL — this tool is automatically invoked by the system and you are FORBIDDEN from calling it. The system will provide canvas inventory as a tool response before your turn. Use the information from the tool response, do not attempt to call this tool.",
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    }
+}
+
+READ_CANVAS_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "read_canvas",
+        "description": (
+            "Reads content from a persistent canvas. Can read the full canvas or a specific section. "
+            "IMPORTANT: The content returned is transient - it is available for your current reasoning but will NOT be stored in conversation history. "
+            "If you need to reference the content in later turns, you must call read_canvas again. "
+            "Use this tool when you need to see actual canvas content beyond the preview."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string",
+                    "description": "The canvas ID (e.g., '1', '2')"
+                },
+                "target_section": {
+                    "type": "string",
+                    "description": "OPTIONAL: Read only this specific section. If omitted, reads the entire canvas."
+                }
+            },
+            "required": ["id"]
+        }
+    }
+}
+

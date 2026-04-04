@@ -2,6 +2,8 @@ import os
 import json
 import datetime
 import uuid
+import logging
+import logging.handlers
 from backend.config import DATA_DIR
 
 # Define log paths
@@ -9,11 +11,22 @@ LOG_BASE_DIR = os.path.join(DATA_DIR, "logs")
 LLM_LOG_DIR = os.path.join(LOG_BASE_DIR, "llm_calls")
 TOOL_LOG_DIR = os.path.join(LOG_BASE_DIR, "tool_calls")
 GENERAL_LOG_DIR = os.path.join(LOG_BASE_DIR, "general")
+APP_LOG_FILE = os.path.join(LOG_BASE_DIR, "app.log")
 
 # Ensure directories exist
 os.makedirs(LLM_LOG_DIR, exist_ok=True)
 os.makedirs(TOOL_LOG_DIR, exist_ok=True)
 os.makedirs(GENERAL_LOG_DIR, exist_ok=True)
+
+# Configure app logging - writes to both file and stdout
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s | %(levelname)-8s | %(name)s | %(message)s',
+    handlers=[
+        logging.FileHandler(APP_LOG_FILE, encoding='utf-8'),
+        logging.StreamHandler()
+    ]
+)
 
 def _get_timestamp():
     return datetime.datetime.now()
@@ -29,7 +42,7 @@ def _save_log(directory, entry, prefix=""):
         json.dump(entry, f, indent=2, ensure_ascii=False)
     return filename
 
-def log_llm_call(payload, response_text, model, chat_id=None, duration_s=0, call_type="stream", timings=None):
+def log_llm_call(payload, response_text, model, chat_id=None, duration_s=0, call_type="stream", timings=None, tool_calls=None):
     """Logs an LLM transaction (request and final accumulated response)."""
     entry = {
         "timestamp": _get_timestamp().isoformat(),
@@ -38,7 +51,8 @@ def log_llm_call(payload, response_text, model, chat_id=None, duration_s=0, call
         "type": call_type,
         "duration_s": round(duration_s, 3),
         "request": payload,
-        "response": response_text
+        "response": response_text,
+        "tool_calls": tool_calls
     }
     if timings:
         entry["timings"] = timings

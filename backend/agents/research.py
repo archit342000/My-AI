@@ -1,27 +1,22 @@
 import json
 import asyncio
+import datetime
 import re
 import os
 import urllib.parse
-import base64
-import html
-from backend.logger import log_event
+from backend.logger import log_event, log_tool_call, log_llm_call
 from bs4 import BeautifulSoup
-import httpx
-import markdownify
 from backend.prompts import (
     RESEARCH_SCOUT_PROMPT,
     RESEARCH_PLANNER_PROMPT,
     RESEARCH_REFLECTION_PROMPT,
     RESEARCH_TRIAGE_PROMPT,
     RESEARCH_STEP_WRITER_PROMPT,
-    RESEARCH_STEP_WRITER_STRUCTURED_PROMPT,
     RESEARCH_STEP_SUMMARY_PROMPT,
     RESEARCH_VISION_PROMPT,
     RESEARCH_DETECTIVE_PROMPT,
     RESEARCH_SURGEON_PROMPT,
-    RESEARCH_SURGEON_STRUCTURED_PROMPT,
-    RESEARCH_SYNTHESIS_PROMPT
+    RESEARCH_SYNTHESIS_PROMPT,
 )
 from backend.utils import (
     create_chunk, validate_research_plan,
@@ -29,531 +24,52 @@ from backend.utils import (
 )
 from backend.mcp_client import tavily_client, playwright_client
 from backend.llm import stream_chat_completion
+from backend.canvas_manager import (
+    create_canvas,
+    get_canvas_content,
+    update_canvas_content,
+    append_to_canvas,
+    patch_canvas_section,
+    get_chat_canvases_with_details
+)
+from backend.db_wrapper import db
 from backend import config
+from backend.agents.research_schemas import (
+    SCOUT_JSON_SCHEMA,
+    PLANNER_JSON_SCHEMA,
+    REFLECTION_JSON_SCHEMA,
+    TRIAGE_JSON_SCHEMA,
+    WRITER_JSON_SCHEMA,
+    SUMMARY_JSON_SCHEMA,
+    DETECTIVE_JSON_SCHEMA,
+    SURGEON_JSON_SCHEMA,
+    SYNTHESIS_JSON_SCHEMA
+)
+from backend.agents.research_utils import (
+    _is_transient_error,
+    _get_sampling_params,
+    _extract_json_from_text,
+    _execute_mcp_tool,
+    _stream_research_call,
+    _fetch_and_encode_image,
+    _create_activity_chunk,
+    _clean_thinking_snippet,
+    _strip_thinking,
+    _select_top_urls,
+    _process_images_in_content,
+    _extract_content_for_url,
+    _process_tavily_search_images,
+    _normalize_citations,
+    _strip_report_images,
+    _strip_invalid_citations
+)
 
 # --- Configuration ---
 # All behavior is now controlled via backend.config
 
-
-def _extract_json_from_text(text):
-    """
-    Robustly extracts the first JSON object from a string.
-    Useful for background tasks (like ranking) where the model might
-    prefix output with a <think> block or other commentary.
-    """
-    if not text:
-        return None
-    
-    # AGENTS.md Compliance: Extract JSON ONLY from the content portion.
-    # We explicitly strip <think> blocks to satisfy the "never use reasoning for logic" rule.
-    clean_text = text
-    if "<think>" in clean_text:
-        clean_text = re.sub(r'<think>.*?</think>', '', clean_text, flags=re.DOTALL).strip()
-    if "</think>" in clean_text:
-        clean_text = clean_text.split("</think>")[-1].strip()
-
-    # First, try to parse the whole thing (fastest path)
-    try:
-        return json.loads(clean_text.strip())
-    except json.JSONDecodeError:
-        pass
-    
-    # Try to find a JSON object or array in the cleaned text
-    target = clean_text
-    for start_char, end_char in [('{', '}'), ('[', ']')]:
-        start = target.find(start_char)
-        if start == -1:
-            continue
-        depth = 0
-        for i in range(start, len(target)):
-            if target[i] == start_char: 
-                depth += 1
-            elif target[i] == end_char:
-                depth -= 1
-                if depth == 0:
-                    try:
-                        return json.loads(target[start:i+1])
-                    except:
-                        break
-    return None
-
-
-async def _stream_research_call(api_url, payload, display_model, activity_type, 
-                                 thought_limit=None, content_threshold=None, 
-                                 step_id=None, is_background=True, api_key=None):
-    """
-    Unified streaming wrapper for all research LLM calls.
-    Implements active meander detection and AGENTS.md compliance.
-    
-    Yields UI activity chunks via {"type": "activity", "data": str}.
-    Returns the final accumulated (and potentially tagged) string via {"type": "result", "data": str}.
-    """
-    full_content = ""
-    full_reasoning = ""
-    reasoning_token_count = 0
-    is_json_mode = "response_format" in payload
-    
-    # Ensure stream is enabled
-    payload = dict(payload)
-    payload["stream"] = True
-    if api_key:
-        payload["api_key"] = api_key
-
-    was_meandered = False
-    
-    try:
-        async for line in stream_chat_completion(api_url, payload):
-            if not line.startswith('data: '): continue
-            if line == 'data: [DONE]': break
-            
-            try:
-                data_json = json.loads(line[6:])
-                choices = data_json.get('choices', [])
-                if not choices: continue
-                
-                delta = choices[0].get('delta', {})
-                content = delta.get('content', '')
-                reasoning = delta.get('reasoning_content', '') or delta.get('reasoning', '')
-                
-                if content:
-                    full_content += content
-                
-                if reasoning:
-                    full_reasoning += reasoning
-                    reasoning_token_count += 1
-                    
-                    if is_background and reasoning_token_count % config.RESEARCH_UI_STREAM_UPDATE_INTERVAL == 0:
-                        snippet = _clean_thinking_snippet(full_reasoning)
-                        yield {"type": "activity", "data": f"data: {_create_activity_chunk(display_model, activity_type, {'message': f'...{snippet}', 'state': 'thinking', 'step_id': step_id})}\n\n"}
-                
-                # Active Meander Detection
-                if thought_limit and content_threshold is not None:
-                    if len(full_reasoning) > thought_limit and len(full_content) < content_threshold:
-                        was_meandered = True
-                        if is_background:
-                            yield {"type": "activity", "data": f"data: {_create_activity_chunk(display_model, activity_type, {'message': 'Meander limit reached. Truncating stream.', 'state': 'warning', 'step_id': step_id})}\n\n"}
-                        break # Stop the LLM stream physically
-            except:
-                continue
-                
-        # Finalize output based on AGENTS.md
-        final_output = ""
-        if is_json_mode:
-            # Structured output: prioritize reasoning (Local AI backend quirk)
-            final_output = full_content or full_reasoning
-        else:
-            # Standard chat: wrap reasoning in tags
-            if full_reasoning:
-                final_output += f"<think>\n{full_reasoning}\n</think>\n"
-            final_output += (full_content or "")
-            
-        yield {"type": "result", "data": final_output, "meandered": was_meandered}
-
-    except Exception as e:
-        log_event("research_stream_call_error", {"error": str(e)})
-        yield {"type": "result", "data": "", "meandered": False}
-
-
-async def _fetch_and_encode_image(url):
-    try:
-        mcp_res = await playwright_client.execute_tool("fetch_and_encode_image_tool", {"url": url})
-        res_json = json.loads(mcp_res.content[0].text)
-        if "error" in res_json:
-            return None
-        return res_json.get("image")
-    except Exception:
-        return None
-
-
-def _create_activity_chunk(model, activity_type, data):
-    """Creates a special SSE chunk carrying structured activity data for the frontend."""
-    return json.dumps({
-        "object": "chat.completion.chunk",
-        "model": model,
-        "choices": [{
-            "index": 0,
-            "delta": {
-                "reasoning_content": json.dumps({
-                    "__research_activity__": True,
-                    "type": activity_type,
-                    "data": data
-                })
-            },
-            "finish_reason": None
-        }]
-    })
-
-def _clean_thinking_snippet(raw_text):
-    """Cleans up raw model reasoning text for human-friendly UI display.
-    Strips XML/JSON structural artifacts, collapses whitespace, and 
-    extracts only readable natural language fragments."""
-    text = raw_text
-    # Strip XML tags (e.g. <research_plan>, <step>, <goal>, <query>, etc.)
-    text = re.sub(r'<[^>]+>', ' ', text)
-    # Strip JSON-style structural characters
-    text = re.sub(r'[{}\[\]"]', ' ', text)
-    # Strip markdown formatting artifacts
-    text = re.sub(r'[*#`_~]', '', text)
-    # Collapse multiple spaces and newlines into single spaces
-    text = re.sub(r'\s+', ' ', text).strip()
-    # If result is too short after cleaning, return a generic message
-    if len(text) < config.RESEARCH_UI_THOUGHT_MIN_LENGTH:
-        return "Analyzing and structuring research approach..."
-    # Take last X chars for a readable trailing snippet
-    if len(text) > config.RESEARCH_UI_THOUGHT_SNIPPET_LENGTH:
-        text = text[-config.RESEARCH_UI_THOUGHT_SNIPPET_LENGTH:]
-        # Try to start at a word boundary
-        first_space = text.find(' ')
-        if first_space != -1 and first_space < 30:
-            text = text[first_space + 1:]
-    return text
-
-
-def _strip_thinking(text):
-    """Strip <think>...</think> blocks from text. Handles unclosed tags."""
-    if not text:
-        return ""
-    result = text
-    # Strip closed <think>...</think> blocks
-    result = re.sub(r'<think>.*?</think>', '', result, flags=re.DOTALL).strip()
-    # Handle unclosed <think> (strip from <think> to end)
-    if '<think>' in result:
-        result = result.split('<think>')[0].strip()
-    # Handle orphaned </think> (strip everything before it)
-    if '</think>' in result:
-        result = result.split('</think>')[-1].strip()
-    return result
-
-
 # =====================================================================
-# HELPER FUNCTIONS: URL Selection, Extraction, Vision, Reflection
+# CORE RESEARCH LOOP: Section Execution & Reflection
 # =====================================================================
-
-
-def _select_top_urls(results, n=None):
-    """Deterministic URL selection: sort by Tavily score, pick top N with domain diversity.
-    No LLM call needed — replaces the old AI-based URL ranking."""
-    if not results:
-        return []
-    
-    if n is None:
-        n = config.RESEARCH_SELECT_TOP_URLS_COUNT
-    
-    # Sort by Tavily score descending
-    sorted_results = sorted(results, key=lambda x: x.get('score', 0), reverse=True)
-    
-    selected = []
-    domains_seen = set()
-    
-    # First pass: pick unique domains (highest scored first)
-    for r in sorted_results:
-        if len(selected) >= n:
-            break
-        domain = urllib.parse.urlparse(r.get('url', '')).netloc.lower()
-        if domain not in domains_seen:
-            selected.append(r)
-            domains_seen.add(domain)
-    
-    # Second pass: if we still need more, fill with highest-scored remaining regardless of domain
-    if len(selected) < n:
-        for r in sorted_results:
-            if len(selected) >= n:
-                break
-            if r not in selected:
-                selected.append(r)
-    
-    return selected
-
-
-
-
-async def _process_images_in_content(content, url, vision_model, api_url, vlm_lock, display_model=None, step_id=None, api_key=None):
-    """Extract and describe images found in markdown content using a vision model.
-    Yields activity packets and finally the modified content string."""
-    if not vision_model or not content:
-        yield {"type": "result", "data": content}
-        return
-    
-    # Improved extraction: find all potential img tags and markdown image markers
-    md_matches = re.findall(r'!\[([^\]]*)\]\((https?://[^\)]+)\)', content)
-    
-    # Robust HTML image extraction: find raw tags first, then pick attributes (order-agnostic)
-    raw_html_tags = re.findall(r'<img [^>]*src=["\'](https?://[^"\']+)["\'][^>]*>', content)
-    
-    all_candidates = []
-    # Add markdown candidates
-    for alt, img_url in md_matches:
-        all_candidates.append({"url": img_url, "alt": alt})
-    
-    # Add HTML candidates (try to find matching alts if possible, otherwise generic)
-    for img_url in raw_html_tags:
-        # Check if we already have this URL from markdown
-        if not any(c["url"] == img_url for c in all_candidates):
-            # Attempt to find alt for this specific tag in the original content (simple heuristics)
-            alt_match = re.search(f'<img [^>]*alt=["\']([^"\']+)["\'][^>]*src=["\']{re.escape(img_url)}["\']', content)
-            if not alt_match:
-                alt_match = re.search(f'<img [^>]*src=["\']{re.escape(img_url)}["\'][^>]*alt=["\']([^"\']+)["\']', content)
-            alt = alt_match.group(1) if alt_match else ""
-            all_candidates.append({"url": img_url, "alt": alt})
-
-    descriptions = []
-    success_count = 0
-    quota = config.RESEARCH_MAX_IMAGES_PER_PAGE
-
-    for candidate in all_candidates:
-        if success_count >= quota:
-            break
-            
-        img_url = html.unescape(candidate["url"]).split('#')[0].strip()
-        alt = candidate["alt"]
-        
-        # Extension and safety check
-        parsed_path = urllib.parse.urlparse(img_url).path.lower()
-        if not (parsed_path.endswith(('.png', '.jpg', '.jpeg', '.webp')) and 'icon' not in img_url.lower() and 'logo' not in img_url.lower()):
-            continue
-
-        try:
-            yield {"type": "activity", "data": f"data: {_create_activity_chunk(display_model, 'vision', {'message': f'Analyzing embedded image ({success_count+1}/{quota})...', 'state': 'thinking', 'step_id': step_id})}\n\n"}
-            
-            base64_img = await _fetch_and_encode_image(img_url)
-            if not base64_img:
-                # Silently skip blocked/broken images - they don't count towards the quota
-                continue
-            
-            payload = {
-                "model": vision_model,
-                "messages": [
-                    {"role": "system", "content": RESEARCH_VISION_PROMPT.format(url=url, alt=alt or "Untitled")},
-                    {"role": "user", "content": [{"type": "image_url", "image_url": {"url": base64_img}}]}
-                ],
-                "max_tokens": config.RESEARCH_MAX_TOKENS_VISION,
-                "temperature": config.RESEARCH_TEMPERATURE_VISION,
-                "response_format": {
-                    "type": "json_schema",
-                    "json_schema": {
-                        "name": "vision_analysis",
-                        "strict": True,
-                        "schema": {
-                            "type": "object",
-                            "properties": {
-                                "caption": {"type": "string"},
-                                "detailed_description": {"type": "string"}
-                            },
-                            "required": ["caption", "detailed_description"],
-                            "additionalProperties": False
-                        }
-                    }
-                }
-            }
-            
-            max_retries = config.RESEARCH_VISION_RETRIES
-            img_desc = ""
-            current_success = False
-            
-            for attempt in range(max_retries):
-                try:
-                    if vlm_lock:
-                        async with vlm_lock:
-                            gen = _stream_research_call(api_url, payload, None, "vision", is_background=False, api_key=api_key)
-                            async for packet in gen:
-                                if packet["type"] == "result":
-                                    img_desc = packet["data"]
-                    else:
-                        gen = _stream_research_call(api_url, payload, None, "vision", is_background=False, api_key=api_key)
-                        async for packet in gen:
-                            if packet["type"] == "result":
-                                img_desc = packet["data"]
-                    
-                    if img_desc and len(img_desc) > config.RESEARCH_VISION_MIN_RESPONSE_LENGTH:
-                        parsed = _extract_json_from_text(img_desc)
-                        if parsed and isinstance(parsed, dict):
-                            ai_caption = parsed.get("caption", "").strip() or (alt or 'Extracted Visual Data')
-                            ai_detail = parsed.get("detailed_description", "").strip() or img_desc.strip()
-                        else:
-                            ai_caption = (alt or 'Extracted Visual Data')
-                            ai_detail = img_desc.strip()
-                        
-                        triplet_block = (
-                            f"\n\n### [IMAGE DETECTED]\n"
-                            f"**Original Title**: {alt or 'Untitled'}\n"
-                            f"**AI Generated Caption**: {ai_caption}\n"
-                            f"**URL**: {img_url}\n"
-                            f"**Vision Model Detailed Description**: {ai_detail}\n"
-                        )
-                        descriptions.append(triplet_block)
-                        current_success = True
-                    break
-                except Exception:
-                    if attempt < max_retries - 1:
-                        await asyncio.sleep(2 ** attempt)
-            
-            if current_success:
-                success_count += 1
-                
-        except Exception:
-            pass
-    
-    if descriptions:
-        content += "\n\n" + "\n".join(descriptions)
-    
-    yield {"type": "result", "data": content}
-
-
-async def _extract_content_for_url(url, search_depth_mode, vision_model, api_url, vlm_lock, display_model=None, step_id=None, raw_content_from_search=None, api_key=None):
-    """Extract content from a single URL based on the search depth mode.
-    
-    Regular mode: Uses raw_content from Tavily search results directly.
-    Deep mode: httpx GET → Tavily Extract fallback → pymupdf for PDFs.
-    Both modes: Vision processing for inline images (deep mode only since regular uses text).
-    
-    Yields activity packets and finally the (url, content_string) or (url, None) tuple.
-    """
-    if search_depth_mode == 'regular':
-        # Regular mode: use raw_content from search results (already available)
-        if raw_content_from_search and len(raw_content_from_search.strip()) > config.RESEARCH_EXTRACT_MIN_RAW_CONTENT:
-            content = raw_content_from_search
-            # Vision processing for inline images (now enabled in regular mode too)
-            if vision_model:
-                async for packet in _process_images_in_content(content, url, vision_model, api_url, vlm_lock, display_model, step_id, api_key=api_key):
-                    if packet["type"] == "activity":
-                        yield packet
-                    else:
-                        content = packet["data"]
-            yield {"type": "result", "data": (url, content)}
-            return
-        yield {"type": "result", "data": (url, None)}
-        return
-    
-    # ===== DEEP MODE EXTRACTION =====
-    
-    # Strategy 1: MCP visit_page (Handles GET, HTML to Markdown, and PDF extraction, with Playwright Fallback)
-    content = None
-    try:
-        mcp_res = await playwright_client.execute_tool("visit_page_tool", {"url": url, "max_chars": 40000, "detail_level": "deep"})
-        extracted = mcp_res.content[0].text
-        if extracted and "Error:" not in extracted and len(extracted.strip()) > (config.RESEARCH_CONTENT_MIN_LENGTH_DEEP if search_depth_mode == 'deep' else config.RESEARCH_CONTENT_MIN_LENGTH_REGULAR):
-            # Vision processing for inline images
-            if vision_model:
-                async for packet in _process_images_in_content(extracted, url, vision_model, api_url, vlm_lock, display_model, step_id, api_key=api_key):
-                    if packet["type"] == "activity":
-                        yield packet
-                    else:
-                        extracted = packet["data"]
-            yield {"type": "result", "data": (url, extracted)}
-            return
-    except Exception:
-        pass
-    
-    yield {"type": "result", "data": (url, None)}
-
-
-async def _process_tavily_search_images(images, section_index, vision_model, api_url, vlm_lock, display_model=None, api_key=None):
-    """Process images from Tavily search results using vision model.
-    Yields activity packets and finally the list of (triplet_block_text, img_url, section_index) tuples."""
-    if not vision_model or not images:
-        yield {"type": "result", "data": []}
-        return
-    
-    # Pre-sanitize and filter by standard logic (extension + keywords)
-    candidates = []
-    for img_url in images:
-        if isinstance(img_url, dict):
-            img_url = img_url.get("url", "")
-        if isinstance(img_url, str):
-            img_url = html.unescape(img_url).split('#')[0].strip()
-            parsed_path = urllib.parse.urlparse(img_url).path.lower()
-            if parsed_path.endswith(('.png', '.jpg', '.jpeg', '.webp')) and 'icon' not in img_url.lower() and 'logo' not in img_url.lower():
-                candidates.append(img_url)
-    
-    results = []
-    success_count = 0
-    quota = config.RESEARCH_MAX_SEARCH_IMAGES
-
-    for img_url in candidates:
-        if success_count >= quota:
-            break
-            
-        try:
-            yield {"type": "activity", "data": f"data: {_create_activity_chunk(display_model, 'vision', {'message': f'Analyzing search evidence ({success_count+1}/{quota})...', 'state': 'thinking', 'step_id': section_index})}\n\n"}
-            
-            base64_img = await _fetch_and_encode_image(img_url)
-            if not base64_img:
-                # Silently skip blocked images - they don't count towards the quota
-                continue
-            
-            payload = {
-                "model": vision_model,
-                "messages": [
-                    {"role": "system", "content": RESEARCH_VISION_PROMPT.format(url="Search Engine Results", alt="Contextual search image")},
-                    {"role": "user", "content": [{"type": "image_url", "image_url": {"url": base64_img}}]}
-                ],
-                "max_tokens": config.RESEARCH_MAX_TOKENS_VISION,
-                "temperature": config.RESEARCH_TEMPERATURE_VISION,
-                "response_format": {
-                    "type": "json_schema",
-                    "json_schema": {
-                        "name": "vision_analysis",
-                        "strict": True,
-                        "schema": {
-                            "type": "object",
-                            "properties": {
-                                "caption": {"type": "string"},
-                                "detailed_description": {"type": "string"}
-                            },
-                            "required": ["caption", "detailed_description"],
-                            "additionalProperties": False
-                        }
-                    }
-                }
-            }
-            
-            img_desc = ""
-            current_success = False
-            
-            for attempt in range(config.RESEARCH_VISION_RETRIES):
-                try:
-                    if vlm_lock:
-                        async with vlm_lock:
-                            gen = _stream_research_call(api_url, payload, None, "vision", is_background=False, api_key=api_key)
-                            async for packet in gen:
-                                if packet["type"] == "result":
-                                    img_desc = packet["data"]
-                    else:
-                        gen = _stream_research_call(api_url, payload, None, "vision", is_background=False, api_key=api_key)
-                        async for packet in gen:
-                            if packet["type"] == "result":
-                                img_desc = packet["data"]
-                    
-                    if img_desc and len(img_desc) > config.RESEARCH_VISION_MIN_RESPONSE_LENGTH:
-                        parsed = _extract_json_from_text(img_desc)
-                        if parsed and isinstance(parsed, dict):
-                            ai_caption = parsed.get("caption", "").strip() or 'Contextual search image'
-                            ai_detail = parsed.get("detailed_description", "").strip() or img_desc.strip()
-                        else:
-                            ai_caption = 'Contextual search image'
-                            ai_detail = img_desc.strip()
-                        
-                        triplet_block = (
-                            f"\n\n### [IMAGE DETECTED]\n"
-                            f"**Original Title**: Search Result Embedded Image\n"
-                            f"**AI Generated Caption**: {ai_caption}\n"
-                            f"**URL**: {img_url}\n"
-                            f"**Vision Model Detailed Description**: {ai_detail}\n"
-                        )
-                        results.append((triplet_block, img_url, section_index))
-                        current_success = True
-                    break
-                except Exception:
-                    if attempt < config.RESEARCH_VISION_RETRIES - 1:
-                        await asyncio.sleep(2 ** attempt)
-            
-            if current_success:
-                success_count += 1
-
-        except Exception:
-            pass
-    
-    yield {"type": "result", "data": results}
 
 
 async def _execute_section_reflection_and_write(
@@ -562,11 +78,13 @@ async def _execute_section_reflection_and_write(
         n_sections, original_topic, full_plan_text,
         search_depth_mode, vision_model, vlm_lock, chat_id,
         display_model, source_registry, next_source_id, mode_guidance, entity_glossary,
-        image_results=None, api_key=None):
+        image_results=None, api_key=None, vision_enabled=True):
     """Multi-turn conversation for a single research section (KV cache reuse).
-    
-    Acts as an async generator, yielding UI chunks in real-time and streaming 
+
+    Acts as an async generator, yielding UI chunks in real-time and streaming
     the section writing turn directly to the frontend.
+
+    Returns progress info with each step completion for partial failure recovery.
     """
     follow_up_buffer = []
     follow_up_content = ""
@@ -617,7 +135,7 @@ async def _execute_section_reflection_and_write(
         summaries_text = "No prior sections completed yet. This is the first section."
 
     queries_text = ", ".join(f'"{q}"' for q in section_queries) if section_queries else "N/A"
-
+    today_date = datetime.date.today().strftime("%A, %B %d, %Y")
     system_prompt = RESEARCH_REFLECTION_PROMPT.format(
         original_topic=original_topic,
         section_heading=section_heading,
@@ -625,12 +143,12 @@ async def _execute_section_reflection_and_write(
         section_queries=queries_text,
         section_number=section_index + 1,
         total_sections=n_sections,
-        remaining_sections=n_sections - section_index - 1,
+        remaining_sections=n_sections - (section_index + 1),
         full_plan=full_plan_text,
         accumulated_summaries=summaries_text,
         max_gaps=config.RESEARCH_MAX_GAPS_PER_SECTION,
         max_queries_per_section=config.RESEARCH_MAX_QUERIES_PER_SECTION,
-        reasoning_limit=config.RESEARCH_MEANDER_THOUGHT_LIMIT_REFLECTION
+        today_date=today_date
     )
 
     messages = [
@@ -638,39 +156,62 @@ async def _execute_section_reflection_and_write(
         {"role": "user", "content": f"Here is the data gathered for section '{section_heading}':\n\n{content_payload}"}
     ]
 
-    # ---- TURN 1: Gap Analysis ----
+    # ---- TURN 1: Gap Analysis (3-Turn Resilience) ----
     yield {"type": "activity", "data": f"data: {_create_activity_chunk(display_model, 'reflection', {'message': f'Analyzing findings for section: {section_heading}...', 'step_id': section_index})}\n\n"}
 
-    reflection_payload = {
-        "model": model,
-        "messages": messages,
-        "temperature": config.RESEARCH_TEMPERATURE_REFLECTION,
-        "max_tokens": config.RESEARCH_MAX_TOKENS_REFLECTION,
-    }
-
+    reflection_success = False
+    reflection = None
     raw_response = ""
-    gen = _stream_research_call(
-        api_url, reflection_payload, display_model, "reflection",
-        thought_limit=config.RESEARCH_MEANDER_THOUGHT_LIMIT_REFLECTION,
-        content_threshold=config.RESEARCH_MEANDER_CONTENT_THRESHOLD,
-        step_id=section_index,
-        api_key=api_key
-    )
-    async for packet in gen:
-        if packet["type"] == "activity":
-            yield packet
-        elif packet["type"] == "result":
-            raw_response = packet["data"]
-            
-    reflection = _extract_json_from_text(raw_response) if raw_response else None
 
-    if not reflection or not isinstance(reflection, dict):
-        reflection = {"gaps": [], "plan_modification": {"updates": [], "additions": []}}
+    for attempt in [1, 2, 3]:
+        reflection_payload = {
+            "model": model,
+            "messages": messages,
+            **_get_sampling_params(attempt=attempt),
+            "max_tokens": config.RESEARCH_MAX_TOKENS_REFLECTION,
+            "response_format": {"type": "json_schema", "json_schema": {"name": "reflection", "schema": REFLECTION_JSON_SCHEMA}}
+        }
+
+        if attempt > 1:
+            status_desc = "meandering" if attempt == 2 else "failing validation"
+            yield {"type": "activity", "data": f"data: {_create_activity_chunk(display_model, 'status', {'message': f'Reflection {status_desc}. Fallback mode (Attempt {attempt}/3)...', 'icon': '⚠️', 'step_id': section_index})}\n\n"}
+
+        raw_response = ""
+        meandered = False
+        gen = _stream_research_call(
+            api_url, reflection_payload, display_model, "reflection",
+            thought_limit=config.RESEARCH_MEANDER_THOUGHT_LIMIT_REFLECTION_TOKENS,
+            content_threshold=config.RESEARCH_MEANDER_CONTENT_THRESHOLD_TOKENS,
+            step_id=section_index,
+            api_key=api_key, chat_id=chat_id, enable_thinking=(attempt == 1)
+        )
+        async for packet in gen:
+            if packet["type"] == "activity": yield packet
+            elif packet["type"] == "result":
+                raw_response = packet["data"]
+                meandered = packet.get("meandered", False)
+        
+        if meandered and attempt == 1:
+            continue
+
+        reflection = _extract_json_from_text(raw_response) if raw_response else None
+        if reflection and isinstance(reflection, dict) and "gaps" in reflection:
+            reflection_success = True
+            break
+
+    if not reflection_success:
+        yield {"type": "activity", "data": f"data: {_create_activity_chunk(display_model, 'needs_retry', {'state': 'section_execution', 'message': f'Gap analysis failed for section: {section_heading}.'})}\n\n"}
+        yield "data: [DONE]\n\n"
+        yield {"type": "result", "data": (None, None, None, None, next_source_id)}
+        return
 
     gaps = reflection.get("gaps", [])
     plan_mod = reflection.get("plan_modification")
 
-    messages.append({"role": "assistant", "content": _strip_thinking(raw_response) or '{"gaps": []}'})
+    # Yield reflection progress checkpoint (for partial recovery)
+    yield {"type": "reflection_checkpoint", "data": {"reflection": reflection, "raw_response": raw_response, "plan_mod": plan_mod}}
+
+    messages.append({"role": "assistant", "content": raw_response})
 
     # ---- TURN 2 (conditional): Gap-Filling ----
     if gaps:
@@ -681,7 +222,7 @@ async def _execute_section_reflection_and_write(
 
             follow_up_content_text = ""
             for fq in follow_up_queries:
-                mcp_res = await tavily_client.execute_tool("async_tavily_search_tool", {"query": fq, "max_results": config.RESEARCH_TAVILY_MAX_RESULTS_FOLLOWUP})
+                mcp_res = await _execute_mcp_tool(tavily_client, "async_tavily_search_tool", {"query": fq, "max_results": config.RESEARCH_TAVILY_MAX_RESULTS_FOLLOWUP}, chat_id=chat_id)
                 try:
                     res_json = json.loads(mcp_res.content[0].text)
                     fu_results_raw = res_json.get("results", [])
@@ -701,7 +242,7 @@ async def _execute_section_reflection_and_write(
                         else:
                             async for fu_packet in _extract_content_for_url(
                                 fu_url, search_depth_mode, vision_model, api_url, vlm_lock,
-                                raw_content_from_search=fu_r.get('raw_content'), api_key=api_key
+                                raw_content_from_search=fu_r.get('raw_content'), api_key=api_key, chat_id=chat_id, vision_enabled=vision_enabled
                             ):
                                 if fu_packet["type"] == "activity":
                                     yield fu_packet
@@ -733,257 +274,154 @@ async def _execute_section_reflection_and_write(
                 messages.append({"role": "user", "content": f"Here is the additional content gathered to fill the identified gaps:\n\n{fu_payload}"})
                 messages.append({"role": "assistant", "content": "Acknowledged. I have structured the gap-filling content into text and visual evidence. I will now proceed to write the section."})
 
-    # ---- TURN 2.5: Information Triage (Core Facts Extraction) ----
+    # ---- TURN 2.5: Information Triage (3-Turn Resilience) ----
     yield {"type": "activity", "data": f"data: {_create_activity_chunk(display_model, 'status', {'message': f'Triaging core facts for section: {section_heading}...', 'icon': '🧠'})}\n\n"}
 
     triage_prompt = RESEARCH_TRIAGE_PROMPT.format(
         section_heading=section_heading,
-        reasoning_limit=config.RESEARCH_MEANDER_THOUGHT_LIMIT_REFLECTION
+        today_date=today_date,
+        accumulated_summaries=summaries_text
     )
-    
-    triage_messages_base = list(messages) # Base history
-    core_facts_str = ""
-    triage_success = False
+    messages.append({"role": "user", "content": triage_prompt})
+    triage_messages = messages
+    triage_result = None
     raw_triage = ""
 
-    for attempt in range(config.RESEARCH_SURGEON_MAX_RETRIES): # 0: Initial, 1+: Warning/Retry
-        triage_messages = list(triage_messages_base)
-        if attempt == 1:
-            # Stage 1: Warning & Self-Correction
-            triage_messages.append({"role": "user", "content": triage_prompt})
-            triage_messages.append({"role": "assistant", "content": raw_triage or ""})
-            triage_messages.append({
-                "role": "user", 
-                "content": "Your reasoning was too long or you failed to provide valid JSON. Please be extremely concise. Output ONLY the valid JSON object with core facts extracted from the provided text."
-            })
-            yield {"type": "activity", "data": f"data: {_create_activity_chunk(display_model, 'status', {'message': 'Triage meandered/failed. Warning and retrying...', 'icon': '⚠️'})}\n\n"}
-        else:
-            triage_messages.append({"role": "user", "content": triage_prompt})
-
+    for attempt in [1, 2, 3]:
         triage_payload = {
             "model": model,
             "messages": triage_messages,
-            "temperature": config.RESEARCH_TEMPERATURE_REFLECTION if attempt == 0 else config.RESEARCH_TEMPERATURE_RETRY_FALLBACK,
-            "max_tokens": config.RESEARCH_MAX_TOKENS_REFLECTION,
+            **_get_sampling_params(attempt=attempt),
+            "max_tokens": config.RESEARCH_MAX_TOKENS_TRIAGE,
+            "response_format": {"type": "json_schema", "json_schema": {"name": "triage", "schema": TRIAGE_JSON_SCHEMA}}
         }
 
-        raw_triage = ""
-        triage_meandered = False
+        if attempt > 1:
+            yield {"type": "activity", "data": f"data: {_create_activity_chunk(display_model, 'status', {'message': f'Triage fallback (Attempt {attempt}/3)...', 'icon': '🛡️'})}\n\n"}
+
         gen = _stream_research_call(
             api_url, triage_payload, display_model, "status",
-            thought_limit=config.RESEARCH_MEANDER_THOUGHT_LIMIT_REFLECTION,
-            content_threshold=config.RESEARCH_MEANDER_CONTENT_THRESHOLD,
-            api_key=api_key
+            thought_limit=config.RESEARCH_MEANDER_THOUGHT_LIMIT_TRIAGE_TOKENS,
+            content_threshold=config.RESEARCH_MEANDER_CONTENT_THRESHOLD_TOKENS,
+            api_key=api_key, chat_id=chat_id, enable_thinking=(attempt == 1)
         )
-        async for packet in gen:
-            if packet["type"] == "activity":
-                yield packet
-            elif packet["type"] == "result":
-                raw_triage = packet["data"]
-                triage_meandered = packet.get("meandered", False)
         
-        # Stream-level meander detection is the single source of truth
-        if triage_meandered:
-            continue
-        
-        triage_result = _extract_json_from_text(raw_triage) if raw_triage else None
-        
-        if triage_result and isinstance(triage_result, dict) and triage_result.get("core_facts"):
-            triage_success = True
-            break
-
-    if not triage_success:
-        # Stage 2: Poison Prevention & Structured Fallback (Clean Context)
-        yield {"type": "activity", "data": f"data: {_create_activity_chunk(display_model, 'status', {'message': 'Triage persists in meandering. Falling back to structured mode...', 'icon': '🛡️'})}\n\n"}
-        
-        structured_payload = {
-            "model": model,
-            "messages": triage_messages_base + [{"role": "user", "content": triage_prompt}],
-            "temperature": config.RESEARCH_TEMPERATURE_RETRY_FALLBACK,
-            "response_format": {
-                "type": "json_schema",
-                "json_schema": {
-                    "name": "core_facts_array",
-                    "strict": True,
-                    "schema": {
-                        "type": "object",
-                        "properties": {
-                            "core_facts": {
-                                "type": "array",
-                                "items": {
-                                    "type": "object",
-                                    "properties": {
-                                        "fact": {"type": "string"},
-                                        "sources": {"type": "array", "items": {"type": "integer"}}
-                                    },
-                                    "required": ["fact", "sources"],
-                                    "additionalProperties": False
-                                }
-                            }
-                        },
-                        "required": ["core_facts"],
-                        "additionalProperties": False
-                    }
-                }
-            }
-        }
         raw_triage = ""
-        gen = _stream_research_call(
-            api_url, structured_payload, display_model, "status",
-            thought_limit=config.RESEARCH_MEANDER_THOUGHT_LIMIT_REFLECTION,
-            content_threshold=config.RESEARCH_MEANDER_CONTENT_THRESHOLD,
-            api_key=api_key
-        )
         async for packet in gen:
-            if packet["type"] == "activity":
-                yield packet
+            if packet["type"] == "activity": yield packet
             elif packet["type"] == "result":
                 raw_triage = packet["data"]
+                if packet.get("meandered"):
+                    raw_triage = None
                 
         triage_result = _extract_json_from_text(raw_triage) if raw_triage else None
-
-    if triage_result and isinstance(triage_result, dict):
-        core_facts_array = triage_result.get("core_facts", [])
-        if core_facts_array:
-            # Format the output for the writer
-            core_facts_lines = []
-            for f in core_facts_array:
-                if isinstance(f, dict):
-                    fact_text = f.get('fact', '')
-                    sources = f.get('sources', [])
-                    if fact_text and sources:
-                        source_str = ", ".join([f"[Source {s}]" for s in sources])
-                        core_facts_lines.append(f"- {fact_text} {source_str}")
-
-            if not core_facts_lines:
-                raise ValueError("Triage extraction completed but no valid core facts could be parsed.")
-
-            core_facts_str = "\n".join(core_facts_lines)
+        if triage_result and isinstance(triage_result, dict) and triage_result.get("core_facts"):
+            # Unique Fact Validation & Capping
+            raw_facts = triage_result.get("core_facts", [])
+            seen_texts = set()
+            unique_valid_facts = []
             
-            # Show a brief preview of facts extracted
-            fact_count = len(core_facts_array)
-            yield {"type": "activity", "data": f"data: {_create_activity_chunk(display_model, 'status', {'message': f'Extracted {fact_count} core facts for drafting.', 'icon': '📂'})}\n\n"}
-        else:
-            raise ValueError("Triage extraction completed but no specific core facts were found.")
-    else:
-        raise ValueError("Triage extraction failed to return valid data.")
-        
-    messages.append({"role": "user", "content": triage_prompt})
-    messages.append({"role": "assistant", "content": f"I have processed the Triage request. Here are the core facts I extracted:\n{core_facts_str}"})
+            for f in raw_facts:
+                txt = f.get('fact', '').strip().lower()
+                if txt and txt not in seen_texts:
+                    seen_texts.add(txt)
+                    unique_valid_facts.append(f)
+            
+            # Reject if model repeated itself excessively or produced a suspiciously long list
+            repeat_count = len(raw_facts) - len(unique_valid_facts)
+            if repeat_count > 2 or len(unique_valid_facts) > config.RESEARCH_TRIAGE_MAX_FACTS + 10:
+                triage_result = None
+                continue
+                
+            # Cap the final result
+            triage_result["core_facts"] = unique_valid_facts[:config.RESEARCH_TRIAGE_MAX_FACTS]
+            break
 
-    # ---- TURN 3: Section Writing (Streaming to Client) ----
+    if not triage_result:
+        yield {"type": "activity", "data": f"data: {_create_activity_chunk(display_model, 'needs_retry', {'state': 'triaging', 'message': f'Failed to extract core facts for \"{section_heading}\".'})}\n\n"}
+        return
+
+    # Format the output for the writer
+    core_facts_array = triage_result.get("core_facts", [])
+    core_facts_lines = []
+    for f in core_facts_array:
+        fact_text = f.get('fact', '')
+        sources = f.get('sources', [])
+        if fact_text and sources:
+            source_str = ", ".join([f"[Source {s}]" for s in sources])
+            core_facts_lines.append(f"- {fact_text} {source_str}")
+
+    if not core_facts_lines:
+        yield {"type": "activity", "data": f"data: {_create_activity_chunk(display_model, 'needs_retry', {'state': 'triaging', 'message': f'Extraction for \"{section_heading}\" returned no valid points.'})}\n\n"}
+        return
+
+    core_facts_str = "\n".join(core_facts_lines)
+
+    # Yield triage progress checkpoint (for partial recovery)
+    yield {"type": "triage_checkpoint", "data": {"triage_result": triage_result, "core_facts_str": core_facts_str}}
+
+    # Show status update
+    fact_count = len(core_facts_array)
+    yield {"type": "activity", "data": f"data: {_create_activity_chunk(display_model, 'status', {'message': f'Extracted {fact_count} core facts for drafting.', 'icon': '📂'})}\n\n"}
+
+    messages.append({"role": "assistant", "content": raw_triage or "{}"})
+
+    # ---- TURN 3: Section Writing (3-Turn Resilience) ----
     yield {"type": "activity", "data": f"data: {_create_activity_chunk(display_model, 'writing', {'message': f'Drafting section: {section_heading}...', 'step_id': section_index})}\n\n"}
 
-    # Format entity glossary for prompt
     glossary_str = "\n".join([f"- {k}: {v}" for k, v in entity_glossary.items()]) if entity_glossary else "None yet."
-
     writer_prompt = RESEARCH_STEP_WRITER_PROMPT.format(
         section_heading=section_heading,
+        accumulated_summaries=summaries_text,
+        entity_glossary=glossary_str,
         mode_guidance=mode_guidance,
-        reasoning_limit=config.RESEARCH_MEANDER_THOUGHT_LIMIT_STEP_WRITER,
-        entity_glossary=glossary_str
+        today_date=today_date
     )
-    writer_messages_base = list(messages)
-    writer_success = False
+    messages.append({"role": "user", "content": writer_prompt})
+    writer_messages = messages
     raw_section = ""
 
-    for attempt in range(config.RESEARCH_SURGEON_MAX_RETRIES): # 0: Initial, 1+: Warning/Retry
-        writer_messages = list(writer_messages_base)
-        if attempt == 1:
-            # Stage 1: Warning & Self-Correction — send back AI's exact response
-            writer_messages.append({"role": "user", "content": writer_prompt})
-            writer_messages.append({"role": "assistant", "content": raw_section or ""})
-            writer_messages.append({
-                "role": "user", 
-                "content": "Your previous attempt meandered or produced insufficient content. Please be extremely concise. Focus on writing a high-density, data-rich markdown section immediately. Start with ## heading."
-            })
-            yield {"type": "activity", "data": f"data: {_create_activity_chunk(display_model, 'status', {'message': 'Drafting meandered/too short. Warning and retrying...', 'icon': '⚠️'})}\n\n"}
-        else:
-            writer_messages.append({"role": "user", "content": writer_prompt})
-
-        raw_section = ""
-        writer_meandered = False
+    for attempt in [1, 2, 3]:
         writer_payload = {
             "model": model,
             "messages": writer_messages,
-            "temperature": config.RESEARCH_TEMPERATURE_STEP_WRITER if attempt == 0 else config.RESEARCH_TEMPERATURE_RETRY_FALLBACK,
+            **_get_sampling_params(attempt=attempt),
             "max_tokens": config.RESEARCH_MAX_TOKENS_STEP_WRITER,
+            "response_format": {"type": "json_schema", "json_schema": {"name": "section_draft", "schema": WRITER_JSON_SCHEMA}}
         }
+
+        if attempt > 1:
+            yield {"type": "activity", "data": f"data: {_create_activity_chunk(display_model, 'status', {'message': f'Drafting fallback (Attempt {attempt}/3)...', 'icon': '🛡️'})}\n\n"}
+
         gen = _stream_research_call(
             api_url, writer_payload, display_model, "status",
-            thought_limit=config.RESEARCH_MEANDER_THOUGHT_LIMIT_STEP_WRITER,
-            content_threshold=config.RESEARCH_MEANDER_CONTENT_THRESHOLD,
+            thought_limit=config.RESEARCH_MEANDER_THOUGHT_LIMIT_STEP_WRITER_TOKENS,
+            content_threshold=config.RESEARCH_MEANDER_CONTENT_THRESHOLD_TOKENS,
             step_id=section_index,
-            api_key=api_key
+            api_key=api_key, chat_id=chat_id, enable_thinking=(attempt == 1)
         )
+
+        raw_section = ""
         async for packet in gen:
-            if packet["type"] == "activity":
-                yield packet
+            if packet["type"] == "activity": yield packet
             elif packet["type"] == "result":
                 raw_section = packet["data"]
-                writer_meandered = packet.get("meandered", False)
-        
-        # Stream-level meander detection is the single source of truth
-        if writer_meandered:
-            continue
-        
-        # Check content quality (strip reasoning for length check)
-        clean_content = _strip_thinking(raw_section)
-        if len(clean_content.strip()) >= config.RESEARCH_MIN_SECTION_LEN:
-            writer_success = True
-            break
+                if packet.get("meandered") and attempt == 1:
+                    raw_section = None
 
-    if not writer_success:
-        # Stage 2: Poison Prevention & Structured Fallback (Clean Context)
-        yield {"type": "activity", "data": f"data: {_create_activity_chunk(display_model, 'status', {'message': 'Drafting meanders persist. Falling back to structured mode...', 'icon': '🛡️'})}\n\n"}
+        if raw_section:
+            parsed = _extract_json_from_text(raw_section)
+            if parsed and isinstance(parsed, dict) and "markdown_content" in parsed:
+                markdown = parsed["markdown_content"]
+                if len(_strip_thinking(markdown).strip()) >= config.RESEARCH_MIN_SECTION_LEN:
+                    raw_section = markdown # Overwrite with final content
+                    break
         
-        writer_structured_prompt = RESEARCH_STEP_WRITER_STRUCTURED_PROMPT.format(
-            section_heading=section_heading,
-            mode_guidance=mode_guidance
-        )
-        
-        structured_payload = {
-            "model": model,
-            "messages": writer_messages_base + [{"role": "user", "content": writer_structured_prompt}],
-            "temperature": config.RESEARCH_TEMPERATURE_RETRY_FALLBACK,
-            "response_format": {
-                "type": "json_schema",
-                "json_schema": {
-                    "name": "section_draft",
-                    "strict": True,
-                    "schema": {
-                        "type": "object",
-                        "properties": {
-                            "markdown_content": {"type": "string"}
-                        },
-                        "required": ["markdown_content"],
-                        "additionalProperties": False
-                    }
-                }
-            }
-        }
-        
-        raw_response = ""
-        gen = _stream_research_call(
-            api_url, structured_payload, display_model, "status",
-            thought_limit=config.RESEARCH_MEANDER_THOUGHT_LIMIT_STEP_WRITER,
-            content_threshold=config.RESEARCH_MEANDER_CONTENT_THRESHOLD,
-            api_key=api_key
-        )
-        async for packet in gen:
-            if packet["type"] == "activity":
-                yield packet
-            elif packet["type"] == "result":
-                raw_response = packet["data"]
-                
-        parsed = _extract_json_from_text(raw_response)
-        
-        if parsed and isinstance(parsed, dict) and "markdown_content" in parsed:
-            raw_section = parsed["markdown_content"]
-        else:
-            if not raw_response or not raw_response.strip():
-                raise ValueError("Writer extraction failed to return valid data after structured fallback.")
-            raw_section = raw_response or ""
+        raw_section = None # Reset for next attempt if quality check fails
+
+    if not raw_section:
+        yield {"type": "activity", "data": f"data: {_create_activity_chunk(display_model, 'needs_retry', {'state': 'writing', 'message': f'Failed to generate section \"{section_heading}\".'})}\n\n"}
+        return
 
     # Process entities from reasoning if any (before stripping)
     if "<think>" in raw_section:
@@ -994,163 +432,107 @@ async def _execute_section_reflection_and_write(
                 if term not in entity_glossary:
                     entity_glossary[term] = definition
 
-    # Strip reasoning from history — only clean content goes into shared messages
-    section_text = _strip_thinking(raw_section)
-    messages.append({"role": "user", "content": writer_prompt})
-    messages.append({"role": "assistant", "content": section_text or ""})
+    # Preserve full response in history
+    messages.append({"role": "assistant", "content": raw_section or ""})
 
     # Strip trailing bibliographies the LLM might have added
+    section_text = raw_section or ""
     for ref_header in ['\n## References', '\n### References', '\n## Sources', '\n### Sources']:
         if ref_header in section_text:
             section_text = section_text.split(ref_header)[0]
 
     section_text = re.sub(r'<section_summary>.*?</section_summary>', '', section_text, flags=re.DOTALL).strip()
 
-    # ---- TURN 4: Section Summary (separate response → isolated task) ----
+    # Yield write progress checkpoint (for partial recovery)
+    yield {"type": "write_checkpoint", "data": {"section_text": section_text, "entity_glossary": entity_glossary.copy()}}
+
+    # ---- TURN 4: Section Summary (3-Turn Resilience) ----
     summary_points = []
     if section_index < n_sections - 1:
         yield {"type": "activity", "data": f"data: {_create_activity_chunk(display_model, 'status', {'message': f'Generating summary for section: {section_heading}...', 'icon': '📋'})}\n\n"}
 
-        summary_prompt = RESEARCH_STEP_SUMMARY_PROMPT.format(
-            reasoning_limit=config.RESEARCH_MEANDER_THOUGHT_LIMIT_SUMMARY
-        )
+        summary_prompt = RESEARCH_STEP_SUMMARY_PROMPT.format(today_date=today_date)
         messages.append({"role": "user", "content": summary_prompt})
+        summary_messages = messages
 
-        summary_payload = {
-            "model": model,
-            "messages": messages,
-            "temperature": config.RESEARCH_TEMPERATURE_SUMMARY,
-            "max_tokens": config.RESEARCH_MAX_TOKENS_SUMMARY,
-        }
+        for attempt in [1, 2, 3]:
+            summary_payload = {
+                "model": model,
+                "messages": summary_messages,
+                **_get_sampling_params(attempt=attempt),
+                "max_tokens": config.RESEARCH_MAX_TOKENS_SUMMARY,
+                "response_format": {"type": "json_schema", "json_schema": {"name": "section_summary", "schema": SUMMARY_JSON_SCHEMA}}
+            }
 
-        raw_summary = ""
-        gen = _stream_research_call(
-            api_url, summary_payload, display_model, "status",
-            thought_limit=config.RESEARCH_MEANDER_THOUGHT_LIMIT_SUMMARY,
-            content_threshold=config.RESEARCH_MEANDER_CONTENT_THRESHOLD,
-            api_key=api_key
-        )
-        async for packet in gen:
-            if packet["type"] == "activity":
-                yield packet
-            elif packet["type"] == "result":
-                raw_summary = packet["data"]
+            if attempt > 1:
+                yield {"type": "activity", "data": f"data: {_create_activity_chunk(display_model, 'status', {'message': f'Summary fallback (Attempt {attempt}/3)...', 'icon': '🛡️'})}\n\n"}
 
-        if raw_summary:
-            clean_summary = _strip_thinking(raw_summary)
+            gen = _stream_research_call(
+                api_url, summary_payload, display_model, "status", 
+                thought_limit=config.RESEARCH_MEANDER_THOUGHT_LIMIT_SUMMARY_TOKENS,
+                content_threshold=config.RESEARCH_MEANDER_CONTENT_THRESHOLD_TOKENS,
+                api_key=api_key, chat_id=chat_id, enable_thinking=(attempt == 1)
+            )
+            
+            raw_summary = ""
+            async for packet in gen:
+                if packet["type"] == "activity": yield packet
+                elif packet["type"] == "result":
+                    raw_summary = packet["data"]
+                    if packet.get("meandered") and attempt == 1:
+                        raw_summary = None
 
-            summary_points = [
-                line.strip().lstrip('- •').strip()
-                for line in clean_summary.split('\n')
-                if line.strip() and line.strip().startswith('-') and len(line.strip()) > 10
-            ]
+            parsed = _extract_json_from_text(raw_summary) if raw_summary else None
+            if parsed and isinstance(parsed, dict) and "summary_points" in parsed:
+                summary_points = parsed["summary_points"]
+                break
 
-    if not summary_points:
-        summary_points = [f"Content gathered and section drafted for: {section_heading}"]
+        if not summary_points:
+            yield {"type": "activity", "data": f"data: {_create_activity_chunk(display_model, 'needs_retry', {'state': 'writing', 'message': f'Failed to generate summary for \"{section_heading}\".'})}\n\n"}
+            yield "data: [DONE]\n\n"
+            yield {"type": "result", "data": (None, None, None, None, next_source_id)}
+            return
+
+    # Yield summary checkpoint (for partial recovery)
+    yield {"type": "summary_checkpoint", "data": {"summary_points": summary_points}}
 
     yield {"type": "activity", "data": f"data: {_create_activity_chunk(display_model, 'reflection', {'message': f'Section complete: {section_heading}', 'step_id': section_index})}\n\n"}
 
     yield {"type": "result", "data": (section_text, summary_points, plan_mod, follow_up_content, next_source_id)}
 
-
-# =====================================================================
-# MECHANICAL NORMALIZATION HELPERS
-# =====================================================================
-
-def _normalize_citations(report_text, source_registry):
-    """Re-number all [N] citations sequentially from [1] and build a references list.
-    Uses a two-phase placeholder approach to avoid collision between old and new IDs."""
-    
-    # Pre-process comma-separated or range citations
-    def split_commas(match):
-        nums = [n.strip() for n in match.group(1).split(',')]
-        return ' '.join(f'[{n}]' for n in nums if n.isdigit())
-    report_text = re.sub(r'\[\s*(\d+(?:\s*,\s*\d+)+)\s*\]', split_commas, report_text)
-    
-    def split_ranges(match):
-        start = int(match.group(1))
-        end = int(match.group(2))
-        if start < end and end - start <= 20: 
-            return ' '.join(f'[{i}]' for i in range(start, end + 1))
-        return match.group(0)
-    report_text = re.sub(r'\[(\d+)-(\d+)\]', split_ranges, report_text)
-
-    # Clean up weird AI markdown formats for citations
-    # Strip markdown link syntax: [1](#1) -> [1]
-    report_text = re.sub(r'\[(\d+)\]\([^)]+\)', r'[\1]', report_text)
-    # Strip nested brackets: [[1]] -> [1] or [[1]; [2]] -> [1]; [2]
-    report_text = re.sub(r'\[\s*(\[\d+\](?:[^\[\]]*\[\d+\])*)\s*\]', r'\1', report_text)
-    
-    all_matches = set(int(m) for m in re.findall(r'\[(\d+)\]', report_text))
-    valid_ids = sorted(sid for sid in all_matches if sid in source_registry)
-
-    if not valid_ids:
-        return report_text, []
-
-    remap = {old: idx + 1 for idx, old in enumerate(valid_ids)}
-
-    # Phase 1: valid citations → placeholders
-    def to_placeholder(match):
-        old_id = int(match.group(1))
-        if old_id in remap:
-            return f'[__REF_{remap[old_id]}__]'
-        return match.group(0)
-
-    temp = re.sub(r'\[(\d+)\]', to_placeholder, report_text)
-
-    # Phase 2: placeholders → final sequential numbers
-    def from_placeholder(match):
-        return f'[{match.group(1)}]'
-
-    normalized = re.sub(r'\[__REF_(\d+)__\]', from_placeholder, temp)
-
-    # Build references (mapping to URLs, not chunks)
-    references = []
-    for old_id in valid_ids:
-        new_id = remap[old_id]
-        url = source_registry[old_id].get('url', 'Unknown Source')
-        title = source_registry[old_id].get('title')
-        if title:
-            references.append(f"{new_id}. [{title}]({url})")
-        else:
-            # Display the actual URL instead of just "Source"
-            references.append(f"{new_id}. [{url}]({url})")
-
-    return normalized, references
-
-
-def _strip_report_images(report_text):
-    """Remove ALL ![alt](url) image embeds from the report.
-    Vision processing still enriches the content via descriptions, but images
-    are never embedded — the report model can't actually see them."""
-    return re.sub(r'!\[([^\]]*)\]\((https?://[^\)]+)\)', '', report_text).strip()
-
-def _strip_invalid_citations(report_text, valid_source_ids):
-    """Mechanically remove any [N] citation where N is not in the source registry."""
-    def check_citation(match):
-        source_id = int(match.group(1))
-        if source_id in valid_source_ids:
-            return match.group(0) # Keep valid citation
-        return '' # Strip invalid citation silently
+def _format_plan_as_markdown(xml_plan):
+    """Converts a <research_plan> XML string into a readable Markdown preview."""
+    try:
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(xml_plan, 'html.parser')
+        title = soup.find('title').get_text() if soup.find('title') else "Research Strategy"
+        md = f"# {title}\n\n"
         
-    def split_commas(match):
-        nums = [n.strip() for n in match.group(1).split(',')]
-        return ' '.join(f'[{n}]' for n in nums if n.isdigit())
-    report_text = re.sub(r'\[\s*(\d+(?:\s*,\s*\d+)+)\s*\]', split_commas, report_text)
-    
-    def split_ranges(match):
-        start = int(match.group(1))
-        end = int(match.group(2))
-        if start < end and end - start <= 20:
-            return ' '.join(f'[{i}]' for i in range(start, end + 1))
-        return match.group(0)
-    report_text = re.sub(r'\[(\d+)-(\d+)\]', split_ranges, report_text)
+        for idx, section in enumerate(soup.find_all('section')):
+            heading = section.find('heading').get_text() if section.find('heading') else f"Section {idx+1}"
+            desc = section.find('description').get_text() if section.find('description') else ""
+            md += f"## {heading}\n"
+            if desc:
+                md += f"{desc}\n\n"
+            
+            queries = section.find_all('query')
+            if queries:
+                md += "### Key Research Queries\n"
+                for q in queries:
+                    md += f"- {q.get_text()}\n"
+                md += "\n"
+        
+        md += "---\n*This plan has been automatically generated based on your request. The agent will now execute these steps and compile a report.*"
+        return md
+    except Exception as e:
+        return f"**Error formatting plan:** {str(e)}"
 
-    # Strip basic [N] format (complex formatting is already handled by _normalize_citations later)
-    return re.sub(r'\[(\d+)\]', check_citation, report_text)
+# =====================================================================
+# MAIN RESEARCH HANDLER
+# =====================================================================
 
 
-async def generate_research_response(api_url, model, messages, approved_plan=None, chat_id=None, search_depth_mode='regular', vision_model=None, model_name=None, resume_state=None, api_key=None):
+async def generate_research_response(api_url, model, messages, approved_plan=None, chat_id=None, search_depth_mode='regular', vision_model=None, model_name=None, resume_state=None, api_key=None, edits=None, topic_override=None, vision_enabled=True):
     """
     Main Research Pipeline
     
@@ -1160,6 +542,8 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
     Phase 3: Assembly & Audit (stitch → normalize → audit patches → synthesis → references)
     """
     display_model = model_name or model
+    full_reasoning = ""
+    today_date = datetime.date.today().strftime("%A, %B %d, %Y")
     log_event("research_start", {"chat_id": chat_id, "mode": 'execution' if approved_plan else 'planning', "model": model, "vision_model": vision_model})
 
     # Ensure MCP clients are connected
@@ -1179,6 +563,7 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
                 content = next((p.get('text', '') for p in content if p.get('type') == 'text'), '')
             if isinstance(content, str) and '<research_plan>' not in content:
                 original_query = content
+                break # Identify the STARTING topic
 
     # VLM concurrency lock (serialize vision model calls)
     vlm_lock = asyncio.Semaphore(1) if vision_model else None
@@ -1234,188 +619,295 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
             return
             
     n_sections = len(sections)
-    if not resume_state:
+    if not resume_state or resume_state in ["scouting", "planning"]:
         if not approved_plan:
             current_time = get_current_time()
             conversation_history = [m for m in messages if m['role'] != 'system']
 
             # ===== PHASE 0: CONTEXT SCOUT =====
-            yield f"data: {_create_activity_chunk(display_model, 'planning', {'message': 'Analyzing your research query...', 'state': 'thinking'})}\n\n"
+            scout_history_path = os.path.join(config.DATA_DIR, "tasks", f"{chat_id}_scout_history.json")
+            planner_history_path = os.path.join(config.DATA_DIR, "tasks", f"{chat_id}_planner_history.json")
+            os.makedirs(os.path.dirname(scout_history_path), exist_ok=True)
 
-            scout_prompt = RESEARCH_SCOUT_PROMPT.format(
-                current_time=current_time,
-                reasoning_limit=config.RESEARCH_MEANDER_THOUGHT_LIMIT_SCOUT
-            )
-            scout_messages = [{"role": "system", "content": scout_prompt}]
-            scout_messages.extend(conversation_history[-config.RESEARCH_CONTEXT_HISTORY_SCOUT:])
-
-            scout_payload = {
-                "model": model,
-                "messages": scout_messages,
-                "temperature": config.RESEARCH_TEMPERATURE_SCOUT,
-            }
-
+            scout_messages = []
             scout_analysis = None
-            scout_context_str = ""
             preliminary_search_results = ""
-
             raw_scout = ""
-            try:
-                gen = _stream_research_call(
-                    api_url, scout_payload, display_model, "planning",
-                    thought_limit=config.RESEARCH_MEANDER_THOUGHT_LIMIT_SCOUT,
-                    content_threshold=config.RESEARCH_MEANDER_CONTENT_THRESHOLD,
-                    api_key=api_key
-                )
-                async for packet in gen:
-                    if packet["type"] == "activity":
-                        yield packet["data"]
-                    elif packet["type"] == "result":
-                        raw_scout = packet["data"]
+            structural_recommendation = "narrative"
 
-                if raw_scout:
-                    scout_analysis = _extract_json_from_text(raw_scout)
+            # 1. Check if we can skip Scout (Edits present means scouting is done)
+            scout_done = False
+            if edits and os.path.exists(planner_history_path):
+                scout_done = True
+                # We need raw_scout from the first assistant message of the scout history to pass context if needed
+                if os.path.exists(scout_history_path):
+                    try:
+                        with open(scout_history_path, 'r') as f:
+                            hist = json.load(f)
+                            # Find the last successful scout analysis and any search findings
+                            for m in hist:
+                                if m['role'] == 'user' and "Preliminary Search Results:" in str(m.get('content', '')):
+                                    preliminary_search_results += f"\n{m['content']}"
+                                
+                                if m['role'] == 'assistant':
+                                    content = m.get('content', '')
+                                    test_analysis = _extract_json_from_text(content)
+                                    if test_analysis and not test_analysis.get('clarifying_question'):
+                                        raw_scout = content
+                                        scout_analysis = test_analysis
+                    except Exception:
+                        # If history file is corrupted or unreadable, treat as if no history exists
+                        pass
 
-                if scout_analysis and isinstance(scout_analysis, dict):
-                    log_event("research_scout_complete", {
-                        "chat_id": chat_id,
-                        "topic_type": scout_analysis.get("topic_type"),
-                        "time_sensitive": scout_analysis.get("time_sensitive"),
-                        "confidence": scout_analysis.get("confidence"),
-                        "needs_search": scout_analysis.get("needs_search"),
-                        "structural_recommendation": scout_analysis.get("structural_recommendation")
-                    })
+            # 2. If not skipping, load Scout history or start fresh
+            if not scout_done:
+                if os.path.exists(scout_history_path):
+                    try:
+                        with open(scout_history_path, 'r') as f:
+                            scout_messages = json.load(f)
+                        # If the last message was a user message (clarification response), we continue
+                        # If the last was assistant, we might be resuming or it might be done
+                        if scout_messages and scout_messages[-1]['role'] == 'assistant':
+                            last_scout_raw = scout_messages[-1]['content']
+                            scout_analysis = _extract_json_from_text(last_scout_raw)
+                            if scout_analysis and not scout_analysis.get("clarifying_question"):
+                                scout_done = True
+                                raw_scout = last_scout_raw
+                    except:
+                        pass
+
+                if not scout_messages:
+                    scout_prompt = RESEARCH_SCOUT_PROMPT.format(
+                        today_date=today_date
+                    )
+                    scout_topic = topic_override or original_query
+                    scout_messages = [
+                        {"role": "system", "content": scout_prompt},
+                        {"role": "user", "content": scout_topic}
+                    ]
+                elif topic_override:
+                    # If history exists and we have a new topic_override, it's likely a clarification response
+                    # Append it if the last message was assistant
+                    if scout_messages and scout_messages[-1]['role'] == 'assistant':
+                        scout_messages.append({"role": "user", "content": topic_override})
+
+            # 3. Scout iteration loop (if not done)
+            while not scout_done:
+                scout_analysis = None
+                for attempt in [1, 2, 3]:
+                    scout_payload = {
+                        "model": model,
+                        "messages": scout_messages,
+                        **_get_sampling_params(attempt=attempt),
+                        "max_tokens": config.RESEARCH_MAX_TOKENS_SCOUT,
+                        "response_format": {"type": "json_schema", "json_schema": {"name": "scout_analysis", "schema": SCOUT_JSON_SCHEMA}}
+                    }
+
+                    try:
+                        status_msg = 'Analyzing topic context...' if attempt == 1 else f'Auto-retrying analysis (Attempt {attempt}/3)...'
+                        yield f"data: {_create_activity_chunk(display_model, 'planning', {'message': status_msg, 'state': 'thinking'})}\n\n"
+                        
+                        gen = _stream_research_call(
+                            api_url, scout_payload, display_model, "planning",
+                            thought_limit=config.RESEARCH_MEANDER_THOUGHT_LIMIT_SCOUT_TOKENS,
+                            content_threshold=config.RESEARCH_MEANDER_CONTENT_THRESHOLD_TOKENS,
+                            api_key=api_key,
+                            chat_id=chat_id,
+                            enable_thinking=(attempt == 1)
+                        )
+                        
+                        raw_scout = ""
+                        scout_content = ""
+                        scout_meandered = False
+                        async for packet in gen:
+                            if packet["type"] == "activity":
+                                yield packet["data"]
+                            elif packet["type"] == "result":
+                                raw_scout = packet["data"]
+                                scout_content = packet.get("content", "")
+                                scout_meandered = packet.get("meandered", False)
+                        
+                        if scout_meandered and attempt == 1:
+                            yield f"data: {_create_activity_chunk(display_model, 'planning', {'message': 'Scout analysis meandering. Falling back to structured mode...', 'state': 'warning'})}\n\n"
+                            continue 
+                        
+                        if raw_scout:
+                            scout_analysis = _extract_json_from_text(scout_content or raw_scout)
+                        
+                        if scout_analysis and isinstance(scout_analysis, dict):
+                            # Success check
+                            if scout_analysis.get("clarifying_question"):
+                                scout_messages.append({"role": "assistant", "content": raw_scout})
+                                with open(scout_history_path, 'w') as f:
+                                    json.dump(scout_messages, f)
+                                yield f"data: {_create_activity_chunk(display_model, 'planning', {'message': 'Topic requires clarification.', 'state': 'complete', 'clarification': True})}\n\n"
+                                yield f"data: {create_chunk(display_model, content=scout_analysis['clarifying_question'], clarification=True)}\n\n"
+                                yield "data: [DONE]\n\n"
+                                return
+
+                            if scout_analysis.get("needs_search") and scout_analysis.get("preliminary_search"):
+                                prelim = scout_analysis["preliminary_search"]
+                                prelim_query = prelim.get("query", "")
+                                if prelim_query:
+                                    yield f"data: {_create_activity_chunk(display_model, 'planning', {'message': f'Gathering context: \"{prelim_query}\"...', 'state': 'thinking'})}\n\n"
+                                    mcp_res = await _execute_mcp_tool(tavily_client, "async_tavily_search_tool", {
+                                        "query": prelim_query,
+                                        "topic": prelim.get("topic", "general"),
+                                        "time_range": prelim.get("time_range")
+                                    }, chat_id=chat_id)
+                                    try:
+                                        res_json = json.loads(mcp_res.content[0].text)
+                                        p_results = res_json.get("results", [])
+                                        snippets = [f"- **{r.get('title')}** ({r.get('url')}): {r.get('content')}" for r in p_results[:config.RESEARCH_SCOUT_PRELIM_RESULTS_COUNT]]
+                                        res_str = "\n".join(snippets)
+                                        preliminary_search_results += f"\nResults for '{prelim_query}':\n{res_str}"
+                                        scout_messages.append({"role": "assistant", "content": raw_scout})
+                                        scout_messages.append({"role": "user", "content": f"Preliminary Search Results:\n{res_str}"})
+                                        # Recurse Scout loop with fresh context
+                                        break # Breaks attempt loop, moves to next for scout_turn
+                                    except:
+                                        pass
+                            
+                            # Final success state
+                            scout_messages.append({"role": "assistant", "content": raw_scout})
+                            scout_done = True
+                            break
+                        else:
+                            if attempt < 3:
+                                yield f"data: {_create_activity_chunk(display_model, 'planning', {'message': f'Attempt {attempt} failed validation. Retrying...', 'state': 'warning'})}\n\n"
+                                continue
                     
-                    structural_recommendation = scout_analysis.get("structural_recommendation", "narrative")
+                    except Exception as e:
+                        log_event("research_scout_error", {"chat_id": chat_id, "error": str(e), "attempt": attempt})
+                        if attempt == 3: raise
+                        continue
 
-                    _topic = scout_analysis.get('topic_type', 'general')
-                    _time_sens = scout_analysis.get('time_sensitive', False)
-                    _conf = scout_analysis.get('confidence', 'unknown')
-                    yield f"data: {_create_activity_chunk(display_model, 'planning', {'message': f'Topic classified as: {_topic} | Time-sensitive: {_time_sens} | Confidence: {_conf}', 'state': 'thinking'})}\n\n"
+                # Save history
+                if scout_messages:
+                    with open(scout_history_path, 'w') as f:
+                        json.dump(scout_messages, f)
 
-                    # Execute preliminary search if scout requests one
-                    if scout_analysis.get("needs_search") and scout_analysis.get("preliminary_search"):
-                        prelim = scout_analysis["preliminary_search"]
-                        prelim_query = prelim.get("query", "")
-                        prelim_topic = prelim.get("topic", "general")
-                        prelim_time_range = prelim.get("time_range")
+                if not scout_done and not scout_analysis:
+                    yield f"data: {_create_activity_chunk(display_model, 'needs_retry', {'state': 'scouting', 'message': 'Scout analysis failed to produce a valid roadmap.'})}\n\n"
+                    yield "data: [DONE]\n\n"
+                    return
 
-                        if prelim_query:
-                            _pq_msg = f'Gathering preliminary context: "{prelim_query}"...'
-                            yield f"data: {_create_activity_chunk(display_model, 'planning', {'message': _pq_msg, 'state': 'thinking'})}\n\n"
+            # ===== PHASE 1: PLANNING (3-Turn Resilience) =====
+            planner_messages = []
+            if os.path.exists(planner_history_path):
+                try:
+                    with open(planner_history_path, 'r') as f:
+                        planner_messages = json.load(f)
+                except:
+                    pass
 
-                            mcp_res = await tavily_client.execute_tool("async_tavily_search_tool", {
-                                "query": prelim_query,
-                                "topic": prelim_topic,
-                                "time_range": prelim_time_range
-                            })
-                            try:
-                                res_json = json.loads(mcp_res.content[0].text)
-                                prelim_results = res_json.get("results", [])
-                                prelim_images = res_json.get("images", [])
-                            except:
-                                prelim_results, prelim_images = [], []
-
-                            if prelim_results:
-                                context_snippets = []
-                                for r in prelim_results[:config.RESEARCH_SCOUT_PRELIM_RESULTS_COUNT]:
-                                    title = r.get('title', 'Untitled')
-                                    snippet = r.get('content', '')
-                                    url = r.get('url', '')
-                                    context_snippets.append(f"- **{title}** ({url}): {snippet}")
-                                preliminary_search_results = "\n".join(context_snippets)
-
-                                if prelim_images:
-                                    preliminary_search_results += "\n\n### Preliminary Visual Evidence:\n" + "\n".join([f"- {img.get('url') if isinstance(img, dict) else img}" for img in prelim_images[:5]])
-
-                                yield f"data: {_create_activity_chunk(display_model, 'planning', {'message': f'Gathered context from {len(prelim_results[:config.RESEARCH_SCOUT_PRELIM_RESULTS_COUNT])} sources and {len(prelim_images[:5])} images.', 'state': 'thinking'})}\n\n"
-                            else:
-                                yield f"data: {_create_activity_chunk(display_model, 'planning', {'message': 'Preliminary search returned no results. Proceeding to planning...', 'state': 'thinking'})}\n\n"
-
-                    scout_context_parts = []
-                    scout_context_parts.append(f"## Context Analysis (from pre-planning scout)")
-                    scout_context_parts.append(f"- **Topic Type:** {scout_analysis.get('topic_type', 'general')}")
-                    scout_context_parts.append(f"- **Time-Sensitive:** {scout_analysis.get('time_sensitive', False)}")
-                    scout_context_parts.append(f"- **Confidence Level:** {scout_analysis.get('confidence', 'unknown')}")
-                    scout_context_parts.append(f"- **Recommended Structure:** {structural_recommendation}")
-                    if scout_analysis.get('context_notes'):
-                        scout_context_parts.append(f"- **Analysis Notes:** {scout_analysis['context_notes']}")
+            if not planner_messages:
+                # Build context from scout
+                scout_context_str = ""
+                if scout_analysis:
+                    scout_context_parts = [
+                        f"## Research Objective\nTarget Topic: {topic_override or original_query}",
+                        f"\n## Context Analysis",
+                        f"- **Topic Type:** {scout_analysis.get('topic_type', 'general')}",
+                        f"- **Time-Sensitive:** {scout_analysis.get('time_sensitive', False)}",
+                        f"- **Analysis Notes:** {scout_analysis.get('context_notes', '')}"
+                    ]
                     if preliminary_search_results:
-                        scout_context_parts.append(f"\n### Preliminary Search Results (use these to inform your plan)")
-                        scout_context_parts.append(preliminary_search_results)
+                        scout_context_parts.append(f"\n### Preliminary Research Findings\n{preliminary_search_results}")
                     scout_context_str = "\n".join(scout_context_parts)
                 else:
-                    log_event("research_scout_failed", {"chat_id": chat_id, "raw_output": raw_scout[:200] if raw_scout else "empty"})
-                    scout_context_str = "## Context Analysis\nScout analysis was not available. Proceed with general planning based on the user query alone."
-            except Exception as e:
-                log_event("research_scout_error", {"chat_id": chat_id, "error": str(e)})
-                scout_context_str = "## Context Analysis\nScout analysis encountered an error. Proceed with general planning based on the user query alone."
+                    scout_context_str = f"## Research Objective\nTarget Topic: {topic_override or original_query}"
 
-            # ===== PHASE 1: PLANNING =====
-            system_prompt = RESEARCH_PLANNER_PROMPT.format(
-                current_time=current_time,
-                scout_context=scout_context_str,
-                max_queries_per_section=config.RESEARCH_MAX_QUERIES_PER_SECTION,
-                max_total_queries=config.RESEARCH_MAX_TOTAL_QUERIES,
-                reasoning_limit=config.RESEARCH_MEANDER_THOUGHT_LIMIT_PLANNING
-            )
-            messages_to_send = [{"role": "system", "content": system_prompt}]
-            messages_to_send.extend(conversation_history[-config.RESEARCH_CONTEXT_HISTORY_PLANNING:])
+                system_prompt = RESEARCH_PLANNER_PROMPT.format(
+                    today_date=today_date,
+                    scout_context=scout_context_str,
+                    max_queries_per_section=config.RESEARCH_MAX_QUERIES_PER_SECTION,
+                    max_total_queries=config.RESEARCH_MAX_TOTAL_QUERIES,
+                )
+                handoff = json.dumps(scout_analysis) if scout_analysis else _strip_thinking(raw_scout)
+                planner_messages = [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": handoff}
+                ]
 
-            payload = {
-                "model": model,
-                "messages": messages_to_send,
-                "stream": True,
-                "temperature": config.RESEARCH_TEMPERATURE_PLANNING,
-                "top_p": config.RESEARCH_TOP_P_PLANNING,
-                "max_tokens": config.RESEARCH_MAX_TOKENS_PLANNING,
-            }
+            if edits:
+                planner_messages.append({"role": "user", "content": f"User refinements: {edits}"})
 
-            yield f"data: {_create_activity_chunk(display_model, 'planning', {'message': 'Designing research strategy...', 'state': 'thinking'})}\n\n"
+            clean_xml = None
+            for attempt in [1, 2, 3]:
+                status_msg = 'Designing research strategy...' if attempt == 1 else f'Auto-retrying planning (Attempt {attempt}/3)...'
+                yield f"data: {_create_activity_chunk(display_model, 'planning', {'message': status_msg, 'state': 'thinking'})}\n\n"
 
-            for attempt in range(1, config.RESEARCH_MAX_PLAN_RETRIES + 1):
-                payload["messages"] = list(messages_to_send)
+                payload = {
+                    "model": model,
+                    "messages": planner_messages,
+                    "stream": True,
+                    **_get_sampling_params(attempt=1 if attempt == 1 else 2),
+                    "max_tokens": config.RESEARCH_MAX_TOKENS_PLANNING,
+                    "response_format": {"type": "json_schema", "json_schema": {"name": "research_plan", "schema": PLANNER_JSON_SCHEMA}}
+                }
+
                 plan_source = ""
-                
+                plan_meandered = False
                 gen = _stream_research_call(
                     api_url, payload, display_model, "planning",
-                    thought_limit=config.RESEARCH_MEANDER_THOUGHT_LIMIT_PLANNING,
-                    content_threshold=config.RESEARCH_MEANDER_CONTENT_THRESHOLD,
-                    api_key=api_key
+                    thought_limit=config.RESEARCH_MEANDER_THOUGHT_LIMIT_PLANNING_TOKENS,
+                    content_threshold=config.RESEARCH_MEANDER_CONTENT_THRESHOLD_TOKENS,
+                    api_key=api_key, chat_id=chat_id, enable_thinking=(attempt == 1)
                 )
+
                 async for packet in gen:
-                    if packet["type"] == "activity":
-                        yield packet["data"]
+                    if packet["type"] == "activity": yield packet["data"]
                     elif packet["type"] == "result":
-                        plan_source = packet["data"]
-                
-                if not plan_source.strip():
-                    yield f"data: {_create_activity_chunk(display_model, 'planning', {'message': f'Attempt {attempt}: No output received. Retrying...', 'state': 'warning'})}\n\n"
+                        plan_source = packet.get("content", "")
+                        plan_meandered = packet.get("meandered", False)
+
+                if plan_meandered and attempt == 1:
+                    yield f"data: {_create_activity_chunk(display_model, 'planning', {'message': 'Planning meandering. Switching to structured mode...', 'state': 'warning'})}\n\n"
                     continue
 
-                yield f"data: {_create_activity_chunk(display_model, 'planning', {'message': 'Validating research plan structure...', 'state': 'validating'})}\n\n"
+                if not plan_source.strip(): continue
 
+                yield f"data: {_create_activity_chunk(display_model, 'planning', {'message': 'Validating strategy...', 'state': 'validating'})}\n\n"
                 clean_xml, error = validate_research_plan(plan_source)
 
                 if clean_xml:
-                    yield f"data: {_create_activity_chunk(display_model, 'planning', {'message': 'Plan generated successfully!', 'state': 'complete'})}\n\n"
+                    planner_messages.append({"role": "assistant", "content": plan_source})
+                    with open(planner_history_path, 'w') as f:
+                        json.dump(planner_messages, f)
+                    yield f"data: {_create_activity_chunk(display_model, 'planning', {'message': 'Strategy approved!', 'state': 'complete'})}\n\n"
+                    
+                    # Issue 3.4 fix: use full chat_id to avoid 8-char collision risk
+                    canvas_id = f"plan_{chat_id}" if chat_id else "research_plan"
+                    plan_md = _format_plan_as_markdown(clean_xml)
+
+                    if chat_id:
+                        try:
+                            # Use centralized canvas manager
+                            result = await create_canvas(
+                                chat_id=chat_id,
+                                canvas_id=canvas_id,
+                                title="Research Strategy",
+                                content=plan_md,
+                                folder="research",
+                                author="system",
+                                version_comment="Research plan created"
+                            )
+                        except Exception as e:
+                            log_event("research_plan_canvas_persist_error", {"chat_id": chat_id, "error": str(e)})
+
+                    yield f"data: {json.dumps({'__canvas_update__': {'id': canvas_id, 'title': 'Research Strategy', 'content': plan_md, 'action': 'create'}})}\n\n"
+
                     yield f"data: {create_chunk(display_model, content=clean_xml)}\n\n"
                     yield "data: [DONE]\n\n"
                     return
                 else:
-                    yield f"data: {_create_activity_chunk(display_model, 'planning', {'message': f'Validation issue: {error}. Refining plan...', 'state': 'warning'})}\n\n"
-                    if attempt < config.RESEARCH_MAX_PLAN_RETRIES:
-                        messages_to_send = list(messages_to_send)
-                        # Ensure we include the full trace if things go wrong
-                        messages_to_send.append({"role": "assistant", "content": plan_source or ""})
-                        messages_to_send.append({
-                            "role": "user",
-                            "content": f"Your output failed validation: {error}\nPlease correct the issue and regenerate the complete <research_plan> block carefully."
-                        })
-
-            yield f"data: {create_chunk(model, content='**I was unable to generate a valid research plan.** Please try rephrasing your research topic or simplifying the request.')}\n\n"
+                    yield f"data: {_create_activity_chunk(display_model, 'planning', {'message': f'Validation issue: {error}', 'state': 'warning'})}\n\n"
+            
+            yield f"data: {_create_activity_chunk(display_model, 'needs_retry', {'state': 'planning', 'message': 'Planning failed after 3 attempts. Please re-run.'})}\n\n"
             yield "data: [DONE]\n\n"
             return
+            # Transition to Phase 2
 
     # =====================================================================
     # PHASE 2: SECTION EXECUTION (for each section → queries → reflect → write)
@@ -1445,8 +937,10 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
             yield f"data: {_create_activity_chunk(display_model, 'status', {'message': f'Resuming from section {last_completed_section + 2}...', 'icon': '🔄'})}\n\n"
         except Exception:
             last_completed_section = -1
+            accumulated_summaries = []
     else:
         last_completed_section = -1
+        accumulated_summaries = []
 
     # Extract the plan title
     plan_root_for_title = BeautifulSoup(approved_plan, 'html.parser')
@@ -1480,11 +974,11 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
                 yield f"data: {_create_activity_chunk(display_model, 'search', {'query': query, 'step_id': section_idx, 'displayMessage': f'Query {q_idx+1}/{len(section_queries)}: Searching...'})}\n\n"
 
                 # --- SEARCH ---
-                mcp_res = await tavily_client.execute_tool("async_tavily_search_tool", {
+                mcp_res = await _execute_mcp_tool(tavily_client, "async_tavily_search_tool", {
                     "query": query, "topic": q_topic, "time_range": q_time_range,
                     "start_date": q_start_date, "end_date": q_end_date,
                     "max_results": config.RESEARCH_TAVILY_MAX_RESULTS_INITIAL
-                })
+                }, chat_id=chat_id)
                 try:
                     res_json = json.loads(mcp_res.content[0].text)
                     results_raw = res_json.get("results", [])
@@ -1521,7 +1015,7 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
                     async for packet in _extract_content_for_url(
                         sel_url, search_depth_mode, vision_model, api_url, vlm_lock,
                         display_model=display_model, step_id=section_idx,
-                        raw_content_from_search=sel_result.get('raw_content'), api_key=api_key
+                        raw_content_from_search=sel_result.get('raw_content'), api_key=api_key, chat_id=chat_id, vision_enabled=vision_enabled
                     ):
                         if packet["type"] == "activity":
                             yield packet["data"]
@@ -1545,8 +1039,8 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
                         yield f"data: {_create_activity_chunk(display_model, 'status', {'message': f'Failed to extract content from {sel_url[:40]}...', 'icon': '⚠️'})}\n\n"
 
                 # --- PROCESS SEARCH IMAGES (VLM) ---
-                if vision_model and search_images:
-                    async for packet in _process_tavily_search_images(search_images, section_idx, vision_model, api_url, vlm_lock, display_model=display_model, api_key=api_key):
+                if vision_model and vision_enabled and search_images:
+                    async for packet in _process_tavily_search_images(search_images, section_idx, vision_model, api_url, vlm_lock, display_model=display_model, api_key=api_key, chat_id=chat_id, vision_enabled=vision_enabled):
                         if packet["type"] == "activity":
                             yield packet["data"]
                         else:
@@ -1560,7 +1054,7 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
                         sel_url = sel_result.get('url', '')
                         yield f"data: {_create_activity_chunk(display_model, 'status', {'message': f'Deep mapping: {sel_url[:40]}...', 'step_id': section_idx, 'icon': '🗺️'})}\n\n"
 
-                        mcp_res = await tavily_client.execute_tool("async_tavily_map_tool", {"url_to_map": sel_url, "instruction": f"Researching: {heading}. Find deep data pages."})
+                        mcp_res = await _execute_mcp_tool(tavily_client, "async_tavily_map_tool", {"url_to_map": sel_url, "instruction": f"Researching: {heading}. Find deep data pages."}, chat_id=chat_id)
                         try:
                             res_json = json.loads(mcp_res.content[0].text)
                             sub_mapped = res_json.get("results", [])
@@ -1581,7 +1075,7 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
                                 deep_extracted = None
                                 async for packet in _extract_content_for_url(
                                     mapped_url, search_depth_mode, vision_model, api_url, vlm_lock,
-                                    display_model=display_model, step_id=section_idx, api_key=api_key
+                                    display_model=display_model, step_id=section_idx, api_key=api_key, chat_id=chat_id, vision_enabled=vision_enabled
                                 ):
                                     if packet["type"] == "activity":
                                         yield packet["data"]
@@ -1617,6 +1111,8 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
 
             # --- SECTION-LEVEL PROCESSING: Reflect + Triage + Write + Summary ---
             section_text = summary_points = plan_mod = _ = None
+            # Track progress for partial failure recovery
+            section_progress = {"reflection": False, "triage": False, "write": False, "summary": False}
 
             query_strings = [q["search"] for q in section_queries]
             async for packet in _execute_section_reflection_and_write(
@@ -1625,13 +1121,59 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
                     n_sections, original_query, approved_plan,
                     search_depth_mode, vision_model, vlm_lock, chat_id,
                     display_model, source_registry, global_source_id, mode_guidance, entity_glossary,
-                    image_results=vlm_image_results, api_key=api_key
+                    image_results=vlm_image_results, api_key=api_key, vision_enabled=vision_enabled
                 ):
 
                 if packet["type"] in ("activity", "stream", "stream_chunk"):
                     yield packet["data"]
                 elif packet["type"] == "result":
                     section_text, summary_points, plan_mod, _, global_source_id = packet["data"]
+                elif packet["type"].endswith("_checkpoint"):
+                    # Handle progress checkpoint for partial failure recovery
+                    checkpoint_type = packet["type"].replace("_checkpoint", "")
+                    checkpoint_data = packet["data"]
+                    section_progress[checkpoint_type] = True
+
+                    # Save state immediately after each checkpoint
+                    if chat_id:
+                        try:
+                            # Update the current section entry with progress
+                            if section_idx >= len(accumulated_summaries):
+                                accumulated_summaries.append({
+                                    "section": section_idx,
+                                    "heading": heading,
+                                    "progress": {},
+                                    "section_text": None,
+                                    "summary_points": None
+                                })
+                            section_entry = accumulated_summaries[section_idx]
+                            if 'progress' not in section_entry:
+                                section_entry['progress'] = {}
+                            section_entry['progress'][checkpoint_type] = {"status": "completed"}
+
+                            # If checkpoint has data, store it
+                            if checkpoint_type == "write" and checkpoint_data.get("section_text"):
+                                section_entry['section_text'] = checkpoint_data["section_text"]
+                            elif checkpoint_type == "summary" and checkpoint_data.get("summary_points"):
+                                section_entry['summary_points'] = checkpoint_data["summary_points"]
+
+                            # Save state to disk
+                            state = {
+                                "accumulated_summaries": accumulated_summaries,
+                                "source_registry": {str(k): v for k, v in source_registry.items()},
+                                "global_source_id": global_source_id,
+                                "last_completed_section": section_idx,
+                                "structural_recommendation": structural_recommendation,
+                                "entity_glossary": entity_glossary
+                            }
+                            with open(state_path, "w", encoding="utf-8") as f:
+                                json.dump(state, f)
+                        except Exception as e:
+                            log_event("research_checkpoint_save_error", {"chat_id": chat_id, "checkpoint": checkpoint_type, "error": str(e)})
+
+            if section_text is None:
+                # The sub-generator already yielded the 'needs_retry' chunk and [DONE]
+                return
 
             yield f"data: {create_chunk(display_model, content=chr(10)*2)}\n\n"
 
@@ -1642,6 +1184,50 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
                 "plan_modification": plan_mod,
                 "section_text": section_text
             })
+
+            # Emit canvas update for progressive rendering (Phase 8a) AND persist to disk (Issue 2.2 fix)
+            canvas_action = "create" if section_idx == 0 else "append"
+            canvas_id = f"research_{chat_id}" if chat_id else "research_report"  # Issue 3.4 fix: full chat_id
+            canvas_title = "Research Report"  # Will be replaced by Synthesis later
+
+            # For progressive updates, we send the section header + content
+            progressive_content = f"## {heading}\n\n{section_text}\n\n"
+
+            # Persist the progressive canvas to disk after every section (partial report recovery)
+            if chat_id:
+                try:
+                    # Build the accumulated content from all completed sections so far
+                    completed_sections = [
+                        s for s in accumulated_summaries if s.get('section_text')
+                    ]
+                    accumulated_content = "\n\n".join(
+                        f"## {s['heading']}\n\n{s['section_text']}" for s in completed_sections
+                    )
+                    # Use centralized canvas manager
+                    if section_idx == 0:
+                        # First section - create canvas
+                        await create_canvas(
+                            chat_id=chat_id,
+                            canvas_id=canvas_id,
+                            title=canvas_title,
+                            content=accumulated_content,
+                            folder="research",
+                            author="system",
+                            version_comment="Progressive research report"
+                        )
+                    else:
+                        # Subsequent sections - append
+                        await append_to_canvas(
+                            canvas_id,
+                            chat_id,
+                            f"\n\n## {heading}\n\n{section_text}",
+                            author="system",
+                            version_comment="Added section"
+                        )
+                except Exception as e:
+                    log_event("research_progressive_canvas_persist_error", {"chat_id": chat_id, "error": str(e)})
+
+            yield f"data: {json.dumps({'__canvas_update__': {'id': canvas_id, 'title': canvas_title, 'content': progressive_content, 'action': canvas_action}})}\n\n"
 
             # Handle plan modifications (adding new sections)
             if plan_mod and isinstance(plan_mod, dict):
@@ -1675,8 +1261,12 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
         import traceback
         traceback.print_exc()
         log_event("research_section_execution_error", {"chat_id": chat_id, "error": str(e)})
-        yield f"data: {create_chunk(model, content=f'**Error during section execution:** {str(e)}')}\n\n"
-        yield f"data: {_create_activity_chunk(display_model, 'needs_retry', {'state': 'section_execution', 'message': f'Section execution failed: {str(e)}'})}\n\n"
+        
+        if _is_transient_error(e):
+            yield f"data: {_create_activity_chunk(display_model, 'needs_retry', {'state': 'section_execution', 'message': f'Section execution interrupted: {str(e)}'})}\n\n"
+        else:
+            yield f"data: {create_chunk(model, content=f'**Fatal Error:** {str(e)}')}\n\n"
+        
         yield "data: [DONE]\n\n"
         return
 
@@ -1717,34 +1307,34 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
             yield "data: [DONE]\n\n"
             return
 
-        # --- 3.1 Stitch sections ---
-        plan_root_for_title = BeautifulSoup(approved_plan, 'html.parser')
-        title_tag = plan_root_for_title.find('title')
-        report_title = title_tag.get_text(strip=True) if title_tag else "Research Report"
-        full_report = f"# {report_title}\n\n" + "\n\n".join([s['section_text'] for s in valid_summaries])
-
-        # --- 3.2 Mechanical image stripping (vision enriches content, but images are never embedded) ---
-        full_report = _strip_report_images(full_report)
-
-        # --- 3.3 Pre-Audit Citation Validation ---
+        # --- 3.1 Pre-Audit Citation Validation ---
         # Mechanically remove any [N] tag that doesn't point to a real source
         valid_source_ids = set(source_registry.keys())
         for s in valid_summaries:
             s['section_text'] = _strip_invalid_citations(s['section_text'], valid_source_ids)
 
+        # --- 3.2 Stitch sections ---
+        plan_root_for_title = BeautifulSoup(approved_plan, 'html.parser')
+        title_tag = plan_root_for_title.find('title')
+        report_title = title_tag.get_text(strip=True) if title_tag else "Research Report"
+        full_report = f"# {report_title}\n\n" + "\n\n".join([s['section_text'] for s in valid_summaries])
+
+        # --- 3.3 Mechanical image stripping (vision enriches content, but images are never embedded) ---
+        full_report = _strip_report_images(full_report)
+
         # --- 3.4 Auditor (if enabled) ---
         if config.RESEARCH_AUDIT_ENABLED:
             yield f"data: {_create_activity_chunk(display_model, 'status', {'message': 'Running quality audit...', 'icon': '🔍'})}\n\n"
 
-            # Build sections JSON for the auditor (paired data)
+            # Build sections JSON for the auditor (structured data)
             report_sections_json = json.dumps(
-                {s['heading']: s['section_text'] for s in valid_summaries},
+                [{"id": i, "title": s['heading'], "content": s['section_text']} for i, s in enumerate(valid_summaries)],
                 indent=2
             )
 
             auditor_prompt = RESEARCH_DETECTIVE_PROMPT.format(
                 user_query=original_query,
-                reasoning_limit=config.RESEARCH_MEANDER_THOUGHT_LIMIT_AUDIT
+                today_date=today_date
             )
 
             auditor_messages = [
@@ -1752,28 +1342,39 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
                 {"role": "user", "content": f"Here is the report draft to audit:\n{report_sections_json}\n\n{auditor_prompt}"}
             ]
 
-            # TURN 1: Detective
-            detective_payload = {
-                "model": model,
-                "messages": auditor_messages,
-                "temperature": config.RESEARCH_TEMPERATURE_AUDIT,
-                "max_tokens": config.RESEARCH_MAX_TOKENS_AUDIT,
-            }
-
+            # TURN 1, 2, 3: Detective (Auditor) (Soft Fail)
             raw_audit = ""
-            gen = _stream_research_call(
-                api_url, detective_payload, display_model, "status",
-                thought_limit=config.RESEARCH_MEANDER_THOUGHT_LIMIT_AUDIT,
-                content_threshold=config.RESEARCH_MEANDER_CONTENT_THRESHOLD,
-                api_key=api_key
-            )
-            async for packet in gen:
-                if packet["type"] == "activity":
-                    yield packet["data"]
-                elif packet["type"] == "result":
-                    raw_audit = packet["data"]
+            for attempt in [1, 2, 3]:
+                detective_payload = {
+                    "model": model,
+                    "messages": auditor_messages,
+                    **_get_sampling_params(attempt=attempt),
+                    "max_tokens": config.RESEARCH_MAX_TOKENS_AUDIT,
+                    "response_format": {"type": "json_schema", "json_schema": {"name": "report_audit", "schema": DETECTIVE_JSON_SCHEMA}}
+                }
 
+                if attempt > 1:
+                    yield f"data: {_create_activity_chunk(display_model, 'status', {'message': f'Detective fallback (Attempt {attempt}/3)...', 'icon': '🛡️'})}\n\n"
+
+                gen = _stream_research_call(
+                    api_url, detective_payload, display_model, "status",
+                    thought_limit=config.RESEARCH_MEANDER_THOUGHT_LIMIT_AUDIT_TOKENS,
+                    content_threshold=config.RESEARCH_MEANDER_CONTENT_THRESHOLD_TOKENS,
+                    api_key=api_key, chat_id=chat_id, enable_thinking=(attempt == 1)
+                )
+                async for packet in gen:
+                    if packet["type"] == "activity": yield packet["data"]
+                    elif packet["type"] == "result":
+                        raw_audit = packet["data"]
+                        if packet.get("meandered") and attempt == 1:
+                            raw_audit = None
+                
+                if raw_audit and _extract_json_from_text(raw_audit):
+                    break # Success
+            
             audit_result = _extract_json_from_text(raw_audit) if raw_audit else None
+            if not audit_result:
+                yield f"data: {_create_activity_chunk(display_model, 'status', {'message': 'Detective audit failed. Proceeding with unwashed draft.', 'icon': '⚠️'})}\n\n"
             
             log_event("research_detective_complete", {
                 "chat_id": chat_id,
@@ -1781,9 +1382,9 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
                 "parsed_success": bool(audit_result)
             })
 
-            auditor_messages.append({"role": "assistant", "content": _strip_thinking(raw_audit) or ""})
-
-            if not audit_result or not isinstance(audit_result, dict):
+            if audit_result and isinstance(audit_result, dict):
+                auditor_messages.append({"role": "assistant", "content": raw_audit})
+            else:
                 audit_result = {"issues": []}
 
             if audit_result and isinstance(audit_result, dict):
@@ -1792,14 +1393,14 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
                 if issues:
                     yield f"data: {_create_activity_chunk(display_model, 'status', {'message': f'Detective found {len(issues)} issue(s)... prioritizing fixes.', 'icon': '🔬'})}\n\n"
                     
-                    # Group issues by section
+                    # Group issues by section ID
                     issues_by_section = {}
                     for issue in issues:
-                        sec_title = issue.get("section_title", "").strip()
-                        if sec_title:
-                            if sec_title not in issues_by_section:
-                                issues_by_section[sec_title] = []
-                            issues_by_section[sec_title].append(issue)
+                        sec_id = issue.get("section_id")
+                        if isinstance(sec_id, int) and 0 <= sec_id < len(valid_summaries):
+                            if sec_id not in issues_by_section:
+                                issues_by_section[sec_id] = []
+                            issues_by_section[sec_id].append(issue)
                     
                     # Filter based on severity thresholds
                     high_count = 0
@@ -1809,7 +1410,7 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
                     sections_to_rewrite = []
                     
                     # We process sections, determining highest severity in each
-                    for sec_title, sec_issues in issues_by_section.items():
+                    for sec_id, sec_issues in issues_by_section.items():
                         highest_severity = "Low"
                         for issue in sec_issues:
                             sev = issue.get("severity", "Low")
@@ -1831,178 +1432,116 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
                             low_count += 1
                             
                         if should_fix:
-                            sections_to_rewrite.append((sec_title, sec_issues))
+                            sections_to_rewrite.append((sec_id, valid_summaries[sec_id]['heading'], sec_issues))
 
                     if sections_to_rewrite:
                         yield f"data: {_create_activity_chunk(display_model, 'status', {'message': f'Surgeon correcting {len(sections_to_rewrite)} section(s)...', 'icon': '🔧'})}\n\n"
                     
-                        for section_title, sec_issues in sections_to_rewrite:
+                        for section_id, section_title, sec_issues in sections_to_rewrite:
                             # Format issues for prompt
                             issues_text = "\n".join([f"- [{i.get('severity', 'Low')}] {i.get('type', 'Unknown')}: {i.get('description', '')}" for i in sec_issues])
                             
                             surgeon_prompt = RESEARCH_SURGEON_PROMPT.format(
+                                section_id=section_id,
                                 section_title=section_title,
                                 issues_list=issues_text,
-                                reasoning_limit=config.RESEARCH_MEANDER_THOUGHT_LIMIT_AUDIT
+                                today_date=today_date
                             )
                             
                             auditor_messages_base = list(auditor_messages)
                             surgeon_success = False
                             patched_section = ""
 
-                            for attempt in range(config.RESEARCH_SURGEON_MAX_RETRIES): # 0: Initial, 1+: Warning/Retry
-                                surgeon_messages = list(auditor_messages_base)
-                                if attempt == 1:
-                                    # Stage 1: Warning & Self-Correction
-                                    surgeon_messages.append({"role": "user", "content": surgeon_prompt})
-                                    surgeon_messages.append({"role": "assistant", "content": patched_section})
-                                    surgeon_messages.append({
-                                        "role": "user", 
-                                        "content": "Your previous fix meandered or was invalid. Please be extremely concise. Output ONLY the corrected markdown section immediately."
-                                    })
-                                else:
-                                    surgeon_messages.append({"role": "user", "content": surgeon_prompt})
+                            for attempt in [1, 2, 3]:
+                                if attempt > 1:
+                                    yield f"data: {_create_activity_chunk(display_model, 'status', {'message': f'Surgeon fallback for {section_title[:20]} (Attempt {attempt}/3)...', 'icon': '🛡️'})}\n\n"
 
                                 surgeon_payload = {
                                     "model": model,
-                                    "messages": surgeon_messages,
-                                    "temperature": config.RESEARCH_TEMPERATURE_AUDIT if attempt == 0 else config.RESEARCH_TEMPERATURE_RETRY_FALLBACK,
+                                    "messages": list(auditor_messages_base) + [{"role": "user", "content": surgeon_prompt}],
+                                    **_get_sampling_params(attempt=1 if attempt == 1 else 2),
                                     "max_tokens": config.RESEARCH_MAX_TOKENS_AUDIT,
+                                    "response_format": {"type": "json_schema", "json_schema": {"name": "section_patch", "schema": SURGEON_JSON_SCHEMA}}
                                 }
 
-                                yield f"data: {_create_activity_chunk(display_model, 'status', {'message': f'Fixing: {section_title[:30]} (Attempt {attempt+1})...', 'icon': '✂️'})}\n\n"
+                                yield f"data: {_create_activity_chunk(display_model, 'status', {'message': f'Fixing: {section_title[:30]}...', 'icon': '✂️'})}\n\n"
                                 
-                                patched_section = ""
-                                surgeon_meandered = False
+                                patched_section_raw = ""
                                 gen = _stream_research_call(
                                     api_url, surgeon_payload, display_model, "status",
-                                    thought_limit=config.RESEARCH_MEANDER_THOUGHT_LIMIT_AUDIT,
-                                    content_threshold=config.RESEARCH_MEANDER_CONTENT_THRESHOLD,
-                                    api_key=api_key
+                                    thought_limit=config.RESEARCH_MEANDER_THOUGHT_LIMIT_AUDIT_TOKENS,
+                                    content_threshold=config.RESEARCH_MEANDER_CONTENT_THRESHOLD_TOKENS,
+                                    api_key=api_key, chat_id=chat_id, enable_thinking=(attempt == 1)
                                 )
                                 async for packet in gen:
-                                    if packet["type"] == "activity":
-                                        yield packet["data"]
+                                    if packet["type"] == "activity": yield packet["data"]
                                     elif packet["type"] == "result":
-                                        patched_section = packet["data"]
-                                        surgeon_meandered = packet.get("meandered", False)
-
-                                # Stream-level meander detection is the single source of truth
-                                if surgeon_meandered:
-                                    continue
+                                        patched_section_raw = packet["data"]
+                                        if packet.get("meandered") and attempt == 1:
+                                            patched_section_raw = None
                                 
-                                # Validate actual content exists after stripping reasoning
-                                if _strip_thinking(patched_section).strip():
-                                    surgeon_success = True
-                                    break
-
+                                if patched_section_raw:
+                                    parsed = _extract_json_from_text(patched_section_raw)
+                                    if parsed and isinstance(parsed, dict) and "patched_markdown" in parsed:
+                                        patched_section = parsed["patched_markdown"]
+                                        surgeon_success = True
+                                        break
+                            
                             if not surgeon_success:
-                                # Stage 2: Poison Prevention & Structured Fallback (Clean Context)
-                                yield f"data: {_create_activity_chunk(display_model, 'status', {'message': f'Surgeon meanders persistent for {section_title[:20]}. Structured fallback...', 'icon': '🛡️'})}\n\n"
-                                
-                                surgeon_structured_prompt = RESEARCH_SURGEON_STRUCTURED_PROMPT.format(
-                                    section_title=section_title,
-                                    issues_list=issues_text
-                                )
-                                
-                                structured_payload = {
-                                    "model": model,
-                                    "messages": auditor_messages_base + [{"role": "user", "content": surgeon_structured_prompt}],
-                                    "temperature": config.RESEARCH_TEMPERATURE_RETRY_FALLBACK,
-                                    "response_format": {
-                                        "type": "json_schema",
-                                        "json_schema": {
-                                            "name": "section_patch",
-                                            "strict": True,
-                                            "schema": {
-                                                "type": "object",
-                                                "properties": {
-                                                    "patched_markdown": {"type": "string"}
-                                                },
-                                                "required": ["patched_markdown"],
-                                                "additionalProperties": False
-                                            }
-                                        }
-                                    }
-                                }
-                                
-                                raw_response = ""
-                                gen = _stream_research_call(
-                                    api_url, structured_payload, display_model, "status",
-                                    thought_limit=config.RESEARCH_MEANDER_THOUGHT_LIMIT_AUDIT,
-                                    content_threshold=config.RESEARCH_MEANDER_CONTENT_THRESHOLD,
-                                    api_key=api_key
-                                )
-                                async for packet in gen:
-                                    if packet["type"] == "activity":
-                                        yield packet["data"]
-                                    elif packet["type"] == "result":
-                                        raw_response = packet["data"]
-                                        
-                                parsed = _extract_json_from_text(raw_response)
-                                if parsed and isinstance(parsed, dict) and "patched_markdown" in parsed:
-                                    patched_section = parsed["patched_markdown"]
-                                else:
-                                    patched_section = raw_response or ""
+                                yield f"data: {_create_activity_chunk(display_model, 'status', {'message': f'Surgeon failed for {section_title[:20]}. Skipping fix.', 'icon': '⚠️'})}\n\n"
 
                             # Strip reasoning from patched section for storage
                             clean_patch = _strip_thinking(patched_section) if patched_section else ""
                             
                             if clean_patch.strip():
-                                auditor_messages.append({"role": "user", "content": surgeon_prompt})
-                                auditor_messages.append({"role": "assistant", "content": clean_patch})
+                                auditor_messages.append({"role": "assistant", "content": patched_section or ""})
                                 
-                                # Robust matching to apply the patch back to valid_summaries
-                                clean_input_title = section_title.lstrip('#').strip().lower()
-                                found = False
-                                for s in valid_summaries:
-                                    heading_lower = s['heading'].strip().lower()
-                                    if heading_lower == clean_input_title or s['heading'] == section_title:
-                                        s['section_text'] = clean_patch
-                                        found = True
-                                        break
-                                    if (len(heading_lower) > 10 and heading_lower in clean_input_title) or (len(clean_input_title) > 10 and clean_input_title in heading_lower):
-                                        s['section_text'] = clean_patch
-                                        found = True
-                                        break
-                                
-                                if not found:
-                                    log_event("research_audit_patch_failed_to_match", {"chat_id": chat_id, "title": section_title})
+                                # Precise ID-based application
+                                valid_summaries[section_id]['section_text'] = clean_patch
+                                log_event("research_surgeon_patch_applied", {"chat_id": chat_id, "section_id": section_id, "section_title": section_title})
 
                     # Re-stitch after patches
                     full_report = f"# {report_title}\n\n" + "\n\n".join([s['section_text'] for s in valid_summaries])
                 else:
                     yield f"data: {_create_activity_chunk(display_model, 'status', {'message': 'No issues found — report is consistent.', 'icon': '✅'})}\n\n"
 
-            # TURN 2: Synthesis (Comparative Analysis & Key Takeaways)
+            # TURN 1 & 2: Synthesis
             yield f"data: {_create_activity_chunk(display_model, 'status', {'message': 'Generating synthesis sections...', 'icon': '🧩'})}\n\n"
-
+            
             synthesis_prompt = RESEARCH_SYNTHESIS_PROMPT.format(
-                reasoning_limit=config.RESEARCH_MEANDER_THOUGHT_LIMIT_SYNTHESIS
+                today_date=today_date
             )
-
-            auditor_messages.append({"role": "user", "content": synthesis_prompt})
-
-            synthesis_payload = {
-                "model": model,
-                "messages": auditor_messages,
-                "temperature": config.RESEARCH_TEMPERATURE_SYNTHESIS,
-                "max_tokens": config.RESEARCH_MAX_TOKENS_SYNTHESIS,
-            }
 
             raw_synthesis = ""
-            gen = _stream_research_call(
-                api_url, synthesis_payload, display_model, "status",
-                thought_limit=config.RESEARCH_MEANDER_THOUGHT_LIMIT_SYNTHESIS,
-                content_threshold=config.RESEARCH_MEANDER_CONTENT_THRESHOLD,
-                api_key=api_key
-            )
-            async for packet in gen:
-                if packet["type"] == "activity":
-                    yield packet["data"]
-                elif packet["type"] == "result":
-                    raw_synthesis = packet["data"]
-            
+            for attempt in [1, 2, 3]:
+                synthesis_payload = {
+                    "model": model,
+                    "messages": auditor_messages + [{"role": "user", "content": synthesis_prompt}],
+                    **_get_sampling_params(attempt=attempt),
+                    "max_tokens": config.RESEARCH_MAX_TOKENS_SYNTHESIS,
+                    "response_format": {"type": "json_schema", "json_schema": {"name": "report_synthesis", "schema": SYNTHESIS_JSON_SCHEMA}}
+                }
+
+                if attempt > 1:
+                    yield f"data: {_create_activity_chunk(display_model, 'status', {'message': f'Synthesis fallback (Attempt {attempt}/3)...', 'icon': '🛡️'})}\n\n"
+
+                gen = _stream_research_call(
+                    api_url, synthesis_payload, display_model, "status",
+                    thought_limit=config.RESEARCH_MEANDER_THOUGHT_LIMIT_SYNTHESIS_TOKENS,
+                    content_threshold=config.RESEARCH_MEANDER_CONTENT_THRESHOLD_TOKENS,
+                    api_key=api_key, chat_id=chat_id, enable_thinking=(attempt == 1)
+                )
+                async for packet in gen:
+                    if packet["type"] == "activity": yield packet["data"]
+                    elif packet["type"] == "result":
+                        raw_synthesis = packet["data"]
+                        full_reasoning = packet.get("reasoning", "")
+                        if packet.get("meandered") and attempt == 1:
+                            raw_synthesis = None
+                
+                if raw_synthesis and _extract_json_from_text(raw_synthesis):
+                    break
+
             synthesis = _extract_json_from_text(raw_synthesis) if raw_synthesis else None
 
             if synthesis and isinstance(synthesis, dict):
@@ -2036,7 +1575,53 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
 
         # --- 3.7 Stream final report ---
         yield f"data: {_create_activity_chunk(display_model, 'phase', {'message': 'Report complete!', 'icon': '✅'})}\n\n"
-        yield f"data: {create_chunk(display_model, content=f'<final_report>{full_report}</final_report>')}\n\n"
+        
+        # Universal Canvas Integration (Phase 4)
+        canvas_id = f"research_{chat_id}" if chat_id else "research_report"  # Issue 3.4 fix: full chat_id
+        canvas_title = f"Research: {report_title[:40]}"
+
+        # Persist to disk using centralized canvas manager
+        if chat_id:
+            try:
+                result = await update_canvas_content(
+                    canvas_id,
+                    chat_id,
+                    full_report,
+                    author="system",
+                    version_comment="Final report completed"
+                )
+            except Exception as e:
+                log_event("research_final_canvas_persist_error", {"chat_id": chat_id, "error": str(e)})
+
+        # Push to UI - report is now only sent to canvas, not conversation history
+        yield f"data: {json.dumps({'__canvas_update__': {'id': canvas_id, 'title': canvas_title, 'content': full_report, 'action': 'create'}})}\n\n"
+
+        # Persistence Fix: Yield a persistable content chunk for the messages table history (ensures context on reload)
+        persist_content = f"Research complete. Click below to view the full report.\n\n<research_report>{full_report}</research_report>"
+        
+        if messages:
+            for m in reversed(messages):
+                if m.get('role') == 'tool' and m.get('name') == 'execute_research_plan':
+                    m['content'] = full_report
+                    break
+
+            for m in reversed(messages):
+                if m.get('role') == 'assistant' and 'execute_research_plan' in str(m.get('tool_calls', '')):
+                    m_content = m.get('content') or ""
+                    if full_reasoning:
+                        m_content += f"\n<think>\n{full_reasoning}\n</think>\n"
+                    m_content += persist_content
+                    m['content'] = m_content
+                    break
+            
+            yield f"__TRANSACTION_MESSAGES__:{json.dumps(messages)}"
+            
+        yield f"data: {create_chunk(display_model, content=persist_content)}\n\n"
+
+        # Finalization: Mark research as complete and notify frontend to unlock chat
+        if chat_id:
+            db.mark_research_completed(chat_id)
+            yield f"data: {json.dumps({'__research_finished__': True})}\n\n"
 
         log_event("research_complete", {
             "chat_id": chat_id,
@@ -2049,7 +1634,11 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
         import traceback
         traceback.print_exc()
         log_event("research_report_generation_fatal_error", {"chat_id": chat_id, "error": str(e)})
-        yield f"data: {_create_activity_chunk(display_model, 'needs_retry', {'state': 'assembly', 'message': f'Report assembly failed: {str(e)}'})}\n\n"
+        
+        if _is_transient_error(e):
+            yield f"data: {_create_activity_chunk(display_model, 'needs_retry', {'state': resume_state or 'assembly', 'message': f'Process interrupted: {str(e)}'})}\n\n"
+        else:
+            yield f"data: {_create_activity_chunk(display_model, 'status', {'message': f'Fatal Code Error: {str(e)}. Please contact support.', 'icon': '☠️'})}\n\n"
 
     yield "data: [DONE]\n\n"
 
