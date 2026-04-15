@@ -1,4 +1,4 @@
-# Tool Directives (v3.1.0)
+# Tool Directives
 
 ## Overview
 

@@ -1,4 +1,4 @@
-# 🌌 My-AI v3.0.0
+# 🌌 My-AI v3.1.1
 
 A high-performance local AI orchestration layer and premium chat interface natively powered by [llama.cpp](https://github.com/ggerganov/llama.cpp). My-AI combines autonomous research capabilities, long-term semantic memory, and multimodal vision into a single, unified workspace running entirely on your local hardware.
 
@@ -65,4 +65,4 @@ My-AI utilizes the **Model Context Protocol (MCP)** to isolate external tool exe
 
 ## 📄 License & Versioning
 This project follows [SemVer v2.0.0](https://semver.org/).  
-**Current Version**: `v3.0.0` (Research Persistence Audit & Task Recovery).
+**Current Version**: `v3.1.1` (Research Persistence Audit & Task Recovery).

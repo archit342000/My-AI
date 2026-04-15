@@ -1,4 +1,4 @@
-# Chat Agent Directives (v3.1.0)
+# Chat Agent Directives
 
 ## Overview
 

@@ -1,4 +1,4 @@
-# Research Agent Directives (v3.1.0)
+# Research Agent Directives
 
 ## Overview
 

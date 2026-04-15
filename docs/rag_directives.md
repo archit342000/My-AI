@@ -1,4 +1,4 @@
-# RAG Directives (v3.1.0)
+# RAG Directives
 
 ## Overview
 

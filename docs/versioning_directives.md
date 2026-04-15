@@ -21,11 +21,12 @@ Update `backend/version.py` by incrementing the appropriate variable and updatin
 - **Action**: Modify `VERSION`, `VERSION_MAJOR`, `VERSION_MINOR`, or `VERSION_PATCH`.
 - **File**: `backend/version.py`
 
-### Step 2: Update Changelog
-Append a new entry to the top of `changelog.md`.
+### Step 2: Update Changelog & README
+Append a new entry to the top of `changelog.md` and update the version number in `README.md`.
 - **Action**: Determine the scope of changes by inspecting the current branch's diff against the base branch (e.g., `git diff main...HEAD`).
-- **Format**: Use the `## vX.Y.Z` header.
-- **Content**: Use bullet points with bolded categories (see *Changelog Standards* below).
+- **Format (Changelog)**: Use the `## vX.Y.Z` header.
+- **Format (README)**: Update the version string at the top of the file.
+- **Content (Changelog)**: Use bullet points with bolded categories (see *Changelog Standards* below).
 - **Mandatory Entry**: Include a `* **Version Bump**: Incremented version globally to vX.Y.Z.` line.
 
 ### Step 3: Git Workflow & Tagging

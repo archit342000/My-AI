@@ -1,4 +1,4 @@
-# Testing Directives (v3.1.0)
+# Testing Directives
 
 ## Overview
 

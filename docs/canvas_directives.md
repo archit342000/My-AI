@@ -1,4 +1,4 @@
-# Canvas Directives (v3.1.0)
+# Canvas Directives
 
 **Note:** This document may contain outdated information. The code is the source of truth. For discrepancies, see `IMPLEMENTATION_DISCREPANCIES.md`.
 
@@ -59,13 +59,13 @@ if transaction_success:
 
 Canvas operations retry up to 2 times before failing.
 
-### Canvas Data Model (v2.1.0)
+### Canvas Data Model
 
 Canvas entities are stored across multiple tables:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│              Canvas Data Model (v2.1.0)                     │
+│              Canvas Data Model                     │
 ├─────────────────────────────────────────────────────────────┤
 │  canvases (metadata)                                       │
 │  ├── id (TEXT) - Local canvas identifier                   │

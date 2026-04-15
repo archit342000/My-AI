@@ -1,4 +1,4 @@
-# Configuration Directives (v3.1.0)
+# Configuration Directives
 
 
 

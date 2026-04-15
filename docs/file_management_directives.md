@@ -1,4 +1,4 @@
-# File Management Directives (v3.1.0)
+# File Management Directives
 
 ## Overview
 

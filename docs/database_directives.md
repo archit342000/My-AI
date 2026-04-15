@@ -1,4 +1,4 @@
-# Database Directives (v3.1.0)
+# Database Directives
 
 ## Overview
 

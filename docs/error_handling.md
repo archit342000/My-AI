@@ -1,4 +1,4 @@
-# Error Handling Directives (v3.1.0)
+# Error Handling Directives
 
 ## Overview
 

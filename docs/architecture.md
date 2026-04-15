@@ -1,4 +1,4 @@
-# Application Architecture (v3.1.0)
+# Application Architecture
 
 
 

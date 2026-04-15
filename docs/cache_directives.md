@@ -1,4 +1,4 @@
-# Cache Directives (v3.1.0)
+# Cache Directives
 
 **Note:** This document may contain outdated information. The code is the source of truth. For discrepancies, see `IMPLEMENTATION_DISCREPANCIES.md`.
 

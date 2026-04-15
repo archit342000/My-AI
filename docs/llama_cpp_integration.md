@@ -1,4 +1,4 @@
-# llama.cpp / Local LLM Integration Guide (v3.1.0)
+# llama.cpp / Local LLM Integration Guide
 
 This document details the exact streaming behavior, payload structures, and known quirks of local LLMs running through llama.cpp's OpenAI-compatible `/v1/chat/completions` endpoint.
 
