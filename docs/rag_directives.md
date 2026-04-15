@@ -49,7 +49,38 @@ All optimization parameters are centralized in `backend/config.py`:
 ## Rules for Agents
 
 ### Rule 1: Use `RAGManager` Singleton
-Never instantiate `RAGManager` directly. Use the provider pattern to ensure shared config and connection pooling.
+
+**ENFORCED:** Direct instantiation of `RAGManager` is **strictly forbidden** and will raise a `RuntimeError`.
+
+Always use the provider pattern:
+
+```python
+from backend.providers import RAGProvider
+
+# Initialize once at startup
+rag_manager = RAGProvider.get_manager(
+    persist_path=config.CHROMA_PATH,
+    api_url=config.EMBEDDING_URL,
+    embedding_model=get_embedding_model(),
+    api_key=config.EMBEDDING_API_KEY
+)
+
+# All RAG consumers receive the manager as a parameter
+research_rag = ResearchRAG(rag_manager=rag_manager)
+file_rag = FileRAG(rag_manager=rag_manager)
+file_manager = FileManager(rag_manager=rag_manager)
+```
+
+**Never do this:**
+```python
+# WRONG - this raises RuntimeError:
+rag_manager = RAGManager(persist_path=config.CHROMA_PATH)
+```
+
+**Provider behavior:**
+- Config is set on the **first** call to `get_manager()`
+- Subsequent calls return the same instance and ignore any config parameters
+- Use `RAGProvider.reset()` to reset state (useful for testing)
 
 ### Rule 2: Multi-Type Support
 Chunks are tagged with `file_type`. Agents should use these tags in `where` filters (e.g., `file_type: "code"`) to improve precision.

@@ -43,14 +43,26 @@ class RAGManager:
     _instance = None
     _initialized = False
 
-    def __new__(cls, persist_path=None, api_url=None, embedding_model=None, api_key=None):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-        return cls._instance
+    def __new__(cls, *args, **kwargs):
+        """Block direct instantiation of RAGManager.
 
-    def __init__(self, persist_path=None, api_url=None, embedding_model=None, api_key=None):
-        if self._initialized:
-            return
+        RAGManager must be accessed via RAGProvider.get_manager().
+        Direct instantiation is forbidden to ensure proper singleton enforcement.
+        """
+        raise RuntimeError(
+            "RAGManager must be accessed via RAGProvider.get_manager(). "
+            "Never instantiate RAGManager directly."
+        )
+
+    def __init__(self, *args, **kwargs):
+        """Block direct initialization.
+
+        This is a safety net - __new__ should have already blocked instantiation.
+        """
+        raise RuntimeError(
+            "RAGManager must be accessed via RAGProvider.get_manager(). "
+            "Never instantiate RAGManager directly."
+        )
 
         print("Initializing RAG System...")
         start_time = time.time()
@@ -1345,18 +1357,19 @@ class ResearchRAG(RAGStore):
 
     Extends RAGStore for shared RAG infrastructure while maintaining
     research-specific retrieval features.
+
+    Requires a RAGManager instance - no fallback instantiation allowed.
+    Get a manager via RAGProvider.get_manager().
     """
 
     def __init__(self, rag_manager: RAGManager = None, persist_path=None, api_url=None, embedding_model=None, api_key=None):
+        # RAGManager MUST be provided - no fallback allowed
         if rag_manager is None:
-            self.rag_manager = RAGManager(
-                persist_path=persist_path,
-                api_url=api_url,
-                embedding_model=embedding_model,
-                api_key=api_key
+            raise RuntimeError(
+                "ResearchRAG requires a RAGManager instance. "
+                "Get one via RAGProvider.get_manager() and pass it to ResearchRAG."
             )
-        else:
-            self.rag_manager = rag_manager
+        self.rag_manager = rag_manager
         super().__init__(self.rag_manager, "research_store")
 
     def store_chunk(self, chat_id, step_index, url, full_text, published_date=None):
@@ -1637,22 +1650,24 @@ class FileRAG(RAGStore):
     """
 
     def __init__(self, rag_manager: RAGManager = None, persist_path=None, api_url=None, embedding_model=None, api_key=None):
-        try:
-            if rag_manager is None:
-                self.rag_manager = RAGManager(
-                    persist_path=persist_path,
-                    api_url=api_url,
-                    embedding_model=embedding_model,
-                    api_key=api_key
-                )
-            else:
-                self.rag_manager = rag_manager
-            super().__init__(self.rag_manager, "file_store")
-            self._initialized = True
-        except Exception as e:
-            log_event("file_rag_init_error", {"error": str(e)})
-            self._initialized = False
-            raise
+        """Initialize FileRAG.
+
+        Requires a RAGManager instance - no fallback instantiation allowed.
+        Get a manager via RAGProvider.get_manager().
+
+        Args:
+            rag_manager: Required RAGManager singleton instance
+            persist_path, api_url, embedding_model, api_key: Ignored (kept for API compatibility)
+        """
+        # RAGManager MUST be provided - no fallback allowed
+        if rag_manager is None:
+            raise RuntimeError(
+                "FileRAG requires a RAGManager instance. "
+                "Get one via RAGProvider.get_manager() and pass it to FileRAG."
+            )
+        self.rag_manager = rag_manager
+        super().__init__(self.rag_manager, "file_store")
+        self._initialized = True
 
     def store_file(self, file_id, chat_id, content_text, filename=None, timestamp=None,
                    file_type_override=None):

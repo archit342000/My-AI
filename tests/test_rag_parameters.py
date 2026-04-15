@@ -26,7 +26,8 @@ import multiprocessing
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from backend import config
-from backend.rag import RAGManager, FileRAG, AIEmbeddingFunction
+from backend.rag import FileRAG, AIEmbeddingFunction
+from backend.providers import RAGProvider
 
 
 # =============================================================================
@@ -454,15 +455,16 @@ def init_worker(corpus_data, eval_documents, queries_data, embedding_dim):
     # Each process must have its own RAGManager instance to avoid socket shared
     # between parent/child which causes ChromaDB connection errors.
     # Parallel processes have isolated memory, so config-patching is safe.
-    RAGManager.reset_instance()
-    
+    RAGProvider.reset()
+
     # Monkey-patch _get_embedding_dimension to avoid redundant API calls in workers
     # which can cause the thundering herd hang.
+    from backend.rag import RAGManager
     original_method = RAGManager._get_embedding_dimension
     RAGManager._get_embedding_dimension = lambda self: embedding_dim
-    
+
     try:
-        rag_manager = RAGManager(
+        rag_manager = RAGProvider.get_manager(
             persist_path=os.path.join(config.DATA_DIR, 'test_grid_search'),
             api_url=config.EMBEDDING_URL,
             embedding_model='embeddinggemma/embeddinggemma-300M-Q8_0',
@@ -507,11 +509,11 @@ def run_grid_search():
     print(f"  - Generated {len(param_combinations)} parameter combinations")
 
     # Initialize RAG
-    # Must reset the singleton FIRST so the custom persist_path below is
+    # Must reset the provider FIRST so the custom persist_path below is
     # honoured even if the main application already created a RAGManager.
     print("\n[3/4] Initializing RAG system...")
-    RAGManager.reset_instance()
-    rag_manager = RAGManager(
+    RAGProvider.reset()
+    rag_manager = RAGProvider.get_manager(
         persist_path=os.path.join(config.DATA_DIR, 'test_grid_search'),
         api_url=config.EMBEDDING_URL,
         embedding_model='embeddinggemma/embeddinggemma-300M-Q8_0',

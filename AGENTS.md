@@ -87,6 +87,8 @@ Any attempt to add inference orchestration (Docker services, model loaders, etc.
 
 8. **Docker**: Never modify existing containers. Build temporary ones with unique names.
 
+9. **RAG Manager Pattern**: **Never instantiate `RAGManager` directly.** Always use `RAGProvider.get_manager()` from `backend.providers`. Direct instantiation (`RAGManager()`) will raise `RuntimeError`. The provider enforces singleton pattern and ensures shared config/connection pooling.
+
 ---
 
 ## Agent-Specific Patterns

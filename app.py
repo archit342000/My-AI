@@ -19,7 +19,8 @@ if os.name != 'nt' and hasattr(time, 'tzset'):
     time.tzset()
 
 from backend import config
-from backend.rag import ResearchRAG, FileRAG, RAGManager
+from backend.rag import ResearchRAG, FileRAG
+from backend.providers import RAGProvider
 from backend.db_wrapper import db
 from backend.storage import init_db
 from backend.model_loader import (
@@ -66,8 +67,8 @@ if os.path.exists(config.CHROMA_PATH):
     shutil.rmtree(config.CHROMA_PATH)
     log_event("rag_chromadb_cleared", {"path": config.CHROMA_PATH})
 
-# Initialize RAGManager for Research and File RAG (singleton)
-rag_manager = RAGManager(
+# Initialize RAGManager for Research and File RAG (singleton) via provider
+rag_manager = RAGProvider.get_manager(
     persist_path=config.CHROMA_PATH,
     api_url=config.EMBEDDING_URL,
     api_key=config.EMBEDDING_API_KEY,

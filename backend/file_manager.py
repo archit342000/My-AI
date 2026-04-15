@@ -24,7 +24,8 @@ from backend.config import (
     FILE_RAG_ENABLED,
 )
 from backend.db_wrapper import db
-from backend.rag import FileRAG, RAGManager
+from backend.rag import FileRAG
+from backend.providers import RAGProvider
 from backend.pdf_extractor import PDFExtractor
 
 logger = logging.getLogger(__name__)
@@ -82,8 +83,13 @@ class FileManager:
         self.storage_path = storage_path or FILE_STORAGE_PATH
         os.makedirs(self.storage_path, exist_ok=True)
 
-        # Use provided RAGManager or create a new one
-        self.rag_manager = rag_manager or RAGManager(persist_path=DATA_DIR)
+        # RAGManager MUST be provided - no fallback allowed
+        if rag_manager is None:
+            raise RuntimeError(
+                "FileManager requires a RAGManager instance. "
+                "Get one via RAGProvider.get_manager() and pass it to FileManager."
+            )
+        self.rag_manager = rag_manager
 
         # Initialize FileRAG for chunked file embeddings (uses shared manager)
         self.file_rag = FileRAG(rag_manager=self.rag_manager) if FILE_RAG_ENABLED else None

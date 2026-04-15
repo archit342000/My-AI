@@ -6,6 +6,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from backend.rag import RAGManager
 from backend import config
+from backend.providers import RAGProvider
 from backend.token_counter import count_tokens
 
 def test_hard_chunking():
@@ -15,7 +16,12 @@ def test_hard_chunking():
     # 26,000 characters is roughly 6,500 tokens for Gemma
     giant_word = "A" * 26000
     
-    rag = RAGManager()
+    rag = RAGProvider.get_manager(
+        persist_path=config.CHROMA_PATH,
+        api_url=config.EMBEDDING_URL,
+        embedding_model=config.EMBEDDING_MODEL if hasattr(config, 'EMBEDDING_MODEL') else None,
+        api_key=config.EMBEDDING_API_KEY
+    )
     limit = 1000
     
     print(f"Input length: {len(giant_word)} chars")
