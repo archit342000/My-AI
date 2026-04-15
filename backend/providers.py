@@ -27,10 +27,10 @@ class RAGProvider:
     @classmethod
     def get_manager(
         cls,
-        persist_path=None,
-        api_url=None,
-        embedding_model=None,
-        api_key=None
+        persist_path,
+        api_url,
+        embedding_model,
+        api_key
     ) -> RAGManager:
         """Get the RAGManager singleton instance.
 
@@ -57,6 +57,10 @@ class RAGProvider:
             # Manually set up the singleton state
             RAGManager._instance = rag_manager
             RAGManager._initialized = False  # Will be set to True after init
+
+            # Authorize initialization for the provider
+            rag_manager._authorized_initialization = True
+
             rag_manager.__init__(
                 persist_path=persist_path,
                 api_url=api_url,

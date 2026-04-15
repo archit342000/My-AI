@@ -54,15 +54,19 @@ class RAGManager:
             "Never instantiate RAGManager directly."
         )
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, persist_path=None, api_url=None, embedding_model=None, api_key=None):
         """Block direct initialization.
 
         This is a safety net - __new__ should have already blocked instantiation.
         """
-        raise RuntimeError(
-            "RAGManager must be accessed via RAGProvider.get_manager(). "
-            "Never instantiate RAGManager directly."
-        )
+        if not getattr(self, '_authorized_initialization', False):
+            raise RuntimeError(
+                "RAGManager must be accessed via RAGProvider.get_manager(). "
+                "Never instantiate RAGManager directly."
+            )
+
+        # Reset the flag so subsequent manual calls to __init__ (if any) are blocked
+        self._authorized_initialization = False
 
         print("Initializing RAG System...")
         start_time = time.time()

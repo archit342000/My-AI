@@ -18,24 +18,24 @@ This ensures the documentation remains accurate and authoritative.
 
 Use this as your primary reference. For detailed technical specifications, follow the links to the `docs/` directory.
  
-| Task | Read This First |
-|------|-----------------|
-| Understanding system architecture | `docs/architecture.md` |
-| Making any code change | **Start here** (CLAUDE.md) |
-| Frontend/UI changes | `docs/design_directives.md` |
-| Database changes | `docs/database_directives.md` |
-| Adding/modifying config | `docs/config_directives.md` |
-| Tool implementation | `docs/tools_directives.md` |
-| Canvas operations | `docs/canvas_directives.md` |
-| Chat agent logic | `docs/chat_agent.md` |
-| Research agent logic | `docs/research_agent.md` |
-| Error handling | `docs/error_handling.md` |
-| Caching | `docs/cache_directives.md` |
-| llama.cpp streaming | `docs/llama_cpp_integration.md` |
-| File management | `docs/file_management_directives.md` |
-| RAG infrastructure | `docs/rag_directives.md` |
-| Testing & Grid Search | `docs/testing_directives.md` |
-| Versioning | `docs/versioning_directives.md` |
+| Task | When to use / Context | Documentation |
+| :--- | :--- | :--- |
+| Understanding system architecture | High-level flow and component interactions | `docs/architecture.md` |
+| Making any code change | **Start here** | (CLAUDE.md) |
+| Frontend/UI changes | HTML, CSS, and Vanilla JS patterns | `docs/design_directives.md` |
+| Database changes | Schema, SQLite, and DB wrapper usage | `docs/database_directives.md` |
+| Adding/modifying config | Application configuration and settings | `docs/config_directives.md` |
+| Tool implementation | MCP and external tool integration | `docs/tools_directives.md` |
+| Canvas operations | Canvas-specific logic and interactions | `docs/canvas_directives.md` |
+| Chat agent logic | Chat agent behavior and implementation | `docs/chat_agent.md` |
+| Research agent logic | Research agent behavior and implementation | `docs/research_agent.md` |
+| Error handling | Standard error patterns and propagation | `docs/error_handling.md` |
+| Caching | Caching strategies and directives | `docs/cache_directives.md` |
+| llama.cpp streaming | Llama.cpp integration and streaming | `docs/llama_cpp_integration.md` |
+| File management | File operations and management rules | `docs/file_management_directives.md` |
+| RAG infrastructure | RAG implementation and vector DB usage | `docs/rag_directives.md` |
+| Testing & Grid Search | Testing patterns and Grid Search logic | `docs/testing_directives.md` |
+| Versioning | Versioning and release rules | `docs/versioning_directives.md` |
 
 ---
 
@@ -87,18 +87,22 @@ Any attempt to add inference orchestration (Docker services, model loaders, etc.
 
 8. **Docker**: Never modify existing containers. Build temporary ones with unique names.
 
-10. **Prefer Incremental Edits**: Always prefer using the `Edit` tool to modify existing code rather than using the `Write` tool to overwrite entire files. This minimizes the risk of accidental deletions and preserves existing code structure.
+10. **Prefer Incremental Edits**: Always prefer using the `Edit` tool to modify existing code rather than using the `Write` tool to overwrite entire files. This minimizes the risk of accidental deletions and preserves existing code structure. Even when using `Edit`, avoid replacing more code than necessary; target the smallest possible string to achieve the change.
 
 11. **Avoid Tool Call Loops**: If you encounter a pattern of repeated, erroneous tool calls, you must stop the current approach and attempt a different strategy (e.g., different search terms, a different tool, or a different exploration method) instead of repeating the same failing actions.
 
 12. **Avoid Masking Errors with Fallbacks**: Do not implement unnecessary error handling or fallbacks (e.g., empty `try-except` blocks, returning `None` or empty lists instead of propagating errors) that might mask underlying issues. Errors should be handled explicitly or allowed to propagate so they can be detected and debugged.
+
+13. **Avoid Large File Updates**: Even if all changes are within a single file, avoid large, monolithic updates. Instead, apply small, incremental changes to ensure correctness and minimize the risk of error.
+
+14. **Leverage Sub-agents**: For tasks requiring deep codebase exploration, extensive research, or complex multi-step reasoning, consider using the `Agent` tool. Delegating these specialized tasks to sub-agents is preferred as it preserves the main conversation's context and improves efficiency.
 
 
 ---
 
 ## Versioning
 
-Follows [SemVer v2.0.0](https://semver.org/). Current: `v3.1.1`.
+Follows [SemVer v2.0.0](https://semver.org/). Current: `v3.1.0`.
 
 ---
 

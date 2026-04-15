@@ -1,5 +1,11 @@
 # CHANGELOG
  
+## v3.1.1
+* **File Upload Input Block**: Fixed file upload input handling to prevent blocking issues. Implemented send button blocking while files are uploading or processing to prevent message send conflicts.
+* **File Manager Refactoring**: Converted `FileManager` to use dependency injection with shared RAG manager instead of global instance pattern.
+* **Documentation Compliance**: Updated all code comments referencing `AGENTS.md` to reference `CLAUDE.md` as the authoritative documentation source.
+* **Version Bump**: Incremented version globally to v3.1.1.
+
 ## v3.1.0
 * **File Reading Infrastructure**: Introduced a unified file management system supporting PDF extraction, intelligent chunking, and metadata tracking for enhanced RAG capabilities.
 * **Configuration Consolidation**: Centralized execution retry limits and RAG parameters in `backend/config.py` as the system's single source of truth.

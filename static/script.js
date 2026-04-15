@@ -2398,6 +2398,34 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function checkSendButtonState() {
+        if (!sendBtn || !filePreviewContainer) return;
+
+        // Don't block if in Research Mode (different workflow)
+        if (isResearchMode) return;
+
+        // Check if there are any files being uploaded or processing
+        const fileItems = filePreviewContainer.querySelectorAll('.file-item');
+        let hasUploadingFiles = false;
+
+        fileItems.forEach(item => {
+            const statusEl = item.querySelector('.upload-status');
+            if (statusEl && (statusEl.textContent.includes('Uploading') || statusEl.textContent.includes('Processing'))) {
+                hasUploadingFiles = true;
+            }
+        });
+
+        // Block send button if files are uploading or processing
+        sendBtn.disabled = hasUploadingFiles;
+        if (hasUploadingFiles) {
+            sendBtn.title = "Please wait for file uploads to complete before sending.";
+            sendBtnWrapper.title = sendBtn.title;
+        } else {
+            sendBtn.title = "";
+            sendBtnWrapper.title = "";
+        }
+    }
+
     // Add dropdown event listeners
     if (modelSelectDropdown) {
         modelSelectDropdown.addEventListener('change', (e) => {
@@ -3310,6 +3338,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (fileItem.parentNode) {
                 fileItem.parentNode.removeChild(fileItem);
             }
+            // Update send button state when file is removed
+            checkSendButtonState();
         });
 
         if (filePreviewContainer) {
@@ -3317,6 +3347,9 @@ document.addEventListener('DOMContentLoaded', () => {
             filePreviewContainer.classList.remove('hidden');
             filePreviewContainer.appendChild(fileItem);
         }
+
+        // Block send button while file is uploading
+        checkSendButtonState();
 
         try {
             // Upload file with progress tracking using XMLHttpRequest
@@ -3399,14 +3432,20 @@ document.addEventListener('DOMContentLoaded', () => {
                                     if (fileItem.parentNode) {
                                         fileItem.parentNode.removeChild(fileItem);
                                     }
+                                    // Update send button state when file is removed
+                                    checkSendButtonState();
                                 });
                             }
+                            // Check if send button should be enabled (all files processed)
+                            checkSendButtonState();
                         } else if (status === 'failed') {
                             // Update UI to show "Processing Failed"
                             if (fileItem.parentNode) {
                                 const statusEl = fileItem.querySelector('.upload-status');
                                 if (statusEl) statusEl.textContent = 'Processing Failed';
                             }
+                            // Check if send button should be enabled (failed files don't block)
+                            checkSendButtonState();
                         } else {
                             // Still processing, poll again
                             setTimeout(pollProcessingStatus, 1000);
@@ -3441,7 +3480,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (fileItem.parentNode) {
                     fileItem.parentNode.removeChild(fileItem);
                 }
+                // Update send button state after error cleanup
+                checkSendButtonState();
             }, 2000);
+            // Check immediately in case other files are ready
+            checkSendButtonState();
         }
     }
 
@@ -3637,6 +3680,18 @@ document.addEventListener('DOMContentLoaded', () => {
         if (sendBtn && sendBtn.classList.contains('incompatible-model')) {
             await showAlert('Incompatible Model', 'This conversation contains images. You must select a model with vision capabilities in the settings dropdown to continue.');
             return;
+        }
+
+        // Safety check: Block send if any files are still uploading or processing
+        if (!isResume && filePreviewContainer) {
+            const fileItems = filePreviewContainer.querySelectorAll('.file-item');
+            for (const item of fileItems) {
+                const statusEl = item.querySelector('.upload-status');
+                if (statusEl && (statusEl.textContent.includes('Uploading') || statusEl.textContent.includes('Processing'))) {
+                    await showAlert('File Upload in Progress', 'Please wait for all file uploads to complete before sending your message.');
+                    return;
+                }
+            }
         }
 
         // Proactive VRAM Cleanup before inference
@@ -3849,6 +3904,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 filePreviewContainer.innerHTML = '';
                 filePreviewContainer.classList.add('hidden');
             }
+            // Update send button state after clearing files
+            checkSendButtonState();
 
             // Only include sampling params for normal chat (deep research uses its own)
             if (!isResearchMode) {

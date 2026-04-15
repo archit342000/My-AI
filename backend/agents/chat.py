@@ -36,7 +36,10 @@ from backend.canvas_manager import (
 )
 from backend.db_wrapper import db
 from backend import config
-from backend.file_manager import file_manager
+from backend.file_manager import FileManager
+from backend.model_loader import get_embedding_model
+from backend.rag import FileRAG
+from backend.providers import RAGProvider
 from backend.mcp_client import tavily_client, playwright_client
 from backend.llm import stream_chat_completion, chat_completion
 import datetime
@@ -167,13 +170,13 @@ def _stream_corrected_content(model, fixed_content, fixed_reasoning=""):
 async def generate_chat_response(api_url, model, messages, extra_body, enable_thinking, rag=None, file_rag=None, memory_mode=False, search_depth_mode='regular', chat_id=None, has_vision=False, api_key=None, research_mode=False, research_completed=False, initial_tool_calls=None, resume_state=None, canvas_mode=False, active_canvas_context=None):
     """
     Handles standard chat interaction with validation and self-healing.
-    
+
     Architecture:
       - full_content: accumulates everything streamed to the frontend. Used for storage.
       - validatable_content: only the last LLM call's raw output. Used for validation.
       - tool_flow_prefix: snapshot of full_content before the second LLM call.
         Used to reconstruct the full message if redact fires during validation.
-    
+
     Frontend rendering uses three self-contained <think> blocks:
       <think>[first reasoning]</think>
       <think>[tool logs]</think>
@@ -183,6 +186,15 @@ async def generate_chat_response(api_url, model, messages, extra_body, enable_th
     # Ensure MCP clients are connected
     await tavily_client.connect()
     await playwright_client.connect()
+
+    # Initialize file manager with shared RAG manager (similar to app.py pattern)
+    rag_manager = RAGProvider.get_manager(
+        persist_path=config.CHROMA_PATH,
+        api_url=config.EMBEDDING_URL,
+        api_key=config.EMBEDDING_API_KEY,
+        embedding_model=get_embedding_model()
+    )
+    file_manager = FileManager(rag_manager=rag_manager)
 
     # Process uploaded files from extra_body
     uploaded_files = extra_body.get('uploaded_files', [])

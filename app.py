@@ -51,7 +51,7 @@ from backend.agents.research import generate_research_response
 from backend.agents.chat import generate_chat_response
 from backend.task_manager import task_manager
 from backend.cache_system import cache_system
-from backend.version import get_version
+from backend.version import get_version, VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH
 
 app = Flask(__name__, static_folder='static')
 # Limit request size to 100MB to match FILE_UPLOAD_MAX_SIZE config
@@ -60,12 +60,6 @@ app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024
 # Initialize components with config - load models from model_loader (no fallbacks)
 init_db()
 embedding_model = get_embedding_model()
-
-# Clear ChromaDB directory to ensure fresh collections with correct embedding dimension
-# This fixes the "Collection expecting embedding with dimension of 768, got 384" error
-if os.path.exists(config.CHROMA_PATH):
-    shutil.rmtree(config.CHROMA_PATH)
-    log_event("rag_chromadb_cleared", {"path": config.CHROMA_PATH})
 
 # Initialize RAGManager for Research and File RAG (singleton) via provider
 rag_manager = RAGProvider.get_manager(
@@ -397,7 +391,12 @@ def discard_research_endpoint(chat_id):
 @app.route('/api/version', methods=['GET'])
 def get_version_endpoint():
     """Return the application version."""
-    return jsonify({"version": get_version(), "major": 2, "minor": 3, "patch": 1})
+    return jsonify({
+        "version": get_version(),
+        "major": VERSION_MAJOR,
+        "minor": VERSION_MINOR,
+        "patch": VERSION_PATCH
+    })
 
 
 @app.route('/api/memory/reset', methods=['POST'])
@@ -1198,12 +1197,12 @@ def chat_completions():
         messages = []
         for msg in raw_messages:
             clean_msg = dict(msg)
-            # AGENTS.md compliance: ensure all required string fields are never None
+            # CLAUDE.md compliance: ensure all required string fields are never None
             if clean_msg.get('role') is None:
                 clean_msg['role'] = "user"
             if clean_msg.get('content') is None:
                 clean_msg['content'] = ""
-            # AGENTS.md / llama.cpp compliance: 'content' MUST be a string or array.
+            # CLAUDE.md / llama.cpp compliance: 'content' MUST be a string or array.
             # If it's a dict/object (e.g. a raw tool result that wasn't serialized),
             # coerce it to a JSON string to prevent a 400 from the inference server.
             content_val = clean_msg.get('content')

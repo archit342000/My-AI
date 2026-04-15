@@ -68,7 +68,7 @@ def _extract_json_from_text(text):
     if not text:
         return None
     
-    # AGENTS.md Compliance: Extract JSON ONLY from the content portion.
+    # CLAUDE.md Compliance: Extract JSON ONLY from the content portion.
     # We explicitly strip <think> blocks to satisfy the "never use reasoning for logic" rule.
     # Replace regex with simpler splitting to prevent backtracking hangs on huge strings
     clean_text = text
@@ -139,7 +139,7 @@ async def _stream_research_call(api_url, payload, display_model, activity_type, 
                                  chat_id=None):
     """
     Unified streaming wrapper for all research LLM calls.
-    Implements active meander detection and AGENTS.md compliance.
+    Implements active meander detection and CLAUDE.md compliance.
     
     Yields UI activity chunks via {"type": "activity", "data": str}.
     Returns the final accumulated (and potentially tagged) string via {"type": "result", "data": str}.
@@ -219,7 +219,7 @@ async def _stream_research_call(api_url, payload, display_model, activity_type, 
             except:
                 continue
                 
-        # Finalize output based on AGENTS.md
+        # Finalize output based on CLAUDE.md
         final_output = ""
         if full_reasoning:
             final_output += f"<think>\n{full_reasoning}\n</think>\n"

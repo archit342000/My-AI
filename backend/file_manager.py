@@ -13,6 +13,7 @@ import logging
 import threading
 from typing import Dict, Optional, Tuple, List
 from dataclasses import dataclass
+from backend import config
 from backend.config import (
     DATA_DIR,
     FILE_UPLOAD_MAX_SIZE,
@@ -22,10 +23,15 @@ from backend.config import (
     PDF_OCR_LANGUAGES,
     PDF_EXTRACTION_MIN_CONTENT,
     FILE_RAG_ENABLED,
+    CHROMA_PATH,
+    EMBEDDING_API_KEY,
+    EMBEDDING_URL
 )
+from backend.model_loader import get_embedding_model
 from backend.db_wrapper import db
 from backend.rag import FileRAG
 from backend.providers import RAGProvider
+from backend.rag import RAGManager
 from backend.pdf_extractor import PDFExtractor
 
 logger = logging.getLogger(__name__)
@@ -632,7 +638,3 @@ class FileManager:
             ))
 
         return files
-
-
-# Global instance
-file_manager = FileManager()
