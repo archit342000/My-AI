@@ -1,0 +1,62 @@
+services:
+  rag_grid_search:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.rag-grid-search
+    networks:
+      - secure-internal
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      - TZ=Asia/Kolkata
+      - RAG_GRID_WORKERS=16
+      - RAG_INVALIDATE_CACHE=false   # Set to 'true' to force re-embedding even if corpus fingerprint matches
+    secrets:
+      - AI_URL
+      - AI_API_KEY
+      - EMBEDDING_URL
+      - EMBEDDING_API_KEY
+      - DATA_DIR
+      - HF_TOKEN
+    volumes:
+      - ..:/app
+      - /home/archit-anand/docker-data/shared/My-AI-data:/app/backend/data
+      - ../reports:/app/reports
+    # deploy:
+    #   resources:
+    #     limits:
+    #       memory: 4G
+
+  classifier_grid_search:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.rag-grid-search
+    networks:
+      - secure-internal
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      - TZ=Asia/Kolkata
+    volumes:
+      - /home/archit-anand/docker-data/shared/My-AI-data:/app/backend/data
+      - ../reports:/app/reports
+    command: ["python3", "tests/test_classifier_parameters.py"]
+
+networks:
+  secure-internal:
+    driver: bridge
+
+secrets:
+  # Defining secrets mapped to files in the ../secrets directory
+  AI_URL:
+    file: ../secrets/AI_URL
+  AI_API_KEY:
+    file: ../secrets/AI_API_KEY
+  EMBEDDING_URL:
+    file: ../secrets/EMBEDDING_URL
+  EMBEDDING_API_KEY:
+    file: ../secrets/EMBEDDING_API_KEY
+  DATA_DIR:
+    file: ../secrets/DATA_DIR
+  HF_TOKEN:
+    file: ../secrets/HF_TOKEN

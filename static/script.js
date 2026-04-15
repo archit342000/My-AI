@@ -381,10 +381,6 @@ document.addEventListener('DOMContentLoaded', () => {
             textArea.value = '';
             textArea.style.height = 'auto';
         }
-        currentImageBase64 = null;
-        if (typeof imageInput !== 'undefined' && imageInput) imageInput.value = '';
-        if (typeof imagePreview !== 'undefined' && imagePreview) imagePreview.src = '';
-        if (typeof imagePreviewContainer !== 'undefined' && imagePreviewContainer) imagePreviewContainer.classList.add('hidden');
 
         // Update canvas lock state
         updateCanvasLockState();
@@ -478,12 +474,31 @@ document.addEventListener('DOMContentLoaded', () => {
             if (tempChatBanner) tempChatBanner.classList.add('hidden');
             if (tempChatBtn) tempChatBtn.classList.remove('active');
             chatHistory = (chat.messages || []).map(msg => {
+                let parsedContent = msg.content;
+                let uploadedFiles = null;
+
                 try {
                     if (typeof msg.content === 'string' && (msg.content.startsWith('[') || msg.content.startsWith('{'))) {
-                        return { ...msg, content: JSON.parse(msg.content) };
+                        parsedContent = JSON.parse(msg.content);
                     }
                 } catch (e) {}
-                return msg;
+
+                // Extract uploadedFiles from content
+                if (typeof parsedContent === 'object' && parsedContent !== null && !Array.isArray(parsedContent)) {
+                    uploadedFiles = parsedContent.uploadedFiles || null;
+                    // If content has uploadedFiles embedded with text, extract the text part
+                    // This handles the case where content was stored as {"text": "...", "uploadedFiles": [...]}
+                    if (parsedContent.text !== undefined && parsedContent.uploadedFiles !== undefined) {
+                        parsedContent = parsedContent.text;
+                    }
+                }
+
+                // Fallback: check for uploadedFiles in original msg (for backward compatibility)
+                if (!uploadedFiles && msg.uploadedFiles) {
+                    uploadedFiles = msg.uploadedFiles;
+                }
+
+                return { ...msg, content: parsedContent, uploadedFiles };
             });
             currentResearchPlan = null;
             isMemoryMode = !!chat.memory_mode;
@@ -618,17 +633,20 @@ document.addEventListener('DOMContentLoaded', () => {
             messageGroups.forEach(group => {
                 if (group.role === 'user') {
                     const msg = group.messages[0];
+                    let text = "";
+                    let img = null;
+                    let fileData = msg.uploadedFiles || null;
+
                     if (Array.isArray(msg.content)) {
-                        let text = "";
-                        let img = null;
                         msg.content.forEach(part => {
                             if (part.type === 'text') text = part.text;
                             if (part.type === 'image_url') img = part.image_url.url;
                         });
-                        appendMessage('User', text, 'user', img, null, msg._originalIndex);
                     } else {
-                        appendMessage('User', msg.content, 'user', null, null, msg._originalIndex);
+                        text = msg.content;
                     }
+
+                    appendMessage('User', text, 'user', img, fileData, null, msg._originalIndex);
                 } else if (group.role === 'bot') {
                     // Group Bot messages (Assistant + Tool)
                     let combinedThoughts = "";
@@ -718,7 +736,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                     const planDisabled = isApproved || isSuperseded;
 
-                    const row = appendMessage('Assistant', '', 'bot', null, lastModel, group.messages[0]._originalIndex);
+                    const row = appendMessage('Assistant', '', 'bot', null, null, lastModel, group.messages[0]._originalIndex);
                     const contentDiv = row.querySelector('.message-content');
                     
                     let isJsonActivities = combinedActivityObjs.length > 0;
@@ -1842,7 +1860,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (attachBtn && isResearchMode) {
             attachBtn.style.opacity = '0.3';
             attachBtn.style.pointerEvents = 'none';
-            attachBtn.title = "Images are not supported in Research mode.";
+            attachBtn.title = "File uploads are not supported in Research mode.";
         }
 
         // Update Temporary Chat Button State
@@ -2195,18 +2213,14 @@ document.addEventListener('DOMContentLoaded', () => {
     function updateVisionUI(hasVision) {
         const attachBtn = document.getElementById('attach-btn');
         if (attachBtn) {
-            if (hasVision) {
-                attachBtn.style.opacity = '1';
-                attachBtn.style.pointerEvents = 'auto';
-                attachBtn.title = "Attach image";
-            } else {
+            if (isResearchMode) {
                 attachBtn.style.opacity = '0.3';
                 attachBtn.style.pointerEvents = 'none';
-                attachBtn.title = "This model does not support images";
-                // If an image was already attached, clear it
-                if (!imagePreviewContainer.classList.contains('hidden')) {
-                    removeImageBtn?.click();
-                }
+                attachBtn.title = "File uploads are not supported in Research mode.";
+            } else {
+                attachBtn.style.opacity = '1';
+                attachBtn.style.pointerEvents = 'auto';
+                attachBtn.title = "Attach files";
             }
         }
     }
@@ -3187,41 +3201,395 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Image Input Selectors
-    const imageInput = document.getElementById('image-input');
     const attachBtn = document.getElementById('attach-btn');
-    const imagePreviewContainer = document.getElementById('image-preview-container');
-    const imagePreview = document.getElementById('image-preview');
-    const removeImageBtn = document.getElementById('remove-image-btn');
 
-    let currentImageBase64 = null;
+    // Helper function to get file type from File API or extension fallback
+    function getFileType(file) {
+        // First try file.type from File API
+        if (file.type) return file.type;
 
-    // Image Input Event Listeners
-    if (attachBtn) {
-        attachBtn.addEventListener('click', () => imageInput.click());
+        // Fallback: check extension
+        const ext = file.name.split('.').pop().toLowerCase();
+        const extToMime = {
+            'pdf': 'application/pdf',
+            'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'doc': 'application/msword',
+            'txt': 'text/plain',
+            'png': 'image/png',
+            'jpg': 'image/jpeg',
+            'jpeg': 'image/jpeg',
+            'gif': 'image/gif',
+            'mp4': 'video/mp4',
+            'mp3': 'audio/mpeg',
+            'wav': 'audio/wav'
+        };
+        return extToMime[ext] || '';
     }
 
-    if (imageInput) {
-        imageInput.addEventListener('change', (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
+    // File Upload Handler
+    async function handleFileUpload(file) {
+        // Get file type using extension fallback for reliable detection
+        const fileType = getFileType(file);
 
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                currentImageBase64 = e.target.result;
-                imagePreview.src = currentImageBase64;
-                imagePreviewContainer.classList.remove('hidden');
+        // Validate file type
+        const allowedTypes = [
+            'application/pdf',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'text/plain',
+            'image/png',
+            'image/jpeg',
+            'image/gif',
+            'video/mp4',
+            'audio/mpeg',
+            'audio/wav'
+        ];
+
+        // Block image/video/audio for text-only models
+        const currentModelData = availableModels.find(m => m.key === selectedModel);
+        const modelHasVision = currentModelData?.capabilities?.vision === true;
+        const imageTypes = ['image/png', 'image/jpeg', 'image/gif'];
+        const videoTypes = ['video/mp4'];
+        const audioTypes = ['audio/mpeg', 'audio/wav'];
+        const blockedTypes = [...imageTypes, ...videoTypes, ...audioTypes];
+
+        if (!modelHasVision && blockedTypes.includes(fileType)) {
+            console.warn(`File type blocked for text-only model: ${fileType}`);
+            await showAlert('File Type Not Supported',
+                `${file.name} requires a vision model. Please switch to a vision-enabled model (e.g., gpt-4o, gemini-1.5-pro) to upload this file type.`);
+            return;
+        }
+
+        if (!allowedTypes.includes(fileType)) {
+            console.warn(`File type not supported: ${fileType}`);
+            await showAlert('File Type Not Supported', `${file.name} is not a supported file type.`);
+            return;
+        }
+
+        const maxFileSize = 100 * 1024 * 1024; // 100MB for text-only models
+
+        if (file.size > maxFileSize) {
+            console.warn(`File too large: ${file.size} > ${maxFileSize}`);
+            await showAlert('File Too Large', `${file.name} exceeds the 100MB limit.`);
+            return;
+        }
+
+        // Create upload form data
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('chat_id', currentChatId);
+
+        // Create a unique file item element that persists through upload states
+        const fileItem = document.createElement('div');
+        fileItem.className = 'file-item';
+        fileItem.dataset.fileName = file.name;
+        fileItem.innerHTML = `
+            <div class="file-icon">
+                <div class="upload-spinner" style="width: 16px; height: 16px; border: 2px solid currentColor; border-top-color: transparent; animation: spin 1s linear infinite;"></div>
+            </div>
+            <div class="file-info">
+                <div class="file-name">${file.name}</div>
+                <div class="file-meta">
+                    <span class="upload-status">Uploading...</span>
+                    <span class="upload-size">${formatFileSize(0)} / ${formatFileSize(file.size)}</span>
+                </div>
+            </div>
+            <button class="remove-file-btn" title="Remove file">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+            </button>
+        `;
+
+        // Add remove button handler
+        const removeBtn = fileItem.querySelector('.remove-file-btn');
+        removeBtn.addEventListener('click', () => {
+            // Remove from uploadedFiles array
+            uploadedFiles = uploadedFiles.filter(f => f.name === file.name && !f.file_id);
+            // Remove from DOM
+            if (fileItem.parentNode) {
+                fileItem.parentNode.removeChild(fileItem);
+            }
+        });
+
+        if (filePreviewContainer) {
+            // Show the preview container by removing hidden class
+            filePreviewContainer.classList.remove('hidden');
+            filePreviewContainer.appendChild(fileItem);
+        }
+
+        try {
+            // Upload file with progress tracking using XMLHttpRequest
+            const uploadResult = await uploadFileWithProgress(file, formData, (loaded, total) => {
+                const percent = Math.round((loaded / total) * 100);
+                const statusEl = fileItem.querySelector('.upload-status');
+                const sizeEl = fileItem.querySelector('.upload-size');
+                if (statusEl) statusEl.textContent = `Uploading ${percent}%`;
+                if (sizeEl) sizeEl.textContent = `${formatFileSize(loaded)} / ${formatFileSize(file.size)}`;
+            });
+
+            // Upload completed, update to processing state
+            const statusEl = fileItem.querySelector('.upload-status');
+            const spinnerEl = fileItem.querySelector('.upload-spinner');
+            const sizeEl = fileItem.querySelector('.upload-size');
+            const iconEl = fileItem.querySelector('.file-icon');
+
+            if (statusEl) statusEl.textContent = 'Processing...';
+            if (sizeEl) sizeEl.textContent = formatFileSize(file.size);
+
+            // Show processing state with a brief animation
+            if (spinnerEl) {
+                spinnerEl.style.animation = 'none';
+                spinnerEl.offsetHeight; /* trigger reflow */
+                spinnerEl.style.animation = 'spin 1s linear infinite';
+            }
+
+            // Store file info
+            const fileData = {
+                file_id: uploadResult.file_id,
+                name: uploadResult.original_filename,
+                size: uploadResult.file_size,
+                mime_type: uploadResult.mime_type
             };
-            reader.readAsDataURL(file);
+            uploadedFiles.push(fileData);
+
+            // Poll for processing status until it's complete
+            // Start with a short delay to allow the backend to set initial status
+            const pollProcessingStatus = async () => {
+                try {
+                    // Add timestamp to avoid caching issues
+                    const response = await fetch(`/api/files/${fileData.file_id}/status?nocache=${Date.now()}`);
+                    if (response.ok) {
+                        const result = await response.json();
+                        const status = result.processing_status;
+
+                        // Handle null/undefined status as 'pending' (not completed yet)
+                        if (!status) {
+                            // Still processing (null means pending), poll again
+                            setTimeout(pollProcessingStatus, 1000);
+                            return;
+                        }
+
+                        if (status === 'completed') {
+                            // Update UI to show "Ready"
+                            if (fileItem.parentNode) {
+                                fileItem.innerHTML = `
+                                    <div class="file-icon file-type-icon ${getIconClassForMime(fileData.mime_type)}">
+                                        ${getIconHtmlForMime(fileData.mime_type)}
+                                    </div>
+                                    <div class="file-info">
+                                        <div class="file-name">${fileData.name}</div>
+                                        <div class="file-meta">
+                                            <span class="file-status">Ready</span>
+                                            <span class="file-size">${formatFileSize(fileData.size)}</span>
+                                        </div>
+                                    </div>
+                                    <button class="remove-file-btn" title="Remove file">
+                                        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                                        </svg>
+                                    </button>
+                                `;
+
+                                // Re-attach remove handler
+                                const newRemoveBtn = fileItem.querySelector('.remove-file-btn');
+                                newRemoveBtn.addEventListener('click', () => {
+                                    uploadedFiles = uploadedFiles.filter(f => f.file_id !== fileData.file_id);
+                                    if (fileItem.parentNode) {
+                                        fileItem.parentNode.removeChild(fileItem);
+                                    }
+                                });
+                            }
+                        } else if (status === 'failed') {
+                            // Update UI to show "Processing Failed"
+                            if (fileItem.parentNode) {
+                                const statusEl = fileItem.querySelector('.upload-status');
+                                if (statusEl) statusEl.textContent = 'Processing Failed';
+                            }
+                        } else {
+                            // Still processing, poll again
+                            setTimeout(pollProcessingStatus, 1000);
+                        }
+                    } else {
+                        // Poll again on error
+                        setTimeout(pollProcessingStatus, 1000);
+                    }
+                } catch (error) {
+                    // Network error, poll again
+                    setTimeout(pollProcessingStatus, 1000);
+                }
+            };
+
+            // Start polling
+            pollProcessingStatus();
+
+        } catch (error) {
+            console.error('File upload error:', error);
+            const statusEl = fileItem.querySelector('.upload-status');
+            if (statusEl) statusEl.textContent = 'Upload Failed';
+
+            // Show error to user
+            const errorMsg = error.message || 'An error occurred while uploading the file.';
+            await showAlert('File Upload Failed', errorMsg);
+
+            // Remove from uploadedFiles
+            uploadedFiles = uploadedFiles.filter(f => f.name === file.name && !f.file_id);
+
+            // Remove from DOM after delay
+            setTimeout(() => {
+                if (fileItem.parentNode) {
+                    fileItem.parentNode.removeChild(fileItem);
+                }
+            }, 2000);
+        }
+    }
+
+    // Helper function to upload file with progress tracking
+    function uploadFileWithProgress(file, formData, onProgress) {
+        return new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+
+            // Track upload progress
+            xhr.upload.onprogress = (event) => {
+                if (event.lengthComputable) {
+                    onProgress(event.loaded, event.total);
+                }
+            };
+
+            xhr.onload = () => {
+                try {
+                    const contentType = xhr.getResponseHeader('content-type');
+                    let result;
+                    if (contentType && contentType.includes('application/json')) {
+                        result = JSON.parse(xhr.responseText);
+                    } else {
+                        result = { success: false, error: `Server returned ${xhr.status}` };
+                    }
+
+                    if (xhr.status === 200 && result.success) {
+                        resolve(result);
+                    } else {
+                        let errorMsg = result.error || `Upload failed with status ${xhr.status}`;
+                        if (xhr.status === 413) {
+                            errorMsg = 'File too large. Maximum size is 100MB.';
+                        }
+                        reject(new Error(errorMsg));
+                    }
+                } catch (e) {
+                    reject(new Error('Failed to parse upload response'));
+                }
+            };
+
+            xhr.onerror = () => {
+                reject(new Error('Network error during upload'));
+            };
+
+            xhr.ontimeout = () => {
+                reject(new Error('Upload timed out'));
+            };
+
+            xhr.open('POST', '/api/upload');
+            xhr.timeout = 300000; // 5 minute timeout for large files
+            xhr.setRequestHeader('Accept', 'application/json');
+            xhr.send(formData);
         });
     }
 
-    if (removeImageBtn) {
-        removeImageBtn.addEventListener('click', () => {
-            currentImageBase64 = null;
-            imageInput.value = '';
-            imagePreview.src = '';
-            imagePreviewContainer.classList.add('hidden');
+    // Helper function to format file size
+    function formatFileSize(bytes) {
+        if (bytes === 0) return '0 B';
+        const k = 1024;
+        const sizes = ['B', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+
+    // Helper function to get icon class for mime type
+    function getIconClassForMime(mime) {
+        if (mime.includes('pdf')) return 'pdf';
+        if (mime.includes('word') || mime.includes('docx')) return 'docx';
+        if (mime.includes('txt')) return 'txt';
+        if (mime.includes('image')) return 'image';
+        if (mime.includes('video')) return 'video';
+        if (mime.includes('audio')) return 'audio';
+        return 'default';
+    }
+
+    // Helper function to get icon HTML for mime type
+    function getIconHtmlForMime(mime) {
+        if (mime.includes('pdf')) {
+            return `<svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>`;
+        }
+        if (mime.includes('docx')) {
+            return `<svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>`;
+        }
+        if (mime.includes('txt')) {
+            return `<svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>`;
+        }
+        if (mime.includes('image')) {
+            return `<svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>`;
+        }
+        if (mime.includes('video')) {
+            return `<svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="7" x2="7" y2="7"/><line x1="2" y1="17" x2="7" y2="17"/><line x1="17" y1="17" x2="22" y2="17"/><line x1="17" y1="7" x2="22" y2="7"/></svg>`;
+        }
+        if (mime.includes('audio')) {
+            return `<svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>`;
+        }
+        return `<svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg>`;
+    }
+
+    // Attach button - opens file picker
+    if (attachBtn) {
+        attachBtn.addEventListener('click', () => {
+            fileInput.click();
+        });
+    }
+
+    // File Upload State
+    const fileInput = document.getElementById('file-input');
+    const fileUploadZone = document.getElementById('file-upload-zone');
+    const filePreviewContainer = document.getElementById('file-preview-container');
+    let uploadedFiles = []; // Array of { file_id, name, size, mime_type }
+
+    // File Upload Event Listeners
+    if (fileInput) {
+        fileInput.addEventListener('change', async (e) => {
+            const files = e.target.files;
+            if (!files || files.length === 0) return;
+
+            for (const file of files) {
+                await handleFileUpload(file);
+            }
+            fileInput.value = ''; // Reset input
+        });
+    }
+
+    if (fileUploadZone) {
+        // Click to open file picker (shows zone for attach button toggle)
+        fileUploadZone.addEventListener('click', () => {
+            fileInput.click();
+        });
+
+        fileUploadZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            fileUploadZone.classList.add('dragover');
+        });
+
+        fileUploadZone.addEventListener('dragleave', () => {
+            fileUploadZone.classList.remove('dragover');
+        });
+
+        fileUploadZone.addEventListener('drop', async (e) => {
+            e.preventDefault();
+            fileUploadZone.classList.remove('dragover');
+
+            const files = e.dataTransfer.files;
+            if (files && files.length > 0) {
+                for (const file of files) {
+                    await handleFileUpload(file);
+                }
+            }
         });
     }
 
@@ -3254,7 +3622,7 @@ document.addEventListener('DOMContentLoaded', () => {
             chatHistory.splice(editIdx);
         }
 
-        if (!isResume && !content && !currentImageBase64 && !approvedPlanPayload && !resumeState) return;
+        if (!isResume && !content && !uploadedFiles.length && !approvedPlanPayload && !resumeState) return;
 
         // Block follow-up messages in Research mode ONLY if an active execution is underway
         // Research is "executing" if plan was approved but research is not yet completed
@@ -3332,14 +3700,14 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                     });
                 }
-                appendMessage('User', content, 'user', currentImageBase64, null, chatHistory.length);
-                const userMsgObj = { role: 'user', content: content };
-                if (currentImageBase64) {
-                    userMsgObj.content = [
-                        { type: "text", text: content || "[Image]" },
-                        { type: "image_url", image_url: { url: currentImageBase64 } }
-                    ];
-                }
+                // Include uploaded files in the user message for persistence
+                const sentFiles = [...uploadedFiles];
+                appendMessage('User', content, 'user', null, sentFiles, null, chatHistory.length);
+                const userMsgObj = {
+                    role: 'user',
+                    content: content,
+                    uploadedFiles: sentFiles.length > 0 ? sentFiles : undefined
+                };
                 chatHistory.push(userMsgObj);
             }
 
@@ -3355,7 +3723,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         memory_mode: isMemoryMode,
                         research_mode: isResearchMode ? 1 : 0,
                         search_depth_mode: searchDepthMode,
-                        is_vision: currentImageBase64 ? 1 : 0
+                        is_vision: 0
                     };
                     savedChats.push(chat);
                     renderChatList();
@@ -3417,12 +3785,8 @@ document.addEventListener('DOMContentLoaded', () => {
         // Add history (last 20 turns)
         messages.push(...chatHistory);
 
-        // Clean up image state
-        const sentImageBase64 = currentImageBase64;
-        currentImageBase64 = null;
-        if (imageInput) imageInput.value = '';
-        imagePreview.src = '';
-        imagePreviewContainer.classList.add('hidden');
+        // Clean up file state - files are stored in chat history for persistence
+        const sentFiles = [...uploadedFiles];
 
         let reqModel = selectedModel;
         let reqModelName = selectedModelName;
@@ -3474,8 +3838,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 activeCanvasContext: currentCanvasContentRaw ? {
                     id: currentCanvasId,
                     content: currentCanvasContentRaw
-                } : null
+                } : null,
+                uploadedFiles: sentFiles.length > 0 ? sentFiles : undefined
             };
+
+            // Clear uploadedFiles after request is constructed (files are now part of request)
+            uploadedFiles = [];
+            // Clear file preview container from DOM
+            if (filePreviewContainer) {
+                filePreviewContainer.innerHTML = '';
+                filePreviewContainer.classList.add('hidden');
+            }
 
             // Only include sampling params for normal chat (deep research uses its own)
             if (!isResearchMode) {
@@ -4031,16 +4404,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (Array.isArray(content)) {
                 const textObj = content.find(i => i.type === 'text');
                 if (textObj) textToEdit = textObj.text;
-                const imgObj = content.find(i => i.type === 'image_url');
-                if (imgObj && imgObj.image_url && imgObj.image_url.url) {
-                    currentImageBase64 = imgObj.image_url.url;
-                    const imagePreview = document.getElementById('image-preview');
-                    const imagePreviewContainer = document.getElementById('image-preview-container');
-                    if (imagePreview && imagePreviewContainer) {
-                        imagePreview.src = currentImageBase64;
-                        imagePreviewContainer.classList.remove('hidden');
-                    }
-                }
+                // Note: Images in edited messages are not editable - they were uploaded files
+                // The image_url is kept in the message for display purposes only
             } else {
                 textToEdit = content;
             }
@@ -4208,7 +4573,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function appendMessage(sender, text, type, imageData = null, modelName = null, historyIndex = null) {
+    function appendMessage(sender, text, type, imageData = null, fileData = null, modelName = null, historyIndex = null) {
         const row = document.createElement('div');
         row.className = `message-row ${type}-message`;
         // Stamp the chatHistory / DB index for reliable delete/edit targeting.
@@ -4240,6 +4605,24 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const imageMarkup = imageData ? `<img src="${imageData}" class="chat-image" style="max-width: 100%; border-radius: var(--radius-lg); margin-bottom: 8px; display: block;" />` : '';
+
+        // File attachments display
+        let fileAttachmentsMarkup = '';
+        if (fileData && Array.isArray(fileData) && fileData.length > 0) {
+            fileAttachmentsMarkup = '<div class="file-attachments">';
+            fileData.forEach(f => {
+                const icon = getFileIconForMime(f.mime_type);
+                fileAttachmentsMarkup += `
+                    <div class="file-attachment" title="${escapeHtml(f.name || f.original_filename || 'File')}">
+                        <span class="file-icon">${icon}</span>
+                        <span class="file-info">
+                            <span class="file-name">${escapeHtml(f.name || f.original_filename)}</span>
+                            <span class="file-size">${formatFileSize(f.size || f.file_size)}</span>
+                        </span>
+                    </div>`;
+            });
+            fileAttachmentsMarkup += '</div>';
+        }
 
         let actionsMarkup = '';
         if (type === 'user') {
@@ -4275,6 +4658,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="message-content-wrapper" style="flex: 1; min-width: 0; display: flex; flex-direction: column;">
                     <div class="message-content raw-text-content" style="flex: 1; min-width: 0;" data-raw="${encodeURIComponent(text)}">
                         ${imageMarkup}
+                        ${fileAttachmentsMarkup}
                         ${formatMarkdown(text)}
                     </div>
                     <div class="bot-message-footer" style="display: ${modelName ? 'flex' : 'none'}; align-items: center; margin-top: 2px; padding: 0 4px;">
@@ -4288,6 +4672,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 ${avatarMarkup}
                 <div class="message-content raw-text-content" data-raw="${encodeURIComponent(text)}">
                     ${imageMarkup}
+                    ${fileAttachmentsMarkup}
                     ${formatMarkdown(text)}
                 </div>
                 ${actionsMarkup}
@@ -4442,6 +4827,24 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         console.warn("DOMPurify is not loaded. Rendering potentially unsafe HTML.");
         return html;
+    }
+
+    function getFileIconForMime(mimeType) {
+        if (!mimeType) return '📄';
+        if (mimeType.startsWith('image/')) return '🖼️';
+        if (mimeType.startsWith('video/')) return '🎥';
+        if (mimeType.startsWith('audio/')) return '🎵';
+        if (mimeType === 'application/pdf') return '📄';
+        if (mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') return '📝';
+        if (mimeType === 'text/plain') return '📄';
+        return '📄';
+    }
+
+    function formatFileSize(bytes) {
+        if (bytes === undefined || bytes === null) return '';
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+        return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
     }
 
     function parseContent(text) {

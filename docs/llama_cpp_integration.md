@@ -1,8 +1,11 @@
-# llama.cpp / Local LLM Integration Guide
+# llama.cpp / Local LLM Integration Guide (v3.1.0)
 
 This document details the exact streaming behavior, payload structures, and known quirks of local LLMs running through llama.cpp's OpenAI-compatible `/v1/chat/completions` endpoint.
 
 Local reasoning models (like `nvidia/nemotron-3-nano`, `DeepSeek-R1`, etc.) often exhibit non-standard behaviors compared to OpenAI's official API. Understanding these differences is critical for writing robust backend parsing logic.
+
+> [!IMPORTANT]
+> **Separation of Concerns**: The inference server (llama.cpp) is managed in a **separate repository**. This application (My-AI) is purely a consumer and interacts with it only through URLs and API keys defined in `secrets/`. This repository contains NO orchestration or deployment logic for the inference server itself.
 
 ## 1. Standard Chat Completion (Streaming)
 
@@ -106,7 +109,7 @@ The `/v1/models` endpoint provides a list of available models, but includes a cr
   "object": "model",
   "status": {
     "value": "unloaded", // Possible: "unloaded", "loading", "loaded"
-    "args": ["/app/llama-server", "--model", "..."],
+    "args": ["--model", "..."],
     "preset": "[model-alias]\nctx-size = 4096..."
   }
 }
@@ -184,7 +187,7 @@ The server provides a standard OpenAI-compatible embeddings endpoint.
 Reasoning models can sometimes "meander" (reach thought limits or produce excessive reasoning compared to final content). 
 
 ### 8.1 Disabling Reasoning Fallback
-If a model persists in meandering during a structured output task (Scout, Planner, etc.), the backend can force it to skip the reasoning phase entirely. This is achieved by passing a custom parameter to the llama.cpp server.
+If a model persists in meandering during a structured output task (Scout, Planner, etc.), the backend can force it to skip the reasoning phase entirely. This is achieved by passing a custom parameter to the inference endpoint.
 
 **Implementation:**
 ```json
@@ -200,14 +203,24 @@ When this is active, `reasoning_content` will be empty, and the model will jump 
 1. **Internal History**: Always preserve the `<think>` blocks in the conversation history within a specific agent loop (e.g., Scout iterating). This allows the model to maintain context.
 2. **Inter-Agent Handovers**: Always **strip** `<think>` blocks when passing one agent's output as a prompt to another (e.g., Scout results to Planner). This prevents the next agent from being influenced or confused by the previous agent's internal monologue.
 
-### 8.3 Summary for Backend Implementation
+### 8.3 The Thinking Protocol (Standardization)
+
+To ensure consistent behavior across all agents (Chat, Research, Canvas), the system enforces a global parameters standard:
+
+1.  **Mandatory Kwarg**: Every LLM call from the `chat.py` or `research.py` agents MUST provide `chat_template_kwargs={"enable_thinking": bool}`.
+2.  **State Management**:
+    - **Default**: The system defaults to `enable_thinking: True` for conversational agents to preserve logical chain-of-thought.
+    - **Optimization**: For structured output tasks (like Scout or Planner generating pure JSON), it may be set to `False` to reduce latency and "meandering".
+3.  **Backend Enforcement**: The `backend/llm.py` logic handles the injection of this kwarg into the final payload sent to the inference endpoint.
+
+### 8.4 Summary for Backend Implementation
 
 1. **Stateful Parsers**: Accumulate both `content` and `reasoning_content`.
 2. **Always Wrap Reasoning**: The backend must wrap `reasoning_content` in `<think>` tags for both logging and history to ensure UI consistency and model context.
 3. **Strict JSON Field**: Treat `content` as the only source of truth for the final JSON payload when `response_format` is requested. `reasoning_content` is exclusively for the thinking process.
-4. **chat_template_kwargs Support**: The backend's `stream_chat_completion()` and `chat_completion()` functions accept an optional `chat_template_kwargs` parameter. This allows passing custom parameters to the Llama.cpp chat template, such as `{"enable_thinking": False}` to skip the reasoning phase entirely. This is useful as a fallback when a model persists in meandering during structured output tasks.
+4. **chat_template_kwargs support**: The backend's `stream_chat_completion()` and `chat_completion()` functions accept an optional `chat_template_kwargs` parameter. This allows passing custom parameters to the inference template, such as `{"enable_thinking": False}` to skip the reasoning phase entirely. This is useful as a fallback when a model persists in meandering during structured output tasks.
 
-### 8.4 Timeout Configuration
+### 8.5 Timeout Configuration
 
 For model loading operations, the default 5-second timeout may be insufficient for large models. Configure the timeout via `backend/config.py`:
 

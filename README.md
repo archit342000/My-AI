@@ -56,7 +56,7 @@ cat ~/.ssh/id_rsa.pub > secrets/authorized_keys
 
 ### 3. Deploy Stack
 ```bash
-docker compose up --build -d
+docker compose -f docker/docker-compose.yml up --build -d
 ```
 The application will be accessible at `http://localhost:5000` (or via the Bastion SSH tunnel on port `2222`).
 

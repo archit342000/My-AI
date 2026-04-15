@@ -1,4 +1,4 @@
-# Canvas Directives (v3.0.0)
+# Canvas Directives (v3.1.0)
 
 **Note:** This document may contain outdated information. The code is the source of truth. For discrepancies, see `IMPLEMENTATION_DISCREPANCIES.md`.
 

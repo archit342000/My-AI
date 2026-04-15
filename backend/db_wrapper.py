@@ -120,7 +120,8 @@ class DatabaseWrapper:
             self.save_chat(
                 chat_id=chat_id,
                 title="New Conversation",
-                timestamp=time.time()
+                timestamp=time.time(),
+                enable_thinking=1
             )
         else:
             _log_db_wrapper_op("ENSURE_CHAT_EXISTS_HIT", chat_id)
@@ -199,16 +200,17 @@ class DatabaseWrapper:
         finally:
             conn.close()
 
-    def save_chat(self, chat_id: str, title: str, timestamp: float,
-                  memory_mode: int = 0, research_mode: bool = False,
-                  is_vision: bool = False, last_model: str = None,
-                  vision_model: str = None, max_tokens: int = 16384,
-                  folder: str = None, search_depth_mode: str = 'regular',
-                  research_completed: int = 0, had_research: int = 0,
-                  canvas_mode: bool = False, enable_thinking: int = 1,
-                  temperature: float = 1.0, top_p: float = 1.0,
-                  top_k: int = 40, min_p: float = 0.05,
-                  presence_penalty: float = 0.0, frequency_penalty: float = 0.0,
+    def save_chat(self, chat_id: str, title: str, timestamp: float, 
+                  enable_thinking: int,
+                  memory_mode: int = 0, research_mode: bool = False, 
+                  is_vision: bool = False, last_model: str = None, 
+                  vision_model: str = None, max_tokens: int = 16384, 
+                  folder: str = None, search_depth_mode: str = 'regular', 
+                  research_completed: int = 0, had_research: int = 0, 
+                  canvas_mode: bool = False,
+                  temperature: float = 1.0, top_p: float = 1.0, 
+                  top_k: int = 40, min_p: float = 0.05, 
+                  presence_penalty: float = 0.0, frequency_penalty: float = 0.0, 
                   is_custom_title: int = None):
         """
         Save chat with Cache-Aside pattern (DB write + cache invalidation).
@@ -533,6 +535,7 @@ class DatabaseWrapper:
                     tool_calls = msg.get('tool_calls')
                     tool_call_id = msg.get('tool_call_id')
                     name = msg.get('name', '')
+                    uploaded_files = msg.get('uploadedFiles')
 
                     # Safety guard: serialize content and tool_calls if list/dict
                     if isinstance(content, (list, dict)):
@@ -545,6 +548,36 @@ class DatabaseWrapper:
                         content = ""
                     if name is None:
                         name = ""
+
+                    # Store uploadedFiles as JSON in content if present
+                    if uploaded_files is not None:
+                        # For strings: wrap in {"text": ..., "uploadedFiles": ...}
+                        # For dicts (multi-part content): add uploadedFiles to the dict
+                        # For other types: create {"text": ..., "uploadedFiles": ...}
+                        if isinstance(content, str):
+                            # Check if content is already a JSON string with uploadedFiles
+                            try:
+                                parsed = json.loads(content)
+                                if isinstance(parsed, dict) and 'uploadedFiles' in parsed:
+                                    # Content is already a JSON object with uploadedFiles
+                                    # Just ensure the uploadedFiles in content matches the one we're saving
+                                    content_obj = {**parsed, 'uploadedFiles': uploaded_files}
+                                    content = json.dumps(content_obj)
+                                else:
+                                    # Regular string content
+                                    content_obj = {"text": content, "uploadedFiles": uploaded_files}
+                                    content = json.dumps(content_obj)
+                            except (json.JSONDecodeError, TypeError, ValueError):
+                                # Not valid JSON, treat as regular string
+                                content_obj = {"text": content, "uploadedFiles": uploaded_files}
+                                content = json.dumps(content_obj)
+                        elif isinstance(content, dict) and not isinstance(content, list):
+                            # Multi-part content: add uploadedFiles as a field
+                            content_obj = {**content, "uploadedFiles": uploaded_files}
+                            content = json.dumps(content_obj)
+                        else:
+                            content_obj = {"text": content if content is not None else "", "uploadedFiles": uploaded_files}
+                            content = json.dumps(content_obj)
 
                     c.execute('''
                         INSERT INTO messages (chat_id, role, content, timestamp, model,
@@ -1550,6 +1583,354 @@ class DatabaseWrapper:
     def get_stats(self):
         """Get cache statistics."""
         return cache_layer.get_stats()
+
+    # ==================== FILE OPERATIONS ====================
+
+    def save_file(self, file_id: str, chat_id: str, original_filename: str,
+                  stored_filename: str, mime_type: str, file_size: int,
+                  content_text: str = None):
+        """Save file metadata to database.
+
+        Args:
+            file_id: Unique file identifier
+            chat_id: Chat session ID
+            original_filename: Original filename
+            stored_filename: Sanitized filename for storage
+            mime_type: MIME type of the file
+            file_size: File size in bytes
+            content_text: Extracted text content for RAG (optional)
+        """
+        logger = logging.getLogger(__name__)
+        logger.info(f"[DB_SAVE_FILE_START] file_id={file_id}, chat_id={chat_id}, original_filename={original_filename}")
+
+        _log_db_wrapper_op("SAVE_FILE_START", chat_id, f"file_id={file_id}")
+        write_start = time.time()
+
+        def _write():
+            conn = make_connection()
+            try:
+                c = conn.cursor()
+                logger.debug(f"[DB_INSERT] Executing INSERT with params: file_id={file_id}, chat_id={chat_id}, original_filename={original_filename}, stored_filename={stored_filename}, mime_type={mime_type}, file_size={file_size}")
+                c.execute('''
+                    INSERT INTO files (id, chat_id, original_filename, stored_filename,
+                                      mime_type, file_size, content_text, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (file_id, chat_id, original_filename, stored_filename,
+                      mime_type, file_size, content_text, time.time()))
+                conn.commit()
+                logger.debug(f"[DB_INSERT] Success, rows affected: {c.rowcount}")
+            except sqlite3.IntegrityError as e:
+                logger.error(f"[DB_INSERT_ERROR] Integrity error: {e}")
+                logger.error(f"[DB_INSERT_ERROR] Params: file_id={file_id}, chat_id={chat_id}, original_filename={original_filename}, stored_filename={stored_filename}, mime_type={mime_type}, file_size={file_size}")
+                raise
+            except Exception as e:
+                logger.error(f"[DB_INSERT_ERROR] General error: {e}")
+                logger.error(f"[DB_INSERT_ERROR] Params: file_id={file_id}, chat_id={chat_id}, original_filename={original_filename}, stored_filename={stored_filename}, mime_type={mime_type}, file_size={file_size}")
+                raise
+            finally:
+                conn.close()
+
+        _write()
+        db_write_duration = (time.time() - write_start) * 1000
+        cache_layer.invalidate("files", f"chat:{chat_id}")
+        _log_db_wrapper_op("SAVE_FILE_END", chat_id, f"file_id={file_id} duration_ms={db_write_duration:.2f}")
+        logger.info(f"[DB_SAVE_FILE_END] file_id={file_id} duration_ms={db_write_duration:.2f}")
+
+    def get_file(self, file_id: str) -> dict:
+        """Get file metadata by ID.
+
+        Args:
+            file_id: Unique file identifier
+
+        Returns:
+            File metadata dict if found, None otherwise
+        """
+        _log_db_wrapper_op("GET_FILE_START", None, f"file_id={file_id}")
+        fetch_start = time.time()
+
+        def _fetch():
+            conn = make_connection()
+            try:
+                conn.row_factory = sqlite3.Row
+                c = conn.cursor()
+                c.execute("SELECT * FROM files WHERE id = ?", (file_id,))
+                row = c.fetchone()
+                return dict(row) if row else None
+            finally:
+                conn.close()
+
+        result = _fetch()
+        duration_ms = (time.time() - fetch_start) * 1000
+        _log_db_wrapper_op("GET_FILE_END", None, f"file_id={file_id} duration_ms={duration_ms:.2f}")
+        return result
+
+    def get_chat_files(self, chat_id: str) -> list:
+        """Get all files for a chat session.
+
+        Args:
+            chat_id: Chat session ID
+
+        Returns:
+            List of file metadata dicts
+        """
+        _log_db_wrapper_op("GET_CHAT_FILES_START", chat_id)
+        fetch_start = time.time()
+
+        def _fetch():
+            conn = make_connection()
+            try:
+                conn.row_factory = sqlite3.Row
+                c = conn.cursor()
+                c.execute(
+                    "SELECT * FROM files WHERE chat_id = ? ORDER BY created_at DESC",
+                    (chat_id,)
+                )
+                return [dict(row) for row in c.fetchall()]
+            finally:
+                conn.close()
+
+        result = _fetch()
+        duration_ms = (time.time() - fetch_start) * 1000
+        file_count = len(result) if result else 0
+        _log_db_wrapper_op("GET_CHAT_FILES_END", chat_id,
+                          f"duration_ms={duration_ms:.2f} count={file_count}")
+        return result
+
+    def delete_file(self, file_id: str):
+        """Delete a file from database and storage.
+
+        Args:
+            file_id: Unique file identifier
+        """
+        _log_db_wrapper_op("DELETE_FILE_START", None, f"file_id={file_id}")
+        write_start = time.time()
+
+        def _write():
+            conn = make_connection()
+            try:
+                c = conn.cursor()
+                c.execute("DELETE FROM files WHERE id = ?", (file_id,))
+                conn.commit()
+            finally:
+                conn.close()
+
+        _write()
+        db_write_duration = (time.time() - write_start) * 1000
+        # Get chat_id for cache invalidation
+        file_meta = self.get_file(file_id)
+        if file_meta:
+            cache_layer.invalidate("files", f"chat:{file_meta.get('chat_id')}")
+        _log_db_wrapper_op("DELETE_FILE_END", None, f"file_id={file_id} duration_ms={db_write_duration:.2f}")
+
+    def update_file_content(self, file_id: str, content_text: str) -> bool:
+        """Update file metadata with extracted content.
+
+        Args:
+            file_id: Unique file identifier
+            content_text: Extracted text content for RAG
+
+        Returns:
+            True if successful, False otherwise
+        """
+        _log_db_wrapper_op("UPDATE_FILE_CONTENT_START", None, f"file_id={file_id}")
+        write_start = time.time()
+
+        def _write():
+            conn = make_connection()
+            try:
+                c = conn.cursor()
+                c.execute("UPDATE files SET content_text = ? WHERE id = ?", (content_text, file_id))
+                conn.commit()
+                return c.rowcount > 0
+            finally:
+                conn.close()
+
+        result = _write()
+        db_write_duration = (time.time() - write_start) * 1000
+        # Get chat_id for cache invalidation
+        file_meta = self.get_file(file_id)
+        if file_meta:
+            cache_layer.invalidate("files", f"chat:{file_meta.get('chat_id')}")
+        _log_db_wrapper_op("UPDATE_FILE_CONTENT_END", None, f"file_id={file_id} duration_ms={db_write_duration:.2f}")
+        return result
+
+    def update_file_processing_status(self, file_id: str, status: str) -> bool:
+        """Update file processing status.
+
+        Args:
+            file_id: Unique file identifier
+            status: 'pending', 'processing', 'completed', or 'failed'
+
+        Returns:
+            True if successful, False otherwise
+        """
+        _log_db_wrapper_op("UPDATE_FILE_STATUS_START", None, f"file_id={file_id}, status={status}")
+        write_start = time.time()
+
+        def _write():
+            conn = make_connection()
+            try:
+                c = conn.cursor()
+                c.execute("UPDATE files SET processing_status = ? WHERE id = ?", (status, file_id))
+                conn.commit()
+                return c.rowcount > 0
+            finally:
+                conn.close()
+
+        result = _write()
+        db_write_duration = (time.time() - write_start) * 1000
+        # Get chat_id for cache invalidation
+        file_meta = self.get_file(file_id)
+        if file_meta:
+            cache_layer.invalidate("files", f"chat:{file_meta.get('chat_id')}")
+        _log_db_wrapper_op("UPDATE_FILE_STATUS_END", None, f"file_id={file_id} duration_ms={db_write_duration:.2f}")
+        return result
+
+    # ==================== MEMORY OPERATIONS ====================
+    # No RAG needed - direct DB access for global memory
+
+    def get_all_memories(self) -> list:
+        """Get all memories from the database.
+
+        Returns:
+            List of memory dicts with id, content, tag, timestamp
+        """
+        _log_db_wrapper_op("GET_ALL_MEMORIES_START")
+        fetch_start = time.time()
+
+        def _fetch():
+            conn = make_connection()
+            try:
+                conn.row_factory = sqlite3.Row
+                c = conn.cursor()
+                c.execute("SELECT * FROM memories ORDER BY timestamp DESC")
+                return [dict(row) for row in c.fetchall()]
+            finally:
+                conn.close()
+
+        result = _fetch()
+        duration_ms = (time.time() - fetch_start) * 1000
+        _log_db_wrapper_op("GET_ALL_MEMORIES_END", None, f"count={len(result)} duration_ms={duration_ms:.2f}")
+        return result
+
+    def add_memory(self, content: str, tag: str) -> str:
+        """Add a new memory to the database.
+
+        Args:
+            content: The memory content (fact, preference, etc.)
+            tag: Category tag (user_preference, user_profile, environment_global, explicit_fact)
+
+        Returns:
+            The ID of the newly created memory
+        """
+        _log_db_wrapper_op("ADD_MEMORY_START", None, f"tag={tag}")
+        write_start = time.time()
+
+        import uuid
+        memory_id = str(uuid.uuid4())
+
+        def _write():
+            conn = make_connection()
+            try:
+                c = conn.cursor()
+                c.execute('''
+                    INSERT INTO memories (id, content, tag, timestamp)
+                    VALUES (?, ?, ?, ?)
+                ''', (memory_id, content, tag, time.time()))
+                conn.commit()
+            finally:
+                conn.close()
+
+        _write()
+        db_write_duration = (time.time() - write_start) * 1000
+        _log_db_wrapper_op("ADD_MEMORY_END", None, f"memory_id={memory_id} duration_ms={db_write_duration:.2f}")
+        return memory_id
+
+    def update_memory(self, memory_id: str, new_content: str, new_tag: str) -> bool:
+        """Update an existing memory.
+
+        Args:
+            memory_id: ID of the memory to update
+            new_content: New content for the memory
+            new_tag: New tag/category
+
+        Returns:
+            True if updated, False if not found
+        """
+        _log_db_wrapper_op("UPDATE_MEMORY_START", None, f"memory_id={memory_id}")
+        write_start = time.time()
+
+        def _write():
+            conn = make_connection()
+            try:
+                c = conn.cursor()
+                c.execute('''
+                    UPDATE memories
+                    SET content = ?, tag = ?, timestamp = ?
+                    WHERE id = ?
+                ''', (new_content, new_tag, time.time(), memory_id))
+                conn.commit()
+                return c.rowcount > 0
+            finally:
+                conn.close()
+
+        result = _write()
+        db_write_duration = (time.time() - write_start) * 1000
+        _log_db_wrapper_op("UPDATE_MEMORY_END", None, f"memory_id={memory_id} updated={result} duration_ms={db_write_duration:.2f}")
+        return result
+
+    def delete_memory(self, memory_id: str) -> bool:
+        """Delete a memory by ID.
+
+        Args:
+            memory_id: ID of the memory to delete
+
+        Returns:
+            True if deleted, False if not found
+        """
+        _log_db_wrapper_op("DELETE_MEMORY_START", None, f"memory_id={memory_id}")
+        write_start = time.time()
+
+        def _write():
+            conn = make_connection()
+            try:
+                c = conn.cursor()
+                c.execute("DELETE FROM memories WHERE id = ?", (memory_id,))
+                conn.commit()
+                return c.rowcount > 0
+            finally:
+                conn.close()
+
+        result = _write()
+        db_write_duration = (time.time() - write_start) * 1000
+        _log_db_wrapper_op("DELETE_MEMORY_END", None, f"memory_id={memory_id} deleted={result} duration_ms={db_write_duration:.2f}")
+        return result
+
+    def clear_memories(self) -> int:
+        """Delete all memories from the database.
+
+        Returns:
+            Number of memories deleted
+        """
+        _log_db_wrapper_op("CLEAR_MEMORIES_START")
+        write_start = time.time()
+
+        def _write():
+            conn = make_connection()
+            try:
+                c = conn.cursor()
+                c.execute("SELECT COUNT(*) FROM memories")
+                count = c.fetchone()[0]
+                c.execute("DELETE FROM memories")
+                conn.commit()
+                return count
+            finally:
+                conn.close()
+
+        deleted_count = _write()
+        db_write_duration = (time.time() - write_start) * 1000
+        _log_db_wrapper_op("CLEAR_MEMORIES_END", None, f"deleted={deleted_count} duration_ms={db_write_duration:.2f}")
+        return deleted_count
 
 
 # Global instance

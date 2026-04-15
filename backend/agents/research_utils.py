@@ -133,10 +133,10 @@ async def _execute_mcp_tool(client, tool_name, arguments, chat_id=None):
         log_event("tool_execution_error", {"tool": tool_name, "error": str(e), "chat_id": chat_id})
         raise
 
-async def _stream_research_call(api_url, payload, display_model, activity_type, 
+async def _stream_research_call(api_url, payload, display_model, activity_type, enable_thinking,
                                  thought_limit=None, content_threshold=None, 
                                  step_id=None, is_background=True, api_key=None,
-                                 chat_id=None, enable_thinking=True):
+                                 chat_id=None):
     """
     Unified streaming wrapper for all research LLM calls.
     Implements active meander detection and AGENTS.md compliance.
@@ -335,7 +335,7 @@ def _select_top_urls(results, n=None):
     
     return selected
 
-async def _process_images_in_content(content, url, vision_model, api_url, vlm_lock, display_model=None, step_id=None, api_key=None, chat_id=None, vision_enabled=True):
+async def _process_images_in_content(content, url, vision_model, api_url, vlm_lock, enable_thinking, display_model=None, step_id=None, api_key=None, chat_id=None, vision_enabled=True):
     """Extract and describe images found in markdown content using a vision model.
     Yields activity packets and finally the modified content string."""
     # Skip vision processing if not enabled
@@ -425,7 +425,7 @@ async def _process_images_in_content(content, url, vision_model, api_url, vlm_lo
                     if vlm_lock:
                         async with vlm_lock:
                             gen = _stream_research_call(
-                                api_url, payload, None, "vision",
+                                api_url, payload, None, "vision", enable_thinking,
                                 thought_limit=config.RESEARCH_MEANDER_THOUGHT_LIMIT_VISION_TOKENS,
                                 content_threshold=config.RESEARCH_MEANDER_CONTENT_THRESHOLD_TOKENS,
                                 is_background=False, api_key=api_key
@@ -435,7 +435,7 @@ async def _process_images_in_content(content, url, vision_model, api_url, vlm_lo
                                     img_desc = packet["data"]
                     else:
                         gen = _stream_research_call(
-                            api_url, payload, None, "vision",
+                            api_url, payload, None, "vision", enable_thinking,
                             thought_limit=config.RESEARCH_MEANDER_THOUGHT_LIMIT_VISION_TOKENS,
                             content_threshold=config.RESEARCH_MEANDER_CONTENT_THRESHOLD_TOKENS,
                             is_background=False, api_key=api_key
@@ -478,13 +478,13 @@ async def _process_images_in_content(content, url, vision_model, api_url, vlm_lo
     
     yield {"type": "result", "data": content}
 
-async def _extract_content_for_url(url, search_depth_mode, vision_model, api_url, vlm_lock, display_model=None, step_id=None, raw_content_from_search=None, api_key=None, chat_id=None, vision_enabled=True):
+async def _extract_content_for_url(url, search_depth_mode, vision_model, api_url, vlm_lock, enable_thinking, display_model=None, step_id=None, raw_content_from_search=None, api_key=None, chat_id=None, vision_enabled=True):
     """Extract content from a single URL based on the search depth mode."""
     if search_depth_mode == 'regular':
         if raw_content_from_search and len(raw_content_from_search.strip()) > config.RESEARCH_EXTRACT_MIN_RAW_CONTENT:
             content = raw_content_from_search
             if vision_model and vision_enabled:
-                async for packet in _process_images_in_content(content, url, vision_model, api_url, vlm_lock, display_model, step_id, api_key=api_key, vision_enabled=vision_enabled):
+                async for packet in _process_images_in_content(content, url, vision_model, api_url, vlm_lock, enable_thinking, display_model, step_id, api_key=api_key, vision_enabled=vision_enabled):
                     if packet["type"] == "activity":
                         yield packet
                     else:
@@ -500,7 +500,7 @@ async def _extract_content_for_url(url, search_depth_mode, vision_model, api_url
         extracted = mcp_res.content[0].text
         if extracted and "Error:" not in extracted and len(extracted.strip()) > (config.RESEARCH_CONTENT_MIN_LENGTH_DEEP if search_depth_mode == 'deep' else config.RESEARCH_CONTENT_MIN_LENGTH_REGULAR):
             if vision_model and vision_enabled:
-                async for packet in _process_images_in_content(extracted, url, vision_model, api_url, vlm_lock, display_model, step_id, api_key=api_key, vision_enabled=vision_enabled):
+                async for packet in _process_images_in_content(extracted, url, vision_model, api_url, vlm_lock, enable_thinking, display_model, step_id, api_key=api_key, vision_enabled=vision_enabled):
                     if packet["type"] == "activity":
                         yield packet
                     else:
@@ -512,7 +512,7 @@ async def _extract_content_for_url(url, search_depth_mode, vision_model, api_url
     
     yield {"type": "result", "data": (url, None)}
 
-async def _process_tavily_search_images(images, section_index, vision_model, api_url, vlm_lock, display_model=None, api_key=None, chat_id=None, vision_enabled=True):
+async def _process_tavily_search_images(images, section_index, vision_model, api_url, vlm_lock, enable_thinking, display_model=None, api_key=None, chat_id=None, vision_enabled=True):
     """Process images from Tavily search results using vision model."""
     # Skip vision processing if not enabled
     if not vision_enabled or not vision_model or not images:
@@ -579,7 +579,7 @@ async def _process_tavily_search_images(images, section_index, vision_model, api
                     if vlm_lock:
                         async with vlm_lock:
                             gen = _stream_research_call(
-                            api_url, payload, None, "vision",
+                            api_url, payload, None, "vision", enable_thinking,
                             thought_limit=config.RESEARCH_MEANDER_THOUGHT_LIMIT_VISION_TOKENS,
                             content_threshold=config.RESEARCH_MEANDER_CONTENT_THRESHOLD_TOKENS,
                             is_background=False, api_key=api_key
@@ -589,7 +589,7 @@ async def _process_tavily_search_images(images, section_index, vision_model, api
                                     img_desc = packet["data"]
                     else:
                         gen = _stream_research_call(
-                            api_url, payload, None, "vision",
+                            api_url, payload, None, "vision", enable_thinking,
                             thought_limit=config.RESEARCH_MEANDER_THOUGHT_LIMIT_VISION_TOKENS,
                             content_threshold=config.RESEARCH_MEANDER_CONTENT_THRESHOLD_TOKENS,
                             is_background=False, api_key=api_key

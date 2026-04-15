@@ -275,3 +275,25 @@ READ_CANVAS_TOOL = {
     }
 }
 
+READ_FILE_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "read_file",
+        "description": "Read content from an uploaded file. Use this when the user asks about a specific file or wants to analyze its contents. For images, you can also use vision to directly analyze the file content.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "file_id": {
+                    "type": "string",
+                    "description": "The unique ID of the file to read (e.g., 'file_abc123')"
+                },
+                "query": {
+                    "type": "string",
+                    "description": "OPTIONAL: Specific question about the file content. If omitted, returns full content."
+                }
+            },
+            "required": ["file_id"]
+        }
+    }
+}
+

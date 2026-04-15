@@ -7,6 +7,7 @@ import datetime
 from urllib.parse import urlparse
 from backend import config
 from backend.logger import log_tool_call, log_llm_call, log_event
+from backend.token_counter import count_tokens
 
 def get_current_time():
     """Returns the current local date and time as a formatted string."""
@@ -83,10 +84,7 @@ async def async_chat_completion(url, payload, chat_id=None):
     # A short timeout like 180s will cause the client to disconnect before 
     # the server even begins processing the later requests in the queue.
     base_url = url.rstrip("/")
-    if not base_url.endswith("/v1"):
-        endpoint = f"{base_url}/v1/chat/completions"
-    else:
-        endpoint = f"{base_url}/chat/completions"
+    endpoint = f"{base_url}/v1/chat/completions"
         
     async with httpx.AsyncClient(timeout=config.TIMEOUT_LLM_ASYNC) as client:
         try:
@@ -126,15 +124,16 @@ async def async_chat_completion(url, payload, chat_id=None):
             return ""
 
 def estimate_tokens(msgs):
+    """Estimate token count using the actual tokenizer."""
     total = 0
     for m in msgs:
         content = m.get('content', '')
-        if isinstance(content, str):
-            total += len(content) // 4
+        if isinstance(content, str) and content.strip():
+            total += count_tokens(content)
         elif isinstance(content, list):
             for part in content:
-                if isinstance(part, dict) and part.get('type') == 'text':
-                    total += len(part.get('text', '')) // 4
+                if isinstance(part, dict) and part.get('type') == 'text' and part.get('text', '').strip():
+                    total += count_tokens(part.get('text', ''))
         total += 4  # overhead per message (role, formatting tokens)
     return total
 

@@ -5,9 +5,9 @@ following Semantic Versioning 2.0.0 (https://semver.org/).
 """
 
 # Application version - see CHANGELOG.md for version history
-VERSION = "3.0.0"
+VERSION = "3.1.0"
 VERSION_MAJOR = 3
-VERSION_MINOR = 0
+VERSION_MINOR = 1
 VERSION_PATCH = 0
 
 

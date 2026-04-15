@@ -587,6 +587,43 @@ def init_db():
             )
         ''')
 
+        # Files table for file upload support
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS files (
+                id TEXT PRIMARY KEY,
+                chat_id TEXT NOT NULL,
+                original_filename TEXT NOT NULL,
+                stored_filename TEXT NOT NULL,
+                mime_type TEXT NOT NULL,
+                file_size INTEGER NOT NULL,
+                content_text TEXT,
+                processing_status TEXT DEFAULT 'pending',
+                created_at REAL DEFAULT (strftime('%s', 'now')),
+                FOREIGN KEY(chat_id) REFERENCES chats(id)
+            )
+        ''')
+
+        # Migration: Add processing_status column if missing (for databases created before this change)
+        try:
+            c.execute('ALTER TABLE files ADD COLUMN processing_status TEXT DEFAULT \'pending\'')
+            # Update existing rows to have 'pending' status (SQLite ALTER doesn't auto-fill existing rows)
+            c.execute("UPDATE files SET processing_status = 'pending' WHERE processing_status IS NULL")
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+
+        # Memories table for global user memory (no RAG needed - direct DB access)
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS memories (
+                id TEXT PRIMARY KEY,
+                content TEXT NOT NULL,
+                tag TEXT NOT NULL,
+                timestamp REAL DEFAULT (strftime('%s', 'now'))
+            )
+        ''')
+        # Index for quick filtering by tag
+        c.execute('CREATE INDEX IF NOT EXISTS idx_memories_tag ON memories(tag)')
+
         conn.commit()
         conn.close()
     

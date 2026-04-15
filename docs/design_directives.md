@@ -341,6 +341,14 @@ All animations are defined in CSS — never in JS logic:
 - **Images**: `max-width: 100%`, rounded `var(--radius-xl)`, `var(--surface-shadow)` shadow, `1px` border. Hover → slight scale + intense shadow + accent-light border.
 - **Blockquotes**: `border-inline-start: 4px solid var(--accent-border)`.
 
+### 6.18 File Upload UI
+- **Upload Zone** (`.file-upload-zone`): Dashed border `2px dashed var(--accent-border)`, `border-radius: var(--radius-xl)`, padding `24px`. Glass surface `var(--glass-bg)` with `backdrop-filter: var(--glass-blur)`, `1px solid var(--glass-border)`. Rounded corners `var(--radius-xl)`. Dragover → `var(--accent)` border, `rgba(var(--accent-rgb), 0.08)` bg. Hover → same accent tint.
+- **File Item** (`.file-item`): Flex row, `var(--glass-bg)` bg, `var(--radius-lg)` rounded, `10px 12px` padding. Icon circle `32px` with `rgba(var(--accent-rgb), 0.1)` bg. Hover → `var(--accent-border)` border.
+- **File Info** (`.file-info`): Contains `.file-name` (`0.925rem`, weight 500), `.file-meta` (`0.75rem`, muted color). File meta uses inline dots (`·`) between size/type.
+- **Remove Button** (`.remove-file-btn`): 24px circle, `var(--color-primary-500)` bg, `2px` white border. Hover → `transform: scale(1.1)`, `var(--color-rose-500)` bg.
+- **File Type Icons**: `.file-type-icon` with type-specific classes (`.pdf`, `.docx`, `.txt`, `.image`, `.video`, `.audio`) for color coding.
+- **Upload Progress** (`.upload-progress`): Shows upload status with progress bar (`var(--accent)` fill), turns green (`var(--color-emerald)`) on success.
+
 ---
 
 ## 7. Responsive Strategy

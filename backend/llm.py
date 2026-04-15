@@ -92,10 +92,7 @@ async def stream_chat_completion(url, payload, chat_id=None, chat_template_kwarg
         payload["chat_template_kwargs"].update(chat_template_kwargs)
 
     base_url = url.rstrip("/")
-    if not base_url.endswith("/v1"):
-        endpoint = f"{base_url}/v1/chat/completions"
-    else:
-        endpoint = f"{base_url}/chat/completions"
+    endpoint = f"{base_url}/v1/chat/completions"
 
     headers = {
         "Content-Type": "application/json"

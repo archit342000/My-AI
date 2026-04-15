@@ -1,0 +1,248 @@
+{
+  "code": [
+    {
+      "query": "Retrieve the specific implementation of LRUCache from the system.",
+      "relevant_id": "d7388e763f3869c6"
+    },
+    {
+      "query": "How is the core logic for the lrucache component defined?",
+      "relevant_id": "d7388e763f3869c6"
+    },
+    {
+      "query": "Retrieve the specific implementation of Dijkstra from the system.",
+      "relevant_id": "052d7289884a0d0d"
+    },
+    {
+      "query": "How is the core logic for the dijkstra component defined?",
+      "relevant_id": "052d7289884a0d0d"
+    },
+    {
+      "query": "Retrieve the specific implementation of NginxParser from the system.",
+      "relevant_id": "a68414d48d0d893b"
+    },
+    {
+      "query": "How is the core logic for the nginxparser component defined?",
+      "relevant_id": "a68414d48d0d893b"
+    },
+    {
+      "query": "Retrieve the specific implementation of AsyncFetcher from the system.",
+      "relevant_id": "54f16f4206d54548"
+    },
+    {
+      "query": "How is the core logic for the asyncfetcher component defined?",
+      "relevant_id": "54f16f4206d54548"
+    },
+    {
+      "query": "Retrieve the specific implementation of SQLAlchemyBase from the system.",
+      "relevant_id": "ec2c23d6af81ac73"
+    },
+    {
+      "query": "How is the core logic for the sqlalchemybase component defined?",
+      "relevant_id": "ec2c23d6af81ac73"
+    },
+    {
+      "query": "Retrieve the specific implementation of SecureVault from the system.",
+      "relevant_id": "e631a8f5d7a2f65b"
+    },
+    {
+      "query": "How is the core logic for the securevault component defined?",
+      "relevant_id": "e631a8f5d7a2f65b"
+    },
+    {
+      "query": "Retrieve the specific implementation of DataFrameNorm from the system.",
+      "relevant_id": "85b6ab3f8c4bf61a"
+    },
+    {
+      "query": "How is the core logic for the dataframenorm component defined?",
+      "relevant_id": "85b6ab3f8c4bf61a"
+    },
+    {
+      "query": "Retrieve the specific implementation of FlaskTodoAPI from the system.",
+      "relevant_id": "a82abf8b80b59a44"
+    },
+    {
+      "query": "How is the core logic for the flasktodoapi component defined?",
+      "relevant_id": "a82abf8b80b59a44"
+    },
+    {
+      "query": "Retrieve the specific implementation of Levenshtein from the system.",
+      "relevant_id": "7e2cf22efdd97009"
+    },
+    {
+      "query": "How is the core logic for the levenshtein component defined?",
+      "relevant_id": "7e2cf22efdd97009"
+    },
+    {
+      "query": "Retrieve the specific implementation of SineWavePlot from the system.",
+      "relevant_id": "fdf382c49e805c03"
+    },
+    {
+      "query": "How is the core logic for the sinewaveplot component defined?",
+      "relevant_id": "fdf382c49e805c03"
+    }
+  ],
+  "pdf": [
+    {
+      "query": "What specific detail is mentioned regarding Human Aviation?",
+      "relevant_id": "f3ab49f1b010cb13"
+    },
+    {
+      "query": "Find the core critical observation about Human Aviation in the text.",
+      "relevant_id": "f3ab49f1b010cb13"
+    },
+    {
+      "query": "What specific detail is mentioned regarding Photosynthesis?",
+      "relevant_id": "3d07949f7f886b8d"
+    },
+    {
+      "query": "Find the core critical observation about Photosynthesis in the text.",
+      "relevant_id": "3d07949f7f886b8d"
+    },
+    {
+      "query": "What specific detail is mentioned regarding Industrial Revolution?",
+      "relevant_id": "d5a25252965854d2"
+    },
+    {
+      "query": "Find the core critical observation about Industrial Revolution in the text.",
+      "relevant_id": "d5a25252965854d2"
+    },
+    {
+      "query": "What specific detail is mentioned regarding Quantum Mechanics?",
+      "relevant_id": "b2cdd64e4d1a743e"
+    },
+    {
+      "query": "Find the core critical observation about Quantum Mechanics in the text.",
+      "relevant_id": "b2cdd64e4d1a743e"
+    },
+    {
+      "query": "What specific detail is mentioned regarding Deep Ocean Ecosystems?",
+      "relevant_id": "46ee6d213f127553"
+    },
+    {
+      "query": "Find the core critical observation about Deep Ocean Ecosystems in the text.",
+      "relevant_id": "46ee6d213f127553"
+    },
+    {
+      "query": "What specific detail is mentioned regarding Architecture?",
+      "relevant_id": "2d242bb36ec91b32"
+    },
+    {
+      "query": "Find the core critical observation about Architecture in the text.",
+      "relevant_id": "2d242bb36ec91b32"
+    },
+    {
+      "query": "What specific detail is mentioned regarding The Human Brain?",
+      "relevant_id": "a53ee8141b6267a2"
+    },
+    {
+      "query": "Find the core critical observation about The Human Brain in the text.",
+      "relevant_id": "a53ee8141b6267a2"
+    },
+    {
+      "query": "What specific detail is mentioned regarding Economics?",
+      "relevant_id": "7e1e3f3776487738"
+    },
+    {
+      "query": "Find the core critical observation about Economics in the text.",
+      "relevant_id": "7e1e3f3776487738"
+    },
+    {
+      "query": "What specific detail is mentioned regarding The Renaissance?",
+      "relevant_id": "305269941e2f6675"
+    },
+    {
+      "query": "Find the core critical observation about The Renaissance in the text.",
+      "relevant_id": "305269941e2f6675"
+    },
+    {
+      "query": "What specific detail is mentioned regarding Volcanic Eruptions?",
+      "relevant_id": "d06cf6a2a9ce541c"
+    },
+    {
+      "query": "Find the core critical observation about Volcanic Eruptions in the text.",
+      "relevant_id": "d06cf6a2a9ce541c"
+    }
+  ],
+  "mixed": [
+    {
+      "query": "How do I correctly implement URL Parsing?",
+      "relevant_id": "b41687dbf5aaa120"
+    },
+    {
+      "query": "Find the specific tutorial block concerning URL Parsing.",
+      "relevant_id": "b41687dbf5aaa120"
+    },
+    {
+      "query": "How do I correctly implement Sorting Dicts?",
+      "relevant_id": "cd196690665b99f7"
+    },
+    {
+      "query": "Find the specific tutorial block concerning Sorting Dicts.",
+      "relevant_id": "cd196690665b99f7"
+    },
+    {
+      "query": "How do I correctly implement Environment Variables?",
+      "relevant_id": "b24f9455f35ddee2"
+    },
+    {
+      "query": "Find the specific tutorial block concerning Environment Variables.",
+      "relevant_id": "b24f9455f35ddee2"
+    },
+    {
+      "query": "How do I correctly implement Random Passwords?",
+      "relevant_id": "b56db87c64816d20"
+    },
+    {
+      "query": "Find the specific tutorial block concerning Random Passwords.",
+      "relevant_id": "b56db87c64816d20"
+    },
+    {
+      "query": "How do I correctly implement File Checksums?",
+      "relevant_id": "931e1c0b169ede50"
+    },
+    {
+      "query": "Find the specific tutorial block concerning File Checksums.",
+      "relevant_id": "931e1c0b169ede50"
+    },
+    {
+      "query": "How do I correctly implement Temporary Files?",
+      "relevant_id": "fc96d78119047669"
+    },
+    {
+      "query": "Find the specific tutorial block concerning Temporary Files.",
+      "relevant_id": "fc96d78119047669"
+    },
+    {
+      "query": "How do I correctly implement Timezones?",
+      "relevant_id": "143f44c1dff35c5f"
+    },
+    {
+      "query": "Find the specific tutorial block concerning Timezones.",
+      "relevant_id": "143f44c1dff35c5f"
+    },
+    {
+      "query": "How do I correctly implement JSON APIs?",
+      "relevant_id": "1a164062664f47d2"
+    },
+    {
+      "query": "Find the specific tutorial block concerning JSON APIs.",
+      "relevant_id": "1a164062664f47d2"
+    },
+    {
+      "query": "How do I correctly implement Regex Validation?",
+      "relevant_id": "3282e0b9b0557cbe"
+    },
+    {
+      "query": "Find the specific tutorial block concerning Regex Validation.",
+      "relevant_id": "3282e0b9b0557cbe"
+    },
+    {
+      "query": "How do I correctly implement Context Managers?",
+      "relevant_id": "dbf43fdcdf54a2cc"
+    },
+    {
+      "query": "Find the specific tutorial block concerning Context Managers.",
+      "relevant_id": "dbf43fdcdf54a2cc"
+    }
+  ]
+}

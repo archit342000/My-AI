@@ -4,11 +4,13 @@ import json
 import re
 from backend.logger import log_event, log_tool_call, log_llm_call
 import time
+import logging
 from backend.prompts import (
     BASE_SYSTEM_PROMPT,
     MEMORY_SYSTEM_PROMPT,
     CANVAS_MODE_GUIDANCE
 )
+from backend.db_wrapper import db
 from backend.tools import (
     MANAGE_CORE_MEMORY_TOOL,
     GET_TIME_TOOL,
@@ -17,7 +19,8 @@ from backend.tools import (
     MANAGE_CANVAS_TOOL,
     PREVIEW_CANVASES_TOOL,
     CREATE_CANVAS_TOOL,
-    READ_CANVAS_TOOL
+    READ_CANVAS_TOOL,
+    READ_FILE_TOOL
 )
 from backend.utils import create_chunk, get_current_time
 from backend.canvas_manager import (
@@ -33,6 +36,7 @@ from backend.canvas_manager import (
 )
 from backend.db_wrapper import db
 from backend import config
+from backend.file_manager import file_manager
 from backend.mcp_client import tavily_client, playwright_client
 from backend.llm import stream_chat_completion, chat_completion
 import datetime
@@ -59,7 +63,7 @@ async def execute_with_retry_async(func, max_retries: int = None, backoff_base: 
         Exception: From func if all retries exhausted
     """
     if max_retries is None:
-        max_retries = config.CACHE_RETRY_COUNT
+        max_retries = config.RETRY_COUNT
 
     for attempt in range(max_retries + 1):
         try:
@@ -160,7 +164,7 @@ def _stream_corrected_content(model, fixed_content, fixed_reasoning=""):
         yield f"data: {create_chunk(model, content=chunk_text)}\n\n"
 
 
-async def generate_chat_response(api_url, model, messages, extra_body, rag=None, memory_mode=False, search_depth_mode='regular', chat_id=None, has_vision=False, api_key=None, research_mode=False, research_completed=False, initial_tool_calls=None, resume_state=None, canvas_mode=False, active_canvas_context=None, enable_thinking=True):
+async def generate_chat_response(api_url, model, messages, extra_body, enable_thinking, rag=None, file_rag=None, memory_mode=False, search_depth_mode='regular', chat_id=None, has_vision=False, api_key=None, research_mode=False, research_completed=False, initial_tool_calls=None, resume_state=None, canvas_mode=False, active_canvas_context=None):
     """
     Handles standard chat interaction with validation and self-healing.
     
@@ -179,6 +183,32 @@ async def generate_chat_response(api_url, model, messages, extra_body, rag=None,
     # Ensure MCP clients are connected
     await tavily_client.connect()
     await playwright_client.connect()
+
+    # Process uploaded files from extra_body
+    uploaded_files = extra_body.get('uploaded_files', [])
+    files_data = []
+    if uploaded_files and file_rag:
+        for file_info in uploaded_files:
+            file_id = file_info.get('file_id')
+            metadata = file_manager.get_file(file_id)
+            if metadata:
+                files_data.append({
+                    'file_id': metadata.file_id,
+                    'original_filename': metadata.original_filename,
+                    'mime_type': metadata.mime_type,
+                    'file_size': metadata.file_size,
+                    'content_text': metadata.content_text,
+                    'stored_filename': metadata.stored_filename
+                })
+                # Skip storing in RAG if already processed (prevents double embedding)
+                existing_chunks = file_rag.get_file_chunks(file_id)
+                if existing_chunks:
+                    logger = logging.getLogger(__name__)
+                    logger.debug(f"[CHAT_FILE_PROCESS] Skipping {file_id} - already in RAG")
+                elif metadata.content_text:
+                    # Store file content in RAG for semantic search
+                    file_rag.store_file(file_id, chat_id, metadata.content_text)
+        extra_body['files_data'] = files_data
 
     def strip_research_artifacts(msgs):
         """
@@ -247,6 +277,9 @@ async def generate_chat_response(api_url, model, messages, extra_body, rag=None,
     if research_mode and not research_completed:
         tools.append(INITIATE_RESEARCH_PLAN_TOOL)
 
+    # Add file tools
+    tools.append(READ_FILE_TOOL)
+
     if search_depth_mode == 'deep':
         # Find search_web from MCP and modify description, omit audit_search
         for mt in mcp_tools:
@@ -259,17 +292,23 @@ async def generate_chat_response(api_url, model, messages, extra_body, rag=None,
         tools.extend(mcp_tools)
 
     system_prompt = BASE_SYSTEM_PROMPT
-    
+
     if memory_mode:
         tools.append(MANAGE_CORE_MEMORY_TOOL)
         system_prompt = MEMORY_SYSTEM_PROMPT
-        if rag:
-            # Fetch current memories and inject them into the system prompt
-            memories_block = rag.get_all_core_memories_formatted()
-            if memories_block:
-                system_prompt += f"\n\n## Current Global Memory Store\n<User Profile & Preferences>\n{memories_block}\n</User Profile & Preferences>\n"
-            else:
-                system_prompt += f"\n\n## Current Global Memory Store\n<User Profile & Preferences>\n(The memory store is currently empty. Add to it if needed.)\n</User Profile & Preferences>\n"
+        # Fetch current memories and inject them into the system prompt
+        memories = db.get_all_memories()
+        if memories:
+            # Format memories for system prompt injection
+            memories_lines = []
+            for m in memories:
+                tag = m.get('tag', 'explicit_fact')
+                content = m.get('content', '')
+                memories_lines.append(f"[{tag.upper()}] {content}")
+            memories_block = "\n".join(memories_lines)
+            system_prompt += f"\n\n## Current Global Memory Store\n<User Profile & Preferences>\n{memories_block}\n</User Profile & Preferences>\n"
+        else:
+            system_prompt += f"\n\n## Current Global Memory Store\n<User Profile & Preferences>\n(The memory store is currently empty. Add to it if needed.)\n</User Profile & Preferences>\n"
 
     # Append Capability Notes
     v_status = "ENABLED" if has_vision else "DISABLED"
@@ -312,6 +351,10 @@ async def generate_chat_response(api_url, model, messages, extra_body, rag=None,
     tool_calls = initial_tool_calls or []
     tool_flow_prefix = ""  # Preserved for redact reconstruction
     reasoning_flow_prefix = ""
+
+    # Inject file inventory before sending to LLM (similar to canvas previews)
+    if chat_id and files_data:
+        messages_to_send = await inject_file_inventory_before_latest_user(messages_to_send, chat_id, files_data)
 
     # Inject previews before sending to LLM
     if chat_id and canvas_mode:
@@ -415,7 +458,7 @@ async def generate_chat_response(api_url, model, messages, extra_body, rag=None,
                 has_real_tools = True
                 continue
 
-            if fn_name == "manage_core_memory" and rag:
+            if fn_name == "manage_core_memory":
                 t0 = time.time()
 
                 additions = args.get("additions") or []
@@ -434,32 +477,32 @@ async def generate_chat_response(api_url, model, messages, extra_body, rag=None,
                         continue
                     content = item.get("content", "")
                     tag = item.get("tag", "explicit_fact")
-                    doc_id = rag.add_core_memory(content, tag)
-                    if doc_id:
-                        results.append(f"Successfully added memory. Assigned ID: {doc_id}")
+                    memory_id = db.add_memory(content, tag)
+                    if memory_id:
+                        results.append(f"Successfully added memory. Assigned ID: {memory_id}")
                     else:
                         results.append(f"Failed to add memory: {content[:30]}...")
 
                 for item in edits:
                     if not isinstance(item, dict):
                         continue
-                    doc_id = item.get("id", "")
+                    memory_id = item.get("id", "")
                     content = item.get("content", "")
                     tag = item.get("tag", "explicit_fact")
-                    success = rag.update_core_memory(doc_id, content, tag)
+                    success = db.update_memory(memory_id, content, tag)
                     if success:
-                        results.append(f"Successfully edited memory {doc_id}")
+                        results.append(f"Successfully edited memory {memory_id}")
                     else:
-                        results.append(f"Failed to edit memory {doc_id} (Not found or empty)")
+                        results.append(f"Failed to edit memory {memory_id} (Not found or empty)")
 
-                for doc_id in deletions:
-                    if not isinstance(doc_id, str):
+                for memory_id in deletions:
+                    if not isinstance(memory_id, str):
                         continue
-                    success = rag.delete_core_memory(doc_id)
+                    success = db.delete_memory(memory_id)
                     if success:
-                        results.append(f"Successfully deleted memory {doc_id}")
+                        results.append(f"Successfully deleted memory {memory_id}")
                     else:
-                        results.append(f"Failed to delete memory {doc_id}")
+                        results.append(f"Failed to delete memory {memory_id}")
 
                 if not results:
                     results = ["No valid memory operations were performed."]
@@ -470,7 +513,7 @@ async def generate_chat_response(api_url, model, messages, extra_body, rag=None,
                     "role": "tool", "tool_call_id": tc['id'], "name": fn_name,
                     "content": f"<tool_result>\n{context_result}\n</tool_result>"
                 })
-                
+
                 duration = time.time() - t0
                 log_tool_call(fn_name, args, context_result, duration_s=duration, chat_id=chat_id)
                 yield f"data: {json.dumps({'__tool_result__': True, 'tool_call_id': tc['id'], 'name': fn_name, 'result': f'<tool_result>{context_result}</tool_result>'})}\n\n"
@@ -842,6 +885,110 @@ async def generate_chat_response(api_url, model, messages, extra_body, rag=None,
 
                 # Store content in a special key for frontend handling (not persisted)
                 yield f"data: {json.dumps({'__read_canvas_content__': read_content, 'tool_call_id': tc['id']})}\n\n"
+                has_real_tools = True
+            elif fn_name == "read_file":
+                # Handle the read_file tool
+                t0 = time.time()
+                file_id = args.get("file_id")
+                query = args.get("query")
+
+                if not file_id:
+                    tool_result = {"success": False, "error": "file_id is required"}
+                    messages_to_send.append({
+                        "role": "tool", "tool_call_id": tc['id'], "name": fn_name,
+                        "content": json.dumps(tool_result)
+                    })
+                    duration = time.time() - t0
+                    log_tool_call(fn_name, args, tool_result, duration_s=duration, chat_id=chat_id)
+                    continue
+
+                try:
+                    metadata = file_manager.get_file(file_id)
+
+                    if not metadata:
+                        tool_result = {"success": False, "error": f"File not found: {file_id}"}
+                    else:
+                        # RAG is enabled for text-based files
+                        if config.FILE_RAG_ENABLED and metadata.content_text:
+                            if query:
+                                # Query mode: Use file_rag to find relevant chunks
+                                rag_results = file_rag.retrieve_for_file(file_id, query, n_results=5) if file_rag else []
+
+                                if rag_results:
+                                    # Build context from chunks, respecting token limit
+                                    rag_context = "\n\n".join([
+                                        f"[Chunk {r['metadata']['chunk_index']}] {r['text']}"
+                                        for r in rag_results
+                                    ])
+                                    # Truncate to token limit
+                                    truncated_context = rag_context[:config.READ_FILE_CONTENT_LIMIT]
+                                    # Remove embeddings from rag_results for JSON serialization
+                                    rag_results_for_response = [
+                                        {k: v for k, v in r.items() if k != 'embedding'}
+                                        for r in rag_results
+                                    ]
+                                    tool_result = {
+                                        "success": True,
+                                        "file_id": file_id,
+                                        "filename": metadata.original_filename,
+                                        "rag_results": rag_results_for_response,
+                                        "rag_context": truncated_context,
+                                        "message": f"Found {len(rag_results)} relevant chunks (showing top results, truncated to {config.READ_FILE_CONTENT_LIMIT} chars)"
+                                    }
+                                else:
+                                    tool_result = {
+                                        "success": True,
+                                        "file_id": file_id,
+                                        "filename": metadata.original_filename,
+                                        "rag_context": "",
+                                        "message": "No relevant chunks found in the file"
+                                    }
+                            else:
+                                # Full content mode: Return full content with truncation
+                                content = metadata.content_text
+                                truncated_content = content[:config.READ_FILE_CONTENT_LIMIT]
+                                if len(content) > config.READ_FILE_CONTENT_LIMIT:
+                                    message = f"File '{metadata.original_filename}' loaded ({len(content)} chars, truncated to {config.READ_FILE_CONTENT_LIMIT})"
+                                else:
+                                    message = f"File '{metadata.original_filename}' loaded ({len(content)} chars)"
+                                tool_result = {
+                                    "success": True,
+                                    "file_id": file_id,
+                                    "filename": metadata.original_filename,
+                                    "content": truncated_content,
+                                    "message": message
+                                }
+                        else:
+                            # For images or files without text, provide metadata only
+                            tool_result = {
+                                "success": True,
+                                "file_id": file_id,
+                                "filename": metadata.original_filename,
+                                "mime_type": metadata.mime_type,
+                                "file_size": metadata.file_size,
+                                "message": "This file does not have extractable text content."
+                            }
+
+                except Exception as e:
+                    import traceback
+                    error_details = {
+                        "error": str(e),
+                        "traceback": traceback.format_exc(),
+                        "file_id": file_id,
+                        "query": query
+                    }
+                    tool_result = {"success": False, "error": str(e)}
+                    # Log the full error for debugging
+                    log_event("read_file_error", error_details)
+
+                duration = time.time() - t0
+                log_tool_call(fn_name, args, tool_result, duration_s=duration, chat_id=chat_id)
+                yield f"data: {json.dumps({'__tool_result__': True, 'tool_call_id': tc['id'], 'name': fn_name, 'result': tool_result})}\n\n"
+
+                messages_to_send.append({
+                    "role": "tool", "tool_call_id": tc['id'], "name": fn_name,
+                    "content": json.dumps(tool_result) if isinstance(tool_result, dict) else str(tool_result)
+                })
                 has_real_tools = True
             elif fn_name == "initiate_research_plan":
                 topic = args.get("topic")
@@ -1237,26 +1384,110 @@ async def inject_previews_before_latest_user(messages, chat_id):
     return messages
 
 
+async def inject_file_inventory_before_latest_user(messages, chat_id, files_data):
+    """
+    Inject file inventory tool call and response before latest user message.
+
+    Similar to inject_previews_before_latest_user but for uploaded files.
+    The tool call is auto-injected and filtered from persistence.
+    """
+    if not files_data:
+        return messages
+
+    # Format file inventory
+    inventory_data = []
+    for f in files_data:
+        inventory_data.append({
+            "file_id": f['file_id'],
+            "filename": f['original_filename'],
+            "mime_type": f['mime_type'],
+            "size": f['file_size']
+        })
+
+    # Find the LAST user message
+    latest_user_index = -1
+    for i in range(len(messages) - 1, -1, -1):
+        if messages[i].get('role') == 'user':
+            latest_user_index = i
+            break
+
+    call_id = f"auto_file_inventory_{int(time.time())}"
+
+    # If no user message found, inject at the beginning (new chat case)
+    if latest_user_index == -1:
+        messages.insert(0, {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [{
+                "id": call_id,
+                "type": "function",
+                "function": {
+                    "name": "read_file",
+                    "arguments": "{}"
+                }
+            }]
+        })
+        messages.insert(1, {
+            "role": "tool",
+            "tool_call_id": call_id,
+            "name": "read_file",
+            "content": json.dumps({
+                "type": "inventory",
+                "files": inventory_data,
+                "message": f"{len(inventory_data)} file(s) available. Use read_file with file_id to access content."
+            })
+        })
+    else:
+        # Insert tool call (assistant role) before user message
+        messages[latest_user_index:latest_user_index] = [{
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [{
+                "id": call_id,
+                "type": "function",
+                "function": {
+                    "name": "read_file",
+                    "arguments": "{}"
+                }
+            }]
+        }]
+
+        # Insert tool response after the tool call
+        messages[latest_user_index + 1:latest_user_index + 1] = [{
+            "role": "tool",
+            "tool_call_id": call_id,
+            "name": "read_file",
+            "content": json.dumps({
+                "type": "inventory",
+                "files": inventory_data,
+                "message": f"{len(inventory_data)} file(s) available. Use read_file with file_id to access content."
+            })
+        }]
+
+    return messages
+
+
 def filter_preview_canvases_tool(messages):
     """
-    Step 1 of the persistence cleanup: Identify preview and read_canvas tool IDs.
-    Returns (skip_ids, read_canvas_ids).
+    Step 1 of the persistence cleanup: Identify preview, read_canvas, and file inventory tool IDs.
+    Returns (skip_ids, read_canvas_ids, file_inventory_ids).
     """
     skip_ids = set()
     read_canvas_ids = set()
+    file_inventory_ids = set()
     for msg in messages:
         if msg.get('role') == 'assistant':
             tool_calls = msg.get('tool_calls')
             if not tool_calls:
                 continue
-            
+
             # Robustly handle stringified tool_calls from history
             if isinstance(tool_calls, str):
-                try: 
+                try:
                     tool_calls = json.loads(tool_calls)
-                except (json.JSONDecodeError, TypeError): 
+                except (json.JSONDecodeError, TypeError):
                     tool_calls = []
-                
+
             if isinstance(tool_calls, list):
                 for tc in tool_calls:
                     if not isinstance(tc, dict):
@@ -1268,8 +1499,11 @@ def filter_preview_canvases_tool(messages):
                             skip_ids.add(tc_id)
                         elif fn_name == 'read_canvas':
                             read_canvas_ids.add(tc_id)
-                            
-    return skip_ids, read_canvas_ids
+                        elif fn_name == 'read_file' and tc_id.startswith('auto_file_inventory_'):
+                            # Skip auto-injected file inventory tool calls
+                            file_inventory_ids.add(tc_id)
+
+    return skip_ids, read_canvas_ids, file_inventory_ids
 
 def filter_bloated_tool_results(messages):
     """
@@ -1279,7 +1513,7 @@ def filter_bloated_tool_results(messages):
     import json
     
     filtered = []
-    skip_ids, read_canvas_ids = filter_preview_canvases_tool(messages)
+    skip_ids, read_canvas_ids, file_inventory_ids = filter_preview_canvases_tool(messages)
     placeholder = ""
 
     # Step 2: Filter and Redact
@@ -1321,6 +1555,10 @@ def filter_bloated_tool_results(messages):
             
             # A. Skip preview results entirely (they are transient and recreated every turn)
             if call_id in skip_ids or msg_name == 'preview_canvases':
+                continue
+
+            # A2. Skip file inventory tool results (they are transient and recreated every turn)
+            if call_id in file_inventory_ids or (msg_name == 'read_file' and 'auto_file_inventory' in call_id):
                 continue
             
             # B. Redact read_canvas results (unconditional preservation)

@@ -1,6 +1,6 @@
-# Configuration Directives
+# Configuration Directives (v3.1.0)
 
-**Note:** This document may contain outdated information. The code is the source of truth. For discrepancies, see `IMPLEMENTATION_DISCREPANCIES.md`.
+
 
 ## Overview
 
@@ -213,8 +213,8 @@ RESEARCH_SAMPLING_REPEAT_PENALTY = 1.1     # Penalty for repeated tokens
 
 ```python
 # AI Inference settings
-AI_URL = "http://localhost:1234"  # Default local LLM endpoint
-AI_API_KEY = ""  # Optional API key for external services
+AI_URL = ""  # Default local LLM endpoint fetched from environment
+AI_API_KEY = ""  # API key for external services fetched from environment
 
 # Model settings
 DEFAULT_MODEL = "qwen2.5-coder-32b"
@@ -614,11 +614,9 @@ Common environment variables:
 
 ```bash
 # .env.development
-AI_URL=http://localhost:1234
 LOG_LEVEL=DEBUG
 
 # .env.production
-AI_URL=https://api.example.com
 LOG_LEVEL=INFO
 ```
 
@@ -702,6 +700,7 @@ if CONFIG_VERSION < 2:
 | Content Thresholds | `RESEARCH_EXTRACT_MIN_*`, `RESEARCH_CONTENT_MIN_*` | `backend/config.py` |
 | Tool Execution | `MAX_TOOL_ROUNDS` | `backend/config.py` |
 | LLM | `AI_URL`, `AI_API_KEY`, `DEFAULT_MODEL`, `VISION_MODEL` | `backend/config.py` |
+| Embeddings | `EMBEDDING_URL` (MANDATORY), `EMBEDDING_API_KEY` (MANDATORY), `EMBEDDING_MAX_TOKENS_*` | `backend/config.py` |
 | Canvas | `CANVAS_ACTIVE_CONTEXT_CHAR_LIMIT`, `CANVAS_MAX_HISTORY`, `CANVAS_AUTO_SAVE_INTERVAL` | `backend/config.py` |
 | Logging | `LOG_LEVEL`, `LOG_DIR` | `backend/config.py` |
 
@@ -720,6 +719,48 @@ max_items = config.ITEMS_PER_PAGE
 # Only hardcode if not in config
 max_items = 10  # Only if not configurable
 ```
+
+### RAG & Embeddings
+
+Settings for vector search and retrieval optimization.
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `RAG_CHUNK_MAX_CHARS` | 2200 | Max characters per embedding chunk |
+| `RAG_MIN_SEMANTIC_SCORE` | 0.40 | Min cosine similarity for retrieval |
+| `RAG_DEDUP_THRESHOLD` | 0.80 | Similarity above which chunks are considered duplicates |
+| `RAG_FETCH_MULTIPLIER` | 2 | Overfetch ratio for hybrid re-ranking |
+| `RAG_DECAY_RATE` | 0.30 | Time-decay weight for older entries |
+| `RAG_RETRIEVAL_LIMIT` | 500 | Hard cap on total retrieved chunks per turn |
+| `RAG_MIGRATION_BATCH_SIZE` | 50 | Batch size for collection re-indexing |
+| `HYBRID_SEARCH_ENABLED` | `True` | Enable BM25 + Vector fusion |
+| `CODE_CHUNKING_ENABLED` | `True` | Enable syntax-aware chunking for code |
+| `RAG_GRID_WORKERS` | 16 | (Experimental) Workers for grid search pipeline |
+
+### File Upload & Extraction
+
+Settings for user-uploaded files and processing.
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `FILE_UPLOAD_MAX_SIZE` | 100MB | Max size per individual file |
+| `FILE_UPLOAD_ALLOWED_TYPES` | See list | Allowed MIME types |
+| `FILE_RAG_ENABLED` | `True` | Index file content in RAG |
+| `FILE_VISION_ENABLED` | `True` | Process images/video with VLM |
+| `READ_FILE_CONTENT_LIMIT` | 10000 | Max chars returned to LLM from `read_file` |
+| `PDF_PAGE_LIMIT` | 5 | Max pages extracted for vision analysis |
+| `PDF_EXTRACTOR_ENABLED` | `True` | Enable text extraction from PDFs |
+| `PDF_OCR_ENABLED` | `True` | Enable OCR fallback for scanned PDFs |
+
+### Embedding Token Limits
+
+Token constraints for embedding model requests.
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `EMBEDDING_MAX_TOKENS_CORE` | 1000 | Token limit for core memory |
+| `EMBEDDING_MAX_TOKENS_RESEARCH` | 1000 | Token limit for research RAG |
+| `EMBEDDING_MAX_TOKENS_FILE` | 1000 | Token limit for file RAG |
 
 ## Troubleshooting
 

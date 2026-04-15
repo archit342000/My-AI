@@ -7,6 +7,7 @@ __pycache__/
 env/
 venv/
 venv_check/
+venv.bak/
 pip-log.txt
 pip-delete-this-directory.txt
 .tox/
@@ -45,6 +46,11 @@ parse_test.log
 app.log
 *.bak
 *.tmp
+*.jsonl
+tmp_*/
+
+# Docker
+docker-data/
 
 
 # IDEs

@@ -1,109 +1,160 @@
 # My-AI Developer & Agents Guide
 
-This document provides essential context, architectural constraints, operational rules, and best practices for AI agents and human developers working on the `My-AI` repository.
+This document provides essential context, architectural constraints, and operational rules for AI agents working on the `My-AI` repository.
 
-## 1. System Architecture & File Organization
+## Documentation Compliance
 
-The application follows a clean separation between a vanilla web frontend and a Python backend.
+**Critical**: The documentation in the `docs/` directory defines the correct architecture and patterns for this codebase. Code must always adhere to the documentation.
 
-*   **Frontend**: Built with **strictly Vanilla HTML, CSS, and JS**.
-    *   **No UI frameworks** (React, Vue, Svelte) and **No CSS frameworks** (Tailwind, Bootstrap) are allowed.
-    *   Logic is contained in a single `static/script.js` file utilizing procedural DOM mutations and event delegation.
-    *   Styling is managed via `static/styles.css` using CSS Custom Properties.
-*   **Backend**: A **Flask** (Python) service orchestrating chat loops, RAG, and deep research agents.
-    *   **Task Management**: Uses an asynchronous producer-consumer architecture (`task_manager.py` and `cache_system.py`) to handle chat streaming without blocking the main Flask thread.
-    *   **Persistence**: Metadata and chat histories are stored in a local **SQLite** database (`storage.py`), while vector embeddings for RAG are managed via **ChromaDB** (`rag.py`).
-*   **Operating Modes**:
-    *   **Standard Chat**: Fast, direct inference streams.
-    *   **Deep Research**: A multi-pass, asynchronous autonomous engine (`research.py`) that executes web searches, analyzes content, and synthesizes reports without locking the UI.
+**If you encounter drift between code and documentation**:
+1. **Stop** - do not proceed with changes that violate documentation
+2. Request explicit permission from the user
+3. Once approved, update the relevant documentation to reflect the new approach
+4. Only then proceed with implementation
 
----
+This ensures the documentation remains accurate and authoritative.
 
-## 2. Design & UI Delegation (`docs/design_directives.md`)
+## Quick Start Guide
 
-When modifying the frontend, styling, or animations, this document (`AGENTS.md`) defers completely to **`docs/design_directives.md`**.
-
-*   **Single Source of Truth**: The `docs/design_directives.md` file is the absolute authority on all things related to the Aurora + Obsidian UI, CSS custom properties, responsive breakpoints, structural logic, and motion design.
-*   **Mandatory Reading**: If your task involves modifying HTML, CSS, or any DOM manipulation in `script.js`, you **must** parse and adhere to `docs/design_directives.md` before writing code. Do not invent new styling conventions or introduce UI frameworks.
-
----
-
-## 3. Best Practices for Development & Contribution
-
-### 3.1 Handling Database Schema Changes & Migration (CRITICAL)
-*   **Never Break Existing Data**: The overarching rule for `backend/storage.py` is backward compatibility. Any change to the SQLite schema (adding columns, creating new tables) **MUST** include migration logic.
-*   **Migration Pattern**: Use `ALTER TABLE` queries inside `init_db()` and wrap them in `try-except sqlite3.OperationalError:` blocks to silently and safely upgrade existing `chats.db` files without causing startup crashes or data loss for existing users.
-*   **ChromaDB Sync**: The RAG system relies on ChromaDB. If you modify how chat data is structured or saved, ensure the vector embeddings stay perfectly synchronized. If a user deletes a chat or resets memory, ChromaDB must be purged accordingly. Never orphan vector data when metadata changes.
-
-### 3.2 Standardized Logging & Dependencies
-*   **Use `log_event`**: Do not use standard Python `print()` statements for backend logic tracing. Always import and use `log_event` from `backend.logger` (e.g., `log_event("action_name", {"key": "value"})`). This ensures the event is properly written to the `network_index.jsonl` file and can be debugged via the frontend's `/logs` UI.
-*   **Dependency Management**: If you introduce a new Python library to solve a task, you **must** immediately append it to `requirements.txt`. Do not assume the environment will permanently retain pip installs across container restarts or deployments.
-
-### 3.3 Git & Branching Strategy
-*   **Standardized Branch Naming**: Every branch name **MUST** start with the target version number you are bumping to, followed by a descriptive hyphenated name.
-    *   **Valid Example**: `1.3.1-update-agents-md`
-    *   **Valid Example**: `1.4.0-feature-deep-research`
-    *   **Invalid Example**: `feature/vision-improvements` (Missing version prefix).
-*   **Commit Messages**: Keep commit messages concise, descriptive, and Git-agnostic. The first line should be an imperative summary under 50 characters, followed by an empty line and detailed reasoning if needed.
-*   **Verification Before Commit**: Always run the application locally to test functionality (both Light and Dark modes) before submitting code. If modifying the frontend, visually verify all structural and animation changes.
-
-### 3.4 Agent-Specific Operational Best Practices
-If you are an AI agent working on this codebase, you must strictly adhere to these operational rules to prevent common execution failures:
-*   **Verify Before Marking Complete**: Never assume a file write or search-and-replace command succeeded flawlessly. **Always** use read tools (`read_file`, `list_files`, etc.) to inspect the file state and syntax *after* making a change.
-*   **Diagnose Before Modifying Environment**: If you encounter an error (e.g., ModuleNotFoundError), do not immediately attempt to install new packages or edit `requirements.txt`. Read the error logs carefully; prioritize fixing code imports, typos, or file path issues over attempting to alter the environment.
-*   **Background Processes & Port Conflicts**: When testing the Flask app, run it in the background (`python3 app.py &`) so your terminal is not blocked. If you need to restart it, you **must** kill the existing process occupying port 5000 first (`kill -9 $(lsof -t -i:5000) 2>/dev/null || true`).
-*   **Vanilla DOM Mutations**: Avoid destructive `innerHTML` assignments when updating complex UI components, as this destroys existing event listeners. Prefer `document.createElement()` and `appendChild()`, or ensure the application's global event delegation system in `script.js` catches the new elements.
-*   **Edit Source, Not Artifacts**: Never modify files inside `.git/`, `__pycache__/`, or `chroma_db/` directly via text editors. Only interact with the database via Python scripts and only touch the source code files.
-*   **Prevent File Truncation (Use Diffs)**: Never overwrite entire large files using full-file write tools, as this frequently leads to accidental truncation or missing code blocks. You **must** use targeted search-and-replace or merge diff tools to modify existing files.
-*   **Exact Diffs**: When using search-and-replace or merge diff tools, ensure the `<SEARCH>` block exactly matches the existing file contents line-for-line, including all whitespace and indentation.
-*   **Docker Operations & Verification**: You are **strictly forbidden** from touching, modifying, or using the human user's existing containers, images, or volumes (e.g., executing `docker compose up` or `down` on the main stack). However, you **may** build your own temporary Docker images and containers for verification and testing purposes, provided you create them with completely unique names (e.g., `docker build -t test-agent-app .` and `docker run --name temp-agent-test ...`) that do not collide with the user's existing environment. You **must** immediately destroy and remove these temporary containers and images the moment your verification is complete. Under no circumstances should you alter the user's primary runtime stack without explicit human authorization.
-
-### 3.5 AI Cognitive Strategies & Debugging
-If you are an AI agent, you must employ these advanced cognitive strategies to prevent hallucination loops and maintain a pristine codebase state:
-*   **The "Sandbox First" Rule**: Do not modify core files like `app.py` or `backend/research.py` to test complex new logic (e.g., parsing llama.cpp streams or web extraction). You **MUST** write a standalone sandbox script (e.g., `test_feature.py`), prove your logic works independently, and then integrate it into the core architecture.
-*   **Echo The Scope**: Before issuing the `submit` tool, you must explicitly reiterate the original user request in your reasoning blocks and verify that your changes solve exactly that request—no more, no less. Do not submit "bonus features" unless explicitly asked.
-*   **State Restoration Directives**: If your code or tests fail consecutively and you realize you have corrupted multiple files, **do not attempt to manually rewrite them from memory**. Immediately execute `git checkout -- .` or use the `reset_all` tool to return to a clean slate before formulating a completely new plan.
-*   **Log-Injection Debugging**: If you encounter a silent failure in a Flask backend route, do not guess the cause by staring at the code. You are **required** to inject aggressive, temporary `log_event()` statements into every step of the failing function, execute the request, read the `network_index.jsonl` output, and then remove the temporary logs before submission.
-
-### 3.6 Versioning & Releases (SemVer)
-*   This project strictly follows [Semantic Versioning 2.0.0](https://semver.org/).
-*   **Mandatory Updates**: When a PR introduces a functionality change, bug fix, or UI modification, you **must** bump the version globally across the project.
-    *   This includes updating:
-        1.  `docs/versioning_directives.md`
-        2.  `changelog.md` (Add a new detailed block at the top under the new version header)
-        3.  `README.md` (Update the displayed version badge/text)
-
-*   **Color System Shift (v2.2.2)**: The application has been updated to use the Ocean Blue (`#3B82F6`) accent palette and Slate neutral palette. DO NOT revert back to Electric Violet (`#A855F7`) or Pure Zinc palettes.
-
-### 3.7 When to Update `AGENTS.md` (Strict AI Protocol)
-This document is a living contract and the ultimate source of truth for AI agents operating on this repository.
-
-**CRITICAL RULE FOR AI AGENTS:**
-If any proposed codebase update, feature request, or architectural shift contradicts a rule in this `AGENTS.md` document, or falls completely outside its established scope (e.g., introducing a frontend framework like React), **YOU MUST HALT**.
-You are strictly forbidden from executing the change autonomously. You must first:
-1.  Explain to the human user exactly how the request violates or exceeds `AGENTS.md`.
-2.  Ask for explicit permission to proceed with the codebase change.
-3.  Ask for explicit permission to permanently update `AGENTS.md` to reflect this new paradigm.
-**ONLY after receiving human approval for both may you proceed.**
-
-You should proactively propose an update to this file if:
-*   A new core architectural dependency or framework is authorized.
-*   A new "anti-pattern" or recurring agent execution failure is identified.
-*   The API payload structures from local LLMs change in future llama.cpp releases.
+Use this as your primary reference. For detailed technical specifications, follow the links to the `docs/` directory.
+ 
+| Task | Read This First |
+|------|-----------------|
+| Understanding system architecture | `docs/architecture.md` |
+| Making any code change | **Start here** (AGENTS.md) |
+| Frontend/UI changes | `docs/design_directives.md` |
+| Database changes | `docs/database_directives.md` |
+| Adding/modifying config | `docs/config_directives.md` |
+| Tool implementation | `docs/tools_directives.md` |
+| Canvas operations | `docs/canvas_directives.md` |
+| Chat agent logic | `docs/chat_agent.md` |
+| Research agent logic | `docs/research_agent.md` |
+| Error handling | `docs/error_handling.md` |
+| Caching | `docs/cache_directives.md` |
+| llama.cpp streaming | `docs/llama_cpp_integration.md` |
+| File management | `docs/file_management_directives.md` |
+| RAG infrastructure | `docs/rag_directives.md` |
+| Testing & Grid Search | `docs/testing_directives.md` |
+| Versioning | `docs/versioning_directives.md` |
 
 ---
 
-## 4. llama.cpp & Backend Integrations (`docs/llama_cpp_integration.md`)
+## System Architecture
 
-When modifying backend logic related to LLM inference, chunk streaming, or the `/v1/chat/completions` API endpoints, you **must** refer to `docs/llama_cpp_integration.md`.
+| Layer | Technology |
+|-------|-----------|
+| Frontend | Vanilla HTML5, CSS3, ES6+ (no frameworks) |
+| Backend | Python 3.12 Flask |
+| Inference | External llama.cpp server (OpenAI-compatible) |
+| Vector DB | ChromaDB |
+| Storage | SQLite |
 
-*   **API Deviations**: Local models running through llama.cpp do not behave identically to OpenAI. The integration guide explicitly details handling for `reasoning_content` streams, missing tags, and critical JSON schema deviations.
-*   **Mandatory Reading**: If your task involves editing `app.py`, `backend/llm.py`, or any agent logic that parses model output, read `docs/llama_cpp_integration.md` to prevent stream-parsing failures.
+**MCP Architecture**: External tools run in isolated containers (`tavily_mcp`, `playwright_mcp`).
 
-## 5. Historical Agent Pitfalls (Lessons Learned)
+---
 
-*AI Agents: If you make a significant mistake during development that is specific to this codebase's architecture and requires multiple turns to fix, you MUST append a concise warning to this list before completing your task.*
+## Project Boundaries & Inference
 
-*   **Missing Tags (llama.cpp)**: Local models emitting `reasoning_content` via llama.cpp do NOT include `<think>` tags. Do not assume they are present in the stream. You must wrap them manually before SQLite DB insertion.
-*   **File Truncation on Edits**: Do not use full-file write tools on large files like `app.py` or `static/script.js`. It frequently results in missing code blocks or severe truncation. Always use targeted diff or search-and-replace tools.
-*   **Vision Payloads in Tool Messages**: OpenAI-compatible local endpoints (like llama.cpp) strictly require the `content` of a `tool` role message to be a string. Do NOT append arrays containing `image_url` dicts or other multipart data to a `tool` message. If a tool retrieves images, append its text response as a string in the `tool` message, and append the images in a follow-up `user` message.
+**IMPORTANT**: There is a strict separation between this application and the inference infrastructure.
+
+1.  **Inference is External**: The `llama.cpp` server is a **separate repository**.
+2.  **No Orchestration**: This codebase contains **zero** logic for starting, managing, or deploying the inference server.
+3.  **Consumption Only**: The application purely consumes the inference API via URLs and API Keys provided in the `secrets/` directory.
+
+Any attempt to add inference orchestration (Docker services, model loaders, etc.) to this repository is a violation of the system architecture.
+
+---
+
+## Critical Rules for AI Agents
+
+1. **Library/Tool Versions**: Always confirm the latest version of any required library or tool from the internet before use. Consult their official documentation as needed.
+
+2. **Python is NEVER to be used directly**: 
+   - **Always** use the Python interpreter from `venv/` for ALL Python tasks
+   - Activate with: `source venv/bin/activate`
+   - Or use directly: `venv/bin/python <script.py>`
+   - This applies to testing, development, and any code execution
+
+3. **Frontend**: No frameworks. Single `static/script.js`, CSS Custom Properties only.
+
+4. **Database**: Always use `db` from `backend/db_wrapper.py`. Never write raw SQL.
+
+5. **Configuration**: All config in `backend/config.py`. Never hardcode values.
+
+6. **Logging**: Use `log_event()` from `backend.logger`, not `print()`.
+
+7. **Branch Naming**: All branches start with version number (e.g., `3.1.0-feature-name`).
+
+8. **Docker**: Never modify existing containers. Build temporary ones with unique names.
+
+---
+
+## Agent-Specific Patterns
+
+### Chat Agent (`backend/agents/chat.py`)
+- Graceful degradation for tool execution
+- 2 retries per tool
+- Max 8 tool rounds
+- Supports: Memory, Research, Canvas, Vision modes, File Reading
+
+### Research Agent (`backend/agents/research.py`)
+- Multi-phase: Scout → Planning → Section Execution → Assembly & Audit
+- 3 retries per LLM call per phase
+- State persistence: `{DATA_DIR}/tasks/{chat_id}_state.json`
+- Resume from any phase supported
+
+---
+
+## llama.cpp Integration
+
+**Critical**: Local models don't include `<think>`/`</think>` tags. Wrap reasoning before DB storage.
+
+See `docs/llama_cpp_integration.md` for streaming format details.
+
+---
+
+## Versioning
+
+Follows [SemVer v2.0.0](https://semver.org/). Current: `v3.1.0`.
+
+---
+
+## Historical Pitfalls
+
+* Missing `<think>` tags (llama.cpp)
+* File truncation on edits
+* Vision payloads in tool messages
+* Database locked errors
+* State restoration on failures
+* Sandbox first for complex logic
+* RAG Grid Search: Ensure synthetic testing data is highly discriminative; generic or repetitive data causes zero-recall metric issues.
+
+**When to add to this section:**
+- When you encounter or fix a bug that could affect other agents
+- When the user points out issues with your changes that reveal a pattern
+- When a fix reveals a deeper architectural or workflow issue
+
+Add a concise description that captures the core lesson.
+
+---
+
+## Plan Mode
+
+**Applies to**: `/plan`, `/brainstorm`, and any other skills or commands that require planning.
+
+When you need to create a plan (via Plan Mode, `/plan`, `/brainstorm`, or any planning skill):
+
+1. Create plan files in `plans/` with descriptive names like:
+   - `migrate-cache-system-2026-04-04.md`
+   - `refactor-auth-flow-2026-04-04.md`
+   - `add-search-functionality-2026-04-04.md`
+
+2. Use clear headings and structured steps. The plan should outline the approach, not just a todo list.
+
+3. Include architecture decisions, file changes, and implementation approach
+
+---
+
+## Skills
+
+See `SKILL.md` for available Claude Code skills (e.g., `/report` to generate reports).

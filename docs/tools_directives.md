@@ -1,4 +1,4 @@
-# Tools Directives (v3.0.0)
+# Tool Directives (v3.1.0)
 
 ## Overview
 
@@ -368,6 +368,38 @@ if action == "patch" and not target_section:
     raise ValueError("target_section required for patch action")
 ```
 
+### File Operations
+
+#### read_file (NEW)
+
+Reads a file's content or performs a targeted search within it using RAG. This is the primary tool for interacting with user-uploaded files that are not already in the conversation context.
+
+*   **Parameters**:
+    *   `file_id`: The unique identifier of the file (from chat metadata).
+    *   `query`: (Optional) A thermal search query to pinpoint relevant sections in large files.
+*   **Usage Rules**:
+    1.  Always retrieve `file_id` from the chat context before calling.
+    2.  Use the `query` parameter for large documents (PDFs, long code files) to avoid context window overflow.
+    3.  Prefer VLM (Vision) for visual analysis of images/videos if the model supports it.
+
+```python
+READ_FILE_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "read_file",
+        "description": "Reads the content of an uploaded file. For large files, provide a query to search for specific information.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "file_id": {"type": "string"},
+                "query": {"type": "string"}
+            },
+            "required": ["file_id"]
+        }
+    }
+}
+```
+
 ## Tool Execution Rules
 
 ### Graceful Degradation Model
@@ -703,6 +735,7 @@ async def test_tool_execution():
 | `manage_canvas` | Built-in | Canvas | Edit/append/patch canvas |
 | `read_canvas` | Built-in | Canvas | Read full canvas content |
 | `preview_canvases` | Built-in | Canvas | List chat canvases |
+| `read_file` | Built-in | Files | Read/search uploaded files |
 
 ## Appendix: Tool Error Handling Pattern
 

@@ -1,7 +1,9 @@
 
 services:
   app:
-    build: .
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
     networks:
       - secure-internal
     extra_hosts:
@@ -18,17 +20,20 @@ services:
       - APP_PASSWORD
       - AI_URL
       - AI_API_KEY
+      - EMBEDDING_URL
+      - EMBEDDING_API_KEY
       - TAVILY_API_KEY
       - MCP_API_KEY
       - PLAYWRIGHT_MCP_API_KEY
+      - HF_TOKEN
 
   bastion_ssh:
     build:
-      context: .
-      dockerfile: Dockerfile.bastion
+      context: ..
+      dockerfile: docker/Dockerfile.bastion
     container_name: bastion_ssh
     volumes:
-      - ./secrets/authorized_keys:/home/appuser/.ssh/authorized_keys:ro
+      - ../secrets/authorized_keys:/home/appuser/.ssh/authorized_keys:ro
     ports:
       - 2222:2222
     networks:
@@ -37,8 +42,8 @@ services:
 
   tavily_mcp:
     build:
-      context: .
-      dockerfile: Dockerfile.mcp
+      context: ..
+      dockerfile: docker/Dockerfile.mcp
     container_name: tavily_mcp
     networks:
       - secure-internal
@@ -51,8 +56,8 @@ services:
 
   playwright_mcp:
     build:
-      context: .
-      dockerfile: Dockerfile.playwright
+      context: ..
+      dockerfile: docker/Dockerfile.playwright
     container_name: playwright_mcp
     networks:
       - secure-internal
@@ -67,18 +72,24 @@ networks:
     driver: bridge
 
 secrets:
-  # Defining secrets mapped to files in the ./secrets directory
+  # Defining secrets mapped to files in the ../secrets directory
   DATA_DIR:
-    file: ./secrets/DATA_DIR
+    file: ../secrets/DATA_DIR
   APP_PASSWORD:
-    file: ./secrets/APP_PASSWORD
+    file: ../secrets/APP_PASSWORD
   AI_URL:
-    file: ./secrets/AI_URL
+    file: ../secrets/AI_URL
   AI_API_KEY:
-    file: ./secrets/AI_API_KEY
+    file: ../secrets/AI_API_KEY
+  EMBEDDING_URL:
+    file: ../secrets/EMBEDDING_URL
+  EMBEDDING_API_KEY:
+    file: ../secrets/EMBEDDING_API_KEY
   TAVILY_API_KEY:
-    file: ./secrets/TAVILY_API_KEY
+    file: ../secrets/TAVILY_API_KEY
   MCP_API_KEY:
-    file: ./secrets/MCP_API_KEY
+    file: ../secrets/MCP_API_KEY
   PLAYWRIGHT_MCP_API_KEY:
-    file: ./secrets/PLAYWRIGHT_MCP_API_KEY
+    file: ../secrets/PLAYWRIGHT_MCP_API_KEY
+  HF_TOKEN:
+    file: ../secrets/HF_TOKEN

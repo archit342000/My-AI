@@ -1,4 +1,4 @@
-# Database Directives (v3.0.0)
+# Database Directives (v3.1.0)
 
 ## Overview
 
@@ -53,6 +53,17 @@ Stores individual messages within chats.
 | `tool_call_id` | TEXT | Tool call identifier |
 | `name` | TEXT | Tool name |
 
+**Note on File Linking**: When a message contains uploaded files, they are stored within the `content` field as a JSON object:
+```json
+{
+  "text": "User message text",
+  "uploadedFiles": [
+    {"id": "file_uuid", "name": "original.pdf", "type": "application/pdf"}
+  ]
+}
+```
+This pattern ensures that file context is preserved exactly when the user sent it.
+
 #### `canvases`
 
 Stores canvas metadata for persistent documents. Uses a **composite primary key**.
@@ -87,6 +98,24 @@ Stores version history for canvases.
 | `comment` | TEXT | Version comment |
 
 **Foreign Key**: `(canvas_id, chat_id)` REFERENCES `canvases(id, chat_id)`
+
+#### `files`
+
+Stores user-uploaded file metadata and processing status.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | TEXT PRIMARY KEY | Unique file identifier |
+| `chat_id` | TEXT | Foreign key to chats(id) |
+| `original_filename` | TEXT | Original filename provided by user |
+| `stored_filename` | TEXT | Sanitized filename for disk storage |
+| `mime_type` | TEXT | Detected MIME type (e.g. 'application/pdf') |
+| `file_size` | INTEGER | File size in bytes |
+| `content_text` | TEXT | Extracted text content for RAG indexing |
+| `created_at` | REAL | Creation timestamp (epoch) |
+| `processing_status`| TEXT | 'pending', 'processing', 'completed', or 'failed' |
+
+**Usage:** The `FileManager.upload_file()` function populates this table. Files are automatically cleaned up when the corresponding chat is deleted.
 
 #### `canvas_counters`
 

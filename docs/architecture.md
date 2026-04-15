@@ -1,6 +1,6 @@
-# Application Architecture (v3.0.0)
+# Application Architecture (v3.1.0)
 
-**Note:** This document may contain outdated information. The code is the source of truth. For discrepancies, see `IMPLEMENTATION_DISCREPANCIES.md`.
+
 
 ## Core Architectural Principles
 
@@ -29,7 +29,7 @@ Both use TTL for automatic expiration.
 All tools except the **Research Agent** are designed as **atomic operations**:
 
 - Each tool operation is independent and idempotent
-- **2 retry attempts** (hardcoded in `error_handling.py` as `max_retries=2`) before failure acknowledgment
+- **2 retry attempts** (configurable in `config.py` as `RETRY_COUNT=2`) before failure acknowledgment
 - Fast execution time, allowing for retry overhead
 - Clean failure states with proper error handling
 
@@ -118,6 +118,17 @@ All state changes follow a **Cache-Aside** pattern where:
 - Immediate cache invalidation follows the write to ensure consistency.
 - Proper transaction management and row-level locking are handled in `backend/db_wrapper.py` and `backend/cache_layer.py`.
 
+### 5. Inference Separation of Concerns
+
+**CRITICAL**: The `llama.cpp` inference server is a **completely separate repository and specialized service**. This application (My-AI) has **no responsibility** for orchestrating, starting, or managing the life cycle of the inference server.
+
+The application interacts with inference solely as an external consumer:
+1.  **URL Discovery**: Fetches the endpoint URL from `secrets/AI_URL` and `secrets/EMBEDDING_URL`.
+2.  **Authentication**: Fetches keys from `secrets/AI_API_KEY` and `secrets/EMBEDDING_API_KEY`.
+3.  **Consumption**: Sends OpenAI-compatible requests to the provided endpoints.
+
+Any configuration or deployment logic for `llama.cpp` (e.g., GGUF model paths, GPU offloading, server parameters) belongs **exclusively** in the inference server's own repository and environment configuration.
+
 ## Component Architecture
 
 ### Backend Components
@@ -151,7 +162,7 @@ Centralized configuration management:
 - Database connection parameters
 - Feature flags
 
-**Note:** Retry count is hardcoded in `error_handling.py` as `max_retries=2`
+**Note:** Retry count is defined in `config.py` as `RETRY_COUNT`
 
 #### `backend/db_wrapper.py`
 
@@ -180,6 +191,24 @@ cache_layer.invalidate(table, row_id)
 
 LLM integration layer for AI model interactions.
 
+#### `backend/file_manager.py`
+
+Handles file uploads, storage sanitization, and content extraction. It orchestrates the background extraction pipeline and coordinates with the RAG system.
+- **See**: `docs/file_management_directives.md` for detailed lifecycle and extraction logic.
+
+#### `backend/rag.py`
+Implements the hybrid search infrastructure (Vector + BM25) and coordinates retrieval across distributed collections.
+- **See**: `docs/rag_directives.md` for architectural details on collections, search, and reciprocal rank fusion.
+
+#### `backend/chunking.py`
+Provides specialized logic for splitting text and code into semantically meaningful chunks. **Crucially, it acts as a Heuristic File Type Classifier**, bypassing file extensions to route content dynamically based on text layout and "syntax density" evaluations. (See `docs/file_management_directives.md`).
+
+#### `backend/pdf_extractor.py`
+A dedicated utility for high-fidelity text and structure extraction from PDF documents, utilizing `pdfplumber` and `PyPDF2`.
+
+#### `backend/token_counter.py`
+Handles precise token counting for multiple model architectures to ensure requests stay within context window limits.
+
 #### `backend/utils.py`
 
 Utility functions and helpers used across the application.
@@ -193,6 +222,12 @@ Contains client-side resources:
 - **index.html**: Main application UI
 - **styles.css**: Styling and layout
 - **script.js**: Client-side logic and API interactions
+
+#### `tests/`
+Contains the RAG evaluation framework and grid search utilities:
+- **test_data_generator.py**: Synthetic dataset generation for RAG benchmarking.
+- **test_rag_parameters.py**: Grid search execution and parameter optimization.
+- **test_rag_hybrid.py**: Benchmarking for hybrid retrieval performance.
 
 ## Data Flow Architecture
 
@@ -268,7 +303,7 @@ Contains client-side resources:
 
 ### Retry Configuration
 
-**Note:** Retry count is hardcoded in `error_handling.py` as `max_retries=2`. There is no `RETRY_COUNT` configuration variable in `config.py`.
+**Note:** Retry count is defined in `config.py` as `RETRY_COUNT`.
 
 ```python
 # Cache TTL settings
@@ -340,6 +375,21 @@ There are **two exceptions** to the atomic transaction model:
 2. Implement key naming convention
 3. Add invalidation rules
 4. Update cache system
+
+## Docker Infrastructure
+
+The application is orchestrated using Docker Compose, isolating components into specialized services.
+
+### Core Stack (`docker-compose.yml`)
+
+- **`app`**: The main Flask backend container. Orchestrates agents, handles API requests, and manages RAG/File processes.
+- **`bastion_ssh`**: A secure SSH entry point for administrative access.
+- **`tavily_mcp`**: Isolated container running the Tavily MCP server for web search.
+- **`playwright_mcp`**: Isolated container running the Playwright MCP server for headless browsing.
+
+### Optimization Stack (`docker/docker-compose.testing.yml`)
+
+- **`rag_grid_search`**: A specialized, ephemeral service used for RAG hyperparameter optimization. It runs evaluation pipelines against synthetic datasets to tune retrieval settings.
 
 ## Security Considerations
 

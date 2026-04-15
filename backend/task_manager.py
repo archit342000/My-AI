@@ -54,6 +54,12 @@ from backend.logger import log_event
 from backend import config
 from backend.cache_system import cache_system
 from backend.utils import strip_images_from_messages
+from backend.model_loader import (
+    get_research_main_model,
+    get_research_vision_model,
+    get_general_text_model,
+    get_general_vision_model
+)
 
 logger = logging.getLogger(__name__)
 
@@ -236,9 +242,18 @@ class TaskManager:
         ai_url = config.AI_URL
 
         # Build kwargs for execution function (runtime arguments)
+        # Use config defaults for models if not provided
+        model = task_info.get("model")
+        if not model:
+            model = get_general_text_model()
+
+        vision_model = task_info.get("vision_model")
+        if not vision_model and task_info.get("research_mode"):
+            vision_model = get_research_vision_model()
+
         fn_kwargs = {
             "api_url": task_info.get("api_url", ai_url),
-            "model": task_info.get("model"),
+            "model": model,
             "messages": task_info.get("messages"),
             "chat_id": chat_id
         }
@@ -252,7 +267,7 @@ class TaskManager:
         valid_kwargs = [p for p in sig.parameters]
 
         # Pass task_info keys that are both present and accepted by execute_fn
-        for key in ['approved_plan', 'search_depth_mode', 'vision_model', 'vision_enabled', 'model_name', 'resume_state', 'rag_engine', 'extra_body', 'rag', 'memory_mode', 'has_vision', 'api_key', 'canvas_mode', 'active_canvas_context', 'research_mode', 'research_completed', 'initial_tool_calls', 'topic_override', 'enable_thinking']:
+        for key in ['approved_plan', 'search_depth_mode', 'vision_model', 'vision_enabled', 'model_name', 'resume_state', 'rag_engine', 'extra_body', 'rag', 'file_rag', 'memory_mode', 'has_vision', 'api_key', 'canvas_mode', 'active_canvas_context', 'research_mode', 'research_completed', 'initial_tool_calls', 'topic_override', 'enable_thinking']:
             if key in task_info and key in valid_kwargs:
                 fn_kwargs[key] = task_info[key]
 
@@ -406,6 +421,11 @@ class TaskManager:
                 if fn_kwargs.get("rag") and hasattr(fn_kwargs["rag"], "cleanup_chat"):
                     try:
                         fn_kwargs["rag"].cleanup_chat(chat_id)
+                    except:
+                        pass
+                if fn_kwargs.get("file_rag") and hasattr(fn_kwargs["file_rag"], "cleanup_chat"):
+                    try:
+                        fn_kwargs["file_rag"].cleanup_chat(chat_id)
                     except:
                         pass
                 

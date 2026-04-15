@@ -1,4 +1,11 @@
 # CHANGELOG
+ 
+## v3.1.0
+* **File Reading Infrastructure**: Introduced a unified file management system supporting PDF extraction, intelligent chunking, and metadata tracking for enhanced RAG capabilities.
+* **Configuration Consolidation**: Centralized execution retry limits and RAG parameters in `backend/config.py` as the system's single source of truth.
+* **Documentation Synchronization**: Fully aligned all architectural directives with the v3.1.0 state, including new core guides for file management and testing.
+* **Template Cleanup**: Purged obsolete experimental Jinja templates to ensure a clean, production-ready release state.
+* **Version Bump**: Incremented version globally to v3.1.0.
 
 ## v3.0.0
 * **Research Agent Overhaul**: Research agent chats can now continue after the report is generated. 

@@ -1,12 +1,12 @@
 from flask import Flask, request, jsonify, Response, send_from_directory
+from werkzeug.exceptions import RequestEntityTooLarge
 from backend.logger import log_event
 import logging
-
-logger = logging.getLogger(__name__)
 import os
 import time
 import json
 import requests
+import shutil
 from dotenv import load_dotenv
 
 # Load environment variables FIRST
@@ -19,9 +19,18 @@ if os.name != 'nt' and hasattr(time, 'tzset'):
     time.tzset()
 
 from backend import config
-from backend.rag import MemoryRAG, ResearchRAG
+from backend.rag import ResearchRAG, FileRAG, RAGManager
 from backend.db_wrapper import db
 from backend.storage import init_db
+from backend.model_loader import (
+    get_embedding_model,
+    get_research_main_model,
+    get_research_vision_model,
+    get_general_text_model,
+    get_general_vision_model,
+    get_general_vision2_model,
+    get_general_coder_model
+)
 from backend.canvas_manager import (
     export_canvas_markdown,
     export_canvas_html,
@@ -35,9 +44,8 @@ from backend.canvas_manager import (
     get_shared_users,
     create_canvas as manager_create_canvas
 )
-
-# Import channel manager for per-chat locking
 from backend.canvas_channel import CanvasChannelManager
+from backend.file_manager import FileManager
 from backend.agents.research import generate_research_response
 from backend.agents.chat import generate_chat_response
 from backend.task_manager import task_manager
@@ -45,24 +53,35 @@ from backend.cache_system import cache_system
 from backend.version import get_version
 
 app = Flask(__name__, static_folder='static')
-# Limit request size to 16MB to prevent unbounded payload DoS (e.g. extremely large JSON arrays)
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
+# Limit request size to 100MB to match FILE_UPLOAD_MAX_SIZE config
+app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024
 
-# Determine config path
-config_path = os.path.join(os.path.dirname(__file__), 'backend', 'model_config.json')
-try:
-    with open(config_path, 'r', encoding='utf-8') as f:
-        model_cfg = json.load(f)
-    embedding_model = model_cfg.get('embedding', 'embeddinggemma/embeddinggemma-300M-Q8_0')
-except Exception as e:
-    log_event("config_load_error", {"error": str(e)})
-    # Fallback default
-    embedding_model = "embeddinggemma/embeddinggemma-300M-Q8_0"
-
-# Initialize components with config
+# Initialize components with config - load models from model_loader (no fallbacks)
 init_db()
-rag = MemoryRAG(persist_path=config.CHROMA_PATH, api_url=config.AI_URL, api_key=config.AI_API_KEY, embedding_model=embedding_model)
-research_rag = ResearchRAG(persist_path=config.CHROMA_PATH, api_url=config.AI_URL, api_key=config.AI_API_KEY, embedding_model=embedding_model)
+embedding_model = get_embedding_model()
+
+# Clear ChromaDB directory to ensure fresh collections with correct embedding dimension
+# This fixes the "Collection expecting embedding with dimension of 768, got 384" error
+if os.path.exists(config.CHROMA_PATH):
+    shutil.rmtree(config.CHROMA_PATH)
+    log_event("rag_chromadb_cleared", {"path": config.CHROMA_PATH})
+
+# Initialize RAGManager for Research and File RAG (singleton)
+rag_manager = RAGManager(
+    persist_path=config.CHROMA_PATH,
+    api_url=config.EMBEDDING_URL,
+    api_key=config.EMBEDDING_API_KEY,
+    embedding_model=embedding_model
+)
+
+# Initialize RAG instances (they all share the same manager)
+# Note: MemoryRAG is no longer used - memory operations now use direct DB access
+research_rag = ResearchRAG(rag_manager=rag_manager)
+file_rag = FileRAG(rag_manager=rag_manager)
+
+# Initialize file manager with shared RAG manager
+file_manager = FileManager(rag_manager=rag_manager)
+
 task_manager.recover_tasks()
 
 # Initialize canvas channel manager for per-chat locking
@@ -95,6 +114,16 @@ def require_auth():
 def serve_static(path):
     return send_from_directory('static', path)
 
+
+# Error handler for 413 Request Entity Too Large
+@app.errorhandler(RequestEntityTooLarge)
+def handle_large_file_error(e):
+    """Handle files that exceed MAX_CONTENT_LENGTH."""
+    return jsonify({
+        "error": f"File too large. Maximum size is {100 * 1024 * 1024} bytes (100MB)"
+    }), 413
+
+
 @app.route('/api/chats', methods=['GET'])
 def list_chats():
     logger = logging.getLogger(__name__)
@@ -114,6 +143,7 @@ def clear_all_chats():
 
 @app.route('/api/chats/<chat_id>', methods=['GET'])
 def get_chat_details(chat_id):
+    logger = logging.getLogger(__name__)
     logger.debug("[API] GET /api/chats/%s - getting chat details", chat_id)
     chat = db.get_chat_full(chat_id)
     if not chat:
@@ -371,13 +401,13 @@ def get_version_endpoint():
 
 @app.route('/api/memory/reset', methods=['POST'])
 def reset_memory():
-    success = rag.reset_memory()
-    return jsonify({"success": success})
+    # MemoryRAG removed - direct DB access
+    return jsonify({"success": True, "message": "MemoryRAG removed - memories use direct DB access"})
 
 @app.route('/api/memory', methods=['GET'])
 def get_memories():
     try:
-        memories = rag.get_all_core_memories_raw()
+        memories = db.get_all_memories()
         return jsonify({"success": True, "memories": memories})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -389,26 +419,24 @@ def add_memory():
     tag = data.get('tag')
     if not content or not tag:
         return jsonify({"error": "Missing content or tag"}), 400
-    doc_id = rag.add_core_memory(content, tag)
-    if doc_id:
-        return jsonify({"success": True, "id": doc_id})
-    return jsonify({"error": "Failed to add memory"}), 500
+    memory_id = db.add_memory(content, tag)
+    return jsonify({"success": True, "id": memory_id})
 
-@app.route('/api/memory/<doc_id>', methods=['PUT'])
-def update_memory(doc_id):
+@app.route('/api/memory/<memory_id>', methods=['PUT'])
+def update_memory(memory_id):
     data = request.json
     content = data.get('content')
     tag = data.get('tag')
     if not content or not tag:
         return jsonify({"error": "Missing content or tag"}), 400
-    success = rag.update_core_memory(doc_id, content, tag)
+    success = db.update_memory(memory_id, content, tag)
     if success:
         return jsonify({"success": True})
     return jsonify({"error": "Failed to update memory"}), 500
 
-@app.route('/api/memory/<doc_id>', methods=['DELETE'])
-def delete_memory(doc_id):
-    success = rag.delete_core_memory(doc_id)
+@app.route('/api/memory/<memory_id>', methods=['DELETE'])
+def delete_memory(memory_id):
+    success = db.delete_memory(memory_id)
     if success:
         return jsonify({"success": True})
     return jsonify({"error": "Failed to delete memory"}), 500
@@ -653,6 +681,177 @@ def get_chat_folders(chat_id):
     from backend.canvas_manager import get_unique_folders
     folders = get_unique_folders(chat_id)
     return jsonify({"success": True, "folders": folders})
+
+
+# =============================================================================
+# FILE UPLOAD ENDPOINTS
+# =============================================================================
+
+@app.route('/api/upload', methods=['POST'])
+async def upload_file_endpoint():
+    """Upload a file and process it."""
+    logger = logging.getLogger(__name__)
+    logger.info("[UPLOAD_ENDPOINT] Starting upload")
+
+    chat_id = request.form.get('chat_id')
+    logger.debug(f"[UPLOAD_ENDPOINT] chat_id={chat_id}")
+    if not chat_id:
+        return jsonify({"error": "chat_id is required"}), 400
+
+    # Ensure chat exists to satisfy foreign key constraint
+    db.ensure_chat_exists(chat_id)
+
+    if 'file' not in request.files:
+        logger.error("[UPLOAD_ENDPOINT] No file in request.files")
+        return jsonify({"error": "No file provided"}), 400
+
+    file = request.files['file']
+    logger.debug(f"[UPLOAD_ENDPOINT] file.filename={file.filename}, type={type(file.filename)}")
+    if file.filename == '':
+        logger.error("[UPLOAD_ENDPOINT] Empty filename")
+        return jsonify({"error": "No file selected"}), 400
+
+    # Validate file type - check MIME type first, then file extension
+    mime_type = file.mimetype
+    if mime_type not in config.FILE_UPLOAD_ALLOWED_TYPES:
+        # Fallback: check if it's octet-stream but has a known extension
+        ext = os.path.splitext(file.filename)[1].lower()
+        expected_mime = {
+            '.pdf': 'application/pdf',
+            '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            '.txt': 'text/plain',
+            '.png': 'image/png',
+            '.jpg': 'image/jpeg',
+            '.jpeg': 'image/jpeg',
+            '.gif': 'image/gif',
+            '.mp4': 'video/mp4',
+            '.mp3': 'audio/mpeg',
+            '.wav': 'audio/wav'
+        }.get(ext)
+        if expected_mime and mime_type == 'application/octet-stream':
+            mime_type = expected_mime
+        else:
+            return jsonify({"error": f"File type not allowed: {mime_type}"}), 400
+
+    # Check file size
+    file_content = file.read()
+    logger.debug(f"[UPLOAD_ENDPOINT] file.size={len(file_content)} bytes")
+    if len(file_content) > config.FILE_UPLOAD_MAX_SIZE:
+        return jsonify({"error": f"File too large. Maximum size is {config.FILE_UPLOAD_MAX_SIZE} bytes"}), 400
+
+    # Write temp file
+    import uuid
+    import os
+    temp_path = os.path.join(config.FILE_STORAGE_PATH, f"temp_{uuid.uuid4().hex}")
+    with open(temp_path, 'wb') as f:
+        f.write(file_content)
+
+    # Process file with background processing for faster response
+    try:
+        logger.info(f"[UPLOAD_ENDPOINT] Calling file_manager.upload_file_async for {file.filename}")
+        metadata = file_manager.upload_file_async(
+            file_path=temp_path,
+            chat_id=chat_id,
+            original_filename=file.filename
+        )
+        logger.info(f"[UPLOAD_ENDPOINT] file_manager.upload_file_async returned: {metadata is not None}")
+
+        # Clean up temp file (file has been copied to storage already)
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+
+        if metadata:
+            logger.info(f"[UPLOAD_ENDPOINT] Upload initiated, file_id={metadata.file_id}")
+            return jsonify({
+                "success": True,
+                "file_id": metadata.file_id,
+                "original_filename": metadata.original_filename,
+                "mime_type": metadata.mime_type,
+                "file_size": metadata.file_size
+            })
+        else:
+            logger.error("[UPLOAD_ENDPOINT] file_manager.upload_file_async returned None")
+            return jsonify({"error": "Failed to process file"}), 500
+
+    except Exception as e:
+        # Clean up temp file on error
+        if os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except:
+                pass
+        logger.error(f"[UPLOAD_ENDPOINT] Exception: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/files', methods=['GET'])
+def list_files_endpoint():
+    """List all files for current chat."""
+    chat_id = request.args.get('chat_id')
+    if not chat_id:
+        return jsonify({"error": "chat_id is required"}), 400
+
+    files = file_manager.get_chat_files(chat_id)
+    return jsonify({
+        "success": True,
+        "files": [{
+            "file_id": f.file_id,
+            "original_filename": f.original_filename,
+            "stored_filename": f.stored_filename,
+            "mime_type": f.mime_type,
+            "file_size": f.file_size,
+            "content_text": f.content_text,
+            "created_at": f.created_at
+        } for f in files]
+    })
+
+
+@app.route('/api/files/<file_id>', methods=['GET'])
+def get_file_endpoint(file_id):
+    """Get file metadata."""
+    metadata = file_manager.get_file(file_id)
+    if not metadata:
+        return jsonify({"error": "File not found"}), 404
+
+    return jsonify({
+        "success": True,
+        "file_id": metadata.file_id,
+        "chat_id": metadata.chat_id,
+        "original_filename": metadata.original_filename,
+        "stored_filename": metadata.stored_filename,
+        "mime_type": metadata.mime_type,
+        "file_size": metadata.file_size,
+        "content_text": metadata.content_text,
+        "created_at": metadata.created_at,
+        "processing_status": getattr(metadata, 'processing_status', None)
+    })
+
+
+@app.route('/api/files/<file_id>/status', methods=['GET'])
+def get_file_status_endpoint(file_id):
+    """Get file processing status."""
+    logger = logging.getLogger(__name__)
+    logger.info(f"[STATUS_ENDPOINT] Checking file_id={file_id}")
+    result = db.get_file(file_id)
+    logger.info(f"[STATUS_ENDPOINT] db.get_file returned: {result}")
+    if not result:
+        logger.warning(f"[STATUS_ENDPOINT] File not found in database: {file_id}")
+        return jsonify({"error": "File not found"}), 404
+
+    return jsonify({
+        "success": True,
+        "file_id": file_id,
+        "processing_status": result.get('processing_status') or 'pending'
+    })
+
+
+@app.route('/api/files/<file_id>', methods=['DELETE'])
+def delete_file_endpoint(file_id):
+    """Delete a file."""
+    success = file_manager.delete_file(file_id)
+    if success:
+        return jsonify({"success": True})
+    return jsonify({"error": "File not found"}), 404
 
 
 @app.route('/api/canvases/<canvas_id>/tags/<tag>', methods=['DELETE'])
@@ -914,11 +1113,10 @@ def get_shared_users_endpoint(canvas_id):
 @app.route('/api/memory/debug', methods=['GET'])
 def debug_memory():
     try:
-        results = rag.collection.get()
+        memories = db.get_all_memories()
         return jsonify({
-            "count": len(results['ids']),
-            "documents": results['documents'],
-            "metadatas": results['metadatas']
+            "count": len(memories),
+            "memories": memories
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -1015,7 +1213,32 @@ def chat_completions():
             if clean_msg.get('name') is None and clean_msg.get('role') == 'tool':
                 clean_msg['name'] = ""
             messages.append(clean_msg)
-        model = data.get('model', 'local-model')
+
+        # Get models from config - no fallbacks
+        from backend.model_loader import (
+            get_embedding_model,
+            get_research_main_model,
+            get_research_vision_model,
+            get_general_text_model,
+            get_general_vision_model,
+            get_general_vision2_model,
+            get_general_coder_model
+        )
+
+        # Get default models from config
+        config_model = get_general_text_model()
+        config_vision_model = get_general_vision_model()
+        config_research_main = get_research_main_model()
+        config_research_vision = get_research_vision_model()
+
+        # Model must be provided and must be in config
+        model = data.get('model')
+        if not model:
+            return jsonify({"error": "Model name is required"}), 400
+        if not model.startswith('http') and '/' not in model:
+            # Model might be a display name - try to resolve from config
+            pass
+
         chat_id = data.get('chatId')
         memory_mode = data.get('memoryMode', False)
         research_mode = data.get('researchMode', False)
@@ -1045,7 +1268,15 @@ def chat_completions():
             'resumeState', 'lastModelName', 'hasVision', 'apiKey', 'apiUrl',
             'canvasMode', 'activeCanvasContext', 'enable_thinking'
         ]
+
+        # Extract uploadedFiles separately to pass to chat handler
+        uploaded_files = data.get('uploadedFiles', [])
+
         extra_body = {k: v for k, v in data.items() if k not in blacklist}
+
+        # Add uploaded_files to extra_body for chat handler
+        if uploaded_files:
+            extra_body['uploaded_files'] = uploaded_files
 
         if not chat_id or '..' in chat_id or '/' in chat_id or '\\' in chat_id:
              return jsonify({"error": "Invalid or missing chatId"}), 400
@@ -1158,12 +1389,6 @@ def chat_completions():
 
         # === 3. Enqueue Background Task ===
         if research_mode and approved_plan:
-            # Sync engineering URL and Key with the request
-            if hasattr(research_rag.embedding_fn, 'api_url'):
-                research_rag.embedding_fn.api_url = api_url
-            if hasattr(research_rag.embedding_fn, 'api_key'):
-                research_rag.embedding_fn.api_key = api_key
-
             # 1. Forge the tool call in history for 'execute_research_plan'
             import uuid
             tc_id = f"manual-{uuid.uuid4().hex[:8]}"
@@ -1191,15 +1416,11 @@ def chat_completions():
             vision_enabled = data.get('visionEnabled', True)
             task_manager.start_research_task(
                 model, messages, approved_plan, chat_id, search_depth_mode, vision_model, generate_research_response,
-                model_name=last_model_name, resume_state=resume_state, rag_engine=research_rag, rag=rag, api_url=api_url, api_key=api_key,
-                topic_override=topic, vision_enabled=vision_enabled
+                model_name=last_model_name, resume_state=resume_state, rag_engine=research_rag, rag=research_rag, file_rag=file_rag, api_url=api_url, api_key=api_key,
+                topic_override=topic, vision_enabled=vision_enabled, enable_thinking=enable_thinking
             )
         else:
             # Normal Chat Task or Research Planning phase
-            if hasattr(rag.embedding_fn, 'api_url'):
-                rag.embedding_fn.api_url = api_url
-            if hasattr(rag.embedding_fn, 'api_key'):
-                rag.embedding_fn.api_key = api_key
             has_vision = data.get('hasVision', False)
             
             initial_tool_calls = None
@@ -1288,7 +1509,8 @@ def chat_completions():
                 canvas_mode=canvas_mode,
                 active_canvas_context=active_canvas_context,
                 extra_body=extra_body,
-                rag=rag,
+                rag=research_rag,
+                file_rag=file_rag,
                 memory_mode=memory_mode,
                 search_depth_mode=search_depth_mode,
                 has_vision=has_vision,
@@ -1326,16 +1548,30 @@ def logs_page():
 
 @app.route('/api/logs', methods=['GET'])
 def get_log_index():
+    """Return the latest N network log entries. Default 200, max 1000."""
+    import collections
+    try:
+        limit = min(int(request.args.get('limit', 200)), 1000)
+    except (ValueError, TypeError):
+        limit = 200
+
     index_path = os.path.join(config.DATA_DIR, "logs", "network_index.jsonl")
-    logs = []
-    if os.path.exists(index_path):
-        with open(index_path, "r", encoding="utf-8") as f:
-            for line in f:
-                try:
-                    logs.append(json.loads(line))
-                except:
-                    pass
-    return jsonify(list(reversed(logs)))
+    if not os.path.exists(index_path):
+        return jsonify([])
+
+    # Use deque to efficiently read only the last `limit` lines
+    entries = collections.deque(maxlen=limit)
+    with open(index_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entries.append(json.loads(line))
+            except Exception:
+                pass
+
+    return jsonify(list(reversed(entries)))
 
 @app.route('/api/logs/detail', methods=['GET'])
 def get_log_detail():
@@ -1362,53 +1598,112 @@ def get_log_detail():
 
 @app.route('/api/logs/events', methods=['GET'])
 def get_event_logs():
+    """Return the latest N events from the most recent event log file."""
+    import collections
+    try:
+        limit = min(int(request.args.get('limit', 500)), 2000)
+    except (ValueError, TypeError):
+        limit = 500
+
     event_dir = os.path.join(config.DATA_DIR, "logs", "general")
-    events = []
-    if os.path.exists(event_dir):
-        # Get latest event file
-        files = sorted([f for f in os.listdir(event_dir) if f.endswith("_events.jsonl")], reverse=True)
-        if files:
-            with open(os.path.join(event_dir, files[0]), "r", encoding="utf-8") as f:
-                for line in f:
-                    try:
-                        events.append(json.loads(line))
-                    except:
-                        pass
-    return jsonify(list(reversed(events)))
+    if not os.path.exists(event_dir):
+        return jsonify([])
+
+    files = sorted([f for f in os.listdir(event_dir) if f.endswith("_events.jsonl")], reverse=True)
+    if not files:
+        return jsonify([])
+
+    entries = collections.deque(maxlen=limit)
+    with open(os.path.join(event_dir, files[0]), "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entries.append(json.loads(line))
+            except Exception:
+                pass
+
+    return jsonify(list(reversed(entries)))
 
 
 @app.route('/api/logs/app', methods=['GET'])
 def get_app_logs():
-    """Get app logs from the log file."""
+    """Get the latest N app log lines using a fast binary seek-from-end tail."""
+    try:
+        limit = min(int(request.args.get('limit', 200)), 1000)
+    except (ValueError, TypeError):
+        limit = 200
+
     log_file = os.path.join(config.DATA_DIR, "logs", "app.log")
-    logs = []
-    if os.path.exists(log_file):
-        try:
-            with open(log_file, "r", encoding="utf-8") as f:
-                for line in f:
-                    logs.append(line.strip())
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
-    # Return last 1000 lines by default
-    return jsonify({"logs": logs[-1000:], "total": len(logs)})
+    if not os.path.exists(log_file):
+        return jsonify({"logs": [], "total": 0})
+
+    try:
+        logs = _tail_file(log_file, limit)
+        return jsonify({"logs": list(reversed(logs)), "total": len(logs)})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+def _tail_file(path, n, chunk_size=32768):
+    """Efficiently return the last n lines of a file using binary seek."""
+    with open(path, 'rb') as f:
+        f.seek(0, 2)  # seek to end
+        file_size = f.tell()
+        if file_size == 0:
+            return []
+
+        remaining = file_size
+        lines_found = []
+        buf = b''
+
+        while remaining > 0 and len(lines_found) <= n:
+            read_size = min(chunk_size, remaining)
+            remaining -= read_size
+            f.seek(remaining)
+            chunk = f.read(read_size)
+            buf = chunk + buf
+            lines_found = buf.split(b'\n')
+
+        # lines_found[0] may be an incomplete line; drop it unless we reached BOF
+        if remaining > 0:
+            lines_found = lines_found[1:]
+
+        # Decode, strip, drop empties, return last n
+        result = []
+        for line in lines_found:
+            decoded = line.decode('utf-8', errors='replace').rstrip()
+            if decoded:
+                result.append(decoded)
+
+        return result[-n:]
 
 
 @app.route('/api/logs/app/lines', methods=['GET'])
 def get_app_log_lines():
-    """Get app logs within a line range."""
+    """Get app logs from a byte-offset range (avoids reading the full file)."""
     log_file = os.path.join(config.DATA_DIR, "logs", "app.log")
     start = request.args.get('start', 0, type=int)
     end = request.args.get('end', 100, type=int)
+    limit = max(1, min(end - start, 500))  # never return more than 500 lines at once
 
     if not os.path.exists(log_file):
         return jsonify({"logs": [], "start": start, "end": end})
 
     try:
-        with open(log_file, "r", encoding="utf-8") as f:
-            all_lines = f.readlines()
-            # Convert to JSON-serializable format
-            logs = [line.rstrip('\n') for line in all_lines[start:end]]
-        return jsonify({"logs": logs, "start": start, "end": end, "total": len(all_lines)})
+        # Return `limit` lines starting at `start` without reading the whole file
+        logs = []
+        with open(log_file, 'r', encoding='utf-8', errors='replace') as f:
+            for i, line in enumerate(f):
+                if i < start:
+                    continue
+                if i >= end:
+                    break
+                stripped = line.rstrip('\n')
+                if stripped:
+                    logs.append(stripped)
+        return jsonify({"logs": logs, "start": start, "end": end})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

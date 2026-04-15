@@ -482,6 +482,32 @@
         .sidebar-collapsed #refresh-btn {
             display: none !important;
         }
+
+        .limit-select {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            color: var(--content-muted);
+            border-radius: var(--radius-md);
+            font-size: 0.7rem;
+            font-weight: 600;
+            padding: 3px 6px;
+            cursor: pointer;
+            outline: none;
+            font-family: var(--font-mono);
+        }
+
+        .limit-select:focus {
+            border-color: var(--color-primary-400);
+        }
+
+        .entry-count-badge {
+            font-size: 0.65rem;
+            color: var(--content-muted);
+            font-family: var(--font-mono);
+            text-align: center;
+            padding: 0 16px 8px;
+            opacity: 0.7;
+        }
     </style>
 </head>
 
@@ -509,6 +535,12 @@
                     </svg>
                     <span class="sidebar-brand-text font-heading sidebar-text">Intelligence</span>
                 </a>
+                <select class="limit-select sidebar-text" id="limit-select" onchange="loadData(true)" title="Max entries to load">
+                    <option value="50">50</option>
+                    <option value="200" selected>200</option>
+                    <option value="500">500</option>
+                    <option value="1000">1000</option>
+                </select>
                 <button class="sidebar-icon-btn" onclick="loadData(true)" title="Refresh" id="refresh-btn">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                         stroke-width="2.5">
@@ -537,6 +569,8 @@
                 <div class="nav-tab" id="tab-events" onclick="switchMode('events')">Events</div>
                 <div class="nav-tab" id="tab-app" onclick="switchMode('app')">App Logs</div>
             </nav>
+
+            <div class="entry-count-badge sidebar-text" id="entry-count"></div>
 
             <div class="list-container custom-scroll sidebar-text" id="log-list">
                 <!-- List Items -->
@@ -677,36 +711,44 @@
         // Data Handling
         async function loadData(force = false) {
             const listDiv = document.getElementById('log-list');
+            const countBadge = document.getElementById('entry-count');
+            const limit = document.getElementById('limit-select')?.value || 200;
 
-            const networkReady = currentMode === 'network' && networkLogs.length > 0;
-            const eventsReady = currentMode === 'events' && eventLogs.length > 0;
-            const appReady = currentMode === 'app' && appLogs.length > 0;
+            if (!force && currentMode === 'network' && networkLogs.length > 0) { renderList(); return; }
+            if (!force && currentMode === 'events' && eventLogs.length > 0) { renderList(); return; }
+            if (!force && currentMode === 'app' && appLogs.length > 0) { renderList(); return; }
 
-            if (!force && (networkReady || eventsReady || appReady)) {
-                renderList();
-                return;
+            listDiv.innerHTML = '<div class="empty-state-logs" style="font-size:0.8rem;">Loading...</div>';
+            if (countBadge) countBadge.textContent = '';
+
+            // Reset stale data on force-refresh
+            if (force) {
+                if (currentMode === 'network') networkLogs = [];
+                else if (currentMode === 'events') eventLogs = [];
+                else if (currentMode === 'app') appLogs = [];
             }
 
             try {
                 let endpoint;
                 if (currentMode === 'network') {
-                    endpoint = '/api/logs';
+                    endpoint = `/api/logs?limit=${limit}`;
                 } else if (currentMode === 'events') {
-                    endpoint = '/api/logs/events';
+                    endpoint = `/api/logs/events?limit=${limit}`;
                 } else if (currentMode === 'app') {
-                    endpoint = '/api/logs/app';
+                    endpoint = `/api/logs/app?limit=${limit}`;
                 }
 
                 const res = await fetch(endpoint);
                 const data = await res.json();
 
-                if (currentMode === 'network') networkLogs = data;
-                else if (currentMode === 'events') eventLogs = data;
+                if (currentMode === 'network') networkLogs = Array.isArray(data) ? data : [];
+                else if (currentMode === 'events') eventLogs = Array.isArray(data) ? data : [];
                 else if (currentMode === 'app') appLogs = data.logs || [];
 
                 renderList();
             } catch (err) {
                 listDiv.innerHTML = '<div class="empty-state-logs">Communications Failure.</div>';
+                if (countBadge) countBadge.textContent = '';
             }
         }
 
@@ -761,6 +803,15 @@
                 renderEventLogs(searchTerm);
             } else if (currentMode === 'app') {
                 renderAppLogs(searchTerm);
+            }
+
+            // Update the count badge
+            const countBadge = document.getElementById('entry-count');
+            if (countBadge) {
+                const total = currentMode === 'network' ? networkLogs.length
+                    : currentMode === 'events' ? eventLogs.length
+                    : appLogs.length;
+                countBadge.textContent = total > 0 ? `Showing ${total} entries` : '';
             }
         }
 

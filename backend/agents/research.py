@@ -34,6 +34,12 @@ from backend.canvas_manager import (
 )
 from backend.db_wrapper import db
 from backend import config
+from backend.model_loader import (
+    get_research_main_model,
+    get_research_vision_model,
+    get_general_text_model,
+    get_general_vision_model
+)
 from backend.agents.research_schemas import (
     SCOUT_JSON_SCHEMA,
     PLANNER_JSON_SCHEMA,
@@ -63,6 +69,7 @@ from backend.agents.research_utils import (
     _strip_report_images,
     _strip_invalid_citations
 )
+from backend.token_counter import count_tokens
 
 # --- Configuration ---
 # All behavior is now controlled via backend.config
@@ -77,6 +84,7 @@ async def _execute_section_reflection_and_write(
         extracted_content, accumulated_summaries, section_index,
         n_sections, original_topic, full_plan_text,
         search_depth_mode, vision_model, vlm_lock, chat_id,
+        enable_thinking,
         display_model, source_registry, next_source_id, mode_guidance, entity_glossary,
         image_results=None, api_key=None, vision_enabled=True):
     """Multi-turn conversation for a single research section (KV cache reuse).
@@ -183,7 +191,7 @@ async def _execute_section_reflection_and_write(
             thought_limit=config.RESEARCH_MEANDER_THOUGHT_LIMIT_REFLECTION_TOKENS,
             content_threshold=config.RESEARCH_MEANDER_CONTENT_THRESHOLD_TOKENS,
             step_id=section_index,
-            api_key=api_key, chat_id=chat_id, enable_thinking=(attempt == 1)
+            api_key=api_key, chat_id=chat_id, enable_thinking=(enable_thinking and attempt == 1)
         )
         async for packet in gen:
             if packet["type"] == "activity": yield packet
@@ -241,7 +249,8 @@ async def _execute_section_reflection_and_write(
                             fu_content_result = fu_r.get('raw_content', fu_r.get('content', ''))
                         else:
                             async for fu_packet in _extract_content_for_url(
-                                fu_url, search_depth_mode, vision_model, api_url, vlm_lock,
+                                fu_url, search_depth_mode, vision_model, api_url, vlm_lock, enable_thinking,
+                                display_model=display_model, step_id=section_index,
                                 raw_content_from_search=fu_r.get('raw_content'), api_key=api_key, chat_id=chat_id, vision_enabled=vision_enabled
                             ):
                                 if fu_packet["type"] == "activity":
@@ -303,7 +312,7 @@ async def _execute_section_reflection_and_write(
             api_url, triage_payload, display_model, "status",
             thought_limit=config.RESEARCH_MEANDER_THOUGHT_LIMIT_TRIAGE_TOKENS,
             content_threshold=config.RESEARCH_MEANDER_CONTENT_THRESHOLD_TOKENS,
-            api_key=api_key, chat_id=chat_id, enable_thinking=(attempt == 1)
+            api_key=api_key, chat_id=chat_id, enable_thinking=(enable_thinking and attempt == 1)
         )
         
         raw_triage = ""
@@ -398,7 +407,7 @@ async def _execute_section_reflection_and_write(
             thought_limit=config.RESEARCH_MEANDER_THOUGHT_LIMIT_STEP_WRITER_TOKENS,
             content_threshold=config.RESEARCH_MEANDER_CONTENT_THRESHOLD_TOKENS,
             step_id=section_index,
-            api_key=api_key, chat_id=chat_id, enable_thinking=(attempt == 1)
+            api_key=api_key, chat_id=chat_id, enable_thinking=(enable_thinking and attempt == 1)
         )
 
         raw_section = ""
@@ -471,7 +480,7 @@ async def _execute_section_reflection_and_write(
                 api_url, summary_payload, display_model, "status", 
                 thought_limit=config.RESEARCH_MEANDER_THOUGHT_LIMIT_SUMMARY_TOKENS,
                 content_threshold=config.RESEARCH_MEANDER_CONTENT_THRESHOLD_TOKENS,
-                api_key=api_key, chat_id=chat_id, enable_thinking=(attempt == 1)
+                api_key=api_key, chat_id=chat_id, enable_thinking=(enable_thinking and attempt == 1)
             )
             
             raw_summary = ""
@@ -532,15 +541,21 @@ def _format_plan_as_markdown(xml_plan):
 # =====================================================================
 
 
-async def generate_research_response(api_url, model, messages, approved_plan=None, chat_id=None, search_depth_mode='regular', vision_model=None, model_name=None, resume_state=None, api_key=None, edits=None, topic_override=None, vision_enabled=True):
+async def generate_research_response(api_url, model, messages, enable_thinking, approved_plan=None, chat_id=None, search_depth_mode='regular', vision_model=None, model_name=None, resume_state=None, api_key=None, edits=None, topic_override=None, vision_enabled=True):
     """
     Main Research Pipeline
-    
+
     Phase 0: Context Scout (pre-planning analysis)
     Phase 1: Planning (structured research plan generation)
     Phase 2: Sequential Step Execution (search → select → extract → reflect → write)
     Phase 3: Assembly & Audit (stitch → normalize → audit patches → synthesis → references)
     """
+    # Use config defaults if model not provided
+    if not model:
+        model = get_research_main_model()
+    if not vision_model:
+        vision_model = get_research_vision_model()
+
     display_model = model_name or model
     full_reasoning = ""
     today_date = datetime.date.today().strftime("%A, %B %d, %Y")
@@ -713,7 +728,7 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
                             content_threshold=config.RESEARCH_MEANDER_CONTENT_THRESHOLD_TOKENS,
                             api_key=api_key,
                             chat_id=chat_id,
-                            enable_thinking=(attempt == 1)
+                            enable_thinking=(enable_thinking and attempt == 1)
                         )
                         
                         raw_scout = ""
@@ -853,7 +868,7 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
                     api_url, payload, display_model, "planning",
                     thought_limit=config.RESEARCH_MEANDER_THOUGHT_LIMIT_PLANNING_TOKENS,
                     content_threshold=config.RESEARCH_MEANDER_CONTENT_THRESHOLD_TOKENS,
-                    api_key=api_key, chat_id=chat_id, enable_thinking=(attempt == 1)
+                    api_key=api_key, chat_id=chat_id, enable_thinking=(enable_thinking and attempt == 1)
                 )
 
                 async for packet in gen:
@@ -1013,7 +1028,7 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
 
                     extracted = None
                     async for packet in _extract_content_for_url(
-                        sel_url, search_depth_mode, vision_model, api_url, vlm_lock,
+                        sel_url, search_depth_mode, vision_model, api_url, vlm_lock, enable_thinking,
                         display_model=display_model, step_id=section_idx,
                         raw_content_from_search=sel_result.get('raw_content'), api_key=api_key, chat_id=chat_id, vision_enabled=vision_enabled
                     ):
@@ -1023,13 +1038,16 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
                             _, extracted = packet["data"]
 
                     if extracted and len(extracted.strip()) > config.RESEARCH_EXTRACT_MIN_TAVILY_CONTENT:
-                        content_tokens = len(extracted) // 4
+                        content_tokens = count_tokens(extracted)
                         # Trim if exceeding budget
                         if accumulated_tokens + content_tokens > content_budget:
-                            remaining_chars = (content_budget - accumulated_tokens) * 4
-                            if remaining_chars > 0:
+                            # Estimate remaining chars based on average tokens per char
+                            remaining_tokens = content_budget - accumulated_tokens
+                            # Use a conservative estimate: ~4 chars per token
+                            remaining_chars = max(0, remaining_tokens * 4)
+                            if remaining_chars > 0 and len(extracted) > remaining_chars:
                                 extracted = extracted[:remaining_chars]
-                                content_tokens = len(extracted) // 4
+                                content_tokens = count_tokens(extracted)
                             else:
                                 break
                         query_content_buffer.append({"url": sel_url, "title": sel_result.get('title'), "content": extracted})
@@ -1040,7 +1058,7 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
 
                 # --- PROCESS SEARCH IMAGES (VLM) ---
                 if vision_model and vision_enabled and search_images:
-                    async for packet in _process_tavily_search_images(search_images, section_idx, vision_model, api_url, vlm_lock, display_model=display_model, api_key=api_key, chat_id=chat_id, vision_enabled=vision_enabled):
+                    async for packet in _process_tavily_search_images(search_images, section_idx, vision_model, api_url, vlm_lock, enable_thinking, display_model=display_model, api_key=api_key, chat_id=chat_id, vision_enabled=vision_enabled):
                         if packet["type"] == "activity":
                             yield packet["data"]
                         else:
@@ -1074,7 +1092,7 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
 
                                 deep_extracted = None
                                 async for packet in _extract_content_for_url(
-                                    mapped_url, search_depth_mode, vision_model, api_url, vlm_lock,
+                                    mapped_url, search_depth_mode, vision_model, api_url, vlm_lock, enable_thinking,
                                     display_model=display_model, step_id=section_idx, api_key=api_key, chat_id=chat_id, vision_enabled=vision_enabled
                                 ):
                                     if packet["type"] == "activity":
@@ -1083,12 +1101,13 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
                                         _, deep_extracted = packet["data"]
 
                                 if deep_extracted and len(deep_extracted.strip()) > config.RESEARCH_MAP_MIN_CONTENT:
-                                    content_tokens = len(deep_extracted) // 4
+                                    content_tokens = count_tokens(deep_extracted)
                                     if accumulated_tokens + content_tokens > content_budget:
-                                        remaining_chars = (content_budget - accumulated_tokens) * 4
-                                        if remaining_chars > 0:
+                                        remaining_tokens = content_budget - accumulated_tokens
+                                        remaining_chars = max(0, remaining_tokens * 4)
+                                        if remaining_chars > 0 and len(deep_extracted) > remaining_chars:
                                             deep_extracted = deep_extracted[:remaining_chars]
-                                            content_tokens = len(deep_extracted) // 4
+                                            content_tokens = count_tokens(deep_extracted)
                                         else:
                                             break
                                     query_content_buffer.append({"url": mapped_url, "title": None, "content": deep_extracted})
@@ -1120,6 +1139,7 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
                     section_content_buffer, accumulated_summaries, section_idx,
                     n_sections, original_query, approved_plan,
                     search_depth_mode, vision_model, vlm_lock, chat_id,
+                    enable_thinking,
                     display_model, source_registry, global_source_id, mode_guidance, entity_glossary,
                     image_results=vlm_image_results, api_key=api_key, vision_enabled=vision_enabled
                 ):
@@ -1360,7 +1380,7 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
                     api_url, detective_payload, display_model, "status",
                     thought_limit=config.RESEARCH_MEANDER_THOUGHT_LIMIT_AUDIT_TOKENS,
                     content_threshold=config.RESEARCH_MEANDER_CONTENT_THRESHOLD_TOKENS,
-                    api_key=api_key, chat_id=chat_id, enable_thinking=(attempt == 1)
+                    api_key=api_key, chat_id=chat_id, enable_thinking=(enable_thinking and attempt == 1)
                 )
                 async for packet in gen:
                     if packet["type"] == "activity": yield packet["data"]
@@ -1471,7 +1491,7 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
                                     api_url, surgeon_payload, display_model, "status",
                                     thought_limit=config.RESEARCH_MEANDER_THOUGHT_LIMIT_AUDIT_TOKENS,
                                     content_threshold=config.RESEARCH_MEANDER_CONTENT_THRESHOLD_TOKENS,
-                                    api_key=api_key, chat_id=chat_id, enable_thinking=(attempt == 1)
+                                    api_key=api_key, chat_id=chat_id, enable_thinking=(enable_thinking and attempt == 1)
                                 )
                                 async for packet in gen:
                                     if packet["type"] == "activity": yield packet["data"]
@@ -1529,7 +1549,7 @@ async def generate_research_response(api_url, model, messages, approved_plan=Non
                     api_url, synthesis_payload, display_model, "status",
                     thought_limit=config.RESEARCH_MEANDER_THOUGHT_LIMIT_SYNTHESIS_TOKENS,
                     content_threshold=config.RESEARCH_MEANDER_CONTENT_THRESHOLD_TOKENS,
-                    api_key=api_key, chat_id=chat_id, enable_thinking=(attempt == 1)
+                    api_key=api_key, chat_id=chat_id, enable_thinking=(enable_thinking and attempt == 1)
                 )
                 async for packet in gen:
                     if packet["type"] == "activity": yield packet["data"]

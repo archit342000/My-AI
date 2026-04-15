@@ -21,8 +21,19 @@ APP_PASSWORD = get_secret("APP_PASSWORD", None)
 # =============================================================================
 # AI INFERENCE & INFRASTRUCTURE
 # =============================================================================
-AI_URL = get_secret("AI_URL", "http://localhost:1234")
+AI_URL = get_secret("AI_URL")
 AI_API_KEY = get_secret("AI_API_KEY", "")
+EMBEDDING_URL = get_secret("EMBEDDING_URL", None)
+EMBEDDING_API_KEY = get_secret("EMBEDDING_API_KEY", None)
+
+# Strict Validation: Fail if EMBEDDING_URL is missing
+if not EMBEDDING_URL:
+    raise ValueError(
+        "FATAL: EMBEDDING_URL is missing from secrets. "
+        "Falling back to AI_URL is deprecated and strictly forbidden for security and isolation."
+    )
+
+PLAYWRIGHT_HEADLESS = os.getenv("PLAYWRIGHT_HEADLESS", "True").lower() == "true"
 CHROMA_PATH = get_secret("CHROMA_PATH", os.path.abspath(os.path.join(DATA_DIR, "chroma_db")))
 
 # Ensure persistence directories exist
@@ -79,11 +90,40 @@ RESEARCH_CONTENT_CHUNK_LIMIT = 15000
 # RAG & EMBEDDINGS
 # =============================================================================
 RAG_CHUNK_MAX_CHARS = 2200         # Max chars per embedding chunk
-RAG_MIN_SEMANTIC_SCORE = 0.50      # Minimum cosine similarity for retrieval
-RAG_DEDUP_THRESHOLD = 0.90         # Similarity above this = duplicate chunk
-RAG_FETCH_MULTIPLIER = 5           # Overfetch ratio for re-ranking
-RAG_DECAY_RATE = 0.10              # Time-decay weight for older memories
+RAG_MIN_SEMANTIC_SCORE = 0.40      # Minimum cosine similarity for retrieval (post-RRF)
+RAG_DEDUP_THRESHOLD = 0.80         # Similarity above this = duplicate chunk
+RAG_FETCH_MULTIPLIER = 2           # Overfetch ratio for re-ranking
+RAG_DECAY_RATE = 0.30              # Time-decay weight for older memories
 RAG_RETRIEVAL_LIMIT = 500          # Hard cap on total retrieved chunks
+RAG_GRID_WORKERS = int(os.getenv("RAG_GRID_WORKERS", 16))  # Parallel workers for optimization
+
+# =============================================================================
+# RAG MIGRATION SETTINGS
+# =============================================================================
+RAG_MIGRATION_BATCH_SIZE = int(os.getenv("RAG_MIGRATION_BATCH_SIZE", 50))
+
+# =============================================================================
+# EMBEDDING TOKEN LIMITS
+# Maximum tokens per embedding request (to stay within tokenizer context window)
+# Using 1000 tokens per chunk: embeddinggemma-300m has 2048 context window,
+# allowing ~2 chunks per LLM context window for retrieval with better context
+# =============================================================================
+EMBEDDING_MAX_TOKENS_CORE = int(os.getenv("EMBEDDING_MAX_TOKENS_CORE", 1000))       # Core memory embeddings
+EMBEDDING_MAX_TOKENS_RESEARCH = int(os.getenv("EMBEDDING_MAX_TOKENS_RESEARCH", 1000))  # Research RAG embeddings
+EMBEDDING_MAX_TOKENS_FILE = int(os.getenv("EMBEDDING_MAX_TOKENS_FILE", 1000))       # File RAG embeddings
+EMBEDDING_BATCH_SIZE = int(os.getenv("EMBEDDING_BATCH_SIZE", 1024))               # Number of chunks per request
+
+# =============================================================================
+# FILE RAG ENHANCEMENTS
+# =============================================================================
+HYBRID_SEARCH_ENABLED = True          # Enable BM25 + vector fusion for File RAG
+CODE_CHUNKING_ENABLED = True          # Enable syntax-aware chunking for code files
+# =============================================================================
+# FILE TYPE CLASSIFIER
+# =============================================================================
+FILE_TYPE_DETECTION_ENABLED = True    # Enable content-based file type detection
+CLASSIFIER_CODE_THRESHOLD = float(os.getenv("CLASSIFIER_CODE_THRESHOLD", 20.0))
+CLASSIFIER_DOC_THRESHOLD = float(os.getenv("CLASSIFIER_DOC_THRESHOLD", 0.35))
 
 # =============================================================================
 # CORE MEMORY MANAGEMENT
@@ -128,7 +168,7 @@ RESEARCH_MAX_GAPS_PER_SECTION = int(os.getenv("RESEARCH_MAX_GAPS_PER_SECTION", 2
 RESEARCH_TRIAGE_MAX_FACTS = int(os.getenv("RESEARCH_TRIAGE_MAX_FACTS", 25))
 RESEARCH_MIN_SECTION_LEN = 300             # Min chars for a written section to be accepted
 
-# Per-query content budget (tokens, estimated as chars / 4)
+# Per-query content budget (actual token counting via token_counter.py)
 RESEARCH_CONTENT_BUDGET_REGULAR = 50000    # Tokens per query, regular mode
 RESEARCH_CONTENT_BUDGET_DEEP = 80000       # Tokens per query, deep mode
 
@@ -233,8 +273,62 @@ CIRCUIT_RECOVERY_TIMEOUT = float(os.getenv("CIRCUIT_RECOVERY_TIMEOUT", 30))    #
 # RETRY CONFIGURATION
 # =============================================================================
 RETRY_COUNT = int(os.getenv("RETRY_COUNT", 2))
+RETRY_DELAY_SECONDS = int(os.getenv("RETRY_DELAY_SECONDS", 1))
 
 # =============================================================================
 # TOOL CONFIGURATION
 # =============================================================================
-MAX_TOOL_ROUNDS = int(os.getenv("MAX_TOOL_ROUNDS", 8))  # Maximum tool rounds per conversation
+MAX_TOOL_ROUNDS = int(os.getenv("MAX_TOOL_ROUNDS", 8))
+
+# =============================================================================
+# FILE UPLOAD SETTINGS
+# =============================================================================
+# Maximum file size for uploads (default 100MB for text-only models)
+FILE_UPLOAD_MAX_SIZE = int(os.getenv("FILE_UPLOAD_MAX_SIZE", 100 * 1024 * 1024))  # 100MB
+FILE_STORAGE_PATH = os.path.join(DATA_DIR, 'files')
+os.makedirs(FILE_STORAGE_PATH, exist_ok=True)
+
+# Allowed MIME types for file uploads
+FILE_UPLOAD_ALLOWED_TYPES = [
+    'application/pdf',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'text/plain',
+    'image/png',
+    'image/jpeg',
+    'image/gif',
+    'video/mp4',
+    'audio/mpeg',
+    'audio/wav'
+]
+
+# File processing options
+# FILE_RAG_ENABLED: Enable RAG storage for uploaded files
+# FILE_VISION_ENABLED: Enable vision processing for image/video files
+# For text-only models: RAG enabled, vision disabled
+FILE_RAG_ENABLED = True
+FILE_VISION_ENABLED = True  # Maximum tool rounds per conversation
+
+# Text-only model file upload settings
+# TEXT_ONLY_MODEL_MAX_FILES: Maximum number of files per chat for text-only models
+# Set to None for no limit, or a positive integer to enforce a limit
+TEXT_ONLY_MODEL_MAX_FILES = None  # No limit by default
+
+# =============================================================================
+# FILE UPLOAD - ADDITIONAL SETTINGS
+# =============================================================================
+# Maximum characters to return from read_file tool
+READ_FILE_CONTENT_LIMIT = int(os.getenv("READ_FILE_CONTENT_LIMIT", 10000))
+# Maximum pages to extract from PDF for vision analysis
+PDF_PAGE_LIMIT = int(os.getenv("PDF_PAGE_LIMIT", 5))
+
+# =============================================================================
+# PDF EXTRACTION SETTINGS
+# =============================================================================
+# Enable PDF text extraction
+PDF_EXTRACTOR_ENABLED = True
+# Enable OCR fallback for scanned PDFs
+PDF_OCR_ENABLED = True
+# OCR languages to use (easyocr supported languages)
+PDF_OCR_LANGUAGES = ['en']
+# Minimum content length required after extraction
+PDF_EXTRACTION_MIN_CONTENT = 50
