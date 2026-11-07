@@ -32,8 +32,8 @@ def client(app):
     return app.test_client()
 
 def test_index_route(client):
-    """Test the root index route serves index.html."""
-    with patch('app.send_from_directory') as mock_send:
+    """Test the root index route serves index.html in legacy mode."""
+    with patch.object(config, 'FRONTEND', 'legacy'), patch('app.send_from_directory') as mock_send:
         mock_send.return_value = "index html content"
         response = client.get('/')
         assert response.status_code == 200
@@ -41,8 +41,8 @@ def test_index_route(client):
         mock_send.assert_called_with('static', 'index.html')
 
 def test_chat_route(client):
-    """Test the chat route serves index.html."""
-    with patch('app.send_from_directory') as mock_send:
+    """Test the chat route serves index.html in legacy mode."""
+    with patch.object(config, 'FRONTEND', 'legacy'), patch('app.send_from_directory') as mock_send:
         mock_send.return_value = "index html content"
         response = client.get('/chat/123')
         assert response.status_code == 200

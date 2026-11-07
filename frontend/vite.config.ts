@@ -13,8 +13,8 @@ export default defineConfig({
     outDir: 'dist',
     emptyOutDir: true,
     sourcemap: false,
-    // mermaid is a large lazy-loaded chunk by design (only loaded when a diagram is shown).
-    chunkSizeWarningLimit: 1500,
+    // Main bundle is ~1.6 MB (React, markdown, KaTeX). mermaid and CodeMirror are lazy chunks.
+    chunkSizeWarningLimit: 1700,
   },
   server: {
     port: 5173,

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { artifactsApi, type Artifact, type ScopeRef } from '../../api/filesystem';
 import { Icon } from '../../components/icons/Icon';
@@ -6,7 +6,7 @@ import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { showToast } from '../../components/ui/toast-store';
 import { Markdown } from '../../components/markdown/Markdown';
 import { useUiStore } from '../../state/ui-store';
-import { CodeEditor } from './CodeEditor';
+const CodeEditor = lazy(() => import('./CodeEditor').then((m) => ({ default: m.CodeEditor })));
 import { previewKind } from './language';
 import { VersionsDialog } from './VersionsDialog';
 
@@ -132,7 +132,9 @@ export function ArtifactPanel({ scope }: { scope: ScopeRef }) {
           </div>
           <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '0 10px 10px' }}>
             {editing ? (
-              <CodeEditor value={content} language={current.language} dark={isDark} onChange={setDraft} onSave={() => dirty && save.mutate(content)} />
+              <Suspense fallback={<div style={{ color: 'var(--content-muted)' }}>Loading editor…</div>}>
+                <CodeEditor value={content} language={current.language} dark={isDark} onChange={setDraft} onSave={() => dirty && save.mutate(content)} />
+              </Suspense>
             ) : previewKind(current.language) === 'markdown' ? (
               <Markdown text={content} className="message-content raw-text-content" />
             ) : previewKind(current.language) === 'html' ? (

@@ -41,6 +41,9 @@ A high-performance, Multi-Agent AI Workspace natively powered by [llama.cpp](htt
 
 ## 🚀 Installation & Setup
 
+> **Frontend:** the UI is built with Node 22+ (`cd frontend && npm ci && npm run build`). The Docker image builds it automatically. Set `FRONTEND=legacy` to serve the old UI. See `docs/frontend.md`.
+
+
 ### 1. Repository Setup
 ```bash
 git clone https://github.com/archit342000/My-AI.git

@@ -21,3 +21,8 @@ EMBEDDING_URL="http://mock" AI_URL="http://mock" AI_API_KEY="dummy" PYTHONPATH=.
 ```
 
 The local README of each component lists its own tests. Read it before running them.
+
+## Frontend tests
+
+Run from `frontend/`: `npm run typecheck`, `npm run lint`, `npm run test`. End-to-end specs
+(`npm run e2e`) need the dev server on :5173 and the backend on :5000. See `docs/frontend.md`.

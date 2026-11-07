@@ -7,7 +7,7 @@ import { Marked, Renderer, type RendererObject, type Tokens } from 'marked';
 import markedFootnote from 'marked-footnote';
 import markedKatex from 'marked-katex-extension';
 import DOMPurify from 'dompurify';
-import hljs from 'highlight.js';
+import hljs from 'highlight.js/lib/common';
 import { normalizeNewlines, parseContent, preprocessLatex } from './content';
 
 export function escapeHtml(value: string): string {

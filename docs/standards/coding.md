@@ -4,7 +4,7 @@
 2. **Configuration:** all config lives in `backend/config.py`. Never hardcode values.
 3. **Database:** always use `db` from `backend.database`. Never write raw SQL outside the database layer.
 4. **Logging:** use `log_event()` from `backend.logging`, not `print()`.
-5. **Frontend:** no frameworks; plain ES6+ modules (`static/js/`); CSS Custom Properties only.
+5. **Frontend:** React and TypeScript in `frontend/` (strict mode). Follow `docs/frontend.md`. CSS Custom Properties only.
 6. **Errors:** do not mask failures with empty `try/except` blocks or by returning `None` or empty lists.
    Handle errors explicitly or let them propagate so they can be debugged.
 7. **Edits:** prefer small, incremental edits over rewriting whole files. Do not replace more code than the change needs.
