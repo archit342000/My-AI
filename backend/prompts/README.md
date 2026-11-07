@@ -11,11 +11,10 @@
 | File | Purpose | Key Symbols/Exports |
 | :--- | :--- | :--- |
 | `loader.py` | Centralized prompt template loading and interpolation logic. | `PromptLoader` |
-| `examples.yaml` | YAML structured few-shot examples for agents. | `PromptLoader.load_examples` |
 
 ## 🧩 Architectural Context
 *   **Dependencies:** `backend.config`, PyYAML.
-*   **Flow:** The `PromptBuilder` and sub-agents retrieve text templates from this directory via `PromptLoader`, which interpolates runtime context and injects YAML-driven few-shot examples.
+*   **Flow:** The `PromptBuilder` and sub-agents retrieve text templates from this directory via `PromptLoader`, which interpolates runtime context and can inject YAML few-shot examples when an `examples.yaml` is present.
 
 ## 🛠️ Usage & Conventions
 *   **Patterns:** Text templates must adhere to strict XML tag schemas.

@@ -19,7 +19,6 @@
 | `clipboard.py` | Out-of-band text sharing clipboard tool implementations. | `clipboard_write`, `clipboard_read`, `clipboard_copy_file` |
 | `files.py` | Tools for reading and searching **uploaded** files (RAG/Grep). | `read_file` |
 | `preferences.py` | Management of long-term user profile facts. | `manage_user_preferences` |
-| `prompts.py` | Specialized system prompts for tools and agents. | `USER_PREFERENCES_DIRECTIVES` |
 | `spec.py` | ToolSpec dataclass and scope/type enumerations. | `ToolSpec`, `ToolScope`, `ToolType` |
 | `router.py` | API endpoints for interacting with tools and config. | `tools_bp` |
 | `tasks.py` | Implementation of persistent task/checklist management. | `manage_task_list` |

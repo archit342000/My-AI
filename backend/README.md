@@ -22,7 +22,6 @@
 | `error_handling.py` | Resilience patterns (Retry, Jitter, Circuit Breaker). | `CircuitBreaker`, `execute_with_retry` |
 | `file_types.py` | Exhaustive registry of supported file and code extensions. | `EXHAUSTIVE_TEXT_EXTENSIONS` |
 | `mcp_client.py` | Client for Model Context Protocol (MCP) tool servers. | `MCPClient` |
-| `prompts.py` | Base system prompts and personality directives. | `BASE_SYSTEM_PROMPT` |
 
 ## 🧪 Testing
 | Test File | Scope |
@@ -31,7 +30,7 @@
 | `tests/test_error_handling.py` | Error classification, retry logic, and circuit breaker states. |
 | `tests/test_mcp_client.py` | Model Context Protocol (MCP) connection and tool execution. |
 | `tests/test_file_types.py` | Exhaustive MIME type and extension mapping. |
-| `tests/test_backend_prompts.py` | Base system prompt composition and personality. |
+| `tests/test_prompts.py` | Base system prompt composition through `PromptBuilder`. |
 
 *   **Run Tests:** `EMBEDDING_URL="http://mock" AI_URL="http://mock" AI_API_KEY="dummy" PYTHONPATH=. ./venv/bin/python -m pytest backend/tests/`
 

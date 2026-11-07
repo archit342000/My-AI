@@ -1,11 +1,6 @@
 # backend/inference
 **Role:** Provides a unified interface for interacting with LLM APIs, handling chat completions, streaming responses, and embeddings while managing request serialization and model lifecycle.
 
-## 📂 Subdirectories
-| Folder | Responsibility |
-| :--- | :--- |
-| `parsers/` | Contains the `StreamInterceptor` state machine and model-specific configurations for dynamically extracting `<think>` tags from raw inference streams. |
-
 ## 📄 Core Files
 | File | Purpose | Key Symbols/Exports |
 | :--- | :--- | :--- |
@@ -25,7 +20,7 @@
     3. **Pre-flight:** It ensures the requested model is loaded on the target server.
     4. **Normalization:** Messages are normalized to standard formats.
     5. **Execution:** Performs the HTTP request and processes the result.
-    6. **Token Interception (App-Side Parsing):** The engine routes raw text through the `parsers` module. Based on model signatures, it strips `<think>` or `<|channel>thought` tags dynamically, segregating them into the UI-compatible `reasoning_content` stream.
+    6. **Token Interception (App-Side Parsing):** The engine routes raw text through the `inference_proxy/parsers` module. Based on model signatures, it strips `<think>` or `<|channel>thought` tags dynamically, segregating them into the UI-compatible `reasoning_content` stream.
     7. **Logging:** Records the transaction, including payloads and timing metadata.
 
 ## 🛠️ Usage & Conventions
