@@ -190,3 +190,71 @@ def test_code_execution_ws_proxy(mock_get_setting, mock_collect_project_files, m
     assert sent_payload["language"] == "python"
     assert sent_payload["entry_file"] == "main.py"
 
+
+
+# --- Frontend mode switch (FRONTEND=legacy|react) ---------------------------
+
+def test_react_mode_serves_built_index(client, tmp_path):
+    """In react mode, SPA routes serve frontend/dist/index.html."""
+    (tmp_path / "index.html").write_text("<div id=root></div>", encoding="utf-8")
+    with patch.object(config, 'FRONTEND', 'react'), patch('app.FRONTEND_DIST', str(tmp_path)):
+        for path in ('/', '/chat/abc', '/workspace/ws1', '/logs'):
+            response = client.get(path)
+            assert response.status_code == 200, path
+            assert b'<div id=root>' in response.data, path
+
+
+def test_react_mode_without_build_returns_503(client, tmp_path):
+    """A missing build gives an actionable 503, not a bare 404."""
+    with patch.object(config, 'FRONTEND', 'react'), patch('app.FRONTEND_DIST', str(tmp_path)):
+        response = client.get('/')
+        assert response.status_code == 503
+        assert b'npm run build' in response.data
+
+
+def test_react_mode_serves_assets(client, tmp_path):
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    (assets / "app.js").write_text("console.log(1)", encoding="utf-8")
+    with patch.object(config, 'FRONTEND', 'react'), patch('app.FRONTEND_DIST', str(tmp_path)):
+        assert client.get('/assets/app.js').status_code == 200
+        assert client.get('/assets/missing.js').status_code == 404
+
+
+def test_legacy_mode_does_not_serve_assets(client):
+    with patch.object(config, 'FRONTEND', 'legacy'):
+        assert client.get('/assets/anything.js').status_code == 404
+
+
+def test_legacy_mode_logs_route_serves_logs_html(client):
+    with patch.object(config, 'FRONTEND', 'legacy'), \
+         patch('app.send_from_directory') as mock_send:
+        mock_send.return_value = "logs html"
+        response = client.get('/logs')
+        assert response.status_code == 200
+        mock_send.assert_called_with('static', 'logs.html')
+
+
+def test_legacy_under_prefix_rewrites_asset_paths(client):
+    """/legacy/ serves the old UI with its absolute asset paths moved under /legacy/."""
+    with patch.object(config, 'FRONTEND', 'react'):
+        response = client.get('/legacy/')
+        assert response.status_code == 200
+        html = response.get_data(as_text=True)
+        assert 'src="/legacy/js/utils.js"' in html
+        assert 'href="/legacy/styles.css"' in html
+        assert 'src="/js/' not in html
+
+
+def test_legacy_prefix_serves_js_files(client):
+    with patch.object(config, 'FRONTEND', 'react'):
+        assert client.get('/legacy/js/utils.js').status_code == 200
+
+
+def test_frontend_setting_rejects_unknown_value():
+    import importlib
+    import backend.config as cfg
+    with patch.dict(os.environ, {"FRONTEND": "vue"}):
+        with pytest.raises(ValueError, match="FRONTEND must be"):
+            importlib.reload(cfg)
+    importlib.reload(cfg)

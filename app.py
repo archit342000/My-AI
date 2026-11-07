@@ -251,11 +251,62 @@ except RuntimeError:
     asyncio.run(InferenceEngine().start())
 
 
+FRONTEND_DIST = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'frontend', 'dist')
+LEGACY_PREFIX = '/legacy'
+
+
+def _react_enabled():
+    return config.FRONTEND == 'react'
+
+
+def _serve_react_index():
+    if not os.path.isfile(os.path.join(FRONTEND_DIST, 'index.html')):
+        return Response('Frontend not built. Run `npm ci && npm run build` in frontend/, '
+                        'or set FRONTEND=legacy.', 503, {'Content-Type': 'text/plain'})
+    return send_from_directory(FRONTEND_DIST, 'index.html')
+
+
+def _serve_legacy_page(filename):
+    """Serve a legacy HTML page under /legacy/ with its absolute asset paths rewritten."""
+    with open(os.path.join('static', filename), encoding='utf-8') as f:
+        html = f.read()
+    html = (html.replace('src="/js/', f'src="{LEGACY_PREFIX}/js/')
+                .replace('href="/styles.css"', f'href="{LEGACY_PREFIX}/styles.css"'))
+    return Response(html, mimetype='text/html')
+
+
 @app.route('/')
 @app.route('/chat/<chat_id>')
 @app.route('/workspace/<workspace_id>')
 def index(chat_id=None, workspace_id=None):
+    if _react_enabled():
+        return _serve_react_index()
     return send_from_directory('static', 'index.html')
+
+@app.route('/logs')
+def react_logs_page():
+    if _react_enabled():
+        return _serve_react_index()
+    return send_from_directory('static', 'logs.html')
+
+@app.route('/assets/<path:path>')
+def react_assets(path):
+    if not _react_enabled():
+        return Response('Not Found', 404)
+    return send_from_directory(os.path.join(FRONTEND_DIST, 'assets'), path)
+
+@app.route(LEGACY_PREFIX + '/')
+@app.route(LEGACY_PREFIX + '/index.html')
+def legacy_index():
+    return _serve_legacy_page('index.html')
+
+@app.route(LEGACY_PREFIX + '/logs.html')
+def legacy_logs():
+    return _serve_legacy_page('logs.html')
+
+@app.route(LEGACY_PREFIX + '/<path:path>')
+def legacy_assets(path):
+    return send_from_directory('static', path)
 
 @app.before_request
 def require_auth():
