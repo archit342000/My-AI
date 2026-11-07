@@ -1,10 +1,10 @@
 import { useNavigate } from 'react-router';
 import { Icon } from '../components/icons/Icon';
 import { useUiStore } from '../state/ui-store';
+import { SidebarChats } from '../features/sidebar/RecentChats';
 
 /**
- * Left navigation rail. Workspaces and recent chats are filled in phase 3; settings buttons
- * are wired in phase 5.
+ * Left navigation rail. Settings buttons are wired in phase 5.
  */
 export function Sidebar() {
   const collapsed = useUiStore((s) => s.sidebarCollapsed);
@@ -64,13 +64,7 @@ export function Sidebar() {
           </button>
         </div>
 
-        <div id="folders-sidebar-section" className="sidebar-section hidden" />
-        <div id="recent-chats-sidebar-section" className="sidebar-section">
-          <div className="sidebar-section-label">
-            <span className="sidebar-text">Recent Chats</span>
-          </div>
-          <div id="chat-history-list" className="chat-history-scroll" />
-        </div>
+        <SidebarChats />
       </div>
 
       <div className="sidebar-footer">
