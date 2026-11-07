@@ -34,7 +34,7 @@ Only list entries that are not obvious from their names.
 Local patterns and constraints. Test commands are in `docs/standards/testing.md`.
 ```
 
-Do not maintain tables of files and symbols by hand. They go stale. Put that information in docstrings.
+File and symbol tables are allowed, but keep them short: `tests/test_docs.py` fails when a table lists a file that no longer exists. Prefer docstrings for per-function detail.
 
 ## Keeping docs accurate
 
@@ -50,5 +50,5 @@ Release history through v4.10.0 is archived in `docs/archive/changelog-through-v
 
 ## Size budget
 
-`AGENTS.md` stays under 80 lines, each file in `docs/` under 200 lines, and each component README under 60 lines.
-`backend/tests/test_docs.py` enforces this.
+`AGENTS.md` stays under 80 lines, each file in `docs/` under 200 lines, and each README under 100 lines.
+`tests/test_docs.py` enforces this, and also checks that files listed in README tables exist and that `CLAUDE.md` and `GEMINI.md` still point to `AGENTS.md`.

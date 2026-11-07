@@ -3,7 +3,7 @@
 ## Rules
 
 1. **1:1 test mapping:** every source file has a test file in its directory's `tests/` subdirectory
-   (`module.py` has `tests/test_module.py`).
+   (`module.py` has `tests/test_<module>.py`).
 2. **Coverage:** test every function. Test classes as a whole, including all methods.
 3. **Run locally, then upward:** run the tests in the directory you changed, then every parent
    `tests/` directory up to the root (for example `backend/database/tests/`, `backend/tests/`, `tests/`).
