@@ -1,3 +1,15 @@
+/** New-chat landing: the welcome hero. The composer is added in phase 4. */
 export function HomePage() {
-  return <main className="placeholder">HomePage</main>;
+  return (
+    <div id="messages">
+      <div id="welcome-hero">
+        <div className="empty-state-content">
+          <div className="empty-state-greeting">
+            <span className="greeting-text font-heading">Hello there</span>
+            <span className="greeting-sub font-heading">How can I help you today?</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
