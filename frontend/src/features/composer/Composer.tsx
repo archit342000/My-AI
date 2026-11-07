@@ -10,6 +10,7 @@ import { useStreamStore } from '../../state/stream-store';
 import { generateChatId, sendTurn, stopTurn } from '../chat/send-turn';
 import { useKeyboardOffset } from '../../hooks/useKeyboardOffset';
 import { SLASH_COMMANDS } from './slash';
+import { useModalStore } from '../../state/modal-store';
 
 interface Staged extends UploadedFile {
   progress: number;
@@ -77,9 +78,14 @@ export function Composer() {
   async function send() {
     if (!canSend) return;
     const content = text.trim();
-    if (content === '/help' || content === '/skills') {
+    if (content === '/skills') {
       setText('');
-      showToast(content === '/skills' ? 'Skills manager opens in phase 5' : 'Type a message to chat', 'info');
+      useModalStore.getState().show('skills');
+      return;
+    }
+    if (content === '/help') {
+      setText('');
+      showToast('Type /skills to manage skills; each skill runs with /name', 'info');
       return;
     }
     const files: UploadedFile[] = staged

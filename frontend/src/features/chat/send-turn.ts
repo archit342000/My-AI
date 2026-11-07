@@ -116,7 +116,7 @@ export async function sendTurn({ queryClient, chatId, text, files, isNewChat, hi
       gitMode: settings.modes.gitMode,
       codeExecutionMode: settings.modes.codeExecutionMode,
     },
-    personaId: null,
+    personaId: settings.personaId,
     folder: null,
     uploadedFiles: files,
   });

@@ -4,6 +4,7 @@ import { ToastViewport } from '../components/ui/Toast';
 import { useThemeSync } from '../hooks/useThemeSync';
 import { useUiStore } from '../state/ui-store';
 import { Sidebar } from './Sidebar';
+import { DialogHost } from '../features/settings/DialogHost';
 
 /** App frame: animated background, sidebar, routed main area, toasts. */
 export function RootLayout() {
@@ -25,6 +26,7 @@ export function RootLayout() {
           <Outlet />
         </main>
       </div>
+      <DialogHost />
       <ToastViewport />
     </>
   );

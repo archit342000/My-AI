@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router';
 import { Icon } from '../components/icons/Icon';
 import { useUiStore } from '../state/ui-store';
 import { SidebarChats } from '../features/sidebar/RecentChats';
+import { useModalStore } from '../state/modal-store';
 
 /**
  * Left navigation rail. Settings buttons are wired in phase 5.
@@ -10,6 +11,7 @@ export function Sidebar() {
   const collapsed = useUiStore((s) => s.sidebarCollapsed);
   const toggle = useUiStore((s) => s.toggleSidebar);
   const navigate = useNavigate();
+  const showDialog = useModalStore((s) => s.show);
 
   return (
     <aside id="sidebar" className={collapsed ? 'sidebar-collapsed' : 'sidebar-expanded'}>
@@ -68,12 +70,12 @@ export function Sidebar() {
       </div>
 
       <div className="sidebar-footer">
-        <button id="settings-trigger" type="button" className="sidebar-footer-btn" title="Chat Settings">
+        <button id="settings-trigger" type="button" className="sidebar-footer-btn" title="Chat Settings" onClick={() => showDialog('chat-settings')}>
           <Icon name="settings" size={18} />
           <span className="sidebar-text">Settings</span>
           <span className="nav-tooltip">Settings</span>
         </button>
-        <button id="system-settings-trigger" type="button" className="sidebar-footer-btn" title="System Settings">
+        <button id="system-settings-trigger" type="button" className="sidebar-footer-btn" title="System Settings" onClick={() => showDialog('system-settings')}>
           <Icon name="monitor" size={18} />
           <span className="sidebar-text">System</span>
           <span className="nav-tooltip">System Settings</span>

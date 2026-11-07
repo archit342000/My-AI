@@ -11,6 +11,7 @@ export const KEYS = {
   sampling: 'my_ai_sampling_params',
   research: 'my_ai_is_research_mode',
   vision: 'my_ai_vision_enabled',
+  persona: 'my_ai_persona_id',
 } as const;
 
 export const DEFAULT_SAMPLING: SamplingParams = {
@@ -50,7 +51,9 @@ interface SettingsState {
   modelName: string | null;
   sampling: SamplingParams;
   visionEnabled: boolean;
+  personaId: string | null;
   modes: ModeToggles;
+  setPersona: (id: string | null) => void;
   setModel: (id: string, name: string) => void;
   setSampling: (patch: Partial<SamplingParams>) => void;
   setVisionEnabled: (on: boolean) => void;
@@ -62,6 +65,12 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   modelName: read(KEYS.modelName),
   sampling: loadSampling(),
   visionEnabled: read(KEYS.vision) === 'true',
+  personaId: read(KEYS.persona),
+  setPersona: (id) => {
+    if (id) localStorage.setItem(KEYS.persona, id);
+    else localStorage.removeItem(KEYS.persona);
+    set({ personaId: id });
+  },
   modes: {
     researchMode: read(KEYS.research) === 'true',
     browsingMode: false,
