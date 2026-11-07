@@ -14,6 +14,7 @@
 | `router.py` | Flask API endpoints for chat management, completions, and persona CRUD. | `chat_bp`, `openai_bp`, `personas_bp` |
 | `tool_handler.py` | Dispatches and executes tool calls (pure or agent-based). | `ToolHandler` |
 | `turn_handler.py` | Serializes turns and ensures state persistence. | `TurnHandler` |
+| `validators.py` | Enforces clipboard-first checks and parses LLM confirmations. | `validate_fs_agent_instruction`, `parse_confirmation_response` |
 
 ## 🧩 Architectural Context
 *   **Dependencies:**

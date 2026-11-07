@@ -18,4 +18,5 @@
 
 ## 🛠️ Usage & Conventions
 *   **Patterns:** Strictly enforces a "Plan-then-Act" workflow using `manage_task_list`.
+*   **Clipboard-First Flow:** Receives clipboard identifiers via `clipboard_keys` parameter to perform out-of-band file transfers rather than inlining large bodies of code.
 *   **Testing:** Local tests in `tests/`. Run with `pytest backend/tools/agents/file_system_agent/tests/`.

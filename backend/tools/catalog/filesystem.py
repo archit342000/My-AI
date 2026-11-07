@@ -211,7 +211,16 @@ FILE_SYSTEM_AGENT = ToolSpec(
         "properties": {
             "instruction": {
                 "type": "string",
-                "description": "Self-contained task description. The agent has no access to conversation history."
+                "description": (
+                    "Self-contained task description. The agent has no access to conversation history. "
+                    "For large files or code block creation/modification, first write the contents using clipboard_write "
+                    "and reference the cb-... key here, specifying the key in clipboard_keys."
+                )
+            },
+            "clipboard_keys": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "List of clipboard keys (e.g., ['cb-xxx']) holding content needed for this operation."
             }
         },
         "required": ["instruction"]

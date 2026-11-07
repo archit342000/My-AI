@@ -97,6 +97,56 @@ class ToolHandler:
             if tool_meta.get('type') == 'agent':
                 log_event("tool_call_agent", {"chat_id": self.chat_id, "name": name, "id": tc_id, "args_raw": args_str})
 
+                # ── CLIPBOARD ENFORCEMENT ────────────────────────────────
+                if name == "file_system_agent":
+                    bypass = False
+                    if hasattr(self.chat_handler, '_validation_bypass_next'):
+                        val = self.chat_handler._validation_bypass_next
+                        if isinstance(val, bool):
+                            bypass = val
+                    if bypass:
+                        self.chat_handler._validation_bypass_next = False
+                        log_event("clipboard_enforcement_bypassed", {
+                            "chat_id": self.chat_id, "tc_id": tc_id,
+                        })
+                    else:
+                        from backend.chat.validators import (
+                            validate_fs_agent_instruction, ValidationStatus,
+                        )
+                        validation = validate_fs_agent_instruction(args)
+
+                        if validation.status in (
+                            ValidationStatus.HARD_REJECT,
+                            ValidationStatus.SOFT_REJECT,
+                        ):
+                            if validation.status == ValidationStatus.SOFT_REJECT:
+                                self.chat_handler._pending_confirmation = {
+                                    "tc_id": tc_id,
+                                    "name": name,
+                                    "args": args.copy(),
+                                    "matched_patterns": validation.matched_patterns,
+                                }
+
+                            from backend.database import db as _vdb
+                            _vdb.add_tool_result(
+                                chat_id=self.chat_id,
+                                tool_call_id=tc_id,
+                                name=name,
+                                content=validation.message,
+                                parent_id=self.parent_message_id,
+                                parent_type=self.parent_type,
+                            )
+                            yield "data: " + json.dumps({
+                                "parent_type": self.parent_type,
+                                "choices": [{"delta": {"tool_result": {
+                                    "name": name,
+                                    "content": validation.message,
+                                    "tool_call_id": tc_id,
+                                }}}]
+                            }) + "\n\n"
+                            continue
+                # ── END CLIPBOARD ENFORCEMENT ────────────────────────────
+
                 # 1. Handoff to AgentHandler
                 flow_fn = ToolRegistry.resolve_implementation(name)
                 logger.info(f"[TOOL] Resolved flow function for tool '{name}': {flow_fn}")

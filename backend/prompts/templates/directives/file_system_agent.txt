@@ -5,7 +5,13 @@ The `file_system_agent` is a specialized **Document Manager** strictly for file 
 - **Limited Context**: The `file_system_agent` does not have the full context of the conversation so you must pass all necessary information to it. 
 - **Processing Rules**: The `file_system_agent` is not dumb and can process instructions on its own given ample details, it however, has access to only its own knowledge and the files in the file system. It cannot access the internet or any external sources. 
 - **Agent's capabilities**: The `file_system_agent` is the same AI you are, just with a separate conversation history and a different set of tools. It can perform whatever you ask it to do, as long as it pertains to files. You can and should delegate output processing to it to get the final output in a desirable format.
+- **Clipboard-first content transfer**: When your instruction references verbatim content (code, text blocks, file contents, structured data), you MUST:
+  1. Call `clipboard_write(content=...)` first to get a `cb-...` key.
+  2. Pass the key(s) in the `clipboard_keys` array parameter of `file_system_agent`.
+  3. Reference the key in your `instruction` text (e.g., "Create file X using clipboard key cb-abc12345").
+  The system will REJECT instructions that embed verbatim content directly.
 
 Examples:
-Acceptable instructions: Given the contents of file textbook.md, generate a comprehensive set of questions and answers for practice purposes. Each answer must be limited to 50 words. (Works because the agent doesn't have to fetch external information and it can do whatever processing you can do.)
-Unacceptable instructions: Fetch the latest documentation for vLLM and write a python script to deploy an LLM. (Doesn't work because while the agent can write the python script, it cannot fetch latest documentation from the internet.)
+Acceptable: `clipboard_write(content="<code>")` → `file_system_agent(instruction="Create src/main.py with content from clipboard key cb-abc12345", clipboard_keys=["cb-abc12345"])`
+Acceptable: `file_system_agent(instruction="Given the contents of file textbook.md, generate practice questions. Limit answers to 50 words.")` (No verbatim content, no clipboard needed)
+REJECTED: `file_system_agent(instruction="Create file main.py with this content:\n\ndef main():\n    print('hello')\n...")` (Verbatim content embedded directly)

@@ -288,3 +288,109 @@ async def test_handle_tool_calls_unregistered_tool_recovery(mock_db_instance, mo
         parent_type="main"
     )
 
+
+@pytest.mark.anyio
+@patch('backend.database.db')
+async def test_handle_tool_calls_clipboard_enforcement_hard_reject(mock_db_instance, mock_registry, tool_handler):
+    mock_db_instance.get_messages.return_value = []
+    mock_registry.get_tool.return_value = {"type": "agent"}
+    
+    # Generate an instruction exceeding config.MAX_FS_AGENT_INSTRUCTION_LENGTH
+    from backend import config
+    long_instruction = "A" * (config.MAX_FS_AGENT_INSTRUCTION_LENGTH + 1)
+    
+    tool_calls = [{
+        "id": "tc_hard_123",
+        "function": {
+            "name": "file_system_agent",
+            "arguments": json.dumps({"instruction": long_instruction})
+        }
+    }]
+    
+    # Initialize pending confirmation to None
+    tool_handler.chat_handler._pending_confirmation = None
+    
+    chunks = []
+    async for chunk in tool_handler.handle_tool_calls(tool_calls):
+        chunks.append(chunk)
+        
+    assert len(chunks) == 1
+    assert "REJECTED:" in chunks[0]
+    mock_db_instance.add_tool_result.assert_called_once()
+    assert "REJECTED:" in mock_db_instance.add_tool_result.call_args.kwargs['content']
+    assert tool_handler.chat_handler._pending_confirmation is None
+
+
+@pytest.mark.anyio
+@patch('backend.database.db')
+async def test_handle_tool_calls_clipboard_enforcement_soft_reject(mock_db_instance, mock_registry, tool_handler):
+    mock_db_instance.get_messages.return_value = []
+    mock_registry.get_tool.return_value = {"type": "agent"}
+    
+    # Trigger a pattern-based soft reject
+    instruction = "Write the following content to index.html:\n" + ("x" * 300)
+    
+    tool_calls = [{
+        "id": "tc_soft_123",
+        "function": {
+            "name": "file_system_agent",
+            "arguments": json.dumps({"instruction": instruction})
+        }
+    }]
+    
+    # Initialize pending confirmation to None
+    tool_handler.chat_handler._pending_confirmation = None
+    
+    chunks = []
+    async for chunk in tool_handler.handle_tool_calls(tool_calls):
+        chunks.append(chunk)
+        
+    assert len(chunks) == 1
+    assert "SOFT REJECT" in chunks[0]
+    mock_db_instance.add_tool_result.assert_called_once()
+    assert "SOFT REJECT" in mock_db_instance.add_tool_result.call_args.kwargs['content']
+    
+    # Check that pending confirmation was stored
+    pending = tool_handler.chat_handler._pending_confirmation
+    assert pending is not None
+    assert pending["tc_id"] == "tc_soft_123"
+    assert pending["name"] == "file_system_agent"
+
+
+@pytest.mark.anyio
+@patch('backend.database.db')
+async def test_handle_tool_calls_clipboard_enforcement_bypass(mock_db_instance, mock_registry, tool_handler):
+    mock_db_instance.get_messages.return_value = []
+    mock_registry.get_tool.return_value = {"type": "agent"}
+    
+    # A flow function that yields a mocked result
+    async def mock_agent_flow(agent, agent_name, **kwargs):
+        yield "mocked_chunk"
+    mock_registry.resolve_implementation.return_value = mock_agent_flow
+    
+    tool_handler.agent_handler = MagicMock()
+    async def execute_agent_mock(*args, **kwargs):
+        yield "mocked_chunk"
+    tool_handler.agent_handler.execute_agent.side_effect = execute_agent_mock
+    tool_handler.agent_handler.result = "success"
+    
+    # Normally this would trigger a soft reject, but with bypass it should proceed
+    instruction = "Write the following content to index.html:\n" + ("x" * 300)
+    tool_handler.chat_handler._validation_bypass_next = True
+    
+    tool_calls = [{
+        "id": "tc_bypass_123",
+        "function": {
+            "name": "file_system_agent",
+            "arguments": json.dumps({"instruction": instruction})
+        }
+    }]
+    
+    chunks = []
+    async for chunk in tool_handler.handle_tool_calls(tool_calls):
+        chunks.append(chunk)
+        
+    assert any("mocked_chunk" in c for c in chunks)
+    assert tool_handler.chat_handler._validation_bypass_next is False # Check it was reset
+
+

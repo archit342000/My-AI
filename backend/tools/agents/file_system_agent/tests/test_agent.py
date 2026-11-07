@@ -159,3 +159,20 @@ async def test_flow_fn_exception_caught(mock_agent, mock_config, mock_db):
         parent_id="test_parent",
         parent_type='file_system_agent'
     )
+
+
+def test_format_user_message_with_clipboard_keys(mock_agent):
+    from backend.tools.agents.file_system_agent.agent import FileSystemAgent
+    cfg = MagicMock()
+    fs_agent = FileSystemAgent(mock_agent, cfg)
+    
+    # Test formatting with no clipboard keys
+    msg1 = fs_agent.format_user_message(instruction="Test instruction")
+    assert msg1 == "Instruction: Test instruction"
+    
+    # Test formatting with clipboard keys
+    msg2 = fs_agent.format_user_message(instruction="Test instruction", clipboard_keys=["cb-1234"])
+    assert "Instruction: Test instruction" in msg2
+    assert "Clipboard Keys Available: [cb-1234]" in msg2
+    assert "Use these keys with the clipboard_key parameter" in msg2
+

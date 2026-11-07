@@ -36,6 +36,9 @@ class ChatHandler:
         self.cache = response_cache
         self.tool_handler = ToolHandler(self.chat_id, self)
         self.chunk_index = 0
+        # ── Soft Rejection State ──
+        self._pending_confirmation = None      # Dict with stored TC details, or None
+        self._validation_bypass_next = False   # Skip validation on next FS agent call
 
     def get_history(self) -> Dict[str, Any]:
         """
@@ -442,8 +445,13 @@ class ChatHandler:
 
                     history = [{"role": "system", "content": system_prompt}] + history
 
+                confirmation_mode = (
+                    self._pending_confirmation is not None
+                    and parent_type == "main"
+                )
+
                 active_tools = []
-                if not tools_disabled:
+                if not tools_disabled and not confirmation_mode:
                     from backend.tools import ToolRegistry
                     active_tools = ToolRegistry.get_main_tools(ctx.active_modes)
 
@@ -465,6 +473,14 @@ class ChatHandler:
                     for param in ['temperature', 'top_p', 'top_k', 'min_p', 'presence_penalty', 'frequency_penalty', 'thinking_budget_tokens']:
                         if param in chat_metadata and chat_metadata[param] is not None:
                             stream_kwargs[param] = chat_metadata[param]
+
+                if confirmation_mode:
+                    stream_kwargs['max_tokens'] = 16
+                    stream_kwargs['temperature'] = 0.0
+                    stream_kwargs['chat_template_kwargs'] = {'enable_thinking': False}
+                    log_event("clipboard_enforcement_confirmation_mode", {
+                        "chat_id": self.chat_id,
+                    })
 
                 stream_gen = self.engine.stream(**stream_kwargs)
             else:
@@ -674,6 +690,28 @@ class ChatHandler:
                 else:
                     break
             else:
+                # ── CONFIRMATION GATE ────────────────────────
+                if self._pending_confirmation is not None and parent_type == "main":
+                    content = last_msg.get('content', '') if last_msg else ''
+                    from backend.chat.validators import parse_confirmation_response
+                    should_proceed = parse_confirmation_response(content)
+
+                    log_event("clipboard_enforcement_confirmation_result", {
+                        "chat_id": self.chat_id,
+                        "raw_response": content[:100],
+                        "decision": "PROCEED" if should_proceed else "REWRITE",
+                        "patterns": self._pending_confirmation.get(
+                            "matched_patterns", []
+                        ),
+                    })
+
+                    if should_proceed:
+                        self._validation_bypass_next = True
+
+                    self._pending_confirmation = None
+                    continue  # Loop back with tools re-enabled
+                # ── END CONFIRMATION GATE ────────────────────
+
                 # No more tool calls. The turn is truly finished.
                 break
 

@@ -464,3 +464,56 @@ async def test_run_orchestrated_stream_json_repair(mock_db, mock_task_manager, m
     assert found_cache_call
 
 
+@pytest.mark.anyio
+async def test_run_orchestrated_stream_confirmation_flow(mock_db, mock_task_manager, mock_response_cache):
+    handler = ChatHandler("test_confirm")
+    mock_task_manager.is_interrupted.return_value = False
+    mock_db.get_messages.return_value = []
+    mock_db.get_chat.return_value = {}
+    mock_db.flush_sse_chunks.return_value = True
+
+    # 1. Set up confirmation mode
+    handler._pending_confirmation = {
+        "tc_id": "tc_soft_123",
+        "name": "file_system_agent",
+        "args": {"instruction": "write something"},
+        "matched_patterns": ["code fence block (```)"],
+    }
+    handler._validation_bypass_next = False
+
+    payload_captured = {}
+
+    def chat_response_callable(payload):
+        nonlocal payload_captured
+        payload_captured.update(payload)
+        # Return LLM response deciding to PROCEED
+        return [
+            {"choices": [{"delta": {"content": "PROCEED"}}]},
+            {"timings": {"prompt_n": 5}},
+        ]
+
+    MockServerState.chat_responses = [chat_response_callable]
+
+    # After LLM responds, mock the database assistant message update
+    mock_db.get_last_assistant_message.return_value = {
+        "id": 2,
+        "content": "PROCEED",
+        "tool_calls": []
+    }
+
+    gen = handler._run_orchestrated_stream(user_message=None, parent_type="main", model_name="NVIDIA/NVIDIA-Nemotron-3-Nano-30B-A3B-UD-Q4_K_XL")
+    chunks = []
+    async for chunk in gen:
+        chunks.append(chunk)
+
+    # Verify that generator stripped tools and set deterministic parameters in payload
+    assert payload_captured.get("max_tokens") == 16
+    assert payload_captured.get("temperature") == 0.0
+    assert "tools" not in payload_captured
+
+    # Verify that after receiving PROCEED, the validation state was updated to bypass and pending was cleared
+    assert handler._validation_bypass_next is True
+    assert handler._pending_confirmation is None
+
+
+
