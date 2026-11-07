@@ -75,7 +75,7 @@ My-AI utilizes the **Model Context Protocol (MCP)** to isolate external tool exe
 
 ## 📄 License & Versioning
 This project follows [SemVer v2.0.0](https://semver.org/).  
-**Current Version**: `v4.10.0`.
+The current version is defined in `backend/version.py` (also reported by `/api/version`).
 
 ## 📄 Core Files
 | File | Purpose | Key Symbols/Exports |
