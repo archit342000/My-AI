@@ -9,7 +9,9 @@ export type DialogName =
   | 'personas'
   | 'agent-config'
   | 'models'
-  | 'stealth';
+  | 'stealth'
+  | 'portal'
+  | 'code-history';
 
 interface ModalState {
   open: DialogName | null;

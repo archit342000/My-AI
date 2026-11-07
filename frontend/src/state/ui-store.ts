@@ -4,8 +4,10 @@ export type ThemeMode = 'light' | 'dark' | 'system';
 
 interface UiState {
   sidebarCollapsed: boolean;
+  artifactsOpen: boolean;
   themeMode: ThemeMode;
   toggleSidebar: () => void;
+  toggleArtifacts: () => void;
   setThemeMode: (mode: ThemeMode) => void;
 }
 
@@ -18,7 +20,9 @@ function readTheme(): ThemeMode {
 
 export const useUiStore = create<UiState>((set) => ({
   sidebarCollapsed: false,
+  artifactsOpen: false,
   themeMode: readTheme(),
+  toggleArtifacts: () => set((s) => ({ artifactsOpen: !s.artifactsOpen })),
   toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
   setThemeMode: (mode) => {
     localStorage.setItem(THEME_KEY, mode);

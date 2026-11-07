@@ -10,6 +10,7 @@ import { useStreamStore } from '../../state/stream-store';
 import { generateChatId, sendTurn, stopTurn } from '../chat/send-turn';
 import { useKeyboardOffset } from '../../hooks/useKeyboardOffset';
 import { SLASH_COMMANDS } from './slash';
+import { ToolsMenu } from '../tools/ToolsMenu';
 import { useModalStore } from '../../state/modal-store';
 
 interface Staged extends UploadedFile {
@@ -135,6 +136,7 @@ export function Composer() {
         <button id="attach-btn" type="button" className="input-action-btn" title="Attach files" onClick={() => fileInput.current?.click()}>
           <Icon name="plus" size={20} />
         </button>
+        <ToolsMenu />
         <input ref={fileInput} type="file" multiple style={{ display: 'none' }} onChange={(e) => void onFiles(e)} />
         <textarea
           id="chat-textarea"

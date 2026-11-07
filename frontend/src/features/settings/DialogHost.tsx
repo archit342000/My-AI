@@ -7,6 +7,8 @@ import { PreferencesDialog } from './PreferencesDialog';
 import { SkillsDialog } from './SkillsDialog';
 import { StealthDialog } from './StealthDialog';
 import { SystemSettingsModal } from './SystemSettingsModal';
+import { PortalDialog } from '../tools/PortalDialog';
+import { CodeHistoryDialog } from '../tools/CodeHistoryDialog';
 
 /** Renders whichever app-level dialog is open. Mounted once in the root layout. */
 export function DialogHost() {
@@ -22,6 +24,8 @@ export function DialogHost() {
       <AgentConfigDialog open={open === 'agent-config'} onClose={close} />
       <ModelsDialog open={open === 'models'} onClose={close} />
       <StealthDialog open={open === 'stealth'} onClose={close} />
+      <PortalDialog open={open === 'portal'} onClose={close} />
+      <CodeHistoryDialog open={open === 'code-history'} onClose={close} />
     </>
   );
 }
