@@ -1,0 +1,157 @@
+/**
+ * Runs one chat turn: optimistic user row, streamed assistant reply, then a refetch of the
+ * persisted chat. Plain functions (no React) so the flow can be reasoned about and tested.
+ */
+import type { QueryClient } from '@tanstack/react-query';
+import { chatsApi, queryKeys } from '../../api/chats';
+import { buildCompletionBody, reattachStream, streamCompletion, type HistoryMessage, type UploadedFile } from '../../api/completions';
+import { toTurns } from '../../lib/chat-model';
+import { showToast } from '../../components/ui/toast-store';
+import { useSettingsStore } from '../../state/settings-store';
+import { useStreamStore, type PendingUser } from '../../state/stream-store';
+import { applyChunk, emptyLiveTurn, StreamError, type StreamChunk } from './stream-reducer';
+
+/** Same id shape as the legacy `generateId()`. */
+export function generateChatId(): string {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2);
+}
+
+export function historyFromCache(queryClient: QueryClient, chatId: string): HistoryMessage[] {
+  const detail = queryClient.getQueryData<{ messages: Parameters<typeof toTurns>[0] }>(queryKeys.chat(chatId));
+  if (!detail) return [];
+  return toTurns(detail.messages).flatMap<HistoryMessage>((t) =>
+    t.kind === 'user' ? [{ role: 'user', content: t.text }] : t.text ? [{ role: 'assistant', content: t.text }] : [],
+  );
+}
+
+async function consume(
+  queryClient: QueryClient,
+  chatId: string,
+  source: AsyncGenerator<unknown>,
+): Promise<void> {
+  const store = useStreamStore.getState();
+  let live = emptyLiveTurn();
+  try {
+    for await (const raw of source) {
+      live = applyChunk(live, raw as StreamChunk);
+      store.update(live);
+    }
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      // user pressed stop: keep what arrived
+    } else {
+      const message = err instanceof Error ? err.message : 'Stream failed';
+      useStreamStore.getState().fail(message);
+      if (!(err instanceof StreamError)) console.error(err);
+      showToast(message, 'error');
+    }
+  } finally {
+    await queryClient.invalidateQueries({ queryKey: queryKeys.chat(chatId) });
+    await queryClient.invalidateQueries({ queryKey: queryKeys.chats });
+    useStreamStore.getState().finish();
+  }
+}
+
+export interface SendArgs {
+  queryClient: QueryClient;
+  chatId: string;
+  text: string;
+  files: UploadedFile[];
+  /** Persist a brand-new chat first (title from the first message). */
+  isNewChat: boolean;
+  /** Overrides the history taken from the cache (used by retry). */
+  history?: HistoryMessage[];
+}
+
+export async function sendTurn({ queryClient, chatId, text, files, isNewChat, history: historyOverride }: SendArgs): Promise<void> {
+  const settings = useSettingsStore.getState();
+  if (!settings.model) {
+    showToast('Select a model first', 'error');
+    return;
+  }
+  if (useStreamStore.getState().chatId) return; // already streaming
+
+  const pending: PendingUser = {
+    text,
+    images: [],
+    files,
+  };
+  const controller = new AbortController();
+  const history = historyOverride ?? historyFromCache(queryClient, chatId);
+  const messages: HistoryMessage[] = [...history, { role: 'user', content: text, uploadedFiles: files.length ? files : undefined }];
+
+  useStreamStore.getState().start(chatId, pending, controller);
+
+  if (isNewChat) {
+    try {
+      await chatsApi.patch(chatId, {
+        title: text.substring(0, 50) || 'New Conversation',
+        user_preferences: false,
+        research_mode: settings.modes.researchMode ? 1 : 0,
+        file_system_mode: settings.modes.fileSystemMode ? 1 : 0,
+        browsing_mode: settings.modes.browsingMode ? 1 : 0,
+        git_mode: settings.modes.gitMode ? 1 : 0,
+        code_execution_mode: settings.modes.codeExecutionMode ? 1 : 0,
+        thinking_profile: settings.sampling.thinking_profile,
+      });
+    } catch (err) {
+      useStreamStore.getState().finish();
+      showToast(err instanceof Error ? err.message : 'Could not create chat', 'error');
+      return;
+    }
+  }
+
+  const body = buildCompletionBody({
+    model: settings.model,
+    modelName: settings.modelName ?? settings.model,
+    messages,
+    chatId,
+    sampling: settings.sampling,
+    modes: {
+      researchMode: settings.modes.researchMode,
+      userPreferences: false,
+      visionEnabled: settings.visionEnabled,
+      fileSystemMode: settings.modes.fileSystemMode,
+      browsingMode: settings.modes.browsingMode,
+      gitMode: settings.modes.gitMode,
+      codeExecutionMode: settings.modes.codeExecutionMode,
+    },
+    personaId: null,
+    folder: null,
+    uploadedFiles: files,
+  });
+
+  await consume(queryClient, chatId, streamCompletion(body, controller.signal));
+}
+
+/** Stops the in-flight turn on the client and asks the server to stop generating. */
+export async function stopTurn(): Promise<void> {
+  const { chatId, controller } = useStreamStore.getState();
+  controller?.abort();
+  if (chatId) {
+    try {
+      await chatsApi.stop(chatId);
+    } catch {
+      /* the stream is already aborted; the server will finish on its own */
+    }
+  }
+}
+
+/** Reconnects to a turn that the server is still generating (after reload or navigation). */
+export async function reattachTurn(queryClient: QueryClient, chatId: string): Promise<void> {
+  if (useStreamStore.getState().chatId) return;
+  const controller = new AbortController();
+  useStreamStore.getState().start(chatId, null, controller);
+  try {
+    const source = await reattachStream(chatId, controller.signal);
+    if (!source) {
+      useStreamStore.getState().finish();
+      await queryClient.invalidateQueries({ queryKey: queryKeys.chat(chatId) });
+      return;
+    }
+    await consume(queryClient, chatId, source);
+  } catch (err) {
+    useStreamStore.getState().finish();
+    console.error('Reattach failed', err);
+  }
+}

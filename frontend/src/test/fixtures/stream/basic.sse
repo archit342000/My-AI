@@ -1,0 +1,12 @@
+data: {"choices": [{"delta": {"reasoning_content": "Planning a short greeting."}}], "model": "Gemma4-26B-A4B-it-GGUF"}
+
+data: {"choices": [{"delta": {"content": "Hello"}}], "model": "Gemma4-26B-A4B-it-GGUF"}
+
+data: {"choices": [{"delta": {"content": " there, "}}], "model": "Gemma4-26B-A4B-it-GGUF"}
+
+data: {"choices": [{"delta": {"content": "friend!"}}], "model": "Gemma4-26B-A4B-it-GGUF"}
+
+data: {"choices": [{"delta": {}}], "usage": {"total_tokens": 10}}
+
+data: [DONE]
+

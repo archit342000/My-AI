@@ -1,0 +1,14 @@
+data: {"choices": [{"delta": {"content": "Let me look."}}], "model": "Gemma4-26B-A4B-it-GGUF"}
+
+data: {"choices": [{"delta": {"tool_calls": [{"id": "call_1", "index": 0, "function": {"name": "grep_search", "arguments": "{\"query\":"}}]}}], "model": "Gemma4-26B-A4B-it-GGUF"}
+
+data: {"choices": [{"delta": {"tool_calls": [{"id": "call_1", "index": 0, "function": {"arguments": "\"TODO\"}"}}]}}], "model": "Gemma4-26B-A4B-it-GGUF"}
+
+data: {"choices": [{"delta": {"role": "event", "content": "Searching the workspace"}}], "model": "Gemma4-26B-A4B-it-GGUF"}
+
+data: {"choices": [{"delta": {"tool_result": {"tool_call_id": "call_1", "content": "src/app.ts:3 TODO"}}}], "model": "Gemma4-26B-A4B-it-GGUF"}
+
+data: {"choices": [{"delta": {"content": "Found one TODO in src/app.ts."}}], "model": "Gemma4-26B-A4B-it-GGUF"}
+
+data: [DONE]
+
