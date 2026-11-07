@@ -13,6 +13,8 @@ export default defineConfig({
     outDir: 'dist',
     emptyOutDir: true,
     sourcemap: false,
+    // mermaid is a large lazy-loaded chunk by design (only loaded when a diagram is shown).
+    chunkSizeWarningLimit: 1500,
   },
   server: {
     port: 5173,
