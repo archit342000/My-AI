@@ -33,7 +33,7 @@ How to add a tool the model can call, or a new external service. Component detai
 ## Adding an MCP service
 
 1. New top-level directory with `server.py`, `requirements.txt`, `README.md` and `tests/`.
-2. Dockerfile in `docker/` (pinned base, non-root user) and a service in `docker/docker-compose.yml` on `secure-internal`,
+2. Dockerfile in `docker/` (pinned base, non-root user) and a service in `docker/docker-compose.yml` on `secure-internal` (or on `runner-net` only, for a sandbox that must not reach the internet or databases),
    with an API key in Docker secrets and resource limits if it runs untrusted work (`docs/standards/docker.md`).
 3. A client in `backend/mcp_client.py` and tools that call it. Timeouts use `TIMEOUT_MCP_TOOL_CALL`.
 4. Document the boundary in `docs/architecture.md`.

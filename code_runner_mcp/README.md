@@ -10,13 +10,15 @@
 | File | Purpose | Key Symbols/Exports |
 | :--- | :--- | :--- |
 | `server.py` | FastAPI application defining the endpoints and authorization. | `app`, `verify_api_key` |
-| `executor.py` | Language-specific execution engine implementing subprocess execution, directory recreation, class parsing, and SQLite/MySQL setups. | `CodeExecutor`, `ExecutionResult` |
+| `executor.py` | Language-specific execution engine implementing subprocess execution, directory recreation, class parsing, and SQLite setup. MySQL is rejected: the runner holds no database credentials. | `CodeExecutor`, `ExecutionResult` |
 | `safety.py` | Heuristics-based static analysis classifier for detecting potentially dangerous execution patterns. | `classify_code` |
+| `relay.py` | TCP relay run by the `code_runner_mcp` service. Forwards port 8100 to `RELAY_TARGET` (`code_runner_runtime:8100`) and nothing else. Used so the app reaches the runner without being on the sandbox network. | `parse_target`, `make_handler` |
 
 ## 🧩 Architectural Context
 *   **Dependencies:**
     - `fastapi`, `uvicorn`: Web frameworks.
-    - Various OS language runtimes (gcc, g++, default-jdk, nodejs, npm, tsx, golang, rustc, php-cli, sqlite3, default-mysql-client).
+    - Various OS language runtimes (gcc, g++, default-jdk, nodejs, npm, tsx, golang, rustc, php-cli, sqlite3).
+*   **Network:** the runtime service `code_runner_runtime` is on `runner-net`, which is internal-only. User code has no internet, `mysql_db` or app access. The app reaches the runtime through the relay service `code_runner_mcp` (`relay.py`), which forwards port 8100 only. Residual reach: the runtime's `CODE_RUNNER_API_KEY` is readable by user code, and user code can call the runner (and the relay) on port 8100. `/install` (pip/npm) needs outbound access, so it fails in this setup.
 *   **Flow:**
     1. The main app container makes an HTTP request to `/execute`, `/install`, or `/packages`.
     2. `server.py` verifies the `X-API-KEY` header.
