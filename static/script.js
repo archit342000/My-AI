@@ -5143,7 +5143,7 @@ async function loadFileSystem(file_systemId, workspaceId = null) {
         type: "init",
         filePath: filePath,
         chat_id: currentChatId,
-        sql_target: "mysql"
+        sql_target: "sqlite"
       }));
       
       outputArea.textContent += "Connected. Preparing execution...\n";

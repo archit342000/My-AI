@@ -42,6 +42,19 @@ def test_websocket_auth_failure():
         with client.websocket_connect("/ws/execute?api_key=wrongkey") as ws:
             pass
 
+def test_websocket_sql_mysql_is_rejected():
+    with client.websocket_connect("/ws/execute?api_key=testkey") as ws:
+        ws.send_json({
+            "language": "sql",
+            "code": "SELECT 1;",
+            "sql_target": "mysql",
+            "timeout": 5
+        })
+        first = ws.receive_json()
+        assert first.get("type") == "stderr"
+        assert "MySQL is not available" in first.get("data", "")
+        assert ws.receive_json() == {"type": "exit", "code": 1}
+
 def test_websocket_execute():
     with client.websocket_connect("/ws/execute?api_key=testkey") as ws:
         ws.send_json({

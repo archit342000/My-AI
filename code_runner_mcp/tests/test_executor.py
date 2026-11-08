@@ -55,6 +55,33 @@ def test_execute_sqlite():
     assert res.exit_code == 0
     assert "hello" in res.stdout
 
+def test_execute_sql_mysql_is_rejected(monkeypatch):
+    import os
+    import executor as executor_module
+    # Pin the sandbox id so the test can check that execute() removes that directory.
+    monkeypatch.setattr(executor_module.uuid, "uuid4", lambda: type("U", (), {"hex": "mysqlreject"})())
+    res = CodeExecutor.execute(
+        language="sql",
+        code="SELECT 1;",
+        sql_target="mysql"
+    )
+    assert res.exit_code == 1
+    assert "MySQL is not available" in res.error
+    assert not res.timed_out
+    assert not os.path.exists("/tmp/sandbox/mysqlreject")
+
+def test_prepare_sandbox_mysql_error_returns_sandbox_dir_for_cleanup():
+    import os
+    import shutil
+    prep = CodeExecutor.prepare_sandbox(
+        language="sql",
+        code="SELECT 1;",
+        sql_target="mysql"
+    )
+    assert "MySQL is not available" in prep["error"]
+    assert os.path.isdir(prep["sandbox_dir"])
+    shutil.rmtree(prep["sandbox_dir"], ignore_errors=True)
+
 def test_execute_cpp():
     import shutil
     if not shutil.which("g++"):

@@ -200,6 +200,28 @@ def test_code_execution_ws_proxy(mock_get_setting, mock_collect_project_files, m
     assert sent_payload["entry_file"] == "main.py"
 
 
+@patch('app.ws_client.create_connection')
+@patch('backend.tools.implementations.code_executor.collect_project_files')
+@patch('backend.database.db.get_setting')
+def test_code_execution_ws_proxy_defaults_sql_target_to_sqlite(mock_get_setting, mock_collect_project_files, mock_create_connection):
+    """An init message without sql_target forwards sqlite to the runner, never mysql."""
+    import json
+    mock_get_setting.return_value = 30
+    mock_collect_project_files.return_value = ("sql", [{"path": "q.sql", "content": "SELECT 1;"}], "q.sql")
+    mock_upstream = MagicMock()
+    mock_create_connection.return_value = mock_upstream
+    mock_ws = MagicMock()
+    mock_ws.receive.side_effect = [
+        json.dumps({"type": "init", "filePath": "q.sql", "chat_id": "chat123"}),
+        None
+    ]
+
+    flask_app.code_execution_ws_proxy(mock_ws)
+
+    sent_payload = json.loads(mock_upstream.send.call_args[0][0])
+    assert sent_payload["sql_target"] == "sqlite"
+
+
 
 # --- Frontend mode switch (FRONTEND=legacy|react) ---------------------------
 
