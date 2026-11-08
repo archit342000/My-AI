@@ -8,7 +8,7 @@ The repository follows strict git-flow. Commit message rules, version source and
 | Branch | Created from | Merges into | Purpose |
 |--------|--------------|-------------|---------|
 | `main` | (permanent) | (none) | Production. Every commit is a release and is tagged `vX.Y.Z`. |
-| `develop` | `main` | (none) | Integration branch for the next release. Always builds and passes CI. |
+| `develop` | `main` | (none) | Integration branch for the next release. Always builds and passes `scripts/check.sh`. |
 | `feature/<topic>` | `develop` | `develop` | New functionality or a larger change. |
 | `bugfix/<topic>` | `develop` | `develop` | Non-urgent fix for unreleased or released code. |
 | `release/X.Y.Z` | `develop` | `main` and `develop` | Stabilization and version bump for a release. |
@@ -42,8 +42,8 @@ The repository follows strict git-flow. Commit message rules, version source and
 ## Merge gate
 
 A PR may merge only when:
-- `scripts/check.sh` passes locally, and its output (or a one-line result) is in the PR description. Hosted CI
-  (`.github/workflows/ci.yml`) is also green when GitHub Actions is available; it runs the same checks.
+- `scripts/check.sh` passes locally, and its output (or a one-line result) is in the PR description.
+  There is no hosted CI; this local run is the gate.
 - The checklist in `docs/standards/review.md` is met and the PR has been reviewed.
 - The base branch is correct: `develop` for feature and bugfix, `main` for release and hotfix.
 - Release and hotfix PRs also have the version bumped consistently and the changelog entry written.
@@ -73,5 +73,5 @@ git checkout -b hotfix/X.Y.Z vX.Y.(Z-1)   # from the last release tag
 
 The repository began with version-prefixed branches (for example `5.0.0-react-frontend`) cut from and merged into `main`.
 Those branches may finish under their current name. To adopt this model, create `develop` from `main`, set it as the target for
-feature and bugfix PRs, and protect `main` and `develop` (PR required, CI required, no force-push) in the repository settings.
+feature and bugfix PRs, and protect `main` and `develop` (PR required, no force-push) in the repository settings.
 Tools such as the `ship` skill open PRs against the repository's default branch; point them at `develop` for feature and bugfix work.

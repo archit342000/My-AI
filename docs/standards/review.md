@@ -7,7 +7,7 @@ A change is done when every item below is true. Use it as the checklist for self
 1. **Scope:** the change does one thing, with small incremental edits and no unrelated reformatting.
 2. **Tests:** new or changed source files have `tests/test_<module>.py`; tests for the changed directory and every parent `tests/`
    directory pass (`docs/standards/testing.md`). Frontend: `typecheck`, `lint`, `test` pass.
-3. **Checks:** `scripts/check.sh` passes (ruff, backend and MCP tests, frontend typecheck/lint/test/build). CI runs the same checks when available.
+3. **Checks:** `scripts/check.sh` passes (ruff, backend and MCP tests, frontend typecheck/lint/test/build).
 4. **Standards:** follows `python.md`, `frontend.md`, `docker.md`, `security.md`, `api.md` and `errors-and-logging.md` where relevant.
    Anything that contradicts a documented rule was agreed with the owner first.
 5. **Docs:** component README updated if role, dependencies or constraints changed; `docs/` updated for new contracts, data

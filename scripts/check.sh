@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Runs the same checks as .github/workflows/ci.yml, locally.
+# Runs all project checks locally (there is no hosted CI).
 # Usage: scripts/check.sh [--python-only | --frontend-only]
 set -u
 cd "$(dirname "$0")/.."
