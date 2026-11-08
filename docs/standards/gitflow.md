@@ -38,6 +38,14 @@ The repository follows strict git-flow. Commit message rules, version source and
    Undo a bad merge with `git revert -m 1 <merge-commit>`.
 7. **Conflicts** are resolved on the working branch by merging the target into it, not on `main` or `develop`.
 8. **Delete merged branches** (feature, bugfix, release, hotfix) from the remote after merging.
+9. **Start from a current branch.** Before writing any code on a branch, fetch the remote and check it is not stale:
+   `git fetch origin && git rev-list --left-right --count origin/<target>...HEAD`. If the target has commits the branch does
+   not have, bring the branch up to date first (rebase while the branch is local-only, otherwise merge the target in, rule 1)
+   before starting the work.
+10. **Rebase before raising a PR.** Before the first push and PR for a branch, rebase it onto the latest target (`develop`, or
+    `main` for release and hotfix), resolve conflicts, and re-run the checks. Rebasing is for local-only history: once the
+    branch has been pushed for review, update it by merging the target in (rule 6). A PR that cannot merge into its target
+    cleanly is not raised.
 
 ## Merge gate
 
