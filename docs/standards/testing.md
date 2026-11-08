@@ -22,6 +22,32 @@ EMBEDDING_URL="http://mock" AI_URL="http://mock" AI_API_KEY="dummy" PYTHONPATH=.
 
 The local README of each component lists its own tests. Read it before running them.
 
+## What a good test does
+
+- Asserts behavior and outputs, including failure paths and edge cases, not implementation details.
+- Is isolated: no real network, LLM, embedding or MCP calls. Mock at the boundary (`mcp_client`, `requests`/`httpx`, `backend.inference`).
+- Uses temporary directories and databases (`tmp_path`, a test `DATA_DIR`); never touches `backend/data`.
+- Is deterministic: no sleeps for timing, no dependence on test order or wall-clock time.
+- Registers regressions: a bug fix adds a test that fails without the fix.
+- Coverage has no numeric gate; the 1:1 mapping and "test every function" rules are the bar.
+
+## Suites and CI
+
+| Suite | Command (repo root unless noted) | In CI |
+|-------|----------------------------------|-------|
+| Docs guardrails | `pytest tests` | yes |
+| Backend | `pytest backend` | yes |
+| Inference proxy | `pytest inference_proxy` | yes |
+| Tavily MCP | `pytest tavily_mcp` | yes |
+| Code runner MCP | `cd code_runner_mcp && PYTHONPATH=. pytest` | yes |
+| Playwright MCP | needs its pinned dependencies (own image) | no |
+| `scripts/` | experiment scripts; some need external services | no |
+| Frontend | in `frontend/`: `npm run typecheck`, `lint`, `test`, `build` | yes |
+| End to end | `npm run e2e` (needs running stack and Chrome) | no |
+
+Run each suite in its own pytest process; combining them causes duplicate-module collection errors.
+All commands above use the env vars and `venv/bin/python` described under "Running tests". CI is `.github/workflows/ci.yml`.
+
 ## Frontend tests
 
 Run from `frontend/`: `npm run typecheck`, `npm run lint`, `npm run test`. End-to-end specs
