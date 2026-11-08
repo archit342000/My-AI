@@ -15,6 +15,7 @@ export const router = createBrowserRouter([
       { path: '/workspace/:workspaceId', element: <WorkspacePage /> },
       { path: '/logs', element: <LogsPage /> },
       ...(import.meta.env.DEV ? [{ path: '/dev/ui', element: <PrimitivesDemo /> }] : []),
+      { path: '*', element: <div className="chat-error">Page not found</div> },
     ],
   },
 ]);

@@ -20,6 +20,14 @@ with patch('backend.database.init_db.init_db'), \
     import app as flask_app
     from backend import config
 
+@pytest.fixture(autouse=True)
+def _restore_app_password():
+    # Several auth tests set config.APP_PASSWORD. Restore it even when an assertion fails,
+    # otherwise every later request is answered with 401.
+    saved = config.APP_PASSWORD
+    yield
+    config.APP_PASSWORD = saved
+
 @pytest.fixture
 def app():
     flask_app.app.config.update({
@@ -50,8 +58,8 @@ def test_chat_route(client):
         mock_send.assert_called_with('static', 'index.html')
 
 def test_serve_static_route(client):
-    """Test serving static files."""
-    with patch('app.send_from_directory') as mock_send:
+    """Test serving static files (legacy mode; React mode has its own fallback, see below)."""
+    with patch.object(config, 'FRONTEND', 'legacy'), patch('app.send_from_directory') as mock_send:
         mock_send.return_value = "static file content"
         response = client.get('/some_static_file.js')
         assert response.status_code == 200
@@ -87,7 +95,8 @@ def test_require_auth_correct_credentials(client):
     headers = {
         'Authorization': 'Basic ' + base64.b64encode(b'user:testpassword').decode('utf-8')
     }
-    with patch('app.send_from_directory') as mock_send:
+    # Pin the legacy UI: under FRONTEND=react the root serves frontend/dist, which may not be built.
+    with patch.object(config, 'FRONTEND', 'legacy'), patch('app.send_from_directory') as mock_send:
         mock_send.return_value = "authorized content"
         response = client.get('/', headers=headers)
         assert response.status_code == 200
@@ -219,6 +228,59 @@ def test_react_mode_serves_assets(client, tmp_path):
     with patch.object(config, 'FRONTEND', 'react'), patch('app.FRONTEND_DIST', str(tmp_path)):
         assert client.get('/assets/app.js').status_code == 200
         assert client.get('/assets/missing.js').status_code == 404
+
+
+def test_react_mode_unknown_page_returns_the_index(client, tmp_path):
+    """Unknown non-API GET paths are client-side routes (F7): they get the React index."""
+    (tmp_path / "index.html").write_text("<div id=root>stub</div>", encoding="utf-8")
+    with patch.object(config, 'FRONTEND', 'react'), patch('app.FRONTEND_DIST', str(tmp_path)):
+        response = client.get('/no/such/page')
+        assert response.status_code == 200
+        assert b'<div id=root>stub</div>' in response.data
+
+
+def test_react_mode_unknown_api_path_is_404_not_html(client, tmp_path):
+    (tmp_path / "index.html").write_text("<div id=root>stub</div>", encoding="utf-8")
+    with patch.object(config, 'FRONTEND', 'react'), patch('app.FRONTEND_DIST', str(tmp_path)):
+        response = client.get('/api/no-such')
+        assert response.status_code == 404
+        assert b'<div id=root>' not in response.data
+
+
+def test_react_mode_does_not_serve_files_outside_the_roots(client, tmp_path):
+    (tmp_path / "index.html").write_text("<div id=root>stub</div>", encoding="utf-8")
+    secret = tmp_path.parent / "outside-secret.txt"
+    secret.write_text("TOP-SECRET", encoding="utf-8")
+    link = tmp_path / "escape.txt"
+    link.symlink_to(secret)
+    try:
+        with patch.object(config, 'FRONTEND', 'react'), patch('app.FRONTEND_DIST', str(tmp_path)):
+            # Paths that resolve outside the roots are not files there; they have an extension, so 404.
+            traversal = client.get('/..%2foutside-secret.txt')
+            assert traversal.status_code == 404
+            assert b'TOP-SECRET' not in traversal.data
+            via_symlink = client.get('/escape.txt')
+            assert via_symlink.status_code == 404
+            assert b'TOP-SECRET' not in via_symlink.data
+    finally:
+        link.unlink()
+        secret.unlink()
+
+
+def test_react_mode_missing_file_with_extension_is_404(client, tmp_path):
+    (tmp_path / "index.html").write_text("<div id=root>stub</div>", encoding="utf-8")
+    with patch.object(config, 'FRONTEND', 'react'), patch('app.FRONTEND_DIST', str(tmp_path)):
+        response = client.get('/missing.js')
+        assert response.status_code == 404
+        assert b'<div id=root>' not in response.data
+
+
+def test_react_mode_bare_api_path_is_404(client, tmp_path):
+    (tmp_path / "index.html").write_text("<div id=root>stub</div>", encoding="utf-8")
+    with patch.object(config, 'FRONTEND', 'react'), patch('app.FRONTEND_DIST', str(tmp_path)):
+        response = client.get('/api')
+        assert response.status_code == 404
+        assert b'<div id=root>' not in response.data
 
 
 def test_legacy_mode_does_not_serve_assets(client):

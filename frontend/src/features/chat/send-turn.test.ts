@@ -28,8 +28,11 @@ function mockCompletion(respond: (signal: AbortSignal) => Response, seen: { pend
 }
 
 function args(overrides: Partial<Parameters<typeof sendTurn>[0]> = {}) {
+  // The chat page loads the chat before sending, so the existing chat is in the cache.
+  const queryClient = new QueryClient();
+  queryClient.setQueryData(['chat', 'chat-1'], { id: 'chat-1', messages: [] });
   return {
-    queryClient: new QueryClient(),
+    queryClient,
     chatId: 'chat-1',
     text: 'hello',
     files: [],
@@ -157,5 +160,18 @@ describe('tool activity in a stream', () => {
     expect(snapshots.at(-1)).toEqual([
       { id: 'call_1', name: 'grep_search', args: '{"query":"TODO"}', result: 'src/app.ts:3 TODO' },
     ]);
+  });
+});
+
+describe('send to an existing chat that is not cached (review fix)', () => {
+  it('refuses with a toast instead of sending without the prior history', async () => {
+    useToastStore.setState({ toasts: [] });
+    useSettingsStore.setState({ model: 'M' } as never);
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    await sendTurn({ queryClient: new QueryClient(), chatId: 'uncached-existing', text: 'hi', files: [], isNewChat: false });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(useToastStore.getState().toasts.some((t) => t.type === 'error')).toBe(true);
+    vi.unstubAllGlobals();
   });
 });

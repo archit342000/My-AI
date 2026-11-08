@@ -7,7 +7,8 @@ from backend.chat.tests.conftest import MockServerState
 
 @pytest.fixture
 def mock_db():
-    with patch('backend.chat.handler.db') as mock:
+    # Compression reads the same db singleton; patch it too so no test touches backend/data.
+    with patch('backend.chat.handler.db') as mock, patch('backend.inference.compression.db', mock):
         yield mock
 
 @pytest.fixture

@@ -320,7 +320,21 @@ def require_auth():
 
 @app.route('/<path:path>')
 def serve_static(path):
-    return send_from_directory('static', path)
+    if not _react_enabled():
+        return send_from_directory('static', path)
+    # React mode: unknown /api paths are 404; existing files under static/ or frontend/dist/ are served
+    # as files (realpath must stay inside the root); anything else is a client-side route and gets the index.
+    if path == 'api' or path.startswith('api/'):
+        return Response('Not Found', 404)
+    for root in ('static', FRONTEND_DIST):
+        root_real = os.path.realpath(root)
+        candidate = os.path.realpath(os.path.join(root, path))
+        if candidate.startswith(root_real + os.sep) and os.path.isfile(candidate):
+            return send_from_directory(root, path)
+    # A missing file (a path with an extension) is a 404, not the HTML index.
+    if os.path.splitext(path)[1]:
+        return Response('Not Found', 404)
+    return _serve_react_index()
 
 
 # Error handler for 413 Request Entity Too Large

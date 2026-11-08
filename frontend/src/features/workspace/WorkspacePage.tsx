@@ -54,12 +54,13 @@ export function WorkspacePage() {
       await queryClient.invalidateQueries({ queryKey: queryKeys.chats });
       window.location.assign('/');
     },
+    onError: (e) => showToast(e instanceof Error ? e.message : 'Delete failed', 'error'),
   });
 
   if (!workspace) {
-    return (
-      <div className="chat-error">{workspaces.isPending ? 'Loading…' : 'Workspace not found.'}</div>
-    );
+    if (workspaces.isPending) return <div className="chat-error">Loading…</div>;
+    if (workspaces.isError) return <div className="chat-error">Could not load workspaces.</div>;
+    return <div className="chat-error">Workspace not found.</div>;
   }
 
   // The workspace's own icon, falling back to the grid when it is unset or unknown (F-47).

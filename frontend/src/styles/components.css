@@ -2481,3 +2481,10 @@ body {
 #sidebar.sidebar-collapsed #temp-chat-btn {
   display: inline-flex !important;
 }
+
+/* Composer hint shown when no model is selected (F4). */
+.composer-hint {
+  font-size: 0.8rem;
+  color: var(--content-muted);
+  padding: 0 4px 6px;
+}

@@ -2,6 +2,13 @@ import pytest
 from unittest.mock import MagicMock, patch, AsyncMock
 from backend.chat.agent_handler import AgentHandler
 
+@pytest.fixture(autouse=True)
+def _no_real_db():
+    # Inference runs compression, which reads the db singleton. Keep every test off backend/data.
+    # agent_handler imports db locally in one branch, so patch the package attribute too.
+    with patch('backend.inference.compression.db') as mock, patch('backend.chat.agent_handler.db', mock), patch('backend.database.db', mock):
+        yield mock
+
 @pytest.fixture
 def mock_db():
     with patch('backend.chat.agent_handler.db') as mock:

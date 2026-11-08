@@ -8,6 +8,7 @@ import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { Menu, type MenuEntry } from '../../components/ui/Menu';
 import { SegmentedControl } from '../../components/ui/SegmentedControl';
 import { showToast } from '../../components/ui/toast-store';
+import { nextArtifactTitle } from '../../lib/artifact-names';
 import { Markdown } from '../../components/markdown/Markdown';
 import { useUiStore } from '../../state/ui-store';
 import { previewKind } from './language';
@@ -59,7 +60,6 @@ export function ArtifactPanel({ scope, onClose }: ArtifactPanelProps) {
 
   useEffect(() => {
     setDraft(null);
-    setEditing(false);
   }, [selected]);
 
   const needle = filter.trim().toLowerCase();
@@ -74,7 +74,11 @@ export function ArtifactPanel({ scope, onClose }: ArtifactPanelProps) {
 
   const create = useMutation({
     mutationFn: () =>
-      artifactsApi.create(scope, { title: 'Untitled', content: '', language: 'markdown' }),
+      artifactsApi.create(scope, {
+        title: nextArtifactTitle((list.data ?? []).map((a) => a.title)),
+        content: '',
+        language: 'markdown',
+      }),
     onSuccess: async (res) => {
       await queryClient.invalidateQueries({ queryKey: ['artifacts', key] });
       setSelected(res.id);
@@ -97,8 +101,10 @@ export function ArtifactPanel({ scope, onClose }: ArtifactPanelProps) {
     mutationFn: (id: string) => artifactsApi.remove(id, scope),
     onSuccess: async () => {
       setSelected(null);
+      setEditing(false);
       await queryClient.invalidateQueries({ queryKey: ['artifacts', key] });
     },
+    onError: (e) => showToast(e instanceof Error ? e.message : 'Delete failed', 'error'),
   });
 
   const current = detail.data;
@@ -145,7 +151,10 @@ export function ArtifactPanel({ scope, onClose }: ArtifactPanelProps) {
             aria-current={selected === a.id}
             style={indent} // dynamic-style
             title={node.path}
-            onClick={() => setSelected(a.id)}
+            onClick={() => {
+                setEditing(false);
+                setSelected(a.id);
+              }}
           >
             <Icon name="file-text" size={14} />
             <span className="artifact-item__title">{node.name}</span>
@@ -198,7 +207,10 @@ export function ArtifactPanel({ scope, onClose }: ArtifactPanelProps) {
                   className="artifact-tree__row artifact-item"
                   aria-current={selected === a.id}
                   title={a.title}
-                  onClick={() => setSelected(a.id)}
+                  onClick={() => {
+                setEditing(false);
+                setSelected(a.id);
+              }}
                 >
                   <Icon name="file-text" size={14} />
                   <span className="artifact-item__title">{a.title}</span>

@@ -45,7 +45,7 @@ test('sends a message and renders the streamed reply', async ({ page }) => {
 
   await persistedDetail(page, 'Say hello');
   await page.goto('/');
-  await page.getByRole('textbox').fill('Say hello');
+  await page.locator('#chat-textarea').fill('Say hello');
   await page.keyboard.press('Enter');
 
   await expect(page).toHaveURL(/\/chat\/[a-z0-9]+$/);

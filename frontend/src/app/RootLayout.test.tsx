@@ -1,0 +1,37 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { fireEvent, screen } from '@testing-library/react';
+import { renderWithProviders } from '../test/render';
+import { RootLayout } from './RootLayout';
+import { useUiStore } from '../state/ui-store';
+import { chatsApi } from '../api/chats';
+
+describe('RootLayout', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    useUiStore.setState({ artifactsOpen: false });
+  });
+
+  it('renders the sidebar, the main area and the artifacts toggle', () => {
+    vi.spyOn(chatsApi, 'list').mockResolvedValue([]);
+    vi.spyOn(chatsApi, 'listWorkspaces').mockResolvedValue([]);
+    const { container } = renderWithProviders(<RootLayout />, { route: '/chat/c1', path: '/chat/:chatId' });
+    expect(container.querySelector('#sidebar')).not.toBeNull();
+    expect(container.querySelector('main')).not.toBeNull();
+    expect(screen.getByRole('button', { name: 'View files and artifacts' })).toBeTruthy();
+  });
+
+  it('the artifacts toggle flips the store flag', () => {
+    vi.spyOn(chatsApi, 'list').mockResolvedValue([]);
+    vi.spyOn(chatsApi, 'listWorkspaces').mockResolvedValue([]);
+    renderWithProviders(<RootLayout />, { route: '/chat/c1', path: '/chat/:chatId' });
+    fireEvent.click(screen.getByRole('button', { name: 'View files and artifacts' }));
+    expect(useUiStore.getState().artifactsOpen).toBe(true);
+  });
+
+  it('the artifacts toggle is hidden on Home (N5)', () => {
+    vi.spyOn(chatsApi, 'list').mockResolvedValue([]);
+    vi.spyOn(chatsApi, 'listWorkspaces').mockResolvedValue([]);
+    renderWithProviders(<RootLayout />);
+    expect(screen.queryByRole('button', { name: 'View files and artifacts' })).toBeNull();
+  });
+});
