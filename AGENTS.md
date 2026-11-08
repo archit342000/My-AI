@@ -32,6 +32,7 @@ Guide for AI agents working on `My-AI`. Details live in `docs/`; this file only 
 | Adding tools and MCP services | `docs/tools.md` |
 | Releasing | `docs/release.md` |
 | Testing rules and commands | `docs/standards/testing.md` |
-| Branches, commits, version, changelog | `docs/standards/git.md` |
+| Commits, version, changelog | `docs/standards/git.md` |
+| Branching model, merge gate | `docs/standards/gitflow.md` |
 | Writing and maintaining docs | `docs/standards/docs.md` |
 | Known traps | `docs/pitfalls.md` |

@@ -15,7 +15,7 @@ A change is done when every item below is true. Use it as the checklist for self
 6. **Pitfalls:** a new entry in `docs/pitfalls.md` if the work uncovered a trap others could hit.
 7. **Compatibility:** no change to API shapes, stored data or `localStorage` keys without updating every consumer and adding a migration.
 8. **Security:** no secrets, no unsanitised HTML, no new unvalidated input, no unchecked paths or URLs.
-9. **Commits:** conventional prefixes, reason in the body when not obvious (`docs/standards/git.md`); branch named with the version.
+9. **Commits:** conventional prefixes, reason in the body when not obvious (`docs/standards/git.md`); branch and PR base follow `docs/standards/gitflow.md`.
 10. **Report:** the summary states what changed, what was run and the results, and anything left undone.
 
 ## Reviewing
