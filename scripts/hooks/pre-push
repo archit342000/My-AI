@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Enable with: git config core.hooksPath scripts/hooks
+# Runs the local checks before every push. Bypass once with: git push --no-verify
+exec "$(git rev-parse --show-toplevel)/scripts/check.sh"

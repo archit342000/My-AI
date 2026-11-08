@@ -46,7 +46,10 @@ The local README of each component lists its own tests. Read it before running t
 | End to end | `npm run e2e` (needs running stack and Chrome) | no |
 
 Run each suite in its own pytest process; combining them causes duplicate-module collection errors.
-All commands above use the env vars and `venv/bin/python` described under "Running tests". CI is `.github/workflows/ci.yml`.
+All commands above use the env vars and `venv/bin/python` described under "Running tests".
+`scripts/check.sh` runs every suite marked "In CI" (use `--python-only` or `--frontend-only` to narrow it) and is the source of truth
+when hosted CI is unavailable. `.github/workflows/ci.yml` runs the same checks on GitHub.
+Enable the optional pre-push hook with `git config core.hooksPath scripts/hooks`.
 
 ## Frontend tests
 

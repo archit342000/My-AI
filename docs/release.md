@@ -3,7 +3,7 @@
 ## Steps
 
 1. **Release branch:** cut `release/X.Y.Z` from `develop` once the planned work is merged (`docs/standards/gitflow.md`). Only fixes, docs and the version bump go in.
-2. **Verify:** `ruff check .`, the pytest suites listed in `docs/standards/testing.md`, and in `frontend/` `npm run typecheck`, `lint`, `test`, `build`.
+2. **Verify:** `scripts/check.sh` (ruff, the pytest suites in `docs/standards/testing.md`, and the frontend typecheck, lint, test and build).
    Optionally run `npm run e2e` against a running stack.
 3. **Audit dependencies:** `npm audit` in `frontend/` and `pip list --outdated` in `venv/`; act on anything severe (`docs/standards/dependencies.md`).
 4. **Bump the version** in `backend/version.py` (`VERSION_MAJOR/MINOR/PATCH`), and in `package.json` and `frontend/package.json`.
