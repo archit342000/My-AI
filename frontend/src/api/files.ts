@@ -9,6 +9,9 @@ interface UploadResponse {
   file_size: number;
 }
 
+/** Uploads and processing both happen before the response; a stalled server must not hang the chip. */
+export const UPLOAD_TIMEOUT_MS = 180_000;
+
 /** Uploads one file for a chat with progress (XHR, since fetch has no upload progress). */
 export function uploadFile(file: File, chatId: string, onProgress?: (fraction: number) => void): Promise<UploadedFile> {
   return new Promise((resolve, reject) => {
@@ -17,6 +20,7 @@ export function uploadFile(file: File, chatId: string, onProgress?: (fraction: n
     form.append('chat_id', chatId);
     const xhr = new XMLHttpRequest();
     xhr.open('POST', '/api/files/upload');
+    xhr.timeout = UPLOAD_TIMEOUT_MS;
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable && onProgress) onProgress(e.loaded / e.total);
     };
@@ -36,6 +40,7 @@ export function uploadFile(file: File, chatId: string, onProgress?: (fraction: n
       }
     };
     xhr.onerror = () => reject(new ApiError(0, null, 'Network error during upload'));
+    xhr.ontimeout = () => reject(new ApiError(0, null, 'Upload timed out; try again'));
     xhr.send(form);
   });
 }

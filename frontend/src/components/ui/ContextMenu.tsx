@@ -1,4 +1,5 @@
 import { useEffect, useRef, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { Icon, type IconName } from '../icons/Icon';
 
 export interface MenuItem {
@@ -45,12 +46,19 @@ export function ContextMenu({ x, y, items, onClose, header }: ContextMenuProps) 
     };
   }, [onClose]);
 
-  return (
+  const maxHeight = Math.max(160, window.innerHeight - 16);
+  const top = Math.max(
+    8,
+    Math.min(y, window.innerHeight - Math.min(maxHeight, 56 + items.length * 40) - 8),
+  );
+  const left = Math.max(8, Math.min(x, window.innerWidth - 260));
+
+  return createPortal(
     <div
       ref={ref}
       className="sidebar-context-menu open"
       role="menu"
-      style={{ left: x, top: y }}
+      style={{ left, top, maxHeight, overflowY: 'auto' }}
     >
       {header ? <div className="sidebar-context-menu-header">{header}</div> : null}
       {items.map((item) => (
@@ -69,6 +77,7 @@ export function ContextMenu({ x, y, items, onClose, header }: ContextMenuProps) 
           <span>{item.label}</span>
         </button>
       ))}
-    </div>
+    </div>,
+    document.body,
   );
 }

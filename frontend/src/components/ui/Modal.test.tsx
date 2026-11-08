@@ -10,10 +10,24 @@ function Harness({ onOuter, onInner }: { onOuter: () => void; onInner: () => voi
   return (
     <>
       <button onClick={() => setOuter(true)}>open-outer</button>
-      <Modal open={outer} onClose={() => { onOuter(); setOuter(false); }} title="Outer">
+      <Modal
+        open={outer}
+        onClose={() => {
+          onOuter();
+          setOuter(false);
+        }}
+        title="Outer"
+      >
         <button onClick={() => setInner(true)}>open-inner</button>
       </Modal>
-      <Modal open={inner} onClose={() => { onInner(); setInner(false); }} title="Inner">
+      <Modal
+        open={inner}
+        onClose={() => {
+          onInner();
+          setInner(false);
+        }}
+        title="Inner"
+      >
         <p>inner body</p>
       </Modal>
     </>
@@ -50,14 +64,14 @@ describe('Modal', () => {
   it('closes on backdrop click but not on dialog click', async () => {
     const onClose = vi.fn();
     const user = userEvent.setup();
-    const { container } = render(
+    render(
       <Modal open onClose={onClose} title="T">
         <p>inside</p>
       </Modal>,
     );
     await user.click(screen.getByText('inside'));
     expect(onClose).not.toHaveBeenCalled();
-    await user.click(container.querySelector('.modal-backdrop') as HTMLElement);
+    await user.click(document.body.querySelector('.modal-backdrop') as HTMLElement);
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 

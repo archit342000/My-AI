@@ -1,12 +1,17 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Modal } from '../../components/ui/Modal';
+import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
+import { Button } from '../../components/ui/Button';
+import { SegmentedControl } from '../../components/ui/SegmentedControl';
 import { showToast } from '../../components/ui/toast-store';
 import { settingsApi, preferencesApi, settingsKeys, type CodeRunnerSettings } from '../../api/settings';
 import { useSettingsStore } from '../../state/settings-store';
 import { useUiStore, type ThemeMode } from '../../state/ui-store';
 import { useModalStore, type DialogName } from '../../state/modal-store';
-import { Field, Section, Status, Toggle, inputStyle } from './forms';
+import { Field, Section, Status, inputStyle } from './forms';
+import { Toggle } from '../../components/ui/Toggle';
+import { SETTINGS_STALE_MS } from '../../api/settings';
 
 const THEMES: Array<[ThemeMode, string]> = [['light', 'Light'], ['dark', 'Dark'], ['system', 'System']];
 
@@ -18,10 +23,11 @@ export function SystemSettingsModal({ open, onClose }: { open: boolean; onClose:
   const showDialog = useModalStore((s) => s.show);
   const vision = useSettingsStore((s) => s.visionEnabled);
   const setVision = useSettingsStore((s) => s.setVisionEnabled);
-  const system = useQuery({ queryKey: settingsKeys.system, queryFn: settingsApi.getSystem, enabled: open });
-  const version = useQuery({ queryKey: settingsKeys.version, queryFn: settingsApi.version, enabled: open });
+  const system = useQuery({ queryKey: settingsKeys.system, queryFn: settingsApi.getSystem, enabled: open, staleTime: SETTINGS_STALE_MS });
+  const version = useQuery({ queryKey: settingsKeys.version, queryFn: settingsApi.version, enabled: open, staleTime: SETTINGS_STALE_MS });
   const [runner, setRunner] = useState<CodeRunnerSettings | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+  const [confirmReset, setConfirmReset] = useState(false);
 
   useEffect(() => {
     if (system.data && !runner) {
@@ -63,19 +69,21 @@ export function SystemSettingsModal({ open, onClose }: { open: boolean; onClose:
   return (
     <Modal open={open} onClose={onClose} title="System Settings" maxWidth={680}>
       <Section title="Appearance">
-        <div role="radiogroup" aria-label="Theme" style={{ display: 'flex', gap: 8 }}>
-          {THEMES.map(([mode, label]) => (
-            <button key={mode} type="button" role="radio" aria-checked={themeMode === mode} className={themeMode === mode ? 'btn-primary' : 'btn-secondary'} onClick={() => setTheme(mode)}>
-              {label}
-            </button>
-          ))}
-        </div>
+        <SegmentedControl
+          label="Theme"
+          value={themeMode}
+          options={THEMES.map(([value, label]) => ({ value, label }))}
+          onChange={(value) => setTheme(value as ThemeMode)}
+        />
       </Section>
 
       <Section title="Capabilities">
-        <Field label="Vision input">
-          <Toggle checked={vision} onChange={setVision} label="Vision input" />
-        </Field>
+        <Toggle
+          checked={vision}
+          onChange={setVision}
+          label="Vision input"
+          description="Send attached images to the model so it can read them."
+        />
       </Section>
 
       <Section title="Code runner">
@@ -102,22 +110,34 @@ export function SystemSettingsModal({ open, onClose }: { open: boolean; onClose:
       </Section>
 
       <Section title="Manage">
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+        <div className="settings-links">
           {links.map(([name, label]) => (
-            <button key={name} type="button" className="btn-secondary" onClick={() => showDialog(name)}>{label}</button>
+            <Button key={name} variant="secondary" onClick={() => showDialog(name)}>{label}</Button>
           ))}
         </div>
       </Section>
 
       <Section title="Danger zone">
-        <button type="button" className="btn-danger" onClick={() => { if (window.confirm('Reset all saved preferences? This cannot be undone.')) reset.mutate(); }}>
+        <Button variant="danger" onClick={() => setConfirmReset(true)}>
           Reset preferences
-        </button>
+        </Button>
       </Section>
 
       <div style={{ fontSize: '0.75rem', color: 'var(--content-muted)' }}>
         Version {version.data?.version ?? '…'}
       </div>
+      <ConfirmDialog
+        open={confirmReset}
+        title="Reset preferences"
+        message="Reset all saved preferences to their defaults? This cannot be undone."
+        confirmLabel="Reset"
+        danger
+        onCancel={() => setConfirmReset(false)}
+        onConfirm={() => {
+          setConfirmReset(false);
+          reset.mutate();
+        }}
+      />
     </Modal>
   );
 }

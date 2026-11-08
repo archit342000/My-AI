@@ -41,17 +41,25 @@ export interface Persona {
   git_mode: number | boolean;
 }
 
+/** Settings rarely change while the dialog is open; reopening within this window reuses cached data (F-54). */
+export const SETTINGS_STALE_MS = 60_000;
+
 export interface LoadedModel {
   id: string;
   status: { value: string };
 }
 
 export const settingsApi = {
-  getSystem: () => apiJson<CodeRunnerSettings & Record<string, unknown>>('/api/tools/config/settings'),
-  saveCodeRunner: (body: CodeRunnerSettings) => apiRequest('/api/tools/config/settings', { method: 'POST', json: body }),
+  getSystem: () =>
+    apiJson<CodeRunnerSettings & Record<string, unknown>>('/api/tools/config/settings'),
+  saveCodeRunner: (body: CodeRunnerSettings) =>
+    apiRequest('/api/tools/config/settings', { method: 'POST', json: body }),
   getAgents: () => apiJson<Record<string, AgentConfig>>('/api/tools/config/agents'),
   patchAgent: (name: string, body: AgentConfig) =>
-    apiRequest(`/api/tools/config/agents/${encodeURIComponent(name)}`, { method: 'PATCH', json: body }),
+    apiRequest(`/api/tools/config/agents/${encodeURIComponent(name)}`, {
+      method: 'PATCH',
+      json: body,
+    }),
   getBrowser: () => apiJson<{ stealth_level: 'minimal' | 'advanced' }>('/api/tools/config/browser'),
   setBrowser: (level: 'minimal' | 'advanced') =>
     apiRequest('/api/tools/config/browser', { method: 'PATCH', json: { stealth_level: level } }),
@@ -59,29 +67,42 @@ export const settingsApi = {
 };
 
 export const preferencesApi = {
-  list: () => apiJson<{ preferences: Preference[] }>('/api/tools/preferences').then((r) => r.preferences),
-  create: (body: { content: string; tag: string }) => apiRequest('/api/tools/preferences', { method: 'POST', json: body }),
+  list: () =>
+    apiJson<{ preferences: Preference[] }>('/api/tools/preferences').then((r) => r.preferences),
+  create: (body: { content: string; tag: string }) =>
+    apiRequest('/api/tools/preferences', { method: 'POST', json: body }),
   update: (id: string, body: { content: string; tag: string }) =>
     apiRequest(`/api/tools/preferences/${encodeURIComponent(id)}`, { method: 'PUT', json: body }),
-  remove: (id: string) => apiRequest(`/api/tools/preferences/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  remove: (id: string) =>
+    apiRequest(`/api/tools/preferences/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   reset: () => apiRequest('/api/tools/preferences/reset', { method: 'POST' }),
 };
 
 export const skillsApi = {
   list: () => apiJson<{ skills: Skill[] }>('/api/skills').then((r) => r.skills),
   create: (body: Omit<Skill, 'id'>) => apiRequest('/api/skills', { method: 'POST', json: body }),
-  update: (id: string, body: Omit<Skill, 'id'>) => apiRequest(`/api/skills/${encodeURIComponent(id)}`, { method: 'PUT', json: body }),
+  update: (id: string, body: Omit<Skill, 'id'>) =>
+    apiRequest(`/api/skills/${encodeURIComponent(id)}`, { method: 'PUT', json: body }),
   remove: (id: string) => apiRequest(`/api/skills/${encodeURIComponent(id)}`, { method: 'DELETE' }),
 };
 
 export const personasApi = {
   list: () => apiJson<{ personas: Persona[] }>('/api/personas').then((r) => r.personas),
-  create: (body: Omit<Persona, 'id'>) => apiRequest('/api/personas', { method: 'POST', json: body }),
-  update: (id: string, body: Omit<Persona, 'id'>) => apiRequest(`/api/personas/${encodeURIComponent(id)}`, { method: 'PUT', json: body }),
-  remove: (id: string) => apiRequest(`/api/personas/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  create: (body: Omit<Persona, 'id'>) =>
+    apiRequest('/api/personas', { method: 'POST', json: body }),
+  update: (id: string, body: Omit<Persona, 'id'>) =>
+    apiRequest(`/api/personas/${encodeURIComponent(id)}`, { method: 'PUT', json: body }),
+  remove: (id: string) =>
+    apiRequest(`/api/personas/${encodeURIComponent(id)}`, { method: 'DELETE' }),
 };
 
+export interface ModelConfig {
+  general?: { text?: string };
+  research?: { main?: string };
+}
+
 export const modelsApi = {
+  config: () => apiJson<ModelConfig>('/api/models/config'),
   list: () => apiJson<{ data: LoadedModel[] }>('/api/models/').then((r) => r.data),
   load: (model: string) => apiRequest('/api/models/load', { method: 'POST', json: { model } }),
   unload: (model: string) => apiRequest('/api/models/unload', { method: 'POST', json: { model } }),

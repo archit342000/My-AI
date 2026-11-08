@@ -51,12 +51,15 @@ interface SettingsState {
   modelName: string | null;
   sampling: SamplingParams;
   visionEnabled: boolean;
+  /** Personalise replies from stored preferences (legacy `isUserPreferences`, default on). */
+  userPreferences: boolean;
   personaId: string | null;
   modes: ModeToggles;
   setPersona: (id: string | null) => void;
   setModel: (id: string, name: string) => void;
   setSampling: (patch: Partial<SamplingParams>) => void;
   setVisionEnabled: (on: boolean) => void;
+  setUserPreferences: (on: boolean) => void;
   setMode: (key: keyof ModeToggles, on: boolean) => void;
 }
 
@@ -65,6 +68,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   modelName: read(KEYS.modelName),
   sampling: loadSampling(),
   visionEnabled: read(KEYS.vision) === 'true',
+  userPreferences: true,
+  setUserPreferences: (on) => set({ userPreferences: on }),
   personaId: read(KEYS.persona),
   setPersona: (id) => {
     if (id) localStorage.setItem(KEYS.persona, id);

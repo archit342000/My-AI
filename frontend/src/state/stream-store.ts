@@ -9,16 +9,31 @@ export interface PendingUser {
   files: UploadedFile[];
 }
 
+/**
+ * A turn that ended early. The partial reply is kept on the client (the server may not have
+ * persisted it), so the reader still sees what arrived, with a "Stopped" marker or the error and a
+ * Retry action.
+ */
+export interface InterruptedTurn {
+  chatId: string;
+  live: LiveTurn;
+  kind: 'stopped' | 'error';
+  /** Error message for `kind: 'error'`. */
+  message: string | null;
+}
+
 export interface StreamState {
   /** Chat whose turn is in flight, or null when idle. */
   chatId: string | null;
   live: LiveTurn | null;
   pending: PendingUser | null;
-  error: string | null;
+  interrupted: InterruptedTurn | null;
   controller: AbortController | null;
   start: (chatId: string, pending: PendingUser | null, controller: AbortController) => void;
   update: (live: LiveTurn) => void;
-  fail: (message: string) => void;
+  /** Ends the in-flight turn as stopped or failed, keeping the partial reply. Call before `finish`. */
+  interrupt: (turn: Omit<InterruptedTurn, 'chatId'> & { chatId: string }) => void;
+  dismissInterrupted: () => void;
   finish: () => void;
 }
 
@@ -26,10 +41,12 @@ export const useStreamStore = create<StreamState>((set) => ({
   chatId: null,
   live: null,
   pending: null,
-  error: null,
+  interrupted: null,
   controller: null,
-  start: (chatId, pending, controller) => set({ chatId, pending, controller, error: null, live: null }),
+  start: (chatId, pending, controller) =>
+    set({ chatId, pending, controller, interrupted: null, live: null }),
   update: (live) => set({ live }),
-  fail: (message) => set({ error: message }),
+  interrupt: (turn) => set({ interrupted: turn }),
+  dismissInterrupted: () => set({ interrupted: null }),
   finish: () => set({ chatId: null, live: null, pending: null, controller: null }),
 }));

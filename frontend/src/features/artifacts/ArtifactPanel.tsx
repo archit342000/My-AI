@@ -2,27 +2,48 @@ import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { artifactsApi, type Artifact, type ScopeRef } from '../../api/filesystem';
 import { Icon } from '../../components/icons/Icon';
+import { Button, IconButton } from '../../components/ui/Button';
+import { EmptyState } from '../../components/ui/EmptyState';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
+import { Menu, type MenuEntry } from '../../components/ui/Menu';
+import { SegmentedControl } from '../../components/ui/SegmentedControl';
 import { showToast } from '../../components/ui/toast-store';
 import { Markdown } from '../../components/markdown/Markdown';
 import { useUiStore } from '../../state/ui-store';
-const CodeEditor = lazy(() => import('./CodeEditor').then((m) => ({ default: m.CodeEditor })));
 import { previewKind } from './language';
 import { VersionsDialog } from './VersionsDialog';
+import { buildTree, isDirectoryEntry, type TreeNode } from './artifact-tree';
+
+const CodeEditor = lazy(() => import('./CodeEditor').then((m) => ({ default: m.CodeEditor })));
 
 const scopeKey = (s: ScopeRef) => `${s.chatId ?? ''}|${s.workspaceId ?? ''}`;
 
-/** Side panel listing a chat's or workspace's artifacts, with preview, editing, versions and export. */
-export function ArtifactPanel({ scope }: { scope: ScopeRef }) {
+const EXPORTS: Array<{ format: 'markdown' | 'html' | 'pdf'; label: string }> = [
+  { format: 'markdown', label: 'Markdown (.md)' },
+  { format: 'html', label: 'HTML (.html)' },
+  { format: 'pdf', label: 'PDF (.pdf)' },
+];
+
+export interface ArtifactPanelProps {
+  scope: ScopeRef;
+  /** Shows a close button in the header. Omit when the panel is not an overlay. */
+  onClose?: () => void;
+}
+
+/** Files panel for a chat or workspace: a folder tree, a preview/edit viewer, versions and export. */
+export function ArtifactPanel({ scope, onClose }: ArtifactPanelProps) {
   const queryClient = useQueryClient();
-  const dark = useUiStore((s) => s.themeMode);
-  const isDark = dark === 'dark' || (dark === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  const themeMode = useUiStore((s) => s.themeMode);
+  const isDark =
+    themeMode === 'dark' ||
+    (themeMode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
   const [selected, setSelected] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<string | null>(null);
   const [showVersions, setShowVersions] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [filter, setFilter] = useState('');
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const key = scopeKey(scope);
 
   const list = useQuery({
@@ -41,13 +62,19 @@ export function ArtifactPanel({ scope }: { scope: ScopeRef }) {
     setEditing(false);
   }, [selected]);
 
-  const items = useMemo(
-    () => (list.data ?? []).filter((a) => a.title.toLowerCase().includes(filter.toLowerCase())),
-    [list.data, filter],
+  const needle = filter.trim().toLowerCase();
+  const tree = useMemo(() => buildTree(list.data ?? []), [list.data]);
+  const matches = useMemo(
+    () =>
+      (list.data ?? []).filter(
+        (a) => !isDirectoryEntry(a) && a.title.toLowerCase().includes(needle),
+      ),
+    [list.data, needle],
   );
 
   const create = useMutation({
-    mutationFn: () => artifactsApi.create(scope, { title: 'Untitled', content: '', language: 'markdown' }),
+    mutationFn: () =>
+      artifactsApi.create(scope, { title: 'Untitled', content: '', language: 'markdown' }),
     onSuccess: async (res) => {
       await queryClient.invalidateQueries({ queryKey: ['artifacts', key] });
       setSelected(res.id);
@@ -78,82 +105,210 @@ export function ArtifactPanel({ scope }: { scope: ScopeRef }) {
   const content = draft ?? current?.content ?? '';
   const dirty = draft !== null && draft !== current?.content;
 
-  return (
-    <aside className="artifact-panel" aria-label="Artifacts" style={{ display: 'flex', flexDirection: 'column', height: '100%', minWidth: 0 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px' }}>
-        <input
-          aria-label="Filter artifacts"
-          placeholder="Filter…"
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-          style={{ flex: 1, minWidth: 0, padding: '6px 8px', borderRadius: 8, border: '1px solid var(--glass-border)', background: 'var(--glass-surface)', color: 'var(--content-primary)' }}
-        />
-        <button type="button" className="btn-ghost" aria-label="New file" onClick={() => create.mutate()}><Icon name="plus" size={16} /></button>
-      </div>
+  function toggleFolder(path: string) {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  }
 
-      <ul style={{ listStyle: 'none', margin: 0, padding: '0 8px', maxHeight: selected ? 180 : undefined, overflowY: 'auto' }}>
-        {items.map((a: Artifact) =>
-          a.type === 'directory' || !a.id ? (
-            <li key={`dir:${a.filename}`} style={{ padding: '6px 8px', fontSize: '0.8rem', color: 'var(--content-muted)' }}>
-              <Icon name="folder" size={14} /> {a.title}
-            </li>
-          ) : (
-          <li key={a.id}>
+  function renderNodes(nodes: TreeNode[], depth: number) {
+    return nodes.map((node) => {
+      const indent = { paddingLeft: 8 + depth * 14 }; // dynamic-style
+      if (node.kind === 'folder') {
+        const open = !collapsed.has(node.path);
+        return (
+          <li key={`dir:${node.path}`}>
             <button
               type="button"
-              className={`artifact-item${selected === a.id ? ' active' : ''}`}
-              aria-current={selected === a.id}
-              onClick={() => setSelected(a.id)}
-              style={{ width: '100%', textAlign: 'left', padding: '6px 8px', borderRadius: 8, background: selected === a.id ? 'var(--accent-subtle)' : 'transparent', color: 'var(--content-primary)', display: 'flex', alignItems: 'center', gap: 8 }}
+              className="artifact-tree__row artifact-tree__folder"
+              aria-expanded={open}
+              style={indent} // dynamic-style
+              onClick={() => toggleFolder(node.path)}
             >
-              <Icon name="file-text" size={14} />
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.title}</span>
+              <Icon name={open ? 'chevron-down' : 'chevron-right'} size={12} />
+              <Icon name="folder" size={14} />
+              <span className="artifact-tree__name">{node.name}</span>
             </button>
+            {open ? <ul className="artifact-tree__children">{renderNodes(node.children, depth + 1)}</ul> : null}
           </li>
-          ),
-        )}
-        {list.isPending ? <li style={{ color: 'var(--content-muted)', padding: 8 }}>Loading…</li> : null}
-        {!list.isPending && items.length === 0 ? <li style={{ color: 'var(--content-muted)', padding: 8 }}>No files yet.</li> : null}
+        );
+      }
+      const a = node.artifact;
+      return (
+        <li key={a.id}>
+          <button
+            type="button"
+            className="artifact-tree__row artifact-item"
+            aria-current={selected === a.id}
+            style={indent} // dynamic-style
+            title={node.path}
+            onClick={() => setSelected(a.id)}
+          >
+            <Icon name="file-text" size={14} />
+            <span className="artifact-item__title">{node.name}</span>
+          </button>
+        </li>
+      );
+    });
+  }
+
+  const exportMenu: MenuEntry[] = EXPORTS.map(({ format, label }) => ({
+    type: 'item',
+    id: format,
+    label,
+    onSelect: () => {
+      if (current) window.open(artifactsApi.exportUrl(current.id, format, scope), '_blank', 'noopener');
+    },
+  }));
+
+  const kind = current ? previewKind(current.language) : 'code';
+
+  return (
+    <section className="artifact-panel" aria-label="Artifacts">
+      <header className="artifact-panel__header">
+        <h2 className="artifact-panel__title">Files</h2>
+        {onClose ? <IconButton icon="close" label="Close files panel" onClick={onClose} /> : null}
+      </header>
+
+      <div className="artifact-panel__filter-row">
+        <input
+          className="artifact-panel__filter"
+          aria-label="Filter files"
+          placeholder="Filter files…"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+        />
+        <IconButton
+          icon="plus"
+          label="New file"
+          onClick={() => create.mutate()}
+          disabled={create.isPending}
+        />
+      </div>
+
+      <ul className={selected ? 'artifact-tree artifact-tree--compact' : 'artifact-tree'}>
+        {needle
+          ? matches.map((a: Artifact) => (
+              <li key={a.id}>
+                <button
+                  type="button"
+                  className="artifact-tree__row artifact-item"
+                  aria-current={selected === a.id}
+                  title={a.title}
+                  onClick={() => setSelected(a.id)}
+                >
+                  <Icon name="file-text" size={14} />
+                  <span className="artifact-item__title">{a.title}</span>
+                </button>
+              </li>
+            ))
+          : renderNodes(tree, 0)}
+        {list.isPending ? <li className="artifact-tree__status">Loading…</li> : null}
       </ul>
+      {!list.isPending && (needle ? matches.length === 0 : tree.length === 0) ? (
+        <EmptyState
+          icon="folder"
+          title={needle ? 'No matching files' : 'No files yet'}
+          description={
+            needle ? 'Clear the filter to see every file.' : 'Use + to create a note, draft or piece of code.'
+          }
+        />
+      ) : null}
 
       {selected && current ? (
-        <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', borderTop: '1px solid var(--glass-border)', marginTop: 8 }}>
-          <div style={{ padding: '8px 10px 0' }}>
-            <strong style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{current.title}</strong>
+        <div className="artifact-viewer">
+          <div className="artifact-viewer__head">
+            <strong className="artifact-viewer__title" title={current.title}>
+              {current.title}
+            </strong>
+            {dirty ? (
+              <span
+                className="artifact-viewer__dirty"
+                role="img"
+                aria-label="Unsaved changes"
+                title="Unsaved changes"
+              />
+            ) : null}
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '6px 10px', flexWrap: 'wrap', fontSize: '0.8rem' }}>
-            <button type="button" className="btn-ghost" onClick={() => setEditing((v) => !v)}>{editing ? 'Preview' : 'Edit'}</button>
-            {dirty ? <button type="button" className="btn-primary" onClick={() => save.mutate(content)}>Save</button> : null}
-            <button type="button" className="btn-ghost" onClick={() => setShowVersions(true)}>Versions</button>
-            <a className="btn-ghost" href={artifactsApi.exportUrl(current.id, 'markdown', scope)} target="_blank" rel="noreferrer">MD</a>
-            <a className="btn-ghost" href={artifactsApi.exportUrl(current.id, 'html', scope)} target="_blank" rel="noreferrer">HTML</a>
-            <a className="btn-ghost" href={artifactsApi.exportUrl(current.id, 'pdf', scope)} target="_blank" rel="noreferrer">PDF</a>
-            <button type="button" className="btn-ghost" aria-label="Delete file" onClick={() => setConfirmDelete(true)}><Icon name="trash" size={14} /></button>
+
+          <div className="artifact-viewer__toolbar">
+            <SegmentedControl
+              label="View mode"
+              value={editing ? 'edit' : 'preview'}
+              onChange={(v) => setEditing(v === 'edit')}
+              options={[
+                { value: 'preview', label: 'Preview' },
+                { value: 'edit', label: 'Edit' },
+              ]}
+            />
+            <Button size="sm" variant="ghost" onClick={() => setShowVersions(true)}>
+              Versions
+            </Button>
+            <Menu
+              label="Export"
+              items={exportMenu}
+              trigger={(props) => (
+                <Button size="sm" variant="ghost" {...props}>
+                  Export
+                  <Icon name="chevron-down" size={12} />
+                </Button>
+              )}
+            />
+            <span className="artifact-viewer__spacer" />
+            {dirty ? (
+              <Button size="sm" variant="primary" loading={save.isPending} onClick={() => save.mutate(content)}>
+                Save
+              </Button>
+            ) : null}
+            <IconButton
+              icon="trash"
+              label="Delete file"
+              tone="danger"
+              onClick={() => setConfirmDelete(true)}
+            />
           </div>
-          <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '0 10px 10px' }}>
+
+          <div className="artifact-viewer__body">
             {editing ? (
-              <Suspense fallback={<div style={{ color: 'var(--content-muted)' }}>Loading editor…</div>}>
-                <CodeEditor value={content} language={current.language} dark={isDark} onChange={setDraft} onSave={() => dirty && save.mutate(content)} />
+              <Suspense fallback={<div className="artifact-viewer__status">Loading editor…</div>}>
+                <CodeEditor
+                  value={content}
+                  language={current.language}
+                  dark={isDark}
+                  onChange={setDraft}
+                  onSave={() => dirty && save.mutate(content)}
+                />
               </Suspense>
-            ) : previewKind(current.language) === 'markdown' ? (
+            ) : kind === 'markdown' ? (
               <Markdown text={content} className="message-content raw-text-content" />
-            ) : previewKind(current.language) === 'html' ? (
-              <iframe title={current.title} sandbox="" srcDoc={content} style={{ width: '100%', height: '60vh', border: 0, background: '#fff' }} />
+            ) : kind === 'html' ? (
+              <iframe title={current.title} sandbox="" srcDoc={content} className="artifact-viewer__frame" />
             ) : (
-              <pre className="font-mono" style={{ whiteSpace: 'pre-wrap', fontSize: '0.8rem' }}>{content}</pre>
+              <pre className="artifact-viewer__plain">{content}</pre>
             )}
           </div>
         </div>
       ) : null}
 
       {selected && current ? (
-        <VersionsDialog open={showVersions} onClose={() => setShowVersions(false)} artifactId={current.id} scope={scope} onRestored={() => void queryClient.invalidateQueries({ queryKey: ['artifact', selected, key] })} />
+        <VersionsDialog
+          open={showVersions}
+          onClose={() => setShowVersions(false)}
+          artifactId={current.id}
+          scope={scope}
+          onRestored={() =>
+            void queryClient.invalidateQueries({ queryKey: ['artifact', selected, key] })
+          }
+        />
       ) : null}
 
       <ConfirmDialog
         open={confirmDelete}
         title="Delete file?"
-        message={`Delete "${current?.title ?? ''}" and its version history?`}
+        message={`Delete "${current?.title ?? ''}" and its version history? This cannot be undone.`}
         confirmLabel="Delete"
         danger
         onCancel={() => setConfirmDelete(false)}
@@ -162,6 +317,6 @@ export function ArtifactPanel({ scope }: { scope: ScopeRef }) {
           if (selected) remove.mutate(selected);
         }}
       />
-    </aside>
+    </section>
   );
 }

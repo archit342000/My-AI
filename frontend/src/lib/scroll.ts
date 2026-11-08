@@ -1,7 +1,6 @@
 /** Smart autoscroll helpers, ported from legacy `scroll-manager.js`. */
 
 export const NEAR_BOTTOM_PX = 60;
-export const SCROLL_THROTTLE_MS = 100;
 
 /** True when the user is within `threshold` px of the end, meaning they are following the stream. */
 export function isNearBottom(el: HTMLElement, threshold = NEAR_BOTTOM_PX): boolean {
@@ -17,17 +16,29 @@ export function computeKeyboardOffset(innerHeight: number, visualHeight: number)
   return offset > 10 ? offset : 0;
 }
 
-/** Throttled scroll-to-bottom. Returns true when a scroll was scheduled. */
-export function createAutoScroller(now: () => number = Date.now) {
-  let last = 0;
-  return function scrollToBottom(el: HTMLElement, opts: { forced?: boolean; smooth?: boolean } = {}) {
-    const t = now();
-    if (!opts.forced && t - last < SCROLL_THROTTLE_MS) return false;
-    last = t;
-    if (!opts.forced && !isNearBottom(el)) return false;
-    requestAnimationFrame(() => {
-      el.scrollTo({ top: el.scrollHeight, behavior: opts.smooth ? 'smooth' : 'auto' });
-    });
-    return true;
+/**
+ * Follow state for a streaming transcript. `pinned` is decided only when the user scrolls (from
+ * where they are at that moment), never after content grows, so one large chunk cannot unpin a
+ * reader who was at the bottom. Only an upward scroll unpins: programmatic and smooth scrolls
+ * toward the bottom fire scroll events mid-way and must not count as the user leaving.
+ * Sending a message or opening a chat re-pins.
+ */
+export function createFollowController(threshold = NEAR_BOTTOM_PX) {
+  let pinned = true;
+  let lastTop = 0;
+  return {
+    isPinned: () => pinned,
+    /** Call from the scroll event. Returns the new pinned state. */
+    observeScroll(el: HTMLElement): boolean {
+      const top = el.scrollTop;
+      if (isNearBottom(el, threshold)) pinned = true;
+      else if (top < lastTop - 1) pinned = false;
+      lastTop = top;
+      return pinned;
+    },
+    /** Call when the user sends a message or opens a chat. */
+    force(): void {
+      pinned = true;
+    },
   };
 }

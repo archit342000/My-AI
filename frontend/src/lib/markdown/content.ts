@@ -41,7 +41,16 @@ export function preprocessLatex(text: string): string {
   });
 }
 
-/** Turns literal `\n` sequences (not followed by a letter) into newlines, as legacy did. */
+/**
+ * Turns literal `\n` sequences (not followed by a letter) into newlines, as legacy did, but only
+ * for a JSON-escaped blob: a message with real line breaks is left alone, and so is anything inside
+ * a backtick code span (a `"Semantic Graph:\n"` string in code must stay as written).
+ */
 export function normalizeNewlines(text: string): string {
-  return text.replace(/\\n(?![a-zA-Z])/g, '\n');
+  if (text.includes('\n')) return text;
+  // Odd indexes are the captured code spans; even indexes are prose.
+  return text
+    .split(/(`+[^`]*?`+)/)
+    .map((part, index) => (index % 2 === 1 ? part : part.replace(/\\n(?![a-zA-Z])/g, '\n')))
+    .join('');
 }

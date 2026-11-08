@@ -13,6 +13,12 @@ interface Props {
   onSave: () => void;
 }
 
+const PROSE = new Set(['', 'markdown', 'md', 'text', 'txt', 'plaintext']);
+
+function wraps(language: string | undefined): boolean {
+  return PROSE.has((language ?? '').toLowerCase());
+}
+
 /** CodeMirror 6 wrapper. The document is owned by CodeMirror; `value` only seeds it when the file changes. */
 export function CodeEditor({ value, language, dark, onChange, onSave }: Props) {
   const host = useRef<HTMLDivElement>(null);
@@ -34,6 +40,8 @@ export function CodeEditor({ value, language, dark, onChange, onSave }: Props) {
           { key: 'Mod-s', run: () => (callbacks.current.onSave(), true) },
         ]),
         languageExtension(language),
+        // Prose files soft-wrap so long lines stay readable (F-42); code keeps its horizontal scroll.
+        ...(wraps(language) ? [EditorView.lineWrapping] : []),
         ...(dark ? [oneDark] : []),
         EditorView.updateListener.of((u) => {
           if (u.docChanged) callbacks.current.onChange(u.state.doc.toString());
@@ -58,5 +66,5 @@ export function CodeEditor({ value, language, dark, onChange, onSave }: Props) {
     }
   }, [value]);
 
-  return <div ref={host} className="code-editor" style={{ height: '100%', minHeight: 200 }} />;
+  return <div ref={host} className="code-editor" />;
 }

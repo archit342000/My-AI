@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { computeKeyboardOffset, createAutoScroller, isNearBottom } from './scroll';
+import { computeKeyboardOffset, createFollowController, isNearBottom } from './scroll';
 
 function fakeEl(scrollHeight: number, scrollTop: number, clientHeight: number) {
   return { scrollHeight, scrollTop, clientHeight, scrollTo: vi.fn() } as unknown as HTMLElement & { scrollTo: ReturnType<typeof vi.fn> };
@@ -19,14 +19,31 @@ describe('computeKeyboardOffset', () => {
   });
 });
 
-describe('createAutoScroller', () => {
-  it('does not scroll when the user has scrolled up, unless forced', () => {
-    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => { cb(0); return 0; });
-    const scroll = createAutoScroller(() => 1000);
-    const el = fakeEl(1000, 0, 600);
-    expect(scroll(el)).toBe(false);
-    expect(scroll(el, { forced: true })).toBe(true);
-    expect(el.scrollTo).toHaveBeenCalledWith({ top: 1000, behavior: 'auto' });
-    vi.unstubAllGlobals();
+describe('createFollowController', () => {
+  it('re-pins only from a scroll position, not from content growth', () => {
+    const follow = createFollowController();
+    expect(follow.isPinned()).toBe(true);
+    follow.observeScroll(fakeEl(1000, 400, 600));
+    // The reader scrolls up: 300px away from the bottom.
+    expect(follow.observeScroll(fakeEl(1000, 100, 600))).toBe(false);
+    // Content grows (no scroll event): still unpinned.
+    expect(follow.isPinned()).toBe(false);
+    // The reader scrolls back to the bottom.
+    expect(follow.observeScroll(fakeEl(1200, 580, 600))).toBe(true);
+  });
+
+  it('stays pinned through scroll events of a smooth scroll moving down', () => {
+    const follow = createFollowController();
+    // Content grew by 700px; a smooth scroll toward the bottom reports intermediate positions.
+    expect(follow.observeScroll(fakeEl(1700, 200, 600))).toBe(true);
+    expect(follow.observeScroll(fakeEl(1700, 600, 600))).toBe(true);
+    expect(follow.observeScroll(fakeEl(1700, 1100, 600))).toBe(true);
+  });
+
+  it('force re-pins after a send', () => {
+    const follow = createFollowController();
+    follow.observeScroll(fakeEl(1000, 0, 600));
+    follow.force();
+    expect(follow.isPinned()).toBe(true);
   });
 });

@@ -1,6 +1,11 @@
 import type { ReactNode } from 'react';
+import { Button } from './Button';
 import { Modal } from './Modal';
 
+/**
+ * Confirmation for every destructive or irreversible action. Use `danger` for deletes and resets;
+ * never `window.confirm`.
+ */
 export function ConfirmDialog({
   open,
   title,
@@ -25,10 +30,14 @@ export function ConfirmDialog({
       title={title}
       maxWidth={420}
       footer={
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button type="button" className="btn-secondary" onClick={onCancel}>Cancel</button>
-          <button type="button" className={danger ? 'btn-danger' : 'btn-primary'} onClick={onConfirm}>{confirmLabel}</button>
-        </div>
+        <>
+          <Button variant="secondary" onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button variant={danger ? 'danger' : 'primary'} onClick={onConfirm}>
+            {confirmLabel}
+          </Button>
+        </>
       }
     >
       <div>{message}</div>
