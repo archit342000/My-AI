@@ -25,7 +25,7 @@ A high-performance, Multi-Agent AI Workspace natively powered by [llama.cpp](htt
 *   **Persistent Storage**: **SQLite** for conversation metadata and history.
 *   **Research Infrastructure**: 
     *   **Tavily API** for high-precision web search and link discovery.
-    *   **MCP Architecture**: Decoupled worker containers for search (`tavily_mcp`), scraping (`playwright_mcp`), and sandboxed code execution (`code_runner_mcp`).
+    *   **MCP Architecture**: Decoupled worker containers for search (`tavily_mcp`), scraping (`playwright_mcp`), and sandboxed code execution (`code_runner_runtime`, reached through the relay `code_runner_mcp`).
 *   **Backend**: Python 3.12 (Flask) with a modular domain-driven architecture.
 *   **Frontend**: React 19 + TypeScript single-page app built with Vite (`frontend/`). The previous vanilla UI remains at `/legacy/` for one release.
 

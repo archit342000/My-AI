@@ -173,6 +173,7 @@ def test_clarification_response_not_found(client, mock_registry, mock_db):
     resp = client.post('/tools/clarification/response', json={"callback_id": "unknown"})
     assert resp.status_code == 404
 
+
 def test_run_file_defaults_sql_target_to_sqlite(client):
     """Direct run-file without sql_target runs SQL on sqlite, never mysql."""
     from unittest.mock import AsyncMock

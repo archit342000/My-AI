@@ -4,7 +4,7 @@
 ## 📂 Subdirectories
 | Folder | Responsibility |
 | :--- | :--- |
-| `tests/` | Unit tests for server, executor, and safety logic. |
+| `tests/` | Unit tests for server, executor, safety logic and the relay. |
 
 ## 📄 Core Files
 | File | Purpose | Key Symbols/Exports |

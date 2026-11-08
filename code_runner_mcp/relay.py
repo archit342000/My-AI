@@ -13,10 +13,10 @@ logger = logging.getLogger(__name__)
 
 
 def parse_target(value: str) -> tuple[str, int]:
-    """Parse 'host:port'. Raises ValueError on a missing or malformed value."""
+    """Parse 'host:port' with 1 <= port <= 65535. Raises ValueError otherwise."""
     host, sep, port = value.rpartition(":")
-    if not sep or not host or not port.isdigit():
-        raise ValueError(f"RELAY_TARGET must be 'host:port', got {value!r}")
+    if not sep or not host or not port.isdigit() or not 1 <= int(port) <= 65535:
+        raise ValueError(f"RELAY_TARGET must be 'host:port' with a port of 1-65535, got {value!r}")
     return host, int(port)
 
 
@@ -47,11 +47,14 @@ def make_handler(target_host, target_port):
             client_writer.close()
             return
         pair = (client_writer, upstream_writer)
+        to_target = asyncio.ensure_future(pipe(client_reader, upstream_writer, pair))
+        to_client = asyncio.ensure_future(pipe(upstream_reader, client_writer, pair))
         try:
-            await asyncio.gather(
-                pipe(client_reader, upstream_writer, pair),
-                pipe(upstream_reader, client_writer, pair),
-            )
+            done, _ = await asyncio.wait({to_target, to_client}, return_when=asyncio.FIRST_COMPLETED)
+            if to_client in done:
+                # The target finished its reply. End the session even if the client keeps its write side open.
+                to_target.cancel()
+            await asyncio.gather(to_target, to_client, return_exceptions=True)
         finally:
             for writer in pair:
                 writer.close()

@@ -97,7 +97,64 @@ def test_parse_target_accepts_host_and_port(value, expected):
     assert parse_target(value) == expected
 
 
-@pytest.mark.parametrize("value", ["", "no-port", ":8100", "host:", "host:abc"])
+@pytest.mark.parametrize("value", ["", "no-port", ":8100", "host:", "host:abc", "host:0", "host:70000"])
 def test_parse_target_rejects_malformed_values(value):
     with pytest.raises(ValueError):
         parse_target(value)
+
+
+def test_relay_ends_session_when_target_replies_and_client_keeps_write_side_open():
+    async def run():
+        async def reply_then_close(reader, writer):
+            await reader.read(100)
+            writer.write(b"done")
+            await writer.drain()
+            writer.close()
+
+        target = await asyncio.start_server(reply_then_close, "127.0.0.1", 0)
+        target_port = target.sockets[0].getsockname()[1]
+        relay_server = await asyncio.start_server(make_handler("127.0.0.1", target_port), "127.0.0.1", 0)
+        relay_port = relay_server.sockets[0].getsockname()[1]
+        try:
+            reader, writer = await asyncio.open_connection("127.0.0.1", relay_port)
+            writer.write(b"go")
+            await writer.drain()
+            # No write_eof(): the relay must still end the session once the target has replied.
+            reply = await asyncio.wait_for(reader.read(), 5)
+            writer.close()
+            return reply
+        finally:
+            relay_server.close()
+            target.close()
+            await relay_server.wait_closed()
+            await target.wait_closed()
+
+    assert asyncio.run(run()) == b"done"
+
+
+def test_main_listens_on_8100_for_the_configured_target(monkeypatch):
+    import relay
+
+    calls = {}
+
+    class _Server:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def serve_forever(self):
+            raise RuntimeError("stop after setup")
+
+    async def fake_start_server(handler, host, port):
+        calls.update(host=host, port=port, handler=handler)
+        return _Server()
+
+    monkeypatch.setenv("RELAY_TARGET", "code_runner_runtime:8100")
+    monkeypatch.setattr(relay.asyncio, "start_server", fake_start_server)
+    with pytest.raises(RuntimeError, match="stop after setup"):
+        asyncio.run(relay.main())
+    assert calls["host"] == "0.0.0.0"
+    assert calls["port"] == 8100
+    assert callable(calls["handler"])

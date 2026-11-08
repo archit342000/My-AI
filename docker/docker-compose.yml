@@ -175,7 +175,7 @@ services:
 networks:
   secure-internal:
     driver: bridge
-  # Internal only: no route to the internet or to mysql_db. Only the app service joins it as well.
+  # Internal only: no route to the internet or to mysql_db. Only the relay code_runner_mcp joins it as well; the app does not.
   runner-net:
     driver: bridge
     internal: true

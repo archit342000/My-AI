@@ -25,7 +25,6 @@ Applies to `docker/` and the services it defines. Rule 9 in `docs/standards/codi
 ## Tool containers (MCP)
 
 - Isolation is the point: `code_runner_mcp` and `playwright_mcp` get no app secrets, no app database and no host access.
-  Exception: `code_runner_runtime` holds its own `CODE_RUNNER_API_KEY`, which user code can read. It sits only on `runner-net`. The relay `code_runner_mcp` holds no secrets and joins `secure-internal` and `runner-net` (see `code_runner_mcp/README.md`).
 - Inference is external (`docs/architecture.md`): do not add llama.cpp, model loaders or GPU services here.
 
 ## Testing containers
