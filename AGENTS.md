@@ -6,7 +6,7 @@ Guide for AI agents working on `My-AI`. Details live in `docs/`; this file only 
 
 1. **Read the local `README.md`** of a component before changing its code, and keep it accurate.
    If code and README disagree, trust the code and fix the README in the same change.
-2. **Run the tests** for what you changed, and the parent test directories, before calling a task done.
+2. **Run the tests** for what you changed and the parent test directories, then `scripts/check.sh`, before calling a task done.
    Every source file needs a matching `tests/test_<module>.py`. See `docs/standards/testing.md`.
 3. **Use `venv/bin/python`** for all Python. Never the system interpreter. Run `ruff check .` before finishing.
 4. **Put configuration in `backend/config.py`**, use `db` from `backend.database` (no raw SQL), and log with `log_event()`.

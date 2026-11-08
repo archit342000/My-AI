@@ -42,7 +42,8 @@ The repository follows strict git-flow. Commit message rules, version source and
 ## Merge gate
 
 A PR may merge only when:
-- CI (`.github/workflows/ci.yml`) is green on the PR.
+- `scripts/check.sh` passes locally, and its output (or a one-line result) is in the PR description. Hosted CI
+  (`.github/workflows/ci.yml`) is also green when GitHub Actions is available; it runs the same checks.
 - The checklist in `docs/standards/review.md` is met and the PR has been reviewed.
 - The base branch is correct: `develop` for feature and bugfix, `main` for release and hotfix.
 - Release and hotfix PRs also have the version bumped consistently and the changelog entry written.

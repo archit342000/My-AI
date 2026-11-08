@@ -4,6 +4,7 @@
 ## Layout
 | File | Purpose |
 |------|---------|
+| `check.sh` | Runs all CI checks locally (ruff, backend and MCP tests, frontend checks). `hooks/pre-push` runs it before each push. |
 | `changelog.py` | Prints release notes from conventional commits (`docs/release.md`). |
 | `run_evals.py` | Runs the query set in `test_queries.json` against the app. |
 | `test_rag_*.py`, `test_chunking.py`, `test_classifier_parameters.py`, `stress_test_chunking.py` | RAG parameter and chunking experiments (grid search). |
