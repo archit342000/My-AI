@@ -109,6 +109,11 @@ export async function sendTurn({
         images: [],
         files,
       };
+  if (!historyOverride && !isNewChat && !queryClient.getQueryData(queryKeys.chat(chatId))) {
+    // The chat is not in the cache, so its prior context is unknown; refuse rather than send without it.
+    showToast('Could not load this chat. Reload the page and try again.', 'error');
+    return;
+  }
   const controller = new AbortController();
   const history = historyOverride ?? historyFromCache(queryClient, chatId);
   const messages: HistoryMessage[] = [

@@ -3,7 +3,8 @@ import type { SelectOption } from '../components/ui/Select';
 /** Minimal shape of a model from `/api/models/` (see api/settings.ts LoadedModel). */
 export interface ModelLike {
   id: string;
-  status: { value: string };
+  /** Absent when the upstream gives no status object (F8): treated as unknown, never a crash. */
+  status?: { value: string };
 }
 
 /** Ids of models that cannot answer chat: embedding models, placeholders and the `default` alias. */
@@ -14,7 +15,11 @@ export function isChatModel(id: string): boolean {
 }
 
 /** Status dot: loaded is green, loading is amber, anything else is muted. */
-function dotFor(status: string): SelectOption['dot'] {
+function statusOf(m: ModelLike): string | undefined {
+  return m.status?.value;
+}
+
+function dotFor(status: string | undefined): SelectOption['dot'] {
   if (status === 'loaded') return 'success';
   if (status === 'loading') return 'warning';
   return 'off';
@@ -26,7 +31,7 @@ function dotFor(status: string): SelectOption['dot'] {
  */
 /** Loaded models first, then loading, then the rest; ties sort by id. */
 export function sortModels<T extends ModelLike>(models: T[]): T[] {
-  const rank = (m: ModelLike) => (m.status.value === 'loaded' ? 0 : m.status.value === 'loading' ? 1 : 2);
+  const rank = (m: ModelLike) => (statusOf(m) === 'loaded' ? 0 : statusOf(m) === 'loading' ? 1 : 2);
   return [...models].sort((a, b) => rank(a) - rank(b) || a.id.localeCompare(b.id));
 }
 
@@ -35,7 +40,7 @@ export function modelSelectOptions(models: ModelLike[]): SelectOption[] {
     value: m.id,
     label: m.id,
     group: isChatModel(m.id) ? undefined : 'Other',
-    dot: dotFor(m.status.value),
-    hint: m.status.value === 'loaded' ? 'Loaded' : m.status.value === 'loading' ? 'Loading' : undefined,
+    dot: dotFor(statusOf(m)),
+    hint: statusOf(m) === 'loaded' ? 'Loaded' : statusOf(m) === 'loading' ? 'Loading' : undefined,
   }));
 }

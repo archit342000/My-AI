@@ -42,6 +42,7 @@ function validateSkill(draft: SkillDraft): Partial<Record<keyof SkillDraft, stri
   const name = draft.name.trim();
   if (!name) errors.name = 'Enter a name, for example my-skill.';
   else if (!NAME_PATTERN.test(name)) errors.name = 'Use lowercase letters, numbers and hyphens only.';
+  if (!draft.description.trim()) errors.description = 'Describe what the skill does.';
   if (!draft.instructions.trim()) errors.instructions = 'Describe what the assistant should do.';
   return errors;
 }
@@ -67,7 +68,7 @@ function SkillForm({ initial, onDone, onSaved }: { initial: Skill | null; onDone
       onSubmit={async (e) => {
         e.preventDefault();
         if (!valid) {
-          setTouched({ name: true, instructions: true });
+          setTouched({ name: true, description: true, instructions: true });
           (errors.name ? nameRef : instructionsRef).current?.focus();
           return;
         }
@@ -98,9 +99,9 @@ function SkillForm({ initial, onDone, onSaved }: { initial: Skill | null; onDone
           </div>
         )}
       </Field>
-      <Field label="Description" hint="A short summary shown in the skill list.">
+      <Field label="Description" required error={shown('description')} hint={shown('description') ? undefined : 'A short summary shown in the skill list.'}>
         {(c) => (
-          <input {...c} className="ui-input" placeholder="Summarise a long document" value={draft.description} onChange={(e) => set('description', e.target.value)} />
+          <input {...c} className="ui-input" placeholder="Summarise a long document" value={draft.description} onBlur={() => setTouched((t) => ({ ...t, description: true }))} onChange={(e) => set('description', e.target.value)} />
         )}
       </Field>
       <Field label="Instructions" required error={shown('instructions')} hint={shown('instructions') ? undefined : 'The prompt sent when you run the skill.'}>

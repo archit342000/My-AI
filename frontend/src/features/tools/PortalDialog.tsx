@@ -10,7 +10,7 @@ export function PortalDialog({ open, onClose }: { open: boolean; onClose: () => 
       {session.isPending ? <div style={{ color: 'var(--content-muted)' }}>Starting browser session…</div> : null}
       {session.isError ? <div role="alert" style={{ color: 'var(--color-rose-500)' }}>{session.error.message}</div> : null}
       {session.isSuccess ? (
-        <iframe title="Remote browser" src="/api/tools/portal/vnc/" style={{ width: '100%', height: '70vh', border: 0, borderRadius: 12, background: '#000' }} />
+        <iframe title="Remote browser" src="/api/tools/portal/vnc/vnc.html?autoconnect=true&resize=scale&path=api/tools/portal/ws" style={{ width: '100%', height: '70vh', border: 0, borderRadius: 12, background: '#000' }} />
       ) : null}
     </Modal>
   );

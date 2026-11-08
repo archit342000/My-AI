@@ -298,6 +298,12 @@ export function Composer() {
         </div>
       ) : null}
 
+      {!hasModel ? (
+        <div className="composer-hint" role="note">
+          Choose a model in Chat Settings
+        </div>
+      ) : null}
+
       <div className="input-container" ref={inputContainer}>
         <Popover
           open={slashOpen}
@@ -354,7 +360,7 @@ export function Composer() {
           aria-controls={slashOpen ? listId : undefined}
           aria-autocomplete="list"
           aria-activedescendant={slashOpen ? `${listId}-${active}` : undefined}
-          placeholder="Start a conversation..."
+          placeholder="Type a message…"
           onChange={(e) => {
             setText(e.target.value);
             setActiveIndex(0);

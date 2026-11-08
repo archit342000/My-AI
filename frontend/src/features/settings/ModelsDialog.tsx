@@ -54,14 +54,15 @@ export function ModelsDialog({ open, onClose, onBack }: { open: boolean; onClose
         />
         <ul className="model-list">
           {sortModels(models.data ?? []).filter((m) => m.id.toLowerCase().includes(query.trim().toLowerCase())).map((m) => {
-            const loading = m.status.value === 'loading';
-            const loaded = m.status.value === 'loaded';
+            const status = m.status?.value;
+            const loading = status === 'loading';
+            const loaded = status === 'loaded';
             return (
               <li key={m.id} className="model-row">
                 <span className="model-row__name" title={m.id}>{m.id}</span>
                 <Badge tone={loaded ? 'success' : loading ? 'warning' : 'neutral'}>
                   {loading ? <span className="ui-spinner" aria-hidden="true" /> : null}
-                  {loaded ? 'Loaded' : loading ? 'Loading' : 'Unloaded'}
+                  {loaded ? 'Loaded' : loading ? 'Loading' : status ? 'Unloaded' : 'Status unknown'}
                 </Badge>
                 {loaded ? (
                   <Button variant="secondary" size="sm" className="model-row__action" onClick={() => unload.mutate(m.id)}>Unload</Button>
@@ -76,7 +77,7 @@ export function ModelsDialog({ open, onClose, onBack }: { open: boolean; onClose
       </Section>
 
       <Section title="Speed test">
-        <UiField label="Model">
+        <UiField label="Speed test target">
           {(c) => (
             <Select
               id={c.id}

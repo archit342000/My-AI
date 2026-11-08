@@ -7,7 +7,7 @@
 | :--- | :--- |
 | `agents/` | Implementation logic for autonomous sub-agents (research, browsing, etc.). |
 | `catalog/` | Unified ToolSpec definition files organized by domain. |
-| `scratch/` | Temporary workspace for transient tool-related data. |
+| Scratch area | Temporary workspace for transient tool-related data (created at runtime). |
 
 ## 📄 Core Files
 | File | Purpose | Key Symbols/Exports |

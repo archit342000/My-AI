@@ -71,7 +71,7 @@ export function RootLayout() {
         )}
         <Sidebar />
         <main>
-          {onLogs ? null : (
+          {onLogs || path === '/' ? null : (
             <button
               id="nav-files-btn"
               type="button"

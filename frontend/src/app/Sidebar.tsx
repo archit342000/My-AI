@@ -45,8 +45,9 @@ export function Sidebar() {
     setCreating(false);
     if (!name.trim()) return;
     try {
-      await chatsApi.createWorkspace(name.trim());
+      const ws = await chatsApi.createWorkspace(name.trim());
       await queryClient.invalidateQueries({ queryKey: queryKeys.workspaces });
+      navigate(`/workspace/${ws.id}`);
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Failed to create workspace', 'error');
     }
@@ -178,6 +179,7 @@ export function Sidebar() {
               type="button"
               className="sidebar-footer-btn"
               title="Chat Settings"
+              aria-label="Settings"
               onClick={() => showDialog('chat-settings')}
             >
               <Icon name="settings" size={18} />
@@ -189,13 +191,14 @@ export function Sidebar() {
               type="button"
               className="sidebar-footer-btn"
               title="System Settings"
+              aria-label="System settings"
               onClick={() => showDialog('system-settings')}
             >
               <Icon name="monitor" size={18} />
               <span className="sidebar-text">System</span>
               <span className="nav-tooltip">System Settings</span>
             </button>
-            <a href="/logs" className="sidebar-footer-btn" title="View Logs">
+            <a href="/logs" className="sidebar-footer-btn" title="View Logs" aria-label="Logs">
               <Icon name="logs" size={18} />
               <span className="sidebar-text">Logs</span>
               <span className="nav-tooltip">Logs</span>

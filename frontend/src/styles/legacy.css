@@ -1888,7 +1888,10 @@ background: var(--accent-border);
     position: fixed;
     border-inline-end: none;
   }
-}.dark aside {
+}
+
+
+.dark aside {
   background: rgba(12, 12, 15, 0.4);
   border-color: var(--sidebar-border-color);
 }.dark #sidebar {

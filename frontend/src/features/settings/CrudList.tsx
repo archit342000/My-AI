@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { Modal } from '../../components/ui/Modal';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
+import { showToast } from '../../components/ui/toast-store';
 import { Button, IconButton } from '../../components/ui/Button';
 import { Tooltip } from '../../components/ui/Tooltip';
 
@@ -84,7 +85,11 @@ export function CrudDialog<T>({
         onConfirm={() => {
           const target = toDelete;
           setToDelete(null);
-          if (target) void onDelete(target);
+          if (target) {
+            Promise.resolve()
+              .then(() => onDelete(target))
+              .catch((e: unknown) => showToast(e instanceof Error ? e.message : 'Delete failed', 'error'));
+          }
         }}
       />
     </Modal>
