@@ -8,6 +8,7 @@ import logging
 import os
 
 LISTEN_PORT = 8100
+CONNECT_TIMEOUT = 5
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +16,7 @@ logger = logging.getLogger(__name__)
 def parse_target(value: str) -> tuple[str, int]:
     """Parse 'host:port' with 1 <= port <= 65535. Raises ValueError otherwise."""
     host, sep, port = value.rpartition(":")
-    if not sep or not host or not port.isdigit() or not 1 <= int(port) <= 65535:
+    if not sep or not host or not port.isascii() or not port.isdigit() or not 1 <= int(port) <= 65535:
         raise ValueError(f"RELAY_TARGET must be 'host:port' with a port of 1-65535, got {value!r}")
     return host, int(port)
 
@@ -41,8 +42,9 @@ async def pipe(reader, writer, abort_pair):
 def make_handler(target_host, target_port):
     async def handle(client_reader, client_writer):
         try:
-            upstream_reader, upstream_writer = await asyncio.open_connection(target_host, target_port)
-        except OSError as exc:
+            upstream_reader, upstream_writer = await asyncio.wait_for(
+                asyncio.open_connection(target_host, target_port), timeout=CONNECT_TIMEOUT)
+        except (OSError, asyncio.TimeoutError) as exc:
             logger.warning("relay target %s:%s unreachable: %s", target_host, target_port, exc)
             client_writer.close()
             return
@@ -54,7 +56,10 @@ def make_handler(target_host, target_port):
             if to_client in done:
                 # The target finished its reply. End the session even if the client keeps its write side open.
                 to_target.cancel()
-            await asyncio.gather(to_target, to_client, return_exceptions=True)
+            results = await asyncio.gather(to_target, to_client, return_exceptions=True)
+            for result in results:
+                if isinstance(result, BaseException) and not isinstance(result, asyncio.CancelledError):
+                    logger.error("relay session error: %r", result)
         finally:
             for writer in pair:
                 writer.close()

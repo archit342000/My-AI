@@ -58,7 +58,9 @@ def test_relay_closes_client_when_target_is_down():
     assert asyncio.run(run()) == b""
 
 
-def test_relay_ends_client_when_target_aborts_mid_stream():
+def test_relay_does_not_hang_when_target_aborts_mid_stream():
+    # Checks liveness only: the client's stream ends (EOF or reset) within the timeout.
+    # Whether the client sees EOF or a reset depends on timing, so the outcome is not asserted.
     async def run():
         async def abort_after_partial(reader, writer):
             await reader.read(100)
