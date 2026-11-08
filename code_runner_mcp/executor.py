@@ -17,17 +17,6 @@ class ExecutionResult(BaseModel):
     error: Optional[str] = None
 
 class CodeExecutor:
-    @staticmethod
-    def read_secret_file(env_var_name: str, default: str = "") -> str:
-        path = os.environ.get(env_var_name)
-        if path and os.path.exists(path):
-            try:
-                with open(path, "r") as f:
-                    return f.read().strip()
-            except Exception:
-                pass
-        return default
-
     @classmethod
     def prepare_sandbox(
         cls,
@@ -47,6 +36,10 @@ class CodeExecutor:
         os.makedirs(sandbox_dir, exist_ok=True)
 
         try:
+            # MySQL is not served here: the runner has no database credentials or route.
+            if lang == "sql" and sql_target == "mysql":
+                return {"error": "MySQL is not available in the code runner; use sqlite.", "sandbox_dir": sandbox_dir}
+
             # 2. Write files
             written_entry_file = None
             
@@ -246,16 +239,8 @@ class CodeExecutor:
                 with open(written_entry_file, "r", encoding="utf-8") as f_obj:
                     sql_content = f_obj.read()
                 
-                if sql_target == "mysql":
-                    host = cls.read_secret_file("MYSQL_HOST_FILE", "mysql_db")
-                    user = cls.read_secret_file("MYSQL_USER_FILE", "sandbox_user")
-                    password = cls.read_secret_file("MYSQL_PASSWORD_FILE", "")
-                    
-                    env["MYSQL_PWD"] = password
-                    cmd = ["mysql", "-h", host, "-u", user, "-D", "sandbox", "--table", "--ssl=0"]
-                else:
-                    # SQLite
-                    cmd = ["sqlite3", "sandbox.db", "-header", "-column"]
+                # SQLite (MySQL is rejected in prepare_sandbox)
+                cmd = ["sqlite3", "sandbox.db", "-header", "-column"]
 
                 try:
                     res = subprocess.run(

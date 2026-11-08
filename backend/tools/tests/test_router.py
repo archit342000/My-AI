@@ -172,3 +172,13 @@ def test_clarification_response_not_found(client, mock_registry, mock_db):
     mock_db.resolve_callback.side_effect = Exception("Not found")
     resp = client.post('/tools/clarification/response', json={"callback_id": "unknown"})
     assert resp.status_code == 404
+
+
+def test_run_file_defaults_sql_target_to_sqlite(client):
+    """Direct run-file without sql_target runs SQL on sqlite, never mysql."""
+    from unittest.mock import AsyncMock
+    with patch('backend.tools.implementations.code_executor.run_file', new_callable=AsyncMock) as run:
+        run.return_value = {"stdout": "", "stderr": "", "exit_code": 0}
+        resp = client.post('/tools/code-execution/run-file', json={"path": "q.sql", "chat_id": "c1"})
+        assert resp.status_code == 200
+        assert run.call_args.kwargs["sql_target"] == "sqlite"

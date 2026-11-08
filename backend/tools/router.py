@@ -351,7 +351,7 @@ async def api_run_file():
     chat_id = data.get("chat_id")
     stdin = data.get("stdin", "")
     args = data.get("args", [])
-    sql_target = data.get("sql_target", "mysql")
+    sql_target = data.get("sql_target", "sqlite")
     
     if not path or not chat_id:
         return jsonify({"error": "Missing path or chat_id"}), 400

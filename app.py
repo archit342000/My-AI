@@ -135,7 +135,7 @@ def code_execution_ws_proxy(ws):
             
         file_path = init_msg.get("filePath")
         chat_id = init_msg.get("chat_id")
-        sql_target = init_msg.get("sql_target", "mysql")
+        sql_target = init_msg.get("sql_target", "sqlite")
         
         if not file_path or not chat_id:
             ws.send(json.dumps({"type": "stderr", "data": "Error: Missing filePath or chat_id.\n"}))

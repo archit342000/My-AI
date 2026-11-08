@@ -223,14 +223,8 @@ async def execute_ws(websocket: WebSocket, api_key: Optional[str] = None):
             with open(written_entry_file, "r", encoding="utf-8") as f_obj:
                 sql_content = f_obj.read()
             
-            if sql_target == "mysql":
-                host = CodeExecutor.read_secret_file("MYSQL_HOST_FILE", "mysql_db")
-                user = CodeExecutor.read_secret_file("MYSQL_USER_FILE", "sandbox_user")
-                password = CodeExecutor.read_secret_file("MYSQL_PASSWORD_FILE", "")
-                env["MYSQL_PWD"] = password
-                cmd = ["mysql", "-h", host, "-u", user, "-D", "sandbox", "--table", "--ssl=0"]
-            else:
-                cmd = ["sqlite3", "sandbox.db", "-header", "-column"]
+            # SQLite (MySQL is rejected in prepare_sandbox)
+            cmd = ["sqlite3", "sandbox.db", "-header", "-column"]
 
             process = await asyncio.create_subprocess_exec(
                 *cmd,

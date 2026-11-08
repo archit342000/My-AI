@@ -103,29 +103,52 @@ services:
     command: ["python3", "inference_proxy/app.py"]
     restart: unless-stopped
 
-  code_runner_mcp:
+  # Sandboxed code runs here. Only runner-net: no internet, no mysql_db, no app.
+  code_runner_runtime:
     build:
       context: ..
       dockerfile: docker/Dockerfile.code-runner
+    image: my-ai-code-runner
     networks:
-      - secure-internal
+      - runner-net
     volumes:
-      - ../code_runner_mcp:/app
+      - ../code_runner_mcp:/app:ro
     secrets:
       - CODE_RUNNER_API_KEY
-      - MYSQL_HOST
-      - MYSQL_USER
-      - MYSQL_PASSWORD
     environment:
       - API_KEY_FILE=/run/secrets/CODE_RUNNER_API_KEY
-      - MYSQL_HOST_FILE=/run/secrets/MYSQL_HOST
-      - MYSQL_USER_FILE=/run/secrets/MYSQL_USER
-      - MYSQL_PASSWORD_FILE=/run/secrets/MYSQL_PASSWORD
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8100/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     deploy:
       resources:
         limits:
           memory: ${CODE_RUNNER_MEMORY_LIMIT:-512M}
           cpus: "${CODE_RUNNER_CPU_LIMIT:-1.0}"
+    restart: unless-stopped
+
+  # Relay: the app's only route to the runner. Forwards TCP 8100 to code_runner_runtime and nothing else.
+  # The relay runs /app/relay.py from the image (no host mount), so the sandbox cannot change what it executes.
+  code_runner_mcp:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.code-runner
+    image: my-ai-code-runner
+    command: ["python3", "/app/relay.py"]
+    networks:
+      - secure-internal
+      - runner-net
+    environment:
+      - RELAY_TARGET=code_runner_runtime:8100
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8100/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    depends_on:
+      - code_runner_runtime
     restart: unless-stopped
 
   mysql_db:
@@ -152,6 +175,10 @@ services:
 networks:
   secure-internal:
     driver: bridge
+  # Internal only: no route to the internet or to mysql_db. Only the relay code_runner_mcp joins it as well; the app does not.
+  runner-net:
+    driver: bridge
+    internal: true
 
 volumes:
   mysql_data:
@@ -182,8 +209,6 @@ secrets:
     file: ../secrets/CODE_RUNNER_API_KEY
   MYSQL_ROOT_PASSWORD:
     file: ../secrets/MYSQL_ROOT_PASSWORD
-  MYSQL_HOST:
-    file: ../secrets/MYSQL_HOST
   MYSQL_USER:
     file: ../secrets/MYSQL_USER
   MYSQL_PASSWORD:

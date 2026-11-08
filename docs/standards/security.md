@@ -11,7 +11,7 @@
 - `require_auth` in `app.py` is a `before_request` hook. When `APP_PASSWORD` is set, every route (API, static, legacy UI and
   WebSocket upgrade requests) needs HTTP Basic auth. Do not add routes outside Flask (which would bypass the hook) or
   exempt paths from it.
-- Internal MCP services are reached only over the `secure-internal` Docker network, with their own API keys.
+- Internal MCP services are reached only over Docker networks, with their own API keys. Sandboxed code runs on `code_runner_runtime`, which sits only on `runner-net`, an internal-only network with no internet, database or app route. The app reaches it through `code_runner_mcp`, a TCP relay that joins `secure-internal` and `runner-net` and forwards only port 8100.
 
 ## Input and output
 
@@ -26,7 +26,7 @@
 
 ## Tools and sandboxing
 
-- Code execution runs only in `code_runner_mcp` (static safety analysis in its `safety.py`, then an isolated container with CPU and memory limits).
+- Code execution runs only in `code_runner_runtime` (static safety analysis in `code_runner_mcp/safety.py`, then an isolated container with CPU and memory limits). `code_runner_mcp` is the relay in front of it.
   Browsing runs only in `playwright_mcp`. Never run either inside the Flask process.
 - Git tools accept only subcommands on the allow-list (`GIT_DEFAULT_ALLOWED_COMMANDS`, editable in system settings).
 - Server-side fetches of user-controlled URLs must reject non-http(s) schemes and private, loopback, link-local and multicast addresses

@@ -22,8 +22,8 @@ RUN_CODE = ToolSpec(
             },
             "sql_target": {
                 "type": "string",
-                "enum": ["mysql", "sqlite"],
-                "description": "For SQL: which database engine to use. Defaults to 'sqlite'."
+                "enum": ["sqlite"],
+                "description": "For SQL: the database engine. Only 'sqlite' is supported. Defaults to 'sqlite'."
             }
         },
         "required": ["code", "language"]
@@ -55,7 +55,7 @@ RUN_FILE = ToolSpec(
             },
             "sql_target": {
                 "type": "string",
-                "enum": ["mysql", "sqlite"],
+                "enum": ["sqlite"],
                 "description": "For SQL files: which database engine to use. Defaults to 'sqlite'."
             }
         },
@@ -69,7 +69,7 @@ RUN_FILE = ToolSpec(
 
 INSTALL_PACKAGES = ToolSpec(
     name="install_packages",
-    description="Install packages in the code execution sandbox. Requires user approval before proceeding. Installed packages persist until the code runner container is restarted.",
+    description="Install packages in the code execution sandbox. Requires user approval before proceeding. Installed packages persist until the code runner container is restarted. Currently not available: the sandbox has no outbound network, so installs fail.",
     parameters={
         "type": "object",
         "properties": {
