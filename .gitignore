@@ -70,3 +70,8 @@ reports/
 scratch/
 
 .antigravitycli
+# Frontend build and test output
+frontend/dist/
+frontend/playwright-report/
+frontend/test-results/
+*.tsbuildinfo

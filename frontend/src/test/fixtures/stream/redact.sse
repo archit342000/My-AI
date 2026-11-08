@@ -1,0 +1,12 @@
+data: {"choices": [{"delta": {"content": "Draft one"}}], "model": "Gemma4-26B-A4B-it-GGUF"}
+
+data: {"choices": [{"delta": {"role": "event", "content": "attempt 1"}}], "model": "Gemma4-26B-A4B-it-GGUF"}
+
+data: {"choices": [{"delta": {"content": " broken table"}}], "model": "Gemma4-26B-A4B-it-GGUF"}
+
+data: {"__redact__": true, "message": "Correcting formatting..."}
+
+data: {"choices": [{"delta": {"content": "Fixed answer."}}], "model": "Gemma4-26B-A4B-it-GGUF"}
+
+data: [DONE]
+

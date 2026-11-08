@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Placeholders so modules that validate configuration at import time can load (see docs/standards/testing.md).
+  EMBEDDING_URL: http://mock
+  AI_URL: http://mock
+  AI_API_KEY: dummy
+  PYTHONPATH: .
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - name: Install system libraries
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libmagic1
+      - run: pip install -r requirements-dev.txt
+      - name: Lint (correctness rules)
+        run: ruff check .
+      - name: Docs guardrails
+        run: python -m pytest tests -q
+      - name: Backend
+        run: python -m pytest backend -q
+      - name: Inference proxy
+        run: python -m pytest inference_proxy -q
+      - name: Tavily MCP
+        run: python -m pytest tavily_mcp -q
+      - name: Code runner MCP
+        working-directory: code_runner_mcp
+        run: python -m pytest -q
+
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run test
+      - run: npm run build

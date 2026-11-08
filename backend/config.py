@@ -18,6 +18,12 @@ os.makedirs(DATA_DIR, exist_ok=True)
 # =============================================================================
 APP_PASSWORD = get_secret("APP_PASSWORD", None)
 
+# Which UI Flask serves at "/": "react" (frontend/dist/, default) or "legacy" (static/).
+# The legacy UI stays reachable at /legacy/ in both modes.
+FRONTEND = os.getenv("FRONTEND", "react").strip().lower()
+if FRONTEND not in ("legacy", "react"):
+    raise ValueError(f"FRONTEND must be 'legacy' or 'react', got {FRONTEND!r}")
+
 # =============================================================================
 # AI INFERENCE & INFRASTRUCTURE
 # =============================================================================

@@ -1,13 +1,13 @@
 # Architecture
 
 My-AI is a Flask application that orchestrates a local llama.cpp inference server,
-a vector store, and isolated MCP tool containers behind a vanilla-JS chat UI.
+a vector store, and isolated MCP tool containers behind a React chat UI (see `docs/frontend.md`).
 
 ## Stack
 
 | Layer | Technology |
 |-------|-----------|
-| Frontend | Vanilla HTML5, CSS3, ES6+ (no frameworks) |
+| Frontend | React 19, TypeScript, Vite (`frontend/`); legacy vanilla UI kept at `/legacy/` for one release |
 | Backend | Python 3.12, Flask |
 | Inference | External llama.cpp server (OpenAI-compatible), reached through `inference_proxy` |
 | Vector DB | ChromaDB |
@@ -44,7 +44,8 @@ Protocol: `tavily_mcp` (search), `playwright_mcp` (browsing/scraping) and
 | `backend/logging/` | Structured event auditing |
 | `backend/config.py` | The only place configuration is read (env and secrets) |
 | `inference_proxy/` | Proxy in front of llama.cpp |
-| `static/` | Frontend (`index.html`, `script.js`, `static/js/` modules) |
+| `frontend/` | React SPA (`src/`), built to `frontend/dist/` |
+| `static/` | Legacy vanilla UI, served at `/legacy/` (removed in a later release) |
 
 Each component directory has a short `README.md` with its purpose and local constraints.
 

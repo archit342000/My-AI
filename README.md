@@ -1,4 +1,4 @@
-# 🌌 My-AI v4.10.0
+# 🌌 My-AI v5.0.0
 
 
 A high-performance, Multi-Agent AI Workspace natively powered by [llama.cpp](https://github.com/ggerganov/llama.cpp) for deep autonomy and statful collaboration. My-AI seamlessly unifies specialized agents for research, autonomous web browsing, file attachments, and long-term semantic memory with a virtualized agentic file system, creating a premium chat interface running entirely on local hardware. The multi-agent orchestration offloads complex tasks to transient agents, thus preserving the context window. This allows for long conversations without the AI losing coherence. 
@@ -27,7 +27,7 @@ A high-performance, Multi-Agent AI Workspace natively powered by [llama.cpp](htt
     *   **Tavily API** for high-precision web search and link discovery.
     *   **MCP Architecture**: Decoupled worker containers for search (`tavily_mcp`), scraping (`playwright_mcp`), and sandboxed code execution (`code_runner_mcp`).
 *   **Backend**: Python 3.12 (Flask) with a modular domain-driven architecture.
-*   **Frontend**: Strictly Vanilla HTML5, CSS3, and ES6+ Javascript.
+*   **Frontend**: React 19 + TypeScript single-page app built with Vite (`frontend/`). The previous vanilla UI remains at `/legacy/` for one release.
 
 ## 📋 Prerequisites
 
@@ -40,6 +40,9 @@ A high-performance, Multi-Agent AI Workspace natively powered by [llama.cpp](htt
 *   **Tavily API**: Required for web search and deep research functionality.
 
 ## 🚀 Installation & Setup
+
+> **Frontend:** the UI is built with Node 22+ (`cd frontend && npm ci && npm run build`). The Docker image builds it automatically. Set `FRONTEND=legacy` to serve the old UI. See `docs/frontend.md`.
+
 
 ### 1. Repository Setup
 ```bash
@@ -72,6 +75,9 @@ The application will be accessible at `http://localhost:5000` (or via the Bastio
 
 ## 🏗️ Architecture Note
 My-AI utilizes the **Model Context Protocol (MCP)** to isolate external tool executions. The main Flask app acts as a secure orchestrator, while dedicated containers handle web search, PDF extraction, browser-level scraping, and sandboxed code execution, ensuring high stability and a reduced security surface area.
+
+## 🧑‍💻 Development
+*   Start with `AGENTS.md`; rules, tests, lint and release steps are in `docs/`. CI is `.github/workflows/ci.yml`.
 
 ## 📄 License & Versioning
 This project follows [SemVer v2.0.0](https://semver.org/).  
