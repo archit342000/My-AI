@@ -31,9 +31,9 @@ The local README of each component lists its own tests. Read it before running t
 - Registers regressions: a bug fix adds a test that fails without the fix.
 - Coverage has no numeric gate; the 1:1 mapping and "test every function" rules are the bar.
 
-## Suites and CI
+## Suites
 
-| Suite | Command (repo root unless noted) | In CI |
+| Suite | Command (repo root unless noted) | In `check.sh` |
 |-------|----------------------------------|-------|
 | Docs guardrails | `pytest tests` | yes |
 | Backend | `pytest backend` | yes |
@@ -47,8 +47,7 @@ The local README of each component lists its own tests. Read it before running t
 
 Run each suite in its own pytest process; combining them causes duplicate-module collection errors.
 All commands above use the env vars and `venv/bin/python` described under "Running tests".
-`scripts/check.sh` runs every suite marked "In CI" (use `--python-only` or `--frontend-only` to narrow it) and is the source of truth
-when hosted CI is unavailable. `.github/workflows/ci.yml` runs the same checks on GitHub.
+`scripts/check.sh` runs every suite marked "In `check.sh`" (use `--python-only` or `--frontend-only` to narrow it) and is the merge gate; there is no hosted CI.
 Enable the optional pre-push hook with `git config core.hooksPath scripts/hooks`.
 
 ## Frontend tests

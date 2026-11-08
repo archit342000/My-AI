@@ -3,7 +3,7 @@
 ## Python
 
 - `requirements.txt` is the runtime set for the main app. Pin exact versions (`==`) for anything the app imports.
-  `requirements-dev.txt` adds pytest and ruff for development and CI.
+  `requirements-dev.txt` adds pytest and ruff for development and `scripts/check.sh`.
 - The MCP services keep their own `requirements.txt` (`code_runner_mcp`, `playwright_mcp`, `tavily_mcp`) because they run in separate images.
   A change to a library shared with the main app (for example `mcp`, `starlette`, `httpx`) is checked in both places.
 - To add a package: confirm the current version and API in the official docs, pin it, install it in `venv/`, and run the affected tests.

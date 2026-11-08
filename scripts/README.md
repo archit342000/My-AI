@@ -4,7 +4,7 @@
 ## Layout
 | File | Purpose |
 |------|---------|
-| `check.sh` | Runs all CI checks locally (ruff, backend and MCP tests, frontend checks). `hooks/pre-push` runs it before each push. |
+| `check.sh` | Runs all project checks locally (ruff, backend and MCP tests, frontend checks). `hooks/pre-push` runs it before each push. |
 | `changelog.py` | Prints release notes from conventional commits (`docs/release.md`). |
 | `run_evals.py` | Runs the query set in `test_queries.json` against the app. |
 | `test_rag_*.py`, `test_chunking.py`, `test_classifier_parameters.py`, `stress_test_chunking.py` | RAG parameter and chunking experiments (grid search). |
@@ -15,6 +15,6 @@
 - **Flow:** scripts read configuration through `backend/config.py` like the app; results are printed or written under `scratch/`.
 
 ## Conventions
-- Unit tests for release tooling are in `tests/` here. The `test_*.py` experiment files are scripts, not part of CI;
+- Unit tests for release tooling are in `tests/` here. The `test_*.py` experiment files are scripts, not part of the checks;
   some fail without external services (`docs/standards/testing.md`).
 - CLIs may use `print()`; application code may not.

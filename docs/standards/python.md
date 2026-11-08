@@ -8,7 +8,7 @@ General rules (venv, config, `db`, logging, errors) are in `docs/standards/codin
 - **Version:** Python 3.12 (matches the Docker images). Run everything with `venv/bin/python`.
 - **Formatting:** PEP 8, 4-space indent, double-quoted strings for new code. Match the surrounding file when editing.
   No formatter is configured; do not reformat code you are not changing.
-- **Linting:** `venv/bin/python -m ruff check .` (config in `pyproject.toml`, tool installed from `requirements-dev.txt`) must pass; CI runs it.
+- **Linting:** `venv/bin/python -m ruff check .` (config in `pyproject.toml`, tool installed from `requirements-dev.txt`) must pass; `scripts/check.sh` runs it.
   It enforces correctness rules only (syntax errors, undefined names). Also remove unused imports and variables in code you touch
   (`ruff check --select F401,F841 <file>`); enabling those repo-wide is a future cleanup, not a requirement for unrelated files.
 - **Type checking:** not enforced (no mypy/pyright). Hints are documentation; keep them accurate.

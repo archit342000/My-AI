@@ -77,7 +77,7 @@ The application will be accessible at `http://localhost:5000` (or via the Bastio
 My-AI utilizes the **Model Context Protocol (MCP)** to isolate external tool executions. The main Flask app acts as a secure orchestrator, while dedicated containers handle web search, PDF extraction, browser-level scraping, and sandboxed code execution, ensuring high stability and a reduced security surface area.
 
 ## 🧑‍💻 Development
-*   Start with `AGENTS.md`; rules, tests, lint and release steps are in `docs/`. CI is `.github/workflows/ci.yml`.
+*   Start with `AGENTS.md`; rules, tests, lint and release steps are in `docs/`. Run `scripts/check.sh` before pushing.
 
 ## 📄 License & Versioning
 This project follows [SemVer v2.0.0](https://semver.org/).  
