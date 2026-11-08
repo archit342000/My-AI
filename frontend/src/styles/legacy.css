@@ -4033,38 +4033,7 @@ background: var(--accent-border);
   text-align: center;
 }
 
-/* ─── Toast Notification ─── */.toast-notification {
-  position: fixed;
-  bottom: max(2rem, env(safe-area-inset-bottom));
-  inset-inline-end: max(2rem, env(safe-area-inset-right));
-  z-index: var(--z-tooltip);
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  padding: 0.75rem 1.25rem;
-  border-radius: var(--radius-xl);
-  background: var(--glass-bg);
-  backdrop-filter: var(--glass-blur);
-  -webkit-backdrop-filter: var(--glass-blur);
-  border: 1px solid var(--glass-border);
-  box-shadow: var(--surface-shadow-intense);
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: var(--content-primary);
-  opacity: 0;
-  transform: translateY(12px);
-  transition:
-    opacity 0.3s var(--ease-spring),
-    transform 0.3s var(--ease-spring);
-  pointer-events: none;
-}.dark .toast-notification {
-  box-shadow:
-    0 20px 40px rgba(0, 0, 0, 0.5),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.05);
-}.toast-notification.show {
-  opacity: 1;
-  transform: translateY(0);
-}
+
 
 /* ═══════════════════════════════════════════
    EXPORT DROPDOWN

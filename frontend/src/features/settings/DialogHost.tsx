@@ -14,16 +14,19 @@ import { CodeHistoryDialog } from '../tools/CodeHistoryDialog';
 export function DialogHost() {
   const open = useModalStore((s) => s.open);
   const close = useModalStore((s) => s.close);
+  const show = useModalStore((s) => s.show);
+  // The Manage dialogs are opened from System Settings: Escape, close and Back return there (F-32).
+  const back = () => show('system-settings');
   return (
     <>
       <ChatSettingsModal open={open === 'chat-settings'} onClose={close} />
       <SystemSettingsModal open={open === 'system-settings'} onClose={close} />
-      <PreferencesDialog open={open === 'preferences'} onClose={close} />
-      <SkillsDialog open={open === 'skills'} onClose={close} />
-      <PersonasDialog open={open === 'personas'} onClose={close} />
-      <AgentConfigDialog open={open === 'agent-config'} onClose={close} />
-      <ModelsDialog open={open === 'models'} onClose={close} />
-      <StealthDialog open={open === 'stealth'} onClose={close} />
+      <PreferencesDialog open={open === 'preferences'} onClose={back} onBack={back} />
+      <SkillsDialog open={open === 'skills'} onClose={back} onBack={back} />
+      <PersonasDialog open={open === 'personas'} onClose={back} onBack={back} />
+      <AgentConfigDialog open={open === 'agent-config'} onClose={back} onBack={back} />
+      <ModelsDialog open={open === 'models'} onClose={back} onBack={back} />
+      <StealthDialog open={open === 'stealth'} onClose={back} onBack={back} />
       <PortalDialog open={open === 'portal'} onClose={close} />
       <CodeHistoryDialog open={open === 'code-history'} onClose={close} />
     </>

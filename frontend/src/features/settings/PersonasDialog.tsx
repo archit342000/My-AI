@@ -1,10 +1,14 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { personasApi, settingsKeys, type Persona } from '../../api/settings';
 import { CrudDialog } from './CrudList';
-import { Field, inputStyle, Toggle } from './forms';
+import { Field } from '../../components/ui/Field';
+import { Toggle } from '../../components/ui/Toggle';
+import { Button } from '../../components/ui/Button';
+import { firstSentencePreview } from '../../lib/preview-text';
 
 type PersonaBody = Omit<Persona, 'id'>;
+type FlagKey = 'is_default' | 'research_mode' | 'file_system_mode' | 'browsing_mode' | 'git_mode';
 
 const EMPTY: PersonaBody = {
   name: '',
@@ -16,7 +20,15 @@ const EMPTY: PersonaBody = {
   git_mode: 0,
 };
 
-export function PersonasDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+const FLAGS: Array<{ key: FlagKey; label: string; description: string }> = [
+  { key: 'is_default', label: 'Default persona', description: 'Used for new chats unless another persona is chosen.' },
+  { key: 'research_mode', label: 'Research mode', description: 'Encourages multi-source research before answering.' },
+  { key: 'file_system_mode', label: 'File system mode', description: 'Allows reading and writing workspace files.' },
+  { key: 'browsing_mode', label: 'Browsing mode', description: 'Allows opening web pages with the browser tool.' },
+  { key: 'git_mode', label: 'Git mode', description: 'Allows git commands in the workspace.' },
+];
+
+export function PersonasDialog({ open, onClose, onBack }: { open: boolean; onClose: () => void; onBack?: () => void }) {
   const queryClient = useQueryClient();
   const list = useQuery({ queryKey: settingsKeys.personas, queryFn: personasApi.list, enabled: open });
   const refresh = () => queryClient.invalidateQueries({ queryKey: settingsKeys.personas });
@@ -24,10 +36,17 @@ export function PersonasDialog({ open, onClose }: { open: boolean; onClose: () =
     <CrudDialog<Persona>
       open={open}
       onClose={onClose}
+      onBack={onBack}
+      noun="persona"
       title="Personas"
       emptyText="No personas yet. A persona sets the assistant's role and instructions."
       items={list.data ?? []}
-      describe={(p) => ({ id: p.id, title: p.name + (p.is_default ? ' (default)' : ''), subtitle: p.content.slice(0, 120) })}
+      describe={(p) => ({
+        id: p.id,
+        title: p.name + (p.is_default ? ' (default)' : ''),
+        subtitle: firstSentencePreview(p.content),
+        fullText: p.content,
+      })}
       renderForm={(initial, onDone) => <PersonaForm initial={initial} onDone={onDone} onSaved={refresh} />}
       onDelete={async (item) => {
         await personasApi.remove(item.id);
@@ -37,21 +56,32 @@ export function PersonasDialog({ open, onClose }: { open: boolean; onClose: () =
   );
 }
 
+/** Validation rules for a persona; returns one message per invalid field. */
+function validatePersona(form: PersonaBody): { name?: string; content?: string } {
+  const errors: { name?: string; content?: string } = {};
+  if (!form.name.trim()) errors.name = 'Enter a name for this persona.';
+  if (!form.content.trim()) errors.content = 'Describe the role and instructions.';
+  return errors;
+}
+
 function PersonaForm({ initial, onDone, onSaved }: { initial: Persona | null; onDone: () => void; onSaved: () => Promise<unknown> }) {
   const [form, setForm] = useState<PersonaBody>(initial ? { ...EMPTY, ...initial } : EMPTY);
+  const [touched, setTouched] = useState<{ name?: boolean; content?: boolean }>({});
   const [error, setError] = useState<string | null>(null);
+  const nameRef = useRef<HTMLInputElement>(null);
+  const contentRef = useRef<HTMLTextAreaElement>(null);
+  const errors = validatePersona(form);
+  const valid = Object.keys(errors).length === 0;
   const set = <K extends keyof PersonaBody>(key: K, value: PersonaBody[K]) => setForm((f) => ({ ...f, [key]: value }));
-  const flag = (key: 'is_default' | 'research_mode' | 'file_system_mode' | 'browsing_mode' | 'git_mode', label: string) => (
-    <Field label={label}>
-      <Toggle checked={Boolean(form[key])} onChange={(v) => set(key, v ? 1 : 0)} label={label} />
-    </Field>
-  );
+
   return (
     <form
+      noValidate
       onSubmit={async (e) => {
         e.preventDefault();
-        if (!form.name.trim() || !form.content.trim()) {
-          setError('Name and instructions are required.');
+        if (!valid) {
+          setTouched({ name: true, content: true });
+          (errors.name ? nameRef : contentRef).current?.focus();
           return;
         }
         try {
@@ -64,17 +94,66 @@ function PersonaForm({ initial, onDone, onSaved }: { initial: Persona | null; on
         }
       }}
     >
-      <Field label="Name"><input style={inputStyle} value={form.name} onChange={(e) => set('name', e.target.value)} /></Field>
-      <Field label="Instructions"><textarea style={{ ...inputStyle, minHeight: 140 }} value={form.content} onChange={(e) => set('content', e.target.value)} /></Field>
-      {flag('is_default', 'Default persona')}
-      {flag('research_mode', 'Research mode')}
-      {flag('file_system_mode', 'File system mode')}
-      {flag('browsing_mode', 'Browsing mode')}
-      {flag('git_mode', 'Git mode')}
-      {error ? <div role="alert" style={{ color: 'var(--color-rose-500)', marginBottom: 8 }}>{error}</div> : null}
-      <div style={{ display: 'flex', gap: 8 }}>
-        <button type="submit" className="btn-primary">Save</button>
-        <button type="button" className="btn-secondary" onClick={onDone}>Cancel</button>
+      <Field
+        label="Name"
+        required
+        error={touched.name ? errors.name ?? null : null}
+        hint={touched.name && errors.name ? undefined : 'Shown in the persona list and the chat settings.'}
+      >
+        {(c) => (
+          <input
+            {...c}
+            ref={nameRef}
+            className="ui-input"
+            placeholder="e.g. Code reviewer"
+            value={form.name}
+            onBlur={() => setTouched((t) => ({ ...t, name: true }))}
+            onChange={(e) => set('name', e.target.value)}
+          />
+        )}
+      </Field>
+      <Field
+        label="Instructions"
+        required
+        error={touched.content ? errors.content ?? null : null}
+        hint="Sets the assistant's role and how it should respond."
+      >
+        {(c) => (
+          <textarea
+            {...c}
+            ref={contentRef}
+            className="ui-textarea"
+            rows={6}
+            placeholder="You are a careful reviewer who explains each finding."
+            value={form.content}
+            onBlur={() => setTouched((t) => ({ ...t, content: true }))}
+            onChange={(e) => set('content', e.target.value)}
+          />
+        )}
+      </Field>
+      <div className="crud-flags">
+        {FLAGS.map(({ key, label, description }) => (
+          <Toggle
+            key={key}
+            checked={Boolean(form[key])}
+            onChange={(v) => set(key, v ? 1 : 0)}
+            label={label}
+            description={description}
+          />
+        ))}
+      </div>
+      {error ? (
+        <div role="alert" className="crud-error">
+          {error}
+        </div>
+      ) : null}
+      <div className="crud-actions">
+        <Button variant="primary" type="submit" disabled={!valid}>
+          Save
+        </Button>
+        <Button variant="secondary" onClick={onDone}>
+          Cancel
+        </Button>
       </div>
     </form>
   );

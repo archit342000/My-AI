@@ -1,16 +1,31 @@
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { Link } from 'react-router';
+import { EmptyState } from '../../components/ui/EmptyState';
+import { Select } from '../../components/ui/Select';
+import { Input } from '../../components/ui/Field';
+import { Button } from '../../components/ui/Button';
+import { Badge, type BadgeTone } from '../../components/ui/Badge';
+import { SegmentedControl } from '../../components/ui/SegmentedControl';
 import { logsApi, toEntries, type LogStream } from './logsApi';
+import { LOG_LEVELS, columnLabel, levelOf, scalarColumns, type LogLevel } from './log-levels';
 
 const LIMITS = [50, 100, 200, 500];
 const MAX_CHARS = 4000;
 
-const STREAMS: Array<[LogStream, string]> = [
-  ['network', 'Network'],
-  ['events', 'Events'],
-  ['app', 'App logs'],
-  ['database', 'Database'],
+const STREAMS: Array<{ value: LogStream; label: string }> = [
+  { value: 'network', label: 'Network' },
+  { value: 'events', label: 'Events' },
+  { value: 'app', label: 'App logs' },
+  { value: 'database', label: 'Database' },
 ];
+
+const LEVEL_TONE: Record<LogLevel, BadgeTone> = {
+  DEBUG: 'neutral',
+  INFO: 'accent',
+  WARNING: 'warning',
+  ERROR: 'danger',
+};
 
 /** Logs viewer: network calls, events, app log lines and database rows. Large entries are truncated. */
 export function LogsPage() {
@@ -19,6 +34,7 @@ export function LogsPage() {
   const [filter, setFilter] = useState('');
   const [table, setTable] = useState('chats');
   const [chatId, setChatId] = useState('');
+  const [levels, setLevels] = useState<Set<LogLevel>>(new Set());
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
 
   const tables = useQuery({ queryKey: ['log-tables'], queryFn: logsApi.dbTables, enabled: stream === 'database' });
@@ -32,58 +48,172 @@ export function LogsPage() {
     refetchInterval: 5000,
   });
 
+  // The database stream stays disabled until a chat id is typed; that is not a loading state (F-04).
+  const awaitingChatId = stream === 'database' && !chatId;
   const entries = useMemo(() => toEntries(data.data), [data.data]);
+  const columns = useMemo(() => scalarColumns(entries), [entries]);
   const visible = useMemo(() => {
     const q = filter.trim().toLowerCase();
-    if (!q) return entries;
-    return entries.filter((e) => JSON.stringify(e).toLowerCase().includes(q));
-  }, [entries, filter]);
+    return entries.filter((e) => {
+      if (stream === 'app' && levels.size > 0) {
+        const level = levelOf(e);
+        if (!level || !levels.has(level)) return false;
+      }
+      return !q || JSON.stringify(e).toLowerCase().includes(q);
+    });
+  }, [entries, filter, levels, stream]);
+
+  function toggleExpanded(i: number) {
+    setExpanded((s) => {
+      const n = new Set(s);
+      if (n.has(i)) n.delete(i);
+      else n.add(i);
+      return n;
+    });
+  }
+
+  function toggleLevel(level: LogLevel) {
+    setLevels((s) => {
+      const n = new Set(s);
+      if (n.has(level)) n.delete(level);
+      else n.add(level);
+      return n;
+    });
+  }
+
+  const isTable = stream === 'network' || stream === 'events' || stream === 'database';
+
+  /** Chat ids link to the chat; a `level` column gets the coloured badge. */
+  function renderCell(column: string, row: Record<string, unknown>) {
+    const value = row[column];
+    const text = value === null || value === undefined ? '' : String(value);
+    if (column === 'chat_id' && text) {
+      return (
+        <Link to={`/chat/${encodeURIComponent(text)}`} onClick={(e) => e.stopPropagation()}>
+          {text}
+        </Link>
+      );
+    }
+    if (column === 'level') {
+      const level = levelOf(row);
+      if (level) return <Badge tone={LEVEL_TONE[level]}>{level}</Badge>;
+    }
+    return text;
+  }
 
   return (
-    <div className="logs-page" style={{ display: 'flex', height: '100vh', paddingLeft: 280, boxSizing: 'border-box' }}>
-      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', padding: 16, gap: 12 }}>
-        <header style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          <h1 className="font-heading" style={{ fontSize: '1.25rem', margin: 0, marginRight: 12 }}>Logs</h1>
-          {STREAMS.map(([key, label]) => (
-            <button key={key} type="button" aria-pressed={stream === key} className={stream === key ? 'btn-primary' : 'btn-secondary'} onClick={() => { setStream(key); setExpanded(new Set()); }}>{label}</button>
-          ))}
-          <select aria-label="Rows" value={limit} onChange={(e) => setLimit(Number(e.target.value))} style={{ padding: 6, borderRadius: 8 }}>
-            {LIMITS.map((n) => <option key={n} value={n}>{n} rows</option>)}
-          </select>
-          <input aria-label="Filter entries" placeholder="Filter…" value={filter} onChange={(e) => setFilter(e.target.value)} style={{ flex: 1, minWidth: 160, padding: 6, borderRadius: 8, border: '1px solid var(--glass-border)', background: 'var(--glass-surface)', color: 'var(--content-primary)' }} />
-          <button type="button" className="btn-ghost" onClick={() => void data.refetch()}>Refresh</button>
+    <div className="logs-page">
+      <div className="logs-main">
+        <header className="logs-toolbar">
+          <h1 className="font-heading logs-title">Logs</h1>
+          <SegmentedControl label="Log stream" value={stream} onChange={(v) => { setStream(v as LogStream); setExpanded(new Set()); }} options={STREAMS} />
+          <div className="logs-toolbar__controls">
+            <Select aria-label="Rows" value={String(limit)} onChange={(v) => setLimit(Number(v))} options={LIMITS.map((n) => ({ value: String(n), label: `${n} rows` }))} />
+            <Input aria-label="Filter entries" placeholder="Filter…" value={filter} onChange={(e) => setFilter(e.target.value)} className="logs-filter" />
+            <Button variant="secondary" disabled={awaitingChatId} onClick={() => void data.refetch()}>Refresh</Button>
+          </div>
         </header>
 
         {stream === 'database' ? (
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-            <select aria-label="Table" value={table} onChange={(e) => setTable(e.target.value)} style={{ padding: 6, borderRadius: 8 }}>
-              {[...(tables.data?.chat_tables ?? []), ...(tables.data?.global_tables ?? [])].map((t) => <option key={t} value={t}>{t}</option>)}
-            </select>
-            <input aria-label="Chat id" placeholder="chat id" value={chatId} onChange={(e) => setChatId(e.target.value)} style={{ padding: 6, borderRadius: 8, minWidth: 220 }} />
+          <div className="logs-toolbar__controls">
+            <Select
+              aria-label="Table"
+              value={table}
+              onChange={setTable}
+              options={[...(tables.data?.chat_tables ?? []), ...(tables.data?.global_tables ?? [])].map((t) => ({ value: t, label: t }))}
+            />
+            <Input aria-label="Chat id" placeholder="chat id" value={chatId} onChange={(e) => setChatId(e.target.value)} className="logs-chat-id" />
           </div>
         ) : null}
 
-        <div style={{ fontSize: '0.8rem', color: 'var(--content-muted)' }}>
-          {data.isPending ? 'Loading…' : data.isError ? `Error: ${data.error.message}` : `${visible.length} of ${entries.length} entries`}
+        {stream === 'app' ? (
+          <div className="logs-levels" role="group" aria-label="Filter by level">
+            {LOG_LEVELS.map((level) => (
+              <button key={level} type="button" className="logs-level-chip" aria-pressed={levels.has(level)} onClick={() => toggleLevel(level)}>
+                <Badge tone={LEVEL_TONE[level]}>{level}</Badge>
+              </button>
+            ))}
+          </div>
+        ) : null}
+
+        <div className="logs-status">
+          {awaitingChatId || data.isError || (!data.isPending && entries.length === 0)
+            ? ''
+            : data.isPending
+              ? 'Loading…'
+              : `${visible.length} of ${entries.length} entries`}
         </div>
 
-        <ol style={{ listStyle: 'none', margin: 0, padding: 0, flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {visible.map((entry, i) => {
-            const text = JSON.stringify(entry, null, 2) ?? '';
-            const isOpen = expanded.has(i);
-            const shown = isOpen || text.length <= MAX_CHARS ? text : `${text.slice(0, MAX_CHARS)}\n…`;
-            return (
-              <li key={i} className="glass" style={{ borderRadius: 10, padding: 8 }}>
-                <pre className="font-mono" style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: '0.75rem' }}>{typeof entry === 'string' ? entry : shown}</pre>
-                {text.length > MAX_CHARS ? (
-                  <button type="button" className="btn-ghost" onClick={() => setExpanded((s) => { const n = new Set(s); if (n.has(i)) n.delete(i); else n.add(i); return n; })}>
-                    {isOpen ? 'Collapse' : `Show all (${Math.round(text.length / 1024)} KB)`}
-                  </button>
-                ) : null}
-              </li>
-            );
-          })}
-        </ol>
+        {awaitingChatId ? (
+          <EmptyState title="Enter a chat id to load rows" description="Database rows are loaded per chat." />
+        ) : data.isError ? (
+          <EmptyState icon="error" title="Could not load logs" description={data.error.message} />
+        ) : !data.isPending && visible.length === 0 ? (
+          <EmptyState
+            icon="logs"
+            title={entries.length === 0 ? 'No entries yet' : 'No entries match'}
+            description={
+              entries.length === 0
+                ? 'Nothing has been recorded for this stream.'
+                : 'Try another filter or clear the level chips.'
+            }
+          />
+        ) : isTable && typeof visible[0] === 'object' ? (
+          <div className="logs-table-wrap">
+            <table className="logs-table">
+              <thead>
+                <tr>
+                  {columns.map((c) => <th key={c} scope="col">{columnLabel(c)}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {visible.map((entry, i) => {
+                  const row = (entry ?? {}) as Record<string, unknown>;
+                  const json = JSON.stringify(entry, null, 2) ?? '';
+                  const isOpen = expanded.has(i);
+                  return (
+                    <Fragment key={i}>
+                      <tr className="logs-row" aria-expanded={isOpen} onClick={() => toggleExpanded(i)}>
+                        {columns.map((c) => (
+                          <td key={c} title={String(row[c] ?? '')}>
+                            {renderCell(c, row)}
+                          </td>
+                        ))}
+                      </tr>
+                      {isOpen ? (
+                        <tr className="logs-row-detail">
+                          <td colSpan={Math.max(columns.length, 1)}>
+                            <pre className="logs-json">{json.length > MAX_CHARS ? `${json.slice(0, MAX_CHARS)}\n…` : json}</pre>
+                          </td>
+                        </tr>
+                      ) : null}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <ol className="logs-list">
+            {visible.map((entry, i) => {
+              const text = typeof entry === 'string' ? entry : JSON.stringify(entry, null, 2) ?? '';
+              const isOpen = expanded.has(i);
+              const level = levelOf(entry);
+              const shown = isOpen || text.length <= MAX_CHARS ? text : `${text.slice(0, MAX_CHARS)}\n…`;
+              return (
+                <li key={i} className="logs-entry">
+                  {level ? <Badge tone={LEVEL_TONE[level]}>{level}</Badge> : null}
+                  <pre className="logs-json">{shown}</pre>
+                  {text.length > MAX_CHARS ? (
+                    <Button variant="ghost" size="sm" onClick={() => toggleExpanded(i)}>
+                      {isOpen ? 'Collapse' : `Show all (${Math.round(text.length / 1024)} KB)`}
+                    </Button>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ol>
+        )}
       </div>
     </div>
   );

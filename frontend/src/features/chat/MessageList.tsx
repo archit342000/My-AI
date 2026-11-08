@@ -1,69 +1,166 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { chatsApi, queryKeys } from '../../api/chats';
 import { Markdown } from '../../components/markdown/Markdown';
 import { showToast } from '../../components/ui/toast-store';
-import { createAutoScroller } from '../../lib/scroll';
+import { useAutoFollow } from './useAutoFollow';
+import { Badge } from '../../components/ui/Badge';
+import { Button } from '../../components/ui/Button';
+import { Textarea } from '../../components/ui/Field';
+import { EmptyState } from '../../components/ui/EmptyState';
+import type { HistoryMessage } from '../../api/completions';
 import type { Turn } from '../../lib/chat-model';
-import type { LiveTurn } from './stream-reducer';
-import type { PendingUser } from '../../state/stream-store';
-import { useStreamStore } from '../../state/stream-store';
-import { ThoughtBlock } from './ThoughtBlock';
-import { ToolActivityFeed } from './ToolActivity';
+import { emptyLiveTurn, type LiveTurn } from './stream-reducer';
+import { useStreamStore, type InterruptedTurn, type PendingUser } from '../../state/stream-store';
+import { ThoughtHeader, ThoughtTimeline } from './ThoughtBlock';
+import { ToolActivityFeed, ToolSummary } from './ToolActivity';
 import { MessageActions } from './MessageActions';
-import { historyFromCache, sendTurn } from './send-turn';
+import { sendTurn } from './send-turn';
 
-function UserTurn({ turn, chatId, onChanged, canEdit }: { turn: Extract<Turn, { kind: 'user' }>; chatId: string; onChanged: () => void; canEdit: boolean }) {
+const USER_AVATAR = (
+  <div className="avatar-wrapper">
+    <div className="avatar avatar--user">
+      <svg
+        width="20"
+        height="20"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+        <circle cx="12" cy="7" r="4" />
+      </svg>
+    </div>
+  </div>
+);
+
+const BOT_AVATAR = (
+  <div className="avatar-wrapper">
+    <div className="avatar-orbit" />
+    <div className="avatar avatar--bot">
+      <svg width="18" height="18" viewBox="0 0 32 32" fill="none">
+        <path d="M16 2L26 12L16 30L6 12Z" fill="white" opacity="0.9" />
+        <path d="M16 2L26 12H6Z" fill="white" opacity="0.3" />
+        <circle cx="16" cy="12" r="2.5" fill="white" opacity="0.7" />
+      </svg>
+    </div>
+  </div>
+);
+
+function UserTurn({
+  turn,
+  chatId,
+  onChanged,
+  onRegenerate,
+  canEdit,
+  showRetry,
+  onRetry,
+}: {
+  turn: Extract<Turn, { kind: 'user' }>;
+  chatId: string;
+  onChanged: () => void;
+  onRegenerate: (userTurnId: string, text: string) => Promise<void>;
+  canEdit: boolean;
+  /** Last user turn with no reply after it: offers Retry under the bubble. */
+  showRetry: boolean;
+  onRetry: () => void;
+}) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(turn.text);
   const queryClient = useQueryClient();
 
-  async function save() {
+  /** Saves the edit. The server drops the old reply, so "regenerate" asks for a new one. */
+  async function save(regenerate: boolean) {
     try {
       await chatsApi.editMessage(chatId, turn.id, draft);
-      setEditing(false);
-      onChanged();
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Edit failed', 'error');
+      return;
     }
+    setEditing(false);
+    onChanged();
+    if (regenerate) await onRegenerate(turn.id, draft);
+  }
+
+  function cancel() {
+    setDraft(turn.text);
+    setEditing(false);
   }
 
   return (
     <div className="message-row chat-row user-message" data-message-id={turn.id}>
-      <div className="message-content-wrapper">
-        {turn.images.length > 0 ? (
-          <div className="message-images">
-            {turn.images.map((src, i) => (
-              <img key={i} src={src} alt="" className="lightbox-img" />
-            ))}
-          </div>
-        ) : null}
-        {editing ? (
-          <div className="edit-box">
-            <textarea className="edit-textarea" value={draft} onChange={(e) => setDraft(e.target.value)} rows={3} aria-label="Edit message" />
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button type="button" className="btn-primary" onClick={() => void save()}>Save</button>
-              <button type="button" className="btn-secondary" onClick={() => setEditing(false)}>Cancel</button>
-            </div>
-          </div>
-        ) : turn.text ? (
-          <div className="message-text-wrapper"><Markdown text={turn.text} /></div>
-        ) : null}
-        {!editing ? (
-          <MessageActions
-            text={turn.text}
-            role="user"
-            canRetry={false}
-            onEdit={canEdit ? () => setEditing(true) : undefined}
-            onDelete={() => void remove(chatId, turn.id, queryClient, onChanged)}
+      {USER_AVATAR}
+      {editing ? (
+        <div className="edit-box">
+          <Textarea
+            className="edit-textarea"
+            autoGrow
+            value={draft}
+            rows={2}
+            aria-label="Edit message"
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+              if (e.key === 'Escape') {
+                e.preventDefault();
+                cancel();
+              } else if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                void save(true);
+              }
+            }}
           />
-        ) : null}
-      </div>
+          <div className="edit-box__actions">
+            <Button variant="ghost" onClick={cancel}>
+              Cancel
+            </Button>
+            <Button variant="secondary" onClick={() => void save(false)}>
+              Save
+            </Button>
+            <Button variant="primary" onClick={() => void save(true)}>
+              Save &amp; regenerate
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="message-content raw-text-content">
+          {turn.images.length > 0 ? (
+            <div className="message-images">
+              {turn.images.map((src, i) => (
+                <img key={i} src={src} alt="" className="lightbox-img message-image" />
+              ))}
+            </div>
+          ) : null}
+          {turn.text ? <Markdown text={turn.text} className="message-text-wrapper" /> : null}
+          {showRetry ? (
+            <Button variant="secondary" size="sm" className="turn-retry" onClick={onRetry}>
+              Retry response
+            </Button>
+          ) : null}
+        </div>
+      )}
+      {!editing ? (
+        <MessageActions
+          text={turn.text}
+          role="user"
+          canRetry={false}
+          onEdit={canEdit ? () => setEditing(true) : undefined}
+          onDelete={() => void remove(chatId, turn.id, queryClient, onChanged)}
+        />
+      ) : null}
     </div>
   );
 }
 
-async function remove(chatId: string, messageId: string, queryClient: ReturnType<typeof useQueryClient>, onChanged: () => void) {
+async function remove(
+  chatId: string,
+  messageId: string,
+  queryClient: ReturnType<typeof useQueryClient>,
+  onChanged: () => void,
+) {
   try {
     await chatsApi.deleteMessage(chatId, messageId);
     await queryClient.invalidateQueries({ queryKey: queryKeys.chat(chatId) });
@@ -71,6 +168,61 @@ async function remove(chatId: string, messageId: string, queryClient: ReturnType
   } catch (err) {
     showToast(err instanceof Error ? err.message : 'Delete failed', 'error');
   }
+}
+
+/**
+ * Shared bot-row body. The avatar is a grid column, so it lines up with the first block of the
+ * turn whether or not a thought header exists (F-23).
+ */
+function BotBody({
+  model,
+  reasoning,
+  tools,
+  active,
+  status,
+  children,
+  footer,
+}: {
+  model: string | null | undefined;
+  reasoning: string;
+  tools: Extract<Turn, { kind: 'assistant' }>['tools'];
+  active: boolean;
+  status?: string | null;
+  children: ReactNode;
+  footer?: ReactNode;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const hasReasoning = Boolean(reasoning) || tools.length > 0;
+  return (
+    <div className="bot-turn">
+      <div className="bot-turn__avatar">{BOT_AVATAR}</div>
+      <div className="bot-turn__body">
+        {hasReasoning || active ? (
+          <ThoughtHeader
+            expanded={expanded}
+            active={active}
+            status={status ?? null}
+            onToggle={() => setExpanded((v) => !v)}
+          />
+        ) : null}
+        {tools.length > 0 ? <ToolSummary tools={tools} /> : null}
+        {hasReasoning ? (
+          <ThoughtTimeline expanded={expanded} reasoning={reasoning}>
+            <ToolActivityFeed tools={tools} />
+          </ThoughtTimeline>
+        ) : null}
+        <div className="message-content-wrapper">
+          {children}
+          {model ? (
+            <div className="bot-message-footer">
+              <span className="bot-model-label">{model}</span>
+            </div>
+          ) : null}
+          {footer}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function AssistantTurn({
@@ -89,31 +241,75 @@ function AssistantTurn({
   const queryClient = useQueryClient();
   return (
     <div className="message-row chat-row bot-message bot" data-message-id={turn.id}>
-      <div className="message-content-wrapper">
-        {turn.model ? <div className="bot-model-label">{turn.model}</div> : null}
-        {turn.thinking ? <ThoughtBlock text={turn.thinking} /> : null}
-        <ToolActivityFeed tools={turn.tools} />
-        {turn.text ? <div className="message-text-wrapper"><Markdown text={turn.text} /></div> : null}
-        <MessageActions text={turn.text} role="assistant" canRetry={isLast} onRetry={onRetry} onDelete={() => void remove(chatId, turn.id, queryClient, onDelete)} />
-      </div>
+      <BotBody model={turn.model} reasoning={turn.thinking ?? ''} tools={turn.tools} active={false}>
+        <Markdown text={turn.text} className="message-content raw-text-content" />
+      </BotBody>
+      <MessageActions
+        text={turn.text}
+        role="assistant"
+        canRetry={isLast}
+        onRetry={onRetry}
+        onDelete={() => void remove(chatId, turn.id, queryClient, onDelete)}
+      />
     </div>
   );
 }
 
 function LiveAssistant({ live }: { live: LiveTurn }) {
-  const tools = live.tools;
+  const thinking = !live.content;
   return (
-    <div className="message-row chat-row bot-message bot streaming" data-live="true">
-      <div className="message-content-wrapper">
-        {live.model ? <div className="bot-model-label">{live.model}</div> : null}
-        {live.reasoning ? <ThoughtBlock text={live.reasoning} /> : null}
-        <ToolActivityFeed tools={tools} />
-        {live.redactNotice ? <div className="validation-fixing"><span className="processing-spinner" /> {live.redactNotice}</div> : null}
-        {live.content ? <div className="message-text-wrapper"><Markdown text={live.content} /></div> : null}
-        {!live.content && !live.reasoning && tools.length === 0 ? (
-          <div className="thought-progress-dots" aria-label="Generating"><span /><span /><span /></div>
+    <div className="message-row chat-row bot-message bot streaming thinking" data-live="true">
+      <BotBody
+        model={live.model}
+        reasoning={live.reasoning ?? ''}
+        tools={live.tools}
+        active={thinking}
+        status={live.events.at(-1) ?? null}
+      >
+        {live.redactNotice ? (
+          <div className="validation-fixing">
+            <span className="processing-spinner" /> {live.redactNotice}
+          </div>
         ) : null}
-      </div>
+        {live.content ? (
+          <Markdown text={live.content} className="message-content raw-text-content" />
+        ) : null}
+      </BotBody>
+    </div>
+  );
+}
+
+/** A reply that ended early: the partial text stays, with a Stopped marker or the error and Retry. */
+function InterruptedAssistant({
+  interrupted,
+  onRetry,
+}: {
+  interrupted: InterruptedTurn;
+  onRetry: () => void;
+}) {
+  const { live } = interrupted;
+  return (
+    <div className="message-row chat-row bot-message bot" data-interrupted={interrupted.kind}>
+      <BotBody model={live.model} reasoning={live.reasoning} tools={live.tools} active={false}>
+        {live.content ? (
+          <Markdown text={live.content} className="message-content raw-text-content" />
+        ) : null}
+      </BotBody>
+      {interrupted.kind === 'error' ? (
+        <div className="chat-error" role="alert">
+          <span className="chat-error__message">{interrupted.message ?? 'The reply failed.'}</span>
+          <Button variant="secondary" size="sm" onClick={onRetry}>
+            Retry
+          </Button>
+        </div>
+      ) : (
+        <div className="turn-notice" role="status">
+          <Badge>Stopped</Badge>
+          <Button variant="secondary" size="sm" onClick={onRetry}>
+            Retry
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
@@ -121,11 +317,16 @@ function LiveAssistant({ live }: { live: LiveTurn }) {
 function LiveUser({ pending }: { pending: PendingUser }) {
   return (
     <div className="message-row chat-row user-message" data-pending="true">
-      <div className="message-content-wrapper">
-        {pending.text ? <div className="message-text-wrapper"><Markdown text={pending.text} /></div> : null}
+      {USER_AVATAR}
+      <div className="message-content raw-text-content">
+        {pending.text ? <Markdown text={pending.text} className="message-text-wrapper" /> : null}
         {pending.files.length ? (
           <div className="message-attachments">
-            {pending.files.map((f) => <span key={f.file_id} className="file-attachment-pill">{f.name}</span>)}
+            {pending.files.map((f) => (
+              <span key={f.file_id} className="message-file-chip">
+                {f.name}
+              </span>
+            ))}
           </div>
         ) : null}
       </div>
@@ -133,29 +334,78 @@ function LiveUser({ pending }: { pending: PendingUser }) {
   );
 }
 
+/** Chat history as the model sees it: user text and non-empty assistant text, in order. */
+function historyBefore(turns: Turn[], index: number): HistoryMessage[] {
+  return turns.slice(0, Math.max(0, index)).flatMap<HistoryMessage>((t) =>
+    t.kind === 'user'
+      ? [{ role: 'user', content: t.text }]
+      : t.text
+        ? [{ role: 'assistant', content: t.text }]
+        : [],
+  );
+}
+
 /** Scrollable transcript: persisted turns, the optimistic user row and the live assistant turn. */
-export function MessageList({ turns, chatId, onChanged }: { turns: Turn[]; chatId: string; onChanged: () => void }) {
+export function MessageList({
+  turns,
+  chatId,
+  onChanged,
+}: {
+  turns: Turn[];
+  chatId: string;
+  onChanged: () => void;
+}) {
   const ref = useRef<HTMLDivElement>(null);
-  const scroller = useRef(createAutoScroller());
   const queryClient = useQueryClient();
   const live = useStreamStore((s) => (s.chatId === chatId ? s.live : null));
   const pending = useStreamStore((s) => (s.chatId === chatId ? s.pending : null));
   const streaming = useStreamStore((s) => s.chatId === chatId);
-  const streamError = useStreamStore((s) => (s.chatId === chatId ? s.error : null));
+  const interrupted = useStreamStore((s) =>
+    s.interrupted?.chatId === chatId ? s.interrupted : null,
+  );
+  const dismissInterrupted = useStreamStore((s) => s.dismissInterrupted);
   const lastUserIdx = findLast(turns, (t) => t.kind === 'user');
+  const follow = useAutoFollow(ref, chatId, pending);
 
+  // A partial reply belongs to the screen it was shown on: drop it when the chat is left.
   useEffect(() => {
-    if (ref.current) scroller.current(ref.current, { forced: true });
-  }, [chatId]);
+    return () => {
+      const current = useStreamStore.getState().interrupted;
+      if (current?.chatId === chatId) dismissInterrupted();
+    };
+  }, [chatId, dismissInterrupted]);
 
-  useEffect(() => {
-    if (ref.current) scroller.current(ref.current);
-  }, [turns.length, live?.content, live?.reasoning]);
+  // Once the server has persisted a reply after the user turn, the persisted copy takes over.
+  const replyPersisted = turns.at(-1)?.kind === 'assistant';
+  const showInterrupted = interrupted !== null && !replyPersisted;
+  const lastHasReply = lastUserIdx >= 0 && turns.slice(lastUserIdx + 1).some((t) => t.kind === 'assistant');
+  const showUserRetry = !streaming && !showInterrupted && lastUserIdx >= 0 && !lastHasReply;
+
+  /** Sends `text` again as the user turn `userTurnId`, with the history before that turn. */
+  async function regenerateFrom(userTurnId: string, text: string) {
+    const index = turns.findIndex((t) => t.id === userTurnId);
+    await sendTurn({
+      queryClient,
+      chatId,
+      text,
+      files: [],
+      isNewChat: false,
+      history: historyBefore(turns, index),
+      userTurnExists: true,
+    });
+  }
+
+  function retryLast() {
+    const userTurn = turns[lastUserIdx];
+    if (userTurn?.kind === 'user') void regenerateFrom(userTurn.id, userTurn.text);
+  }
 
   async function retry(assistantIdx: number) {
-    const userTurn = turns.slice(0, assistantIdx).reverse().find((t) => t.kind === 'user');
+    const userTurn = turns
+      .slice(0, assistantIdx)
+      .reverse()
+      .find((t) => t.kind === 'user');
     if (!userTurn || userTurn.kind !== 'user') return;
-    const history = historyFromCache(queryClient, chatId).slice(0, Math.max(0, indexOfUser(turns, userTurn.id)));
     try {
       await chatsApi.deleteMessage(chatId, turns[assistantIdx]!.id);
     } catch (err) {
@@ -163,14 +413,23 @@ export function MessageList({ turns, chatId, onChanged }: { turns: Turn[]; chatI
       return;
     }
     await queryClient.invalidateQueries({ queryKey: queryKeys.chat(chatId) });
-    await sendTurn({ queryClient, chatId, text: userTurn.text, files: [], isNewChat: false, history });
+    await regenerateFrom(userTurn.id, userTurn.text);
   }
 
   return (
     <div id="messages" ref={ref} className="messages-list">
       {turns.map((turn, i) =>
         turn.kind === 'user' ? (
-          <UserTurn key={turn.id} turn={turn} chatId={chatId} onChanged={onChanged} canEdit={!streaming} />
+          <UserTurn
+            key={turn.id}
+            turn={turn}
+            chatId={chatId}
+            onChanged={onChanged}
+            onRegenerate={regenerateFrom}
+            canEdit={!streaming}
+            showRetry={showUserRetry && i === lastUserIdx}
+            onRetry={retryLast}
+          />
         ) : (
           <AssistantTurn
             key={turn.id}
@@ -182,9 +441,24 @@ export function MessageList({ turns, chatId, onChanged }: { turns: Turn[]; chatI
           />
         ),
       )}
+      {turns.length === 0 && !pending && !streaming ? (
+        <EmptyState
+          className="chat-empty"
+          icon="sparkles"
+          title={<span className="font-heading">Hello there</span>}
+          description="How can I help you today?"
+        />
+      ) : null}
       {pending ? <LiveUser pending={pending} /> : null}
-      {streaming && live ? <LiveAssistant live={live} /> : null}
-      {streamError ? <div className="chat-error" role="alert">{streamError}</div> : null}
+      {streaming ? <LiveAssistant live={live ?? emptyLiveTurn()} /> : null}
+      {showInterrupted && interrupted ? (
+        <InterruptedAssistant interrupted={interrupted} onRetry={retryLast} />
+      ) : null}
+      {streaming && !follow.pinned ? (
+        <button type="button" className="chat-jump-latest" onClick={follow.jumpToLatest}>
+          Jump to latest
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -193,8 +467,3 @@ function findLast<T>(items: T[], pred: (t: T) => boolean): number {
   for (let i = items.length - 1; i >= 0; i--) if (pred(items[i]!)) return i;
   return -1;
 }
-
-function indexOfUser(turns: Turn[], id: string): number {
-  return turns.filter((t) => t.kind === 'user').findIndex((t) => t.id === id);
-}
-

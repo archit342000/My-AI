@@ -1,6 +1,10 @@
 import { useState } from 'react';
 import type { ToolActivity as ToolActivityItem } from '../../lib/chat-model';
-import { TOOL_LABELS } from './tool-labels.generated';
+import { friendlyToolName } from './tool-names';
+import { cx } from '../../lib/cx';
+
+/** Results longer than this are clipped until the user asks for the rest. */
+const CLIP_CHARS = 1500;
 
 function prettyArgs(args: string): string {
   try {
@@ -10,29 +14,63 @@ function prettyArgs(args: string): string {
   }
 }
 
-/** One tool call with its result, collapsed by default (legacy `.activity-item`). */
+/** Text in a `<pre>`, clipped to CLIP_CHARS with a "Show more" toggle. */
+function ClippedText({ text, label }: { text: string; label: string }) {
+  const [full, setFull] = useState(false);
+  const long = text.length > CLIP_CHARS;
+  const shown = long && !full ? `${text.slice(0, CLIP_CHARS)}\n…` : text;
+  return (
+    <div className="activity-content" aria-label={label}>
+      <pre className="font-mono">{shown}</pre>
+      {long ? (
+        <button type="button" className="activity-more" onClick={() => setFull((value) => !value)}>
+          {full ? 'Show less' : `Show more (${Math.ceil(text.length / 1024)} KB)`}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * One tool call with its result, collapsed by default. The `expanded` class on `.activity-item`
+ * drives the animated body (see components.css, "Tool activity").
+ */
 export function ToolActivityCard({ tool }: { tool: ToolActivityItem }) {
   const [open, setOpen] = useState(false);
-  const label = TOOL_LABELS[tool.name] ?? tool.name;
+  const label = friendlyToolName(tool.name);
   return (
-    <div className={`activity-item${open ? '' : ' collapsed'}`}>
+    <div className={open ? 'activity-item expanded' : 'activity-item'}>
       <button type="button" className="activity-header" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
         <span className="activity-type">{label}</span>
         <span className="thought-chevron" aria-hidden="true">{open ? '▾' : '▸'}</span>
       </button>
-      {open ? (
-        <div className="activity-content-wrapper">
-          <div className="activity-content tool-call-content">
-            <pre className="font-mono">{prettyArgs(tool.args)}</pre>
-          </div>
-          {tool.result !== null ? (
-            <div className="activity-content tool-result-content">
-              <pre className="font-mono">{tool.result}</pre>
-            </div>
-          ) : null}
+      <div className="activity-content-wrapper">
+        <div className="activity-body">
+          <ClippedText text={prettyArgs(tool.args)} label="Arguments" />
+          {tool.result !== null ? <ClippedText text={tool.result} label="Result" /> : null}
         </div>
-      ) : null}
+      </div>
     </div>
+  );
+}
+
+/** Compact list of the turn's tool calls, visible without expanding the thought block. */
+export function ToolSummary({ tools }: { tools: ToolActivityItem[] }) {
+  return (
+    <ul className="tool-summary" aria-label="Tool calls">
+      {tools.map((tool) => {
+        const running = tool.result === null;
+        return (
+          <li
+            key={tool.id || tool.name}
+            className={cx('tool-summary__item', running && 'tool-summary__item--running')}
+          >
+            <span className="tool-summary__name">{friendlyToolName(tool.name)}</span>
+            <span className="tool-summary__state">{running ? 'Running' : 'Done'}</span>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 

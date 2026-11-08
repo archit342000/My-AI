@@ -19,6 +19,17 @@ describe('preprocessLatex / normalizeNewlines', () => {
     expect(normalizeNewlines('a\\n1')).toBe('a\n1');
     expect(normalizeNewlines('a\\nb')).toBe('a\\nb'); // legacy: not before a letter
   });
+  it('leaves code with literal \\n untouched (F-05)', () => {
+    // Inline code spans are never rewritten, even in a single-line message.
+    expect(normalizeNewlines('Use `"Semantic Graph:\\n"` in code')).toBe('Use `"Semantic Graph:\\n"` in code');
+    // Multi-line code (real newlines present) is never rewritten.
+    const fenced = '```py\nprint("Semantic Graph:\\n")\nf(x\\n)\n```';
+    expect(normalizeNewlines(fenced)).toBe(fenced);
+  });
+  it('does not rewrite a message that already has real line breaks (F-05)', () => {
+    const text = 'Line one\nreads "a\\n" literally';
+    expect(normalizeNewlines(text)).toBe(text);
+  });
 });
 
 describe('renderMarkdown', () => {

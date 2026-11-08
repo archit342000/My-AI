@@ -1,15 +1,102 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { ApiError } from '../../api/client';
+import { chatsApi, queryKeys } from '../../api/chats';
+import { showToast } from '../../components/ui/toast-store';
 import { toTurns } from '../../lib/chat-model';
 import { useStreamStore } from '../../state/stream-store';
 import { useUiStore } from '../../state/ui-store';
 import { Composer } from '../composer/Composer';
-import { ArtifactPanel } from '../artifacts/ArtifactPanel';
+import { ArtifactDrawer } from '../artifacts/ArtifactDrawer';
 import { MessageList } from './MessageList';
 import { reattachTurn } from './send-turn';
 import { useChatDetail } from './useChatQueries';
+
+/** Header pill with click-to-rename (legacy `#chat-title-display`). */
+function ChatTitle({ chatId, title }: { chatId: string; title: string }) {
+  const queryClient = useQueryClient();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(title);
+
+  async function commit() {
+    const next = draft.trim();
+    setEditing(false);
+    if (!next || next === title) return;
+    try {
+      await chatsApi.patch(chatId, { title: next });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.chat(chatId) });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.chats });
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Rename failed', 'error');
+    }
+  }
+
+  return (
+    <div id="chat-title-header" className="chat-title-header">
+      <div
+        className="chat-header-content"
+        style={{
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          width: '100%',
+          maxWidth: 800,
+          position: 'relative',
+        }}
+      >
+        {editing ? (
+          <input
+            className="chat-title-display"
+            autoFocus
+            aria-label="Chat title"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={() => void commit()}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') void commit();
+              if (e.key === 'Escape') setEditing(false);
+            }}
+          />
+        ) : (
+          <div
+            id="chat-title-display"
+            className="chat-title-display"
+            role="button"
+            tabIndex={0}
+            title="Rename chat"
+            onClick={() => {
+              setDraft(title);
+              setEditing(true);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                setDraft(title);
+                setEditing(true);
+              }
+            }}
+          >
+            <span className="title-text">{title}</span>
+            <span className="header-rename-icon">
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+              </svg>
+            </span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export function ChatPage() {
   const { chatId } = useParams();
@@ -37,16 +124,10 @@ export function ChatPage() {
   const turns = toTurns(data.messages);
   return (
     <>
-      <div className="chat-title-header">
-        <span className="chat-title-text font-heading">{data.title || 'Untitled chat'}</span>
-      </div>
+      <ChatTitle chatId={data.id} title={data.title || 'Untitled chat'} />
       <MessageList turns={turns} chatId={data.id} onChanged={() => void refetch()} />
       <Composer />
-      {artifactsOpen ? (
-        <div className="artifact-sidebar-overlay" style={{ position: 'fixed', right: 16, top: 72, bottom: 16, width: 'min(460px, 92vw)', zIndex: 50, background: 'var(--glass-surface)', backdropFilter: 'var(--glass-blur)', border: '1px solid var(--glass-border)', borderRadius: 16, overflow: 'hidden' }}>
-          <ArtifactPanel scope={{ chatId: data.id }} />
-        </div>
-      ) : null}
+      {artifactsOpen ? <ArtifactDrawer scope={{ chatId: data.id }} /> : null}
     </>
   );
 }

@@ -1,5 +1,6 @@
-import { useEffect, useId, useRef, type ReactNode } from 'react';
-import { Icon } from '../icons/Icon';
+import { useEffect, useId, useRef, type ReactNode, type RefObject } from 'react';
+import { createPortal } from 'react-dom';
+import { IconButton } from './Button';
 import { pushModal } from '../../lib/modal-stack';
 import { lockScroll, unlockScroll } from '../../lib/scroll-lock';
 
@@ -12,15 +13,30 @@ export interface ModalProps {
   footer?: ReactNode;
   maxWidth?: number | string;
   id?: string;
+  /** Shows a back chevron in the header (sub-dialogs return to their parent). */
+  onBack?: () => void;
+  /** Element to focus on open instead of the first focusable control. */
+  initialFocusRef?: RefObject<HTMLElement | null>;
 }
 
-const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])';
+const FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])';
 
 /**
  * Dialog with Escape-to-close (top of stack only), backdrop click, focus trap, focus restore and
  * body scroll lock. Matches the legacy `.modal-backdrop.open` / `.modal-content` markup.
  */
-export function Modal({ open, onClose, title, children, footer, maxWidth = 560, id }: ModalProps) {
+export function Modal({
+  open,
+  onClose,
+  title,
+  children,
+  footer,
+  maxWidth = 560,
+  id,
+  onBack,
+  initialFocusRef,
+}: ModalProps) {
   const titleId = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
@@ -34,15 +50,15 @@ export function Modal({ open, onClose, title, children, footer, maxWidth = 560, 
     const previouslyFocused = document.activeElement as HTMLElement | null;
     const release = pushModal(() => onCloseRef.current());
     lockScroll();
-    // Focus the first focusable control, or the dialog itself.
+    // Focus the requested control, else the first focusable one, or the dialog itself.
     const first = dialogRef.current?.querySelector<HTMLElement>(FOCUSABLE);
-    (first ?? dialogRef.current)?.focus();
+    (initialFocusRef?.current ?? first ?? dialogRef.current)?.focus();
     return () => {
       release();
       unlockScroll();
       previouslyFocused?.focus?.();
     };
-  }, [open]);
+  }, [open, initialFocusRef]);
 
   if (!open) return null;
 
@@ -61,7 +77,8 @@ export function Modal({ open, onClose, title, children, footer, maxWidth = 560, 
     }
   }
 
-  return (
+  // Portalled to <body>: sidebar/message ancestors use backdrop-filter, which would trap `position: fixed`.
+  return createPortal(
     <div
       className="modal-backdrop open"
       id={id}
@@ -76,32 +93,24 @@ export function Modal({ open, onClose, title, children, footer, maxWidth = 560, 
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        style={{ maxWidth }}
+        style={{ maxWidth }} // dynamic-style
         onKeyDown={onKeyDown}
       >
         <div className="modal-header">
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <h2
-              id={titleId}
-              className="font-heading"
-              style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--content-primary)', margin: 0 }}
-            >
+          <div className="ui-modal__header-row">
+            {onBack ? (
+              <IconButton icon="chevron-left" label="Back" tooltip={false} onClick={onBack} />
+            ) : null}
+            <h2 id={titleId} className="font-heading ui-modal__title">
               {title}
             </h2>
-            <button
-              type="button"
-              className="btn-ghost"
-              aria-label="Close"
-              onClick={onClose}
-              style={{ width: '2.5rem', height: '2.5rem', padding: 0, borderRadius: '0.75rem' }}
-            >
-              <Icon name="close" size={20} strokeWidth={2.5} />
-            </button>
+            <IconButton icon="close" label="Close" tooltip={false} onClick={onClose} />
           </div>
         </div>
         <div className="modal-body">{children}</div>
         {footer ? <div className="modal-footer">{footer}</div> : null}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

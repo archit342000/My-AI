@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { renderMarkdown } from '../../lib/markdown/renderer';
+import { ImageLightbox } from './ImageLightbox';
 
 /**
  * Renders markdown as sanitised HTML and attaches the interactive pieces the legacy UI had:
@@ -56,11 +57,7 @@ export function Markdown({ text, className = 'message-content raw-text-content' 
   return (
     <>
       <div ref={ref} className={className} onClick={onClick} dangerouslySetInnerHTML={{ __html: html }} />
-      {lightbox ? (
-        <div className="image-lightbox-backdrop open" role="dialog" aria-label="Image preview" onClick={() => setLightbox(null)} onKeyDown={(e) => e.key === 'Escape' && setLightbox(null)}>
-          <img src={lightbox} alt="" className="image-lightbox-img" />
-        </div>
-      ) : null}
+      {lightbox ? <ImageLightbox src={lightbox} onClose={() => setLightbox(null)} /> : null}
     </>
   );
 }

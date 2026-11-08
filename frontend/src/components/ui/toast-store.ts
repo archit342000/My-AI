@@ -12,6 +12,8 @@ export interface ToastItem {
 
 export const TOAST_VISIBLE_MS = 3000;
 export const TOAST_FADE_MS = 300;
+/** Most toasts on screen at once; the oldest one leaves first when a new one overflows. */
+export const TOAST_MAX_VISIBLE = 4;
 
 interface ToastState {
   toasts: ToastItem[];
@@ -26,7 +28,10 @@ export const useToastStore = create<ToastState>((set, get) => ({
   show: (message, type = 'info') => {
     const id = nextId++;
     set((s) => ({ toasts: [...s.toasts, { id, message, type, leaving: false }] }));
-    setTimeout(() => get().dismiss(id), TOAST_VISIBLE_MS);
+    // Errors stay until the user dismisses them, so a failure cannot be missed.
+    if (type !== 'error') setTimeout(() => get().dismiss(id), TOAST_VISIBLE_MS);
+    const active = get().toasts.filter((t) => !t.leaving);
+    for (const t of active.slice(0, Math.max(0, active.length - TOAST_MAX_VISIBLE))) get().dismiss(t.id);
     return id;
   },
   dismiss: (id) => {
