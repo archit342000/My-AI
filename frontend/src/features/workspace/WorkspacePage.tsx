@@ -20,7 +20,10 @@ function updatedLabel(ts: number | string | null | undefined): string | null {
   return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-/** Workspace page: its chats, rename/delete, and the workspace's shared artifacts. */
+/**
+ * Workspace page: its chats, rename/delete, and the workspace's shared artifacts (the files panel
+ * is shown while the Files toggle is on).
+ */
 export function WorkspacePage() {
   const { workspaceId = '' } = useParams();
   const queryClient = useQueryClient();
@@ -31,6 +34,8 @@ export function WorkspacePage() {
   const [name, setName] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
   const navigate = useNavigate();
+  const artifactsOpen = useUiStore((s) => s.artifactsOpen);
+  const setArtifactsOpen = useUiStore((s) => s.setArtifactsOpen);
 
   const rename = useMutation({
     mutationFn: (value: string) =>
@@ -166,12 +171,16 @@ export function WorkspacePage() {
         ) : null}
       </div>
 
-      <h2 className="font-heading" style={{ fontSize: '1.1rem', margin: '28px 0 10px' }}>
-        Files
-      </h2>
-      <div className="artifact-inline">
-        <ArtifactPanel scope={{ workspaceId }} />
-      </div>
+      {artifactsOpen ? (
+        <>
+          <h2 className="font-heading" style={{ fontSize: '1.1rem', margin: '28px 0 10px' }}>
+            Files
+          </h2>
+          <div className="artifact-inline">
+            <ArtifactPanel scope={{ workspaceId }} onClose={() => setArtifactsOpen(false)} />
+          </div>
+        </>
+      ) : null}
 
       <ConfirmDialog
         open={confirming}
