@@ -1,3 +1,5 @@
+import hashlib
+import hmac
 import pytest
 import json
 import time
@@ -110,3 +112,81 @@ async def test_auth_middleware():
         await middleware({"type": "http", "path": "/sse", "headers": [(b"x-mcp-api-key", b"wrong")]}, None, send_mock)
         mock_app.assert_not_called()
         send_mock.assert_called()
+
+
+def _http_scope(path, key=None):
+    headers = [] if key is None else [(b"x-mcp-api-key", key)]
+    return {"type": "http", "path": path, "headers": headers}
+
+
+async def _run_middleware(scope, mcp_api_key):
+    """Runs the middleware with the given configured key; returns (app_called, status or None)."""
+    app = AsyncMock()
+    send = AsyncMock()
+    with patch("tavily_mcp.server.MCP_API_KEY", mcp_api_key):
+        await AuthMiddleware(app)(scope, None, send)
+    status = send.call_args_list[0].args[0]["status"] if send.call_args_list else None
+    return app.called, status
+
+
+# The tests below use anyio because pytest-asyncio is not installed in the dev venv; the older tests in this
+# module use asyncio. Align the markers when that dependency is pinned.
+@pytest.mark.anyio
+async def test_auth_missing_or_wrong_key_is_rejected_with_401():
+    for scope in (_http_scope("/sse"), _http_scope("/sse", b"wrong"), _http_scope("/messages/abc", b"wrong"),
+                  _http_scope("/messages/", b"")):
+        assert await _run_middleware(scope, "secret") == (False, 401), scope["path"]
+
+
+@pytest.mark.anyio
+async def test_auth_correct_key_reaches_the_app_wrong_keys_of_any_length_do_not():
+    assert await _run_middleware(_http_scope("/sse", b"secret"), "secret") == (True, None)
+    assert await _run_middleware(_http_scope("/messages/abc", b"secret"), "secret") == (True, None)
+    for wrong in (b"secreT", b"secre", b"secret-and-more", b"s"):   # same length, shorter, longer
+        assert await _run_middleware(_http_scope("/sse", wrong), "secret") == (False, 401), wrong
+
+
+@pytest.mark.anyio
+async def test_auth_compares_digests_with_compare_digest():
+    with patch("tavily_mcp.server.hmac.compare_digest", wraps=hmac.compare_digest) as compare:
+        await _run_middleware(_http_scope("/sse", b"secret"), "secret")
+    assert compare.call_args.args == (hashlib.sha256(b"secret").digest(), hashlib.sha256(b"secret").digest())
+
+
+@pytest.mark.anyio
+async def test_auth_rejects_a_repeated_key_header_in_either_order():
+    for headers in ([(b"x-mcp-api-key", b"secret"), (b"x-mcp-api-key", b"other")],
+                    [(b"x-mcp-api-key", b"other"), (b"x-mcp-api-key", b"secret")],
+                    [(b"x-mcp-api-key", b"secret"), (b"x-mcp-api-key", b"secret")]):
+        scope = {"type": "http", "path": "/sse", "headers": headers}
+        assert await _run_middleware(scope, "secret") == (False, 401), headers
+
+
+@pytest.mark.anyio
+async def test_auth_never_logs_the_key_or_a_forged_newline(caplog):
+    import logging
+    with caplog.at_level(logging.WARNING):
+        await _run_middleware(_http_scope("/sse", b"super-secret-guess"), "super-secret-value")
+        await _run_middleware(_http_scope("/messages/%0aFORGED\nline", b"x"), "")
+    assert "super-secret" not in caplog.text
+    assert "\nline" not in caplog.text and "Unauthorized access attempt" in caplog.text
+
+
+@pytest.mark.anyio
+async def test_auth_fails_closed_when_no_key_is_configured():
+    for key in ("", None):
+        for scope in (_http_scope("/sse"), _http_scope("/sse", b"anything"), _http_scope("/messages/x", b"")):
+            assert await _run_middleware(scope, key) == (False, 401), (key, scope["path"])
+
+
+@pytest.mark.anyio
+async def test_auth_non_ascii_key_is_rejected_without_raising():
+    assert await _run_middleware(_http_scope("/sse", "sécret".encode("utf-8")), "secret") == (False, 401)
+    assert await _run_middleware(_http_scope("/sse", b"\xff\xfe"), "secret") == (False, 401)
+
+
+@pytest.mark.anyio
+async def test_auth_leaves_other_paths_and_scopes_alone_even_without_a_key():
+    assert await _run_middleware(_http_scope("/health"), "") == (True, None)
+    assert await _run_middleware({"type": "websocket"}, "") == (True, None)
+
