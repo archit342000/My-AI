@@ -124,6 +124,7 @@ def code_execution_ws_proxy(ws):
     # Wait for the first message which contains filePath and chat_id
     closed = threading.Event()
     upstream = None
+    chat_id = None
     try:
         init_msg_raw = ws.receive()
         if not init_msg_raw:
@@ -146,8 +147,14 @@ def code_execution_ws_proxy(ws):
         
         try:
             lang, files_list, entry_file = collect_project_files(chat_id, file_path)
-        except Exception as e:
+        except (FileNotFoundError, ValueError) as e:
+            # Our own user-facing messages: the file does not exist, is not supported, or the path is invalid.
             ws.send(json.dumps({"type": "stderr", "data": f"Error: {e}\n"}))
+            ws.send(json.dumps({"type": "exit", "code": 1}))
+            return
+        except Exception as e:
+            log_event("code_execution_ws_prepare_error", {"chat_id": chat_id, "file_path": file_path, "error": type(e).__name__})
+            ws.send(json.dumps({"type": "stderr", "data": "Error: Could not prepare the file for execution.\n"}))
             ws.send(json.dumps({"type": "exit", "code": 1}))
             return
             
@@ -158,8 +165,15 @@ def code_execution_ws_proxy(ws):
         api_key = config.CODE_RUNNER_API_KEY
         upstream_url = f"{config.CODE_RUNNER_URL.replace('http://', 'ws://').rstrip('/')}/ws/execute?api_key={api_key}"
         
-        upstream = ws_client.create_connection(upstream_url)
-        
+        try:
+            upstream = ws_client.create_connection(upstream_url)
+        except Exception as e:
+            # Only the type name is logged: the message can carry the upstream URL (with the key, in the old form).
+            logger.error(f"Code execution WS proxy could not reach the runner: {type(e).__name__}")
+            log_event("code_execution_ws_proxy_error", {"chat_id": chat_id, "stage": "connect", "error": type(e).__name__})
+            ws.send(json.dumps({"type": "stderr", "data": "Error: Code runner is unavailable.\n"}))
+            return
+
         # Send initial configuration to code_runner_mcp
         config_payload = {
             "language": lang,
@@ -205,9 +219,11 @@ def code_execution_ws_proxy(ws):
                 break
                 
     except Exception as e:
-        logger.error(f"Code execution WS proxy error: {e}", exc_info=True)
+        # Only the type name is logged: the message can carry the upstream URL.
+        logger.error(f"Code execution WS proxy error: {type(e).__name__}")
+        log_event("code_execution_ws_proxy_error", {"chat_id": chat_id, "stage": "proxy", "error": type(e).__name__})
         try:
-            ws.send(json.dumps({"type": "stderr", "data": f"Proxy error: {e}\n"}))
+            ws.send(json.dumps({"type": "stderr", "data": "Error: Code execution failed.\n"}))
         except Exception:
             pass
     finally:

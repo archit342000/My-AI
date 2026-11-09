@@ -8,6 +8,7 @@ from typing import Optional, List, Dict, Any
 from backend import config
 from backend.database import db
 from backend.file_system.utils import resolve_owner_and_physical_path
+from backend.logging import log_event
 from backend.tools.clarify import request_clarification
 from code_runner_mcp.safety import classify_code
 
@@ -95,7 +96,8 @@ async def run_code(
         data = res.json()
     except Exception as e:
         logger.error(f"Failed to communicate with code runner service: {e}")
-        return f"Error: Failed to execute code. Code runner service is unavailable: {e}"
+        log_event("code_executor_run_code_error", {"chat_id": chat_id, "error": type(e).__name__})
+        return "Error: Failed to execute code. Code runner service is unavailable."
 
     stdout = data.get("stdout", "")
     stderr = data.get("stderr", "")

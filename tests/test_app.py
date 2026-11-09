@@ -1,3 +1,4 @@
+import json
 import pytest
 import os
 from unittest.mock import patch, MagicMock
@@ -220,6 +221,67 @@ def test_code_execution_ws_proxy_defaults_sql_target_to_sqlite(mock_get_setting,
 
     sent_payload = json.loads(mock_upstream.send.call_args[0][0])
     assert sent_payload["sql_target"] == "sqlite"
+
+
+# ---- live-run WebSocket: fixed messages for unexpected errors, our own messages unchanged ----------------------
+
+def _run_ws_proxy(init=None):
+    mock_ws = MagicMock()
+    mock_ws.receive.side_effect = [json.dumps(init or {"type": "init", "filePath": "main.py", "chat_id": "chat123"}), None]
+    flask_app.code_execution_ws_proxy(mock_ws)
+    return [json.loads(c.args[0]) for c in mock_ws.send.call_args_list]
+
+
+@pytest.mark.parametrize("error", [
+    FileNotFoundError("File 'x.py' does not exist."),
+    ValueError("File extension '.xyz' is not supported for execution."),
+])
+@patch('app.log_event')
+@patch('backend.tools.implementations.code_executor.collect_project_files')
+def test_code_execution_ws_proxy_keeps_its_own_user_facing_messages(mock_collect, mock_log, error):
+    mock_collect.side_effect = error
+    frames = _run_ws_proxy()
+    assert frames == [{"type": "stderr", "data": f"Error: {error}\n"}, {"type": "exit", "code": 1}]
+    mock_log.assert_not_called()
+
+
+@patch('app.log_event')
+@patch('backend.tools.implementations.code_executor.collect_project_files')
+def test_code_execution_ws_proxy_hides_an_unexpected_prepare_error_and_logs_it(mock_collect, mock_log):
+    mock_collect.side_effect = RuntimeError("db path /secret/x locked")
+    frames = _run_ws_proxy()
+    assert frames == [{"type": "stderr", "data": "Error: Could not prepare the file for execution.\n"}, {"type": "exit", "code": 1}]
+    assert "/secret" not in json.dumps(frames)
+    mock_log.assert_called_once_with("code_execution_ws_prepare_error", {"chat_id": "chat123", "file_path": "main.py", "error": "RuntimeError"})
+
+
+@patch('app.log_event')
+@patch('app.logger.error')
+@patch('app.ws_client.create_connection')
+@patch('backend.tools.implementations.code_executor.collect_project_files')
+@patch('backend.database.db.get_setting', return_value=30)
+def test_code_execution_ws_proxy_hides_a_connection_error_and_never_logs_the_key(mock_setting, mock_collect, mock_create, mock_logger_error, mock_log):
+    mock_collect.return_value = ("python", [{"path": "main.py", "content": "print(1)"}], "main.py")
+    mock_create.side_effect = ConnectionRefusedError("ws://code_runner_mcp:8100/ws/execute?api_key=SECRETKEY")
+    frames = _run_ws_proxy()
+    assert frames == [{"type": "stderr", "data": "Error: Code runner is unavailable.\n"}]
+    assert "SECRETKEY" not in json.dumps(frames) and "code_runner_mcp" not in json.dumps(frames)
+    mock_log.assert_called_once_with("code_execution_ws_proxy_error", {"chat_id": "chat123", "stage": "connect", "error": "ConnectionRefusedError"})
+    assert "SECRETKEY" not in str(mock_logger_error.call_args)
+
+
+@patch('app.log_event')
+@patch('app.logger.error')
+@patch('app.ws_client.create_connection')
+@patch('backend.tools.implementations.code_executor.collect_project_files')
+@patch('backend.database.db.get_setting', side_effect=RuntimeError("settings table at /secret is locked"))
+def test_code_execution_ws_proxy_does_not_blame_the_runner_for_other_failures(mock_setting, mock_collect, mock_create, mock_logger_error, mock_log):
+    mock_collect.return_value = ("python", [{"path": "main.py", "content": "print(1)"}], "main.py")
+    frames = _run_ws_proxy()
+    assert frames == [{"type": "stderr", "data": "Error: Code execution failed.\n"}]
+    assert "/secret" not in json.dumps(frames)
+    mock_create.assert_not_called()
+    mock_log.assert_called_once_with("code_execution_ws_proxy_error", {"chat_id": "chat123", "stage": "proxy", "error": "RuntimeError"})
 
 
 
