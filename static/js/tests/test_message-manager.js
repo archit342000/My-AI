@@ -172,6 +172,71 @@ describe('message-manager.js', () => {
             assert.strictEqual(content.textContent.includes('System Note'), false, 'Should strip file system notes');
         });
 
+        const NOTE_HEAD = '\n\n[System Note: The user has attached the following files. Use the `document_agent` tool with the provided file_id to read their contents if needed:\n';
+        const userBubble = (text, extra = {}) => window.MessageManager.createMessageBubble({ role: 'user', text, historyIndex: 0, ...extra });
+        const pillNames = (bubble) => [...bubble.querySelectorAll('.file-attachment-pill')].map((p) => p.textContent.trim());
+
+        test('strips the older read_file wording of the System Note too', () => {
+            const note = '\n\n[System Note: The user has attached the following files. Use the `read_file` tool with the provided file_id to read their contents if needed:\n- a.pdf (ID: f1)]';
+            const content = userBubble(`hello${note}`).querySelector('.message-content');
+            assert.ok(content.textContent.includes('hello'));
+            assert.strictEqual(content.textContent.includes('System Note'), false);
+        });
+
+        test('a "]" inside a file name does not leave a fragment of the note behind', () => {
+            const bubble = userBubble(`see file${NOTE_HEAD}- r[1].pdf (ID: f1)]`);
+            assert.deepStrictEqual(pillNames(bubble), ['r[1].pdf']);
+            const content = bubble.querySelector('.message-content').cloneNode(true);
+            content.querySelectorAll('.message-attachments').forEach((el) => el.remove());   // the pill shows the name; the text must not
+            assert.ok(content.textContent.includes('see file'));
+            for (const residue of ['.pdf', '(ID:', 'System Note']) {
+                assert.strictEqual(content.textContent.includes(residue), false, `residue ${residue}`);
+            }
+        });
+
+        test('shows the files of the note as pills when no files or collections are loaded', () => {
+            const bubble = userBubble(`two files${NOTE_HEAD}- a.pdf (ID: f1)\n- r[1].pdf (ID: f2)]`);
+            assert.deepStrictEqual(pillNames(bubble), ['a.pdf', 'r[1].pdf']);
+        });
+
+        test('prefers loaded files over the note and does not repeat a file', () => {
+            const files = [{ file_id: 'f1', name: 'a.pdf' }];
+            const collections = [{ collection_type: 'files', items: [{ file_id: 'f1', name: 'a.pdf' }] }];
+            const bubble = userBubble(`one${NOTE_HEAD}- a.pdf (ID: f1)\n- b.pdf (ID: f2)]`, { files, collections });
+            assert.deepStrictEqual(pillNames(bubble), ['a.pdf']);
+        });
+
+        test('a bullet the user typed is not turned into a file pill and stays in the text', () => {
+            const bubble = userBubble('my list:\n- item (ID: x)');
+            assert.deepStrictEqual(pillNames(bubble), []);
+            assert.ok(bubble.querySelector('.message-content').textContent.includes('- item (ID: x)'));
+        });
+
+        test('text that only mentions "[System Note:" is left alone', () => {
+            const mention = 'the label [System Note: x] is just a word';
+            assert.ok(userBubble(mention).querySelector('.message-content').textContent.includes(mention));
+            // the prefix without the closing bracket is not a router note either
+            const open = `typed${NOTE_HEAD}- a.pdf (ID: f1)`;
+            const bubble = userBubble(open);
+            assert.deepStrictEqual(pillNames(bubble), []);
+            assert.ok(bubble.querySelector('.message-content').textContent.includes('System Note'));
+        });
+
+        test('assistant bubbles keep every file pill (no de-duplication outside user messages)', () => {
+            const files = [{ file_id: 'f1', name: 'a.pdf' }, { file_id: 'f1', name: 'a.pdf' }];
+            const bot = window.MessageManager.createMessageBubble({ role: 'assistant', text: 'here', historyIndex: 1, files });
+            assert.deepStrictEqual(pillNames(bot), ['a.pdf', 'a.pdf']);
+        });
+
+        test('rendering does not change the config text or other messages', () => {
+            const config = { role: 'user', text: `keep${NOTE_HEAD}- a.pdf (ID: f1)]`, historyIndex: 0 };
+            const before = config.text;
+            window.MessageManager.createMessageBubble(config);
+            assert.strictEqual(config.text, before);
+            const bot = window.MessageManager.createMessageBubble({ role: 'assistant', text: `bot${NOTE_HEAD}- a.pdf (ID: f1)]`, historyIndex: 1 });
+            assert.ok(bot.querySelector('.message-content').textContent.includes('System Note'));
+        });
+
         test('handles image rendering correctly', () => {
             const bubble = window.MessageManager.createMessageBubble({
                 role: 'user',
