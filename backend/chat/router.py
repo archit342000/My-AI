@@ -332,11 +332,21 @@ def chat_completions():
             if isinstance(content, (list, dict)):
                 content = json.dumps(content)
                 
+            # Keep only the stable file reference fields on the user message so attachments
+            # survive reloads and Retry (resume) can reuse them.
+            attachments = None
+            if isinstance(files, list):
+                attachments = [
+                    {k: f[k] for k in ('file_id', 'name', 'size', 'mime_type') if k in f}
+                    for f in files if isinstance(f, dict)
+                ] or None
+
             msg_id = db.add_message(
                 chat_id=chat_id,
                 role='user',
                 content=content,
-                model=model
+                model=model,
+                attachments=attachments
             )
 
             if files:

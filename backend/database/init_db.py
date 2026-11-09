@@ -1,3 +1,4 @@
+import json
 import sqlite3
 import os
 import logging
@@ -169,6 +170,7 @@ def init_db():
                 parent_id INTEGER,
                 parent_type TEXT DEFAULT 'main',
                 reasoning_content TEXT,
+                attachments TEXT,
                 FOREIGN KEY(chat_id) REFERENCES chats(id) ON DELETE CASCADE
             )
         ''')
@@ -917,6 +919,11 @@ def init_db():
         except Exception as e:
             logger.error(f"Error renaming DB tables from canvas to file_system: {e}")
 
+        # Remember whether messages already had 'attachments' before migration 11 (which may recreate
+        # the table), so the backfill in 11b runs once, when the column is first introduced.
+        c.execute("PRAGMA table_info(messages)")
+        messages_had_attachments = "attachments" in [r[1] for r in c.fetchall()]
+
         # 11. Data Migration for adding ON DELETE CASCADE to all dependent tables
         try:
             dependent_tables = {
@@ -934,6 +941,7 @@ def init_db():
                         parent_id INTEGER,
                         parent_type TEXT DEFAULT 'main',
                         reasoning_content TEXT,
+                        attachments TEXT,
                         FOREIGN KEY(chat_id) REFERENCES chats(id) ON DELETE CASCADE
                     )
                 ''',
@@ -1027,6 +1035,46 @@ def init_db():
             logger.info("MIGRATION: All dependent tables updated with ON DELETE CASCADE.")
         except Exception as e:
             logger.error(f"Error updating tables with ON DELETE CASCADE: {e}")
+
+        # 11b. Store file references on the user message (messages.attachments) and backfill
+        # them from the existing 'files' collections so old chats show their attachments too.
+        c.execute("PRAGMA table_info(messages)")
+        if "attachments" not in [r[1] for r in c.fetchall()]:
+            c.execute("ALTER TABLE messages ADD COLUMN attachments TEXT DEFAULT NULL")
+            logger.info("MIGRATION: Added 'attachments' column to messages.")
+
+        if not messages_had_attachments:
+            c.execute('''
+                SELECT m.id, (
+                    SELECT col.items FROM collections col
+                    WHERE col.parent_message_id = CAST(m.id AS TEXT)
+                      AND col.parent_type = 'main' AND col.collection_type = 'files'
+                    ORDER BY col.id LIMIT 1
+                )
+                FROM messages m
+                WHERE m.role = 'user' AND m.attachments IS NULL
+            ''')
+            backfilled = 0
+            for msg_id, items_json in c.fetchall():
+                if not items_json:
+                    continue
+                try:
+                    items = json.loads(items_json)
+                except ValueError:
+                    logger.warning(f"MIGRATION: Skipped attachments backfill for message {msg_id}: files collection is not valid JSON.")
+                    continue
+                if not isinstance(items, list):
+                    logger.warning(f"MIGRATION: Skipped attachments backfill for message {msg_id}: files collection is not a list.")
+                    continue
+                attachments = [
+                    {k: item[k] for k in ("file_id", "name", "size", "mime_type") if k in item}
+                    for item in items if isinstance(item, dict)
+                ]
+                if attachments:
+                    c.execute("UPDATE messages SET attachments = ? WHERE id = ?", (json.dumps(attachments), msg_id))
+                    backfilled += 1
+            if backfilled:
+                logger.info(f"MIGRATION: Backfilled attachments for {backfilled} user messages from file collections.")
 
         # 12. Data Migration for Rebranding file_agent to document_agent
         try:

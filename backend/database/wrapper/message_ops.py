@@ -99,6 +99,8 @@ class MessageOpsMixin(BaseMixin):
                     d["content"] = _parse_json_field(d.get("content"))
                     if "tool_calls" in d and d.get("tool_calls"):
                         d["tool_calls"] = _parse_json_field(d.get("tool_calls"))
+                    if d.get("attachments"):
+                        d["attachments"] = _parse_json_field(d["attachments"])
                     rows.append(d)
                 return rows
             finally:
@@ -166,11 +168,13 @@ class MessageOpsMixin(BaseMixin):
                     model: str = None, timestamp: float = None,
                     tool_calls: str = None, tool_call_id: str = None,
                     name: str = None, parent_id: int = None,
-                    parent_type: str = "main", reasoning_content: str = None):
+                    parent_type: str = "main", reasoning_content: str = None,
+                    attachments: list = None):
         """
         Unified method to add messages to both main chat and sub-agents.
         If parent_type is 'main', adds to the 'messages' table.
         Otherwise, adds to 'sub_agent_messages' using parent_type as agent_name.
+        `attachments` (a list of file references) is stored only on main messages.
         """
         self._log_db_wrapper_op("ADD_MESSAGE_START", chat_id, f"role={role} parent_type={parent_type}")
         write_start = time.time()
@@ -179,6 +183,7 @@ class MessageOpsMixin(BaseMixin):
         if isinstance(content, (list, dict)): content = json.dumps(content)
         if isinstance(tool_calls, (list, dict)): tool_calls = json.dumps(tool_calls)
         if name is None: name = ""
+        attachments_json = json.dumps(attachments) if attachments else None
 
         def _write():
             conn = make_connection()
@@ -191,10 +196,12 @@ class MessageOpsMixin(BaseMixin):
                         # Standard main chat message
                         c.execute('''
                             INSERT INTO messages (chat_id, role, content, timestamp, model,
-                                                tool_calls, tool_call_id, name, parent_id, parent_type, reasoning_content)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                                tool_calls, tool_call_id, name, parent_id, parent_type, reasoning_content,
+                                                attachments)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ''', (chat_id, role, content, timestamp, model,
-                            tool_calls, tool_call_id, name, parent_id, parent_type, reasoning_content))
+                            tool_calls, tool_call_id, name, parent_id, parent_type, reasoning_content,
+                            attachments_json))
                         new_id = c.lastrowid
                         
                         # Fetch existing state for main chat pointers/order map
