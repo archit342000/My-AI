@@ -1,3 +1,4 @@
+import hmac
 import json
 import os
 import subprocess
@@ -7,25 +8,47 @@ from executor import CodeExecutor, ExecutionResult
 from fastapi import FastAPI, Header, HTTPException, Depends, status, WebSocket, WebSocketDisconnect
 import asyncio
 import shutil
+from package_names import validate_packages
 
 app = FastAPI(title="My-AI Sandboxed Code Runner")
 
-# Load API Key on startup
 API_KEY_FILE = os.environ.get("API_KEY_FILE", "")
-API_KEY = ""
-if API_KEY_FILE and os.path.exists(API_KEY_FILE):
-    try:
+
+
+def load_api_key() -> str:
+    """
+    Loads the API key: the file named by `API_KEY_FILE` if it exists, else `CODE_RUNNER_API_KEY`.
+
+    Returns:
+        The stripped, non-empty key.
+
+    Raises:
+        RuntimeError: If no key is configured, so the service refuses to start instead of running open.
+        OSError: If the key file exists but cannot be read.
+    """
+    key = ""
+    if API_KEY_FILE and os.path.exists(API_KEY_FILE):
         with open(API_KEY_FILE, "r") as f:
-            API_KEY = f.read().strip()
-    except Exception:
-        pass
+            key = f.read().strip()
+    if not key:
+        key = os.environ.get("CODE_RUNNER_API_KEY", "").strip()
+    if not key:
+        raise RuntimeError("No API key configured: set API_KEY_FILE (a readable file) or CODE_RUNNER_API_KEY")
+    return key
 
-if not API_KEY:
-    API_KEY = os.environ.get("CODE_RUNNER_API_KEY", "")
 
-def verify_api_key(x_api_key: Optional[str] = Header(None, alias="X-API-KEY")):
-    # If API_KEY is configured, enforce verification
-    if API_KEY and x_api_key != API_KEY:
+# Fail closed: importing this module (and so starting the service) needs a key.
+API_KEY = load_api_key()
+
+
+def _key_matches(candidate: Optional[str]) -> bool:
+    """Constant-time comparison of a presented key with the configured one; a missing key never matches."""
+    return candidate is not None and hmac.compare_digest(candidate.encode("utf-8"), API_KEY.encode("utf-8"))
+
+
+def verify_api_key(x_api_key: Optional[str] = Header(None, alias="X-API-KEY")) -> None:
+    """Dependency for the HTTP routes: 401 unless the `X-API-KEY` header carries the configured key."""
+    if not _key_matches(x_api_key):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or missing API key."
@@ -63,12 +86,25 @@ def execute_code(req: ExecuteRequest):
     )
 
 @app.post("/install", dependencies=[Depends(verify_api_key)])
-def install_packages(req: InstallRequest):
+def install_packages(req: InstallRequest) -> dict:
+    """
+    Installs packages with pip or npm.
+
+    Only plain package names are accepted (see `package_names.py`): a leading `-`, a URL, a path or more than
+    the allowed number of packages is a 400 and nothing is run.
+    """
     mgr = req.package_manager.lower()
     pkgs = req.packages
-    
+
     if not pkgs:
         return {"stdout": "", "stderr": "", "exit_code": 0, "success": True}
+
+    if mgr not in ("pip", "npm"):
+        raise HTTPException(status_code=400, detail=f"Unsupported package manager: {mgr}")
+    try:
+        validate_packages(mgr, pkgs)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
     if mgr == "pip":
         # Install with --user to avoid permissions issue as runner user
@@ -79,8 +115,6 @@ def install_packages(req: InstallRequest):
         cmd = ["npm", "install", "--no-save"] + pkgs
         cwd = "/home/runner"
         os.makedirs(cwd, exist_ok=True)
-    else:
-        raise HTTPException(status_code=400, detail=f"Unsupported package manager: {mgr}")
 
     try:
         res = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd, timeout=120)
@@ -149,13 +183,13 @@ def list_packages(manager: str = "pip"):
     }
 
 @app.websocket("/ws/execute")
-async def execute_ws(websocket: WebSocket, api_key: Optional[str] = None):
-    # Verify API key
-    expected_api_key = API_KEY
-    if expected_api_key and api_key != expected_api_key:
+async def execute_ws(websocket: WebSocket, api_key: Optional[str] = None) -> None:
+    """Live code execution over a WebSocket; the connection is refused (1008) unless `api_key` matches."""
+    if not _key_matches(api_key):
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Invalid API key.")
         return
-        
+
+
     await websocket.accept()
     
     sandbox_dir = None

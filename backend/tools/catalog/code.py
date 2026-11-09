@@ -76,7 +76,7 @@ INSTALL_PACKAGES = ToolSpec(
             "packages": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "List of package names to install."
+                "description": "Plain package names to install, with an optional version (for example `requests`, `numpy==1.26.4`, `lodash@4`). URLs, paths, command-line options and more than one version specifier (for example `>=1,<2`) are rejected."
             },
             "package_manager": {
                 "type": "string",
