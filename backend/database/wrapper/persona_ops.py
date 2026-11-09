@@ -1,7 +1,10 @@
 from datetime import datetime, timezone
 from typing import List, Dict, Optional
 from backend.database.db_layer import make_connection
+from backend.database.wrapper.chat_ops import _require_user_id
 import uuid
+
+_PERSONA_COLUMNS = 'id, name, content, is_default, timestamp, research_mode, file_system_mode, browsing_mode, git_mode, code_execution_mode'
 
 class PersonaOperations:
     def _row_to_dict(self, row) -> Dict:
@@ -19,40 +22,45 @@ class PersonaOperations:
             "code_execution_mode": row[9] if len(row) > 9 else 1
         }
 
-    def get_all_personas(self) -> List[Dict]:
-        """Get all saved personas."""
+    def get_all_personas(self, user_id: str) -> List[Dict]:
+        """Get one user's personas."""
+        _require_user_id(user_id)
         with make_connection() as conn:
             c = conn.cursor()
-            c.execute('SELECT id, name, content, is_default, timestamp, research_mode, file_system_mode, browsing_mode, git_mode, code_execution_mode FROM personas ORDER BY timestamp DESC')
+            c.execute(f'SELECT {_PERSONA_COLUMNS} FROM personas WHERE user_id = ? ORDER BY timestamp DESC', (user_id,))
             return [self._row_to_dict(row) for row in c.fetchall()]
 
-    def get_persona(self, persona_id: str) -> Optional[Dict]:
-        """Get a specific persona by ID."""
+    def get_persona(self, persona_id: str, user_id: str) -> Optional[Dict]:
+        """Get a persona by ID; None when it does not exist or belongs to another user."""
+        _require_user_id(user_id)
         with make_connection() as conn:
             c = conn.cursor()
-            c.execute('SELECT id, name, content, is_default, timestamp, research_mode, file_system_mode, browsing_mode, git_mode, code_execution_mode FROM personas WHERE id = ?', (persona_id,))
+            c.execute(f'SELECT {_PERSONA_COLUMNS} FROM personas WHERE id = ? AND user_id = ?', (persona_id, user_id))
             return self._row_to_dict(c.fetchone())
 
-    def get_default_persona(self) -> Optional[Dict]:
-        """Get the default persona if one exists."""
+    def get_default_persona(self, user_id: str) -> Optional[Dict]:
+        """Get the user's default persona if one exists (each user has their own default)."""
+        _require_user_id(user_id)
         with make_connection() as conn:
             c = conn.cursor()
-            c.execute('SELECT id, name, content, is_default, timestamp, research_mode, file_system_mode, browsing_mode, git_mode, code_execution_mode FROM personas WHERE is_default = 1 LIMIT 1')
+            c.execute(f'SELECT {_PERSONA_COLUMNS} FROM personas WHERE is_default = 1 AND user_id = ? LIMIT 1', (user_id,))
             return self._row_to_dict(c.fetchone())
 
-    def persona_name_exists(self, name: str, exclude_id: str | None = None) -> bool:
+    def persona_name_exists(self, name: str, user_id: str, exclude_id: str | None = None) -> bool:
         """
-        Whether another persona already uses this name (case-insensitive, ignoring surrounding spaces).
+        Whether another persona of this user already uses this name (case-insensitive, ignoring surrounding spaces).
 
         Args:
             name: The candidate persona name.
+            user_id: Owner whose personas are checked; other users' names do not count.
             exclude_id: A persona id to leave out, so updating a persona under its own name is allowed.
 
         Returns:
             True if a different persona has the same name.
         """
-        sql = 'SELECT 1 FROM personas WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))'
-        params = [name]
+        _require_user_id(user_id)
+        sql = 'SELECT 1 FROM personas WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) AND user_id = ?'
+        params = [name, user_id]
         if exclude_id is not None:
             sql += ' AND id != ?'
             params.append(exclude_id)
@@ -64,8 +72,9 @@ class PersonaOperations:
         finally:
             conn.close()
 
-    def create_persona(self, name: str, content: str, is_default: int = 0, research_mode: int = 0, file_system_mode: int = 0, browsing_mode: int = 0, git_mode: int = 0, code_execution_mode: int = 1) -> Dict:
-        """Create a new persona."""
+    def create_persona(self, name: str, content: str, user_id: str, is_default: int = 0, research_mode: int = 0, file_system_mode: int = 0, browsing_mode: int = 0, git_mode: int = 0, code_execution_mode: int = 1) -> Dict:
+        """Create a new persona owned by `user_id`. Making it the default clears only that user's other defaults."""
+        _require_user_id(user_id)
         persona_id = "persona_" + uuid.uuid4().hex[:16]
         timestamp = datetime.now(timezone.utc).timestamp()
         
@@ -76,13 +85,13 @@ class PersonaOperations:
         with make_connection() as conn:
             c = conn.cursor()
             
-            # If making this default, clear other defaults
+            # If making this default, clear the user's other defaults
             if is_default == 1:
-                c.execute('UPDATE personas SET is_default = 0')
+                c.execute('UPDATE personas SET is_default = 0 WHERE user_id = ?', (user_id,))
                 
             c.execute(
-                'INSERT INTO personas (id, name, content, is_default, timestamp, research_mode, file_system_mode, browsing_mode, git_mode, code_execution_mode) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                (persona_id, name, content, is_default, timestamp, research_mode, file_system_mode, browsing_mode, git_mode, code_execution_mode)
+                'INSERT INTO personas (id, name, content, is_default, timestamp, research_mode, file_system_mode, browsing_mode, git_mode, code_execution_mode, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                (persona_id, name, content, is_default, timestamp, research_mode, file_system_mode, browsing_mode, git_mode, code_execution_mode, user_id)
             )
             conn.commit()
             
@@ -99,8 +108,13 @@ class PersonaOperations:
             "code_execution_mode": code_execution_mode
         }
 
-    def update_persona(self, persona_id: str, name: str, content: str, is_default: int = 0, research_mode: int = 0, file_system_mode: int = 0, browsing_mode: int = 0, git_mode: int = 0, code_execution_mode: int = 1) -> bool:
-        """Update an existing persona."""
+    def update_persona(self, persona_id: str, name: str, content: str, user_id: str, is_default: int = 0, research_mode: int = 0, file_system_mode: int = 0, browsing_mode: int = 0, git_mode: int = 0, code_execution_mode: int = 1) -> bool:
+        """
+        Update a persona of `user_id`. Returns False (changing nothing) when it does not exist or belongs to another user.
+
+        The target row is updated first; only when it matched and is made the default are the user's other defaults cleared.
+        """
+        _require_user_id(user_id)
         if research_mode == 1:
             file_system_mode = 0
             browsing_mode = 0
@@ -108,22 +122,22 @@ class PersonaOperations:
         with make_connection() as conn:
             c = conn.cursor()
             
-            if is_default == 1:
-                c.execute('UPDATE personas SET is_default = 0')
-                
             c.execute(
-                'UPDATE personas SET name = ?, content = ?, is_default = ?, research_mode = ?, file_system_mode = ?, browsing_mode = ?, git_mode = ?, code_execution_mode = ? WHERE id = ?',
-                (name, content, is_default, research_mode, file_system_mode, browsing_mode, git_mode, code_execution_mode, persona_id)
+                'UPDATE personas SET name = ?, content = ?, is_default = ?, research_mode = ?, file_system_mode = ?, browsing_mode = ?, git_mode = ?, code_execution_mode = ? WHERE id = ? AND user_id = ?',
+                (name, content, is_default, research_mode, file_system_mode, browsing_mode, git_mode, code_execution_mode, persona_id, user_id)
             )
-            changes = conn.total_changes
+            matched = c.rowcount > 0
+            if matched and is_default == 1:
+                c.execute('UPDATE personas SET is_default = 0 WHERE user_id = ? AND id != ?', (user_id, persona_id))
             conn.commit()
-            return changes > 0
+            return matched
 
-    def delete_persona(self, persona_id: str) -> bool:
-        """Delete a persona."""
+    def delete_persona(self, persona_id: str, user_id: str) -> bool:
+        """Delete a persona of `user_id`. Returns False when it does not exist or belongs to another user."""
+        _require_user_id(user_id)
         with make_connection() as conn:
             c = conn.cursor()
-            c.execute('DELETE FROM personas WHERE id = ?', (persona_id,))
-            changes = conn.total_changes
+            c.execute('DELETE FROM personas WHERE id = ? AND user_id = ?', (persona_id, user_id))
+            deleted = c.rowcount > 0
             conn.commit()
-            return changes > 0
+            return deleted

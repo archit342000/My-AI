@@ -38,7 +38,8 @@ class PromptContext:
             pid = self.chat_metadata.get('persona_id')
             if pid:
                 from backend.database import db
-                persona = db.get_persona(pid)
+                owner = self.chat_metadata.get('user_id')
+                persona = db.get_persona(pid, owner) if owner else None
                 content = persona.get('content') if persona else None
         if not content:
             content = (self.chat_metadata.get('system_prompt') or '').strip() or None

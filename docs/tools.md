@@ -12,7 +12,7 @@ How to add a tool the model can call, or a new external service. Component detai
 ## Adding a tool
 
 1. Write the function (async if it does I/O) in the right module under `backend/tools/` or `backend/tools/implementations/`.
-   Signature takes the model's arguments, `chat_id` where needed, and `**kwargs`. Return a string (or JSON-serializable value).
+   Signature takes the model's arguments, `chat_id` where needed, and `**kwargs`. A tool that reads or writes user data (preferences, skills) declares `user_id`: the server injects the chat owner through `system_ctx`, overriding any value the model sends, and the tool returns an error when it is missing. Return a string (or JSON-serializable value).
 2. Define a `ToolSpec` in `backend/tools/catalog/<domain>.py`: `name`, `description`, JSON-schema `parameters`,
    `implementation` (dotted path), `tool_type`, `scopes` and, if mode-gated, `requires_mode`.
 3. Add the spec list to `ALL_TOOL_SPECS` in `backend/tools/catalog/__init__.py` if you created a new catalog module.

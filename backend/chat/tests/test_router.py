@@ -126,7 +126,7 @@ def test_create_persona_rejects_duplicate_name(mock_db, client):
     response = client.post('/api/personas', json={"name": "Pirate", "content": "Arr!"})
     assert response.status_code == 400
     assert response.json == {"success": False, "error": "A persona named 'Pirate' already exists"}
-    mock_db.persona_name_exists.assert_called_with("Pirate")
+    mock_db.persona_name_exists.assert_called_with("Pirate", "user-a")
     mock_db.create_persona.assert_not_called()
 
 @patch('backend.chat.router.db')
@@ -135,7 +135,7 @@ def test_update_persona_rejects_duplicate_name(mock_db, client):
     response = client.put('/api/personas/p1', json={"name": "Pirate", "content": "Arr!"})
     assert response.status_code == 400
     assert response.json == {"success": False, "error": "A persona named 'Pirate' already exists"}
-    mock_db.persona_name_exists.assert_called_with("Pirate", exclude_id="p1")
+    mock_db.persona_name_exists.assert_called_with("Pirate", "user-a", exclude_id="p1")
     mock_db.update_persona.assert_not_called()
 
 @patch('backend.chat.router.db')
@@ -840,7 +840,7 @@ def test_create_persona(mock_db, client):
     data = response.json
     assert data["success"] is True
     assert data["persona"]["name"] == "Pirate"
-    mock_db.create_persona.assert_called_with("Pirate", "Arr!", 0, 0, 0, 0)
+    mock_db.create_persona.assert_called_with("Pirate", "Arr!", "user-a", 0, 0, 0, 0)
 
     # Success with agent toggles
     mock_db.create_persona.return_value = {
@@ -852,7 +852,7 @@ def test_create_persona(mock_db, client):
     })
     assert response.status_code == 201
     assert response.json["persona"]["file_system_mode"] == 1
-    mock_db.create_persona.assert_called_with("FS Developer", "FS only", 0, 0, 1, 1)
+    mock_db.create_persona.assert_called_with("FS Developer", "FS only", "user-a", 0, 0, 1, 1)
 
 
 @patch('backend.chat.router.db')
@@ -879,7 +879,7 @@ def test_update_persona(mock_db, client):
     data = response.json
     assert data["success"] is True
     assert data["persona"]["name"] == "Updated"
-    mock_db.update_persona.assert_called_with("p1", "Updated", "New prompt", 1, 1, 0, 0)
+    mock_db.update_persona.assert_called_with("p1", "Updated", "New prompt", "user-a", 1, 1, 0, 0)
 
 
 @patch('backend.chat.router.db')
@@ -895,7 +895,7 @@ def test_delete_persona(mock_db, client):
     response = client.delete('/api/personas/p1')
     assert response.status_code == 200
     assert response.json == {"success": True}
-    mock_db.delete_persona.assert_called_with("p1")
+    mock_db.delete_persona.assert_called_with("p1", "user-a")
 
 
 # =============================================================================
@@ -976,18 +976,18 @@ def test_update_skill(mock_db, client):
 
 @patch('backend.chat.router.db')
 def test_delete_skill(mock_db, client):
-    # Not found
-    mock_db.get_skill.return_value = None
+    # Not found (also what another user's skill looks like)
+    mock_db.delete_skill.return_value = False
     response = client.delete('/api/skills/s1')
     assert response.status_code == 404
     assert response.json["success"] is False
 
     # Success
-    mock_db.get_skill.return_value = {"id": "s1"}
+    mock_db.delete_skill.return_value = True
     response = client.delete('/api/skills/s1')
     assert response.status_code == 200
     assert response.json == {"success": True}
-    mock_db.delete_skill.assert_called_with("s1")
+    mock_db.delete_skill.assert_called_with("s1", "user-a")
 
 
 # Routes that need a JSON body: a missing, malformed or non-object body is a 400 JSON error, not a 500 or an HTML page.
@@ -1259,3 +1259,80 @@ def test_chat_routes_fail_closed_without_a_current_user():
     app.register_blueprint(chat_bp, url_prefix='/api/chats')
     with patch('backend.chat.router.db'):
         assert app.test_client().get('/api/chats/chat1').status_code == 404
+
+
+# =============================================================================
+# Ownership of personas and skills
+# =============================================================================
+
+@pytest.fixture
+def as_user_b(app, login_as, user_b):
+    login_as(app, user_b)
+    return app.test_client()
+
+
+@patch('backend.chat.router.db')
+def test_persona_routes_pass_the_callers_id_and_a_foreign_id_is_404(mock_db, as_user_b, user_b):
+    mock_db.get_all_personas.return_value = []
+    mock_db.persona_name_exists.return_value = False
+    mock_db.create_persona.return_value = {"id": "pb"}
+    mock_db.update_persona.return_value = False  # user_a's persona: not found for user_b
+    mock_db.delete_persona.return_value = False
+    assert as_user_b.get('/api/personas').get_json()["personas"] == []
+    mock_db.get_all_personas.assert_called_once_with(user_b["id"])
+    assert as_user_b.post('/api/personas', json={"name": "N", "content": "C"}).status_code == 201
+    assert mock_db.create_persona.call_args.args[2] == user_b["id"]
+    assert mock_db.persona_name_exists.call_args.args == ("N", user_b["id"])
+    foreign_update = as_user_b.put('/api/personas/pa', json={"name": "N", "content": "C"})
+    assert foreign_update.status_code == 404 and foreign_update.get_json() == {"success": False, "error": "Persona not found"}
+    mock_db.get_persona.assert_not_called()  # nothing about the foreign persona is read back
+    foreign_delete = as_user_b.delete('/api/personas/pa')
+    assert foreign_delete.status_code == 404
+    assert mock_db.update_persona.call_args.args[3] == user_b["id"]
+    mock_db.delete_persona.assert_called_once_with("pa", user_b["id"])
+
+
+@patch('backend.chat.router.db')
+def test_skill_routes_pass_the_callers_id_and_a_foreign_id_is_404(mock_db, as_user_b, user_b):
+    mock_db.get_all_skills.return_value = []
+    mock_db.get_skill.return_value = None  # user_a's skill is not visible to user_b
+    mock_db.delete_skill.return_value = False
+    assert as_user_b.get('/api/skills').get_json()["skills"] == []
+    mock_db.get_all_skills.assert_called_once_with(user_b["id"])
+    foreign_put = as_user_b.put('/api/skills/sa', json={"name": "n", "description": "d", "instructions": "i"})
+    assert foreign_put.status_code == 404
+    mock_db.add_skill.assert_not_called()
+    assert as_user_b.delete('/api/skills/sa').status_code == 404
+    mock_db.delete_skill.assert_called_once_with("sa", user_b["id"])
+    mock_db.get_skill.return_value = {"id": "sb"}
+    mock_db.add_skill.return_value = True
+    assert as_user_b.post('/api/skills', json={"name": "n", "description": "d", "instructions": "i"}).status_code == 201
+    assert mock_db.add_skill.call_args.args[4] == user_b["id"]
+
+
+@patch('backend.chat.router.db')
+def test_skill_put_that_loses_ownership_between_check_and_write_is_404(mock_db, as_user_b):
+    mock_db.get_skill.return_value = {"id": "s1"}
+    mock_db.add_skill.return_value = False  # the guarded upsert refused a foreign id
+    response = as_user_b.put('/api/skills/s1', json={"name": "n", "description": "d", "instructions": "i"})
+    assert response.status_code == 404
+
+
+@pytest.mark.parametrize("field", ["persona_id", "workspace_id", "folder"])
+@pytest.mark.parametrize("bad", [["a"], {"id": "x"}, 5])
+@patch('backend.chat.router.db')
+def test_save_chat_with_a_non_string_persona_or_workspace_is_400(mock_db, bad, field, as_user_b):
+    mock_db.get_chat.return_value = None
+    response = as_user_b.post('/api/chats/save', json={"chat_id": "new1", field: bad})
+    assert response.status_code == 400
+    mock_db.save_chat.assert_not_called()
+
+
+@patch('backend.chat.router.db')
+def test_save_chat_with_a_foreign_persona_is_404_and_writes_nothing(mock_db, as_user_b, user_b):
+    mock_db.get_chat.return_value = None
+    mock_db.get_persona.return_value = None  # not user_b's persona
+    response = as_user_b.post('/api/chats/save', json={"chat_id": "new1", "persona_id": "persona-of-a"})
+    assert response.status_code == 404 and response.get_json() == {"error": "Persona not found"}
+    mock_db.get_persona.assert_called_once_with("persona-of-a", user_b["id"])
+    mock_db.save_chat.assert_not_called()

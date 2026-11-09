@@ -18,7 +18,7 @@
 | `clarify.py` | Implementation for user clarification requests. | `request_clarification` |
 | `clipboard.py` | Out-of-band text sharing clipboard tool implementations. | `clipboard_write`, `clipboard_read`, `clipboard_copy_file` |
 | `files.py` | Tools for reading and searching **uploaded** files (RAG/Grep). | `read_file` |
-| `preferences.py` | Management of long-term user profile facts. | `manage_user_preferences` |
+| `preferences.py` | Management of long-term user profile facts. Tools receive `user_id` from the server (the chat owner, via `ToolHandler`), never from model arguments. | `add_user_preference`, `edit_user_preference`, `delete_user_preference` |
 | `spec.py` | ToolSpec dataclass and scope/type enumerations. | `ToolSpec`, `ToolScope`, `ToolType` |
 | `router.py` | API endpoints for interacting with tools and config. Callback routes (`/active/<chat_id>`, `/clarification/response`) check the chat owner; an unknown or foreign callback id is the same 404. | `tools_bp` |
 | `tasks.py` | Implementation of persistent task/checklist management. | `manage_task_list` |

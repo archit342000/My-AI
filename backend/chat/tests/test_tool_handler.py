@@ -21,7 +21,9 @@ def mock_registry():
 @pytest.fixture
 def tool_handler():
     chat_handler = MagicMock()
-    return ToolHandler("chat_123", chat_handler, parent_message_id=100)
+    handler = ToolHandler("chat_123", chat_handler, parent_message_id=100)
+    handler._user_id = "user-a"  # the chat owner (normally read from the db on first use)
+    return handler
 
 def test_init(tool_handler):
     assert tool_handler.chat_id == "chat_123"
@@ -213,6 +215,56 @@ async def test_execute_pure_tool_strict_params(mock_registry, tool_handler):
     mock_registry.resolve_implementation.return_value = mock_impl
     result = await tool_handler._execute_pure_tool("tool1", {"arg": 1}, tc_id="t1")
     assert result == "1_chat_123"
+
+@pytest.mark.anyio
+async def test_user_id_comes_from_the_chat_owner_never_from_the_model(mock_registry, tool_handler):
+    received = {}
+
+    def impl(content, user_id=None, **kwargs):
+        received["user_id"] = user_id
+        return "ok"
+
+    mock_registry.resolve_implementation.return_value = impl
+    # the model tries to act as another user; the server-side value must win (system_ctx overrides model arguments)
+    assert await tool_handler._execute_pure_tool("tool1", {"content": "c", "user_id": "someone-else"}) == "ok"
+    assert received["user_id"] == "user-a"
+
+
+@pytest.mark.anyio
+async def test_user_id_is_injected_into_a_tool_that_declares_it_without_var_keyword(mock_registry, tool_handler):
+    def impl(content, user_id):
+        return f"{content}:{user_id}"
+
+    mock_registry.resolve_implementation.return_value = impl
+    assert await tool_handler._execute_pure_tool("tool1", {"content": "c"}) == "c:user-a"
+
+
+@pytest.mark.anyio
+async def test_a_failing_owner_lookup_is_a_tool_error_not_an_exception(mock_registry):
+    handler = ToolHandler("chat_9", MagicMock())
+    received = {}
+
+    def impl(content, user_id=None, **kwargs):
+        received["user_id"] = user_id
+        return "ran"
+
+    mock_mod = patch('backend.chat.tool_handler.db')
+    with mock_mod as owner_db:
+        owner_db.get_chat_owner.side_effect = RuntimeError("database is locked")
+        mock_registry.resolve_implementation.return_value = impl
+        assert await handler._execute_pure_tool("tool1", {"content": "c"}) == "ran"  # no exception mid-stream
+    assert received["user_id"] is None  # the tool then reports "no owner" itself
+
+
+def test_tool_handler_resolves_the_chat_owner_lazily_and_once():
+    with patch('backend.chat.tool_handler.db') as owner_db:
+        owner_db.get_chat_owner.return_value = "owner-9"
+        handler = ToolHandler("chat_9", MagicMock())
+        owner_db.get_chat_owner.assert_not_called()  # building a handler needs no db access
+        assert handler.user_id == "owner-9"
+        assert handler.user_id == "owner-9"
+    owner_db.get_chat_owner.assert_called_once_with("chat_9")
+
 
 @pytest.mark.anyio
 async def test_sync_tool_runs_as_the_current_user(mock_registry, tool_handler):

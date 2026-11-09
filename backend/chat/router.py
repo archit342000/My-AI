@@ -114,6 +114,15 @@ def save_chat_endpoint():
             return denied
         return jsonify({"error": "Cannot overwrite existing chat history via save endpoint. Use Action-Based APIs."}), 403
 
+    # Ids must be strings (a list or object would reach sqlite and fail with a 500)
+    for field in ('persona_id', 'workspace_id', 'folder'):
+        if data.get(field) and not isinstance(data.get(field), str):
+            return jsonify({"error": f"{field} must be a string"}), 400
+
+    # A persona must be the caller's (a falsy persona_id is saved as before, i.e. none)
+    if data.get('persona_id') and not db.get_persona(data.get('persona_id'), current_user_id()):
+        return jsonify({"error": "Persona not found"}), 404
+
     save_workspace_id = data.get('workspace_id') or data.get('folder')
     if save_workspace_id:
         denied = require_workspace_owner(save_workspace_id)
@@ -748,7 +757,7 @@ personas_bp = Blueprint('personas', __name__)
 
 @personas_bp.route('/personas', methods=['GET'])
 def get_personas():
-    personas = db.get_all_personas()
+    personas = db.get_all_personas(current_user_id())
     return jsonify({"success": True, "personas": personas})
 
 
@@ -766,10 +775,10 @@ def create_persona():
 
     if not name or not content:
         return jsonify({"success": False, "error": "Name and content are required"}), 400
-    if db.persona_name_exists(name):
+    if db.persona_name_exists(name, current_user_id()):
         return jsonify({"success": False, "error": f"A persona named '{name}' already exists"}), 400
 
-    persona = db.create_persona(name, content, is_default, research_mode, file_system_mode, browsing_mode)
+    persona = db.create_persona(name, content, current_user_id(), is_default, research_mode, file_system_mode, browsing_mode)
     return jsonify({"success": True, "persona": persona}), 201
 
 
@@ -787,20 +796,20 @@ def update_persona(persona_id):
 
     if not name or not content:
         return jsonify({"success": False, "error": "Name and content are required"}), 400
-    if db.persona_name_exists(name, exclude_id=persona_id):
+    if db.persona_name_exists(name, current_user_id(), exclude_id=persona_id):
         return jsonify({"success": False, "error": f"A persona named '{name}' already exists"}), 400
 
-    success = db.update_persona(persona_id, name, content, is_default, research_mode, file_system_mode, browsing_mode)
+    success = db.update_persona(persona_id, name, content, current_user_id(), is_default, research_mode, file_system_mode, browsing_mode)
     if not success:
         return jsonify({"success": False, "error": "Persona not found"}), 404
 
-    persona = db.get_persona(persona_id)
+    persona = db.get_persona(persona_id, current_user_id())
     return jsonify({"success": True, "persona": persona})
 
 
 @personas_bp.route('/personas/<persona_id>', methods=['DELETE'])
 def delete_persona(persona_id):
-    success = db.delete_persona(persona_id)
+    success = db.delete_persona(persona_id, current_user_id())
     if not success:
         return jsonify({"success": False, "error": "Persona not found"}), 404
     return jsonify({"success": True})
@@ -815,7 +824,7 @@ skills_bp = Blueprint('skills', __name__)
 
 @skills_bp.route('/skills', methods=['GET'])
 def get_skills():
-    skills = db.get_all_skills()
+    skills = db.get_all_skills(current_user_id())
     return jsonify({"success": True, "skills": skills})
 
 
@@ -840,8 +849,8 @@ def create_skill():
     import sqlite3
     skill_id = str(uuid.uuid4())
     try:
-        db.add_skill(skill_id, name, description, instructions)
-        skill = db.get_skill(skill_id)
+        db.add_skill(skill_id, name, description, instructions, current_user_id())
+        skill = db.get_skill(skill_id, current_user_id())
         return jsonify({"success": True, "skill": skill}), 201
     except sqlite3.IntegrityError:
         return jsonify({"success": False, "error": f"A skill with the name '{name}' already exists"}), 400
@@ -864,14 +873,15 @@ def update_skill(skill_id):
         return jsonify({"success": False, "error": "Invalid skill name"}), 400
 
     # Verify skill exists
-    existing = db.get_skill(skill_id)
+    existing = db.get_skill(skill_id, current_user_id())
     if not existing:
         return jsonify({"success": False, "error": "Skill not found"}), 404
 
     import sqlite3
     try:
-        db.add_skill(skill_id, name, description, instructions)
-        skill = db.get_skill(skill_id)
+        if not db.add_skill(skill_id, name, description, instructions, current_user_id()):
+            return jsonify({"success": False, "error": "Skill not found"}), 404
+        skill = db.get_skill(skill_id, current_user_id())
         return jsonify({"success": True, "skill": skill})
     except sqlite3.IntegrityError:
         return jsonify({"success": False, "error": f"A skill with the name '{name}' already exists"}), 400
@@ -879,9 +889,7 @@ def update_skill(skill_id):
 
 @skills_bp.route('/skills/<skill_id>', methods=['DELETE'])
 def delete_skill(skill_id):
-    existing = db.get_skill(skill_id)
-    if not existing:
+    if not db.delete_skill(skill_id, current_user_id()):
         return jsonify({"success": False, "error": "Skill not found"}), 404
-    db.delete_skill(skill_id)
     return jsonify({"success": True})
 

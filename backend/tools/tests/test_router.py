@@ -115,6 +115,26 @@ def test_update_browser_config_invalid(client):
     resp = client.patch('/tools/config/browser', json={"stealth_level": "invalid"})
     assert resp.status_code == 400
 
+def test_preference_routes_use_the_callers_id(app, login_as, user_b, mock_db):
+    login_as(app, user_b)
+    client = app.test_client()
+    mock_db.get_all_preferences.return_value = []
+    mock_db.add_preference.return_value = "p1"
+    mock_db.update_preference.return_value = False  # user_a's preference: not found for user_b
+    mock_db.delete_preference.return_value = False
+    mock_db.clear_preferences.return_value = 0
+    client.get('/tools/preferences')
+    mock_db.get_all_preferences.assert_called_once_with(user_b["id"])
+    client.post('/tools/preferences', json={"content": "c", "tag": "t"})
+    mock_db.add_preference.assert_called_once_with("c", "t", user_b["id"])
+    assert client.put('/tools/preferences/pa', json={"content": "x", "tag": "t"}).status_code == 404
+    mock_db.update_preference.assert_called_once_with("pa", "x", "t", user_b["id"])
+    assert client.delete('/tools/preferences/pa').status_code == 404
+    mock_db.delete_preference.assert_called_once_with("pa", user_b["id"])
+    client.post('/tools/preferences/reset')
+    mock_db.clear_preferences.assert_called_once_with(user_b["id"])
+
+
 def test_update_preference(client, mock_db):
     mock_db.update_preference.return_value = True
     resp = client.put('/tools/preferences/p1', json={"content": "updated", "tag": "tag1"})

@@ -62,12 +62,18 @@ def test_prompt_builder_persona_snapshot():
 @patch('backend.database.db.get_persona')
 def test_prompt_builder_persona_id_fallback(mock_get_persona):
     mock_get_persona.return_value = {"content": "Adopt a ninja persona."}
-    ctx = PromptContext(chat_metadata={"persona_id": "ninja_id"})
+    ctx = PromptContext(chat_metadata={"persona_id": "ninja_id", "user_id": "owner-1"})
     builder = PromptBuilder(ctx)
     prompt = builder.build()
     
     assert "<user_persona>\nAdopt a ninja persona.\n</user_persona>" in prompt
-    mock_get_persona.assert_called_once_with("ninja_id")
+    mock_get_persona.assert_called_once_with("ninja_id", "owner-1")  # looked up among the chat owner's personas
+
+@patch('backend.database.db.get_persona')
+def test_prompt_builder_persona_fallback_needs_an_owner(mock_get_persona):
+    ctx = PromptContext(chat_metadata={"persona_id": "ninja_id"})  # no user_id on the chat row
+    assert "ninja" not in PromptBuilder(ctx).build()
+    mock_get_persona.assert_not_called()
 
 def test_prompt_builder_system_prompt_fallback():
     ctx = PromptContext(chat_metadata={"system_prompt": "Adopt a wizard persona."})

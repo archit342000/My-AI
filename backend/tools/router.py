@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify, Response
 import json
 import logging
+from backend.auth.context import current_user_id
 from backend.auth.ownership import require_chat_owner
 from backend.tools.callbacks import callback_registry
 from backend.logging import log_event
@@ -116,7 +117,7 @@ def clarification_response():
 def get_preferences():
     from backend.database import db
     try:
-        prefs = db.get_all_preferences()
+        prefs = db.get_all_preferences(current_user_id())
         return jsonify({"success": True, "preferences": prefs})
     except Exception as e:
         logger.exception("Failed to load preferences")
@@ -133,7 +134,7 @@ def add_preference():
     tag = data.get('tag')
     if not content or not tag:
         return jsonify({"error": "Missing content or tag"}), 400
-    pref_id = db.add_preference(content, tag)
+    pref_id = db.add_preference(content, tag, current_user_id())
     return jsonify({"success": True, "id": pref_id})
 
 @tools_bp.route('/preferences/<preference_id>', methods=['PUT'])
@@ -146,7 +147,7 @@ def update_preference(preference_id):
     tag = data.get('tag')
     if not content or not tag:
         return jsonify({"error": "Missing content or tag"}), 400
-    success = db.update_preference(preference_id, content, tag)
+    success = db.update_preference(preference_id, content, tag, current_user_id())
     if success:
         return jsonify({"success": True})
     log_event("tools_preference_update_not_found", {"preference_id": preference_id})
@@ -155,7 +156,7 @@ def update_preference(preference_id):
 @tools_bp.route('/preferences/<preference_id>', methods=['DELETE'])
 def delete_preference(preference_id):
     from backend.database import db
-    success = db.delete_preference(preference_id)
+    success = db.delete_preference(preference_id, current_user_id())
     if success:
         return jsonify({"success": True})
     log_event("tools_preference_delete_not_found", {"preference_id": preference_id})
@@ -165,7 +166,7 @@ def delete_preference(preference_id):
 def reset_preferences():
     from backend.database import db
     try:
-        deleted = db.clear_preferences()
+        deleted = db.clear_preferences(current_user_id())
         return jsonify({"success": True, "deleted": deleted})
     except Exception as e:
         logger.exception("Failed to reset preferences")
