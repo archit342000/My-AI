@@ -467,8 +467,18 @@ def reattach_stream(chat_id):
 @chat_bp.route('/<chat_id>/resume', methods=['POST'])
 def resume_chat(chat_id):
     """
-    Resumes an interrupted chat turn.
+    Resumes an interrupted chat turn from the last stored user message.
+
+    Returns 400 {"error": "a response is already in progress"} if a turn for the chat is running or
+    starting (sends and resumes share one claim per chat, docs/standards/api.md).
     """
+    # Keep a reference so the release in call_on_close targets the manager that took the claim,
+    # even if the module-level name is rebound later (as tests do).
+    turns = task_manager
+    if not turns.claim_turn(chat_id):
+        log_event("chat_resume_rejected_turn_in_progress", {"chat_id": chat_id})
+        return jsonify({"error": "a response is already in progress"}), 400
+
     try:
         handler = ChatHandler(chat_id)
         
@@ -477,6 +487,7 @@ def resume_chat(chat_id):
         last_user_msg = next((m for m in reversed(messages) if m['role'] == 'user'), None)
                 
         if not last_user_msg:
+            turns.release_turn_claim(chat_id)
             return jsonify({"error": "No user message found to resume from."}), 400
 
         model = request.json.get('model')
@@ -516,8 +527,12 @@ def resume_chat(chat_id):
             finally:
                 loop.close()
 
-        return Response(generate_stream(), mimetype='text/event-stream')
+        response = Response(generate_stream(), mimetype='text/event-stream')
+        # The claim is held until the stream ends or the client disconnects.
+        response.call_on_close(lambda: turns.release_turn_claim(chat_id))
+        return response
     except Exception as e:
+        turns.release_turn_claim(chat_id)
         logger.error(f"Error in resume_chat route: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
 

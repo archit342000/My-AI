@@ -217,6 +217,25 @@ describe('resumeTurn (Retry)', () => {
     expect(useToastStore.getState().toasts.some((t) => t.message === 'No user message found to resume from.')).toBe(true);
   });
 
+  it('shows the turn-in-progress refusal as a toast only, no inline error row', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (path: string) =>
+        path === '/api/chats/chat-1/resume'
+          ? new Response(JSON.stringify({ error: 'a response is already in progress' }), {
+              status: 400,
+              headers: { 'Content-Type': 'application/json' },
+            })
+          : new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } }),
+      ),
+    );
+    await resumeTurn(new QueryClient(), 'chat-1');
+    const messages = useToastStore.getState().toasts.map((t) => t.message);
+    expect(messages).toContain('a response is already in progress');
+    expect(useStreamStore.getState().interrupted).toBeNull();
+    expect(useStreamStore.getState().chatId).toBeNull();
+  });
+
   it('sends nothing while a stream is running or when no model is selected', async () => {
     const fetchMock = vi.fn(async () => new Response('{}', { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);

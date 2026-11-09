@@ -39,6 +39,13 @@ export function historyFromCache(queryClient: QueryClient, chatId: string): Hist
   );
 }
 
+/**
+ * The error text of the server's 400 refusal of a send or resume while a turn runs or starts.
+ * This exact string is part of the API contract in docs/standards/api.md (backend/chat/router.py
+ * returns it from both routes); change them together.
+ */
+const TURN_IN_PROGRESS = 'a response is already in progress';
+
 async function consume(
   queryClient: QueryClient,
   chatId: string,
@@ -57,9 +64,13 @@ async function consume(
     if (err instanceof DOMException && err.name === 'AbortError') {
       // The user pressed Stop: keep what arrived, marked as stopped (F-15).
       store.interrupt({ chatId, live, kind: 'stopped', message: null });
-    } else if (refusalIsToastOnly && err instanceof ApiError && err.status === 400) {
-      // A send refused before anything was stored or started (for example while a reply is in
-      // progress): toast only, there is no partial reply to keep.
+    } else if (
+      err instanceof ApiError &&
+      err.status === 400 &&
+      (refusalIsToastOnly || err.message === TURN_IN_PROGRESS)
+    ) {
+      // A send refused before anything was stored or started, or any request refused because a
+      // turn is already in progress (also a Retry/resume): toast only, no partial reply to keep.
       showToast(err.message, 'error');
     } else {
       const message = err instanceof Error ? err.message : 'Stream failed';
