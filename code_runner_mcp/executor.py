@@ -1,15 +1,17 @@
+import json
 import logging
 import os
 import re
-import shutil
 import signal
 import subprocess
-import sys
 import threading
 import time
 import uuid
 from typing import Dict, List, Optional, Any
 from pydantic import BaseModel
+
+import runner_helper
+import sandbox_user
 
 logger = logging.getLogger(__name__)
 
@@ -31,38 +33,137 @@ def scratch_roots() -> tuple:
     return tuple(SCRATCH_ROOTS)
 
 
-def clear_scratch() -> List[str]:
-    """Remove everything inside each scratch root (the roots themselves stay). Symlinks are unlinked, never followed.
-    Returns the paths that could not be removed (and logs each as runner_cleanup_error); an empty list means clean."""
-    failed: List[str] = []
+def ensure_sandbox_base() -> None:
+    """Create the sandbox base the runner uid creates its per-run directories in (sticky, world-writable)."""
+    os.makedirs(SANDBOX_BASE, exist_ok=True)
+    os.chmod(SANDBOX_BASE, 0o1777)
 
-    def record(path: str, exc: BaseException) -> None:
-        failed.append(path)
-        logger.error("runner_cleanup_error path=%s error=%s", path, exc)
 
-    for root in dict.fromkeys(scratch_roots() + (SANDBOX_BASE,)):
+def run_helper(command: str, payload: dict, kind: str = "runner", timeout: int = 30) -> List[str]:
+    """
+    Run a `runner_helper` command as the runner (or runner-pkg) uid and return the failures it reports.
+
+    With the uid switch (a root server) the helper is a child started with `sandbox_user.spawn_kwargs(kind)`; in the
+    unprivileged dev/test mode the same functions run in this process. Raises RuntimeError when the helper itself fails.
+    """
+    if not sandbox_user.isolation_enabled():
+        if command == "make_sandbox":
+            runner_helper.make_sandbox(payload["path"], payload.get("files", []))
+            return []
+        if command == "remove_tree":
+            return runner_helper.remove_tree(payload["path"])
+        if command == "clean_uid":
+            return runner_helper.clean_uid(payload["roots"], payload["sandbox_base"], kill_processes=False, remove_ipc=False)
+        raise RuntimeError(f"unknown helper command {command!r}")
+    proc = subprocess.run(
+        ["python3", sandbox_user.HELPER_PATH, command],
+        input=json.dumps(payload), capture_output=True, text=True, timeout=timeout, cwd="/",
+        env={"PATH": os.environ.get("PATH", sandbox_user.DEFAULT_PATH), "LANG": os.environ.get("LANG", "C.UTF-8")},
+        **sandbox_user.spawn_kwargs(kind),
+    )
+    lines = proc.stdout.strip().splitlines()
+    try:
+        reply = json.loads(lines[-1]) if lines else {}
+    except ValueError:
+        reply = {}
+    if "error" in reply:
+        raise RuntimeError(reply["error"])
+    if not reply:  # no (or unreadable) reply is never a success, whatever the exit code
+        raise RuntimeError(f"runner helper {command} gave no reply (exit {proc.returncode}): {proc.stderr.strip()[-200:]}")
+    return list(reply.get("failed", []))
+
+
+def remove_sandbox(path: str) -> List[str]:
+    """Remove a run directory through the helper (the root server cannot read inside trees the runner uid made)."""
+    return run_helper("remove_tree", {"path": path})
+
+
+def _owned_by_isolated_uid(path: str) -> bool:
+    try:
+        return os.lstat(path).st_uid in sandbox_user.isolated_uids()
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return True  # cannot even look at it: treat as left behind
+
+
+PROCESS_EXIT_WAIT = 1.0  # seconds to let killed processes disappear before reporting them
+
+
+def isolated_processes() -> List[str]:
+    """Pids of live (not zombie) processes whose real uid is one of the isolated uids. Reads the Uid line of
+    /proc/<pid>/status: the owner of /proc/<pid> is root for a process that made itself non-dumpable."""
+    found = []
+    for entry in os.listdir("/proc"):
+        if not entry.isdigit():
+            continue
         try:
-            entries = os.listdir(root)
+            uid, state = None, ""
+            with open(f"/proc/{entry}/status", encoding="utf-8") as status:
+                for line in status:
+                    if line.startswith("Uid:"):
+                        uid = int(line.split()[1])
+                    elif line.startswith("State:"):
+                        state = line.split()[1]
+        except OSError:
+            continue
+        if uid in sandbox_user.isolated_uids() and state != "Z":
+            found.append(entry)
+    return found
+
+
+def verify_clean() -> List[str]:
+    """
+    Check, as the server, that nothing of the isolated uids is left: entries in the scratch roots and the sandbox base,
+    `/dev/mqueue` entries, SysV IPC objects and processes. An entry owned by those uids counts even when its contents
+    cannot be listed. Returns what is left.
+    """
+    left: List[str] = []
+    base = os.path.abspath(SANDBOX_BASE)
+    for root in dict.fromkeys(scratch_roots() + (SANDBOX_BASE, runner_helper.MQUEUE_DIR)):
+        try:
+            names = os.listdir(root)
         except FileNotFoundError:
             continue
-        except OSError as exc:
-            record(root, exc)
+        except OSError:
+            left.append(root)
             continue
-        for name in entries:
+        for name in names:
             path = os.path.join(root, name)
-            try:
-                if os.path.isdir(path) and not os.path.islink(path):
-                    if sys.version_info >= (3, 12):
-                        shutil.rmtree(path, onexc=lambda _fn, p, exc: record(p, exc))
-                    else:
-                        shutil.rmtree(path, onerror=lambda _fn, p, info: record(p, info[1]))
-                else:
-                    os.unlink(path)
-            except FileNotFoundError:
+            if os.path.abspath(path) == base:
                 continue
-            except OSError as exc:
-                record(path, exc)
-    return failed
+            if _owned_by_isolated_uid(path):
+                left.append(path)
+    if sandbox_user.isolation_enabled():
+        for uid in sandbox_user.isolated_uids():
+            left.extend(f"sysv-ipc:{flag}{ident}" for flag, ident in runner_helper.sysv_objects(uid))
+        deadline = time.monotonic() + PROCESS_EXIT_WAIT
+        while True:
+            alive = isolated_processes()
+            if not alive or time.monotonic() >= deadline:
+                break
+            time.sleep(0.02)  # just-killed processes need a moment to be reaped
+        left.extend(f"process:{pid}" for pid in alive)
+    return left
+
+
+def clear_scratch() -> List[str]:
+    """
+    Clean up after the isolated uids and verify it: a helper running as each uid removes that uid's files, IPC objects
+    and processes, then the server checks nothing is left. Returns what could not be cleaned (each logged as
+    runner_cleanup_error); an empty list means clean.
+    """
+    failed: List[str] = []
+    kinds = ("runner", "pkg") if sandbox_user.isolation_enabled() else ("runner",)
+    for kind in kinds:
+        try:
+            failed.extend(run_helper("clean_uid", {"roots": list(scratch_roots()), "sandbox_base": SANDBOX_BASE}, kind))
+        except Exception as exc:  # a broken helper is a cleanup failure, never silently ignored
+            failed.append(f"helper:{kind}:{exc}")
+    failed.extend(verify_clean())
+    for path in dict.fromkeys(failed):
+        logger.error("runner_cleanup_error path=%s", path)
+    return list(dict.fromkeys(failed))
 
 
 def kill_group(pid: int, wait: float = 1.0) -> None:
@@ -92,7 +193,7 @@ def _run_in_group(cmd, cwd, env, timeout, input_text=None, text=True):
         cwd=cwd,
         env=env,
         text=text,
-        start_new_session=True,
+        **sandbox_user.spawn_kwargs("runner"),
     )
     try:
         out, err = proc.communicate(input=input_text, timeout=timeout)
@@ -141,11 +242,7 @@ class CodeExecutor:
         # 1. Create a unique sandbox directory
         sandbox_id = uuid.uuid4().hex
         sandbox_dir = os.path.join(SANDBOX_BASE, sandbox_id)
-        os.makedirs(sandbox_dir, exist_ok=True)
-        home_dir = os.path.join(sandbox_dir, "home")
-        tmp_dir = os.path.join(sandbox_dir, "tmp")
-        os.makedirs(home_dir, exist_ok=True)
-        os.makedirs(tmp_dir, exist_ok=True)
+        files_to_write: List[Dict[str, str]] = []
 
         try:
             # MySQL is not served here: the runner has no database credentials or route.
@@ -166,13 +263,14 @@ class CodeExecutor:
                     full_path = os.path.abspath(os.path.join(sandbox_dir, rel_path))
                     if not full_path.startswith(os.path.abspath(sandbox_dir)):
                         continue
-                    
-                    os.makedirs(os.path.dirname(full_path), exist_ok=True)
-                    with open(full_path, "w", encoding="utf-8") as file_obj:
-                        file_obj.write(file_content)
-                
+                    files_to_write.append({"path": rel_path, "content": file_content})
+
                 if entry_file:
-                    written_entry_file = os.path.join(sandbox_dir, entry_file)
+                    candidate = os.path.abspath(os.path.join(sandbox_dir, entry_file))
+                    # The root server stats (and, for SQL, reads) the entry file: it must be a plain path inside the sandbox.
+                    if os.path.isabs(entry_file) or ".." in entry_file.split("/") or not candidate.startswith(os.path.abspath(sandbox_dir) + os.sep):
+                        return {"error": "Invalid entry file path.", "sandbox_dir": sandbox_dir}
+                    written_entry_file = candidate
             else:
                 # Single file execution via `code` string
                 code_content = code or ""
@@ -205,22 +303,18 @@ class CodeExecutor:
                     entry_name = "code.txt"
 
                 written_entry_file = os.path.join(sandbox_dir, entry_name)
-                with open(written_entry_file, "w", encoding="utf-8") as file_obj:
-                    file_obj.write(code_content)
+                files_to_write.append({"path": entry_name, "content": code_content})
+
+            # The files are written, and the run directory made, by the runner uid (the helper): the server cannot.
+            failures = run_helper("make_sandbox", {"path": sandbox_dir, "files": files_to_write})
+            if failures:
+                return {"error": "Could not prepare the sandbox.", "sandbox_dir": sandbox_dir}
 
             if not written_entry_file or not os.path.exists(written_entry_file):
                 return {"error": "No valid entry file found.", "sandbox_dir": sandbox_dir}
 
             # 3. Setup stripped environment
-            env = {
-                "PATH": os.environ.get("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"),
-                "HOME": home_dir,
-                "LANG": os.environ.get("LANG", "en_US.UTF-8"),
-                "TMPDIR": tmp_dir,
-                "PYTHONPATH": "/home/runner/.local/lib/python3.12/site-packages",
-                "NODE_PATH": "/home/runner/node_modules",
-                "PYTHONUNBUFFERED": "1"
-            }
+            env = sandbox_user.run_env(sandbox_dir)
 
             cwd = os.path.dirname(written_entry_file)
             entry_basename = os.path.basename(written_entry_file)
@@ -326,7 +420,7 @@ class CodeExecutor:
         
         sandbox_dir = prep.get("sandbox_dir")
         if prep.get("error"):
-            shutil.rmtree(sandbox_dir, ignore_errors=True)
+            remove_sandbox(sandbox_dir)
             return ExecutionResult(
                 stdout="",
                 stderr="",
@@ -347,7 +441,7 @@ class CodeExecutor:
         try:
             # Compilation phase if required
             if compile_cmd:
-                comp_code, _comp_out, comp_err = _run_in_group(compile_cmd, cwd, env, 15, text=False)
+                comp_code, _comp_out, comp_err = _run_in_group(sandbox_user.limited(compile_cmd), cwd, env, 15, text=False)
                 if comp_code != 0:
                     return ExecutionResult(
                         stdout="",
@@ -372,7 +466,7 @@ class CodeExecutor:
                 cmd = ["sqlite3", "sandbox.db", "-header", "-column"]
 
                 try:
-                    exit_code, stdout, stderr = _run_in_group(cmd, cwd, env, timeout, input_text=sql_content)
+                    exit_code, stdout, stderr = _run_in_group(sandbox_user.limited(cmd), cwd, env, timeout, input_text=sql_content)
                 except subprocess.TimeoutExpired:
                     timed_out = True
                     stdout = ""
@@ -381,7 +475,7 @@ class CodeExecutor:
             else:
                 # Standard language run
                 try:
-                    exit_code, stdout, stderr = _run_in_group(run_cmd, cwd, env, timeout, input_text=stdin)
+                    exit_code, stdout, stderr = _run_in_group(sandbox_user.limited(run_cmd), cwd, env, timeout, input_text=stdin)
                 except subprocess.TimeoutExpired:
                     timed_out = True
                     stdout = ""
@@ -419,5 +513,5 @@ class CodeExecutor:
                 error=str(e)
             )
         finally:
-            # Remove this run's sandbox; the scratch roots are cleared by execute()
-            shutil.rmtree(sandbox_dir, ignore_errors=True)
+            # Remove this run's sandbox (as the runner uid); the scratch roots are cleaned by execute()
+            remove_sandbox(sandbox_dir)

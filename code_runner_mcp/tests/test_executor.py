@@ -1,3 +1,4 @@
+import json
 import os
 import subprocess
 import threading
@@ -8,7 +9,7 @@ import pytest
 
 import executor
 from executor import CodeExecutor
-from helpers import _gone, _grandchild_code
+from helpers import _gone, _grandchild_code, read_pid
 
 def test_execute_python_success():
     res = CodeExecutor.execute(
@@ -77,7 +78,7 @@ def test_execute_sql_mysql_is_rejected(monkeypatch):
     assert res.exit_code == 1
     assert "MySQL is not available" in res.error
     assert not res.timed_out
-    assert not os.path.exists("/tmp/sandbox/mysqlreject")
+    assert not os.path.exists(os.path.join(executor_module.SANDBOX_BASE, "mysqlreject"))  # the isolated base, never the real /tmp
 
 def test_prepare_sandbox_mysql_error_returns_sandbox_dir_for_cleanup():
     import os
@@ -88,8 +89,9 @@ def test_prepare_sandbox_mysql_error_returns_sandbox_dir_for_cleanup():
         sql_target="mysql"
     )
     assert "MySQL is not available" in prep["error"]
-    assert os.path.isdir(prep["sandbox_dir"])
-    shutil.rmtree(prep["sandbox_dir"], ignore_errors=True)
+    # the sandbox is made by the helper only after the checks pass, so nothing exists yet; removing it is a safe no-op
+    assert not os.path.exists(prep["sandbox_dir"])
+    assert executor.remove_sandbox(prep["sandbox_dir"]) == []
 
 def test_execute_cpp():
     import shutil
@@ -111,8 +113,8 @@ def test_home_and_tmpdir_are_inside_the_sandbox():
         sandbox = prep["sandbox_dir"]
         assert prep["env"]["HOME"] == os.path.join(sandbox, "home") and os.path.isdir(prep["env"]["HOME"])
         assert prep["env"]["TMPDIR"] == os.path.join(sandbox, "tmp") and os.path.isdir(prep["env"]["TMPDIR"])
-        assert prep["env"]["PYTHONPATH"] == "/home/runner/.local/lib/python3.12/site-packages"  # installed packages still load
-        assert prep["env"]["NODE_PATH"] == "/home/runner/node_modules"
+        assert prep["env"]["PYTHONPATH"] == "/opt/runner/python"  # installed packages still load
+        assert prep["env"]["NODE_PATH"] == "/opt/runner/node/node_modules"
     finally:
         executor.clear_scratch()
 
@@ -127,6 +129,9 @@ def test_a_run_sees_its_own_home_and_tmp_and_leaves_nothing_behind(isolated_scra
 
 
 def test_every_user_code_subprocess_starts_a_new_session():
+    import shutil
+    if not (shutil.which("gcc") and shutil.which("sqlite3")):
+        pytest.skip("gcc and sqlite3 are needed for the compile and sql phases")
     calls = []
     real_popen = subprocess.Popen
 
@@ -145,14 +150,14 @@ def test_the_process_group_is_killed_after_a_timeout(tmp_path):
     pidfile = tmp_path / "pid"
     res = CodeExecutor.execute(language="python", code=_grandchild_code(pidfile) + "time.sleep(30)", timeout=2)
     assert res.timed_out
-    assert _gone(int(pidfile.read_text())), "a grandchild survived the timeout"
+    assert _gone(read_pid(pidfile)), "a grandchild survived the timeout"
 
 
 def test_the_process_group_is_killed_after_a_normal_exit(tmp_path):
     pidfile = tmp_path / "pid"
     res = CodeExecutor.execute(language="python", code=_grandchild_code(pidfile) + "print('done')")
     assert res.exit_code == 0
-    assert _gone(int(pidfile.read_text())), "a background child survived a normal exit"
+    assert _gone(read_pid(pidfile)), "a background child survived a normal exit"
 
 
 def test_kill_group_of_an_exited_process_is_a_noop():
@@ -257,7 +262,7 @@ def test_a_detached_child_holding_the_pipes_cannot_wedge_the_runner(tmp_path):
         assert not executor.RUN_LOCK.locked()
     finally:
         try:
-            os.kill(int(pidfile.read_text()), 9)  # the escapee is the test's to clean up
+            os.kill(read_pid(pidfile), 9)  # the escapee is the test's to clean up
         except (FileNotFoundError, ValueError, ProcessLookupError):
             pass
     assert res.error in (None, "Execution timed out")
@@ -279,12 +284,167 @@ def test_a_failed_cleanup_is_added_to_the_runs_own_error():
 def test_kill_group_does_not_return_until_every_member_is_gone(tmp_path):
     pidfile = tmp_path / "pid"
     proc = subprocess.Popen(["python3", "-c", _grandchild_code(pidfile) + "time.sleep(60)"], start_new_session=True)
-    end = time.time() + 10
-    while time.time() < end and not pidfile.exists():
-        time.sleep(0.02)
-    grandchild = int(pidfile.read_text())
+    grandchild = read_pid(pidfile)
     executor.kill_group(proc.pid)
     proc.wait()  # reap the leader only after kill_group has returned
     with pytest.raises(ProcessLookupError):
         os.kill(grandchild, 0)  # the grandchild was already gone when kill_group returned
 
+
+# --- uid isolation: the helper does the creating and cleaning, children run as the runner uid ------------------------
+
+class TestIsolation:
+    @pytest.fixture(autouse=True)
+    def isolated(self, monkeypatch):
+        monkeypatch.delenv("CODE_RUNNER_ALLOW_UNPRIVILEGED")
+
+    def test_run_helper_starts_the_helper_as_the_requested_uid_with_a_json_payload(self):
+        done = type("P", (), {"stdout": '{"failed": []}\n', "stderr": "", "returncode": 0})()
+        with patch("executor.subprocess.run", return_value=done) as run:
+            assert executor.run_helper("make_sandbox", {"path": "/tmp/sandbox/x", "files": []}) == []
+            assert executor.run_helper("clean_uid", {"roots": [], "sandbox_base": "/tmp/sandbox"}, kind="pkg") == []
+        runner_call, pkg_call = run.call_args_list
+        assert runner_call.args[0][-1] == "make_sandbox" and runner_call.kwargs["user"] == 61001
+        assert pkg_call.kwargs["user"] == 61002 and pkg_call.kwargs["extra_groups"] == []
+        assert json.loads(runner_call.kwargs["input"])["path"] == "/tmp/sandbox/x"
+        assert runner_call.kwargs["env"].keys() == {"PATH", "LANG"}  # the server's environment (the key) never reaches it
+
+    def test_run_helper_reports_failures_and_raises_on_a_helper_error(self):
+        failed = type("P", (), {"stdout": '{"failed": ["/tmp/stuck"]}\n', "stderr": "", "returncode": 1})()
+        with patch("executor.subprocess.run", return_value=failed):
+            assert executor.run_helper("clean_uid", {"roots": [], "sandbox_base": ""}) == ["/tmp/stuck"]
+        broken = type("P", (), {"stdout": '{"error": "OSError: boom"}\n', "stderr": "", "returncode": 1})()
+        with patch("executor.subprocess.run", return_value=broken), pytest.raises(RuntimeError, match="boom"):
+            executor.run_helper("make_sandbox", {"path": "/x", "files": []})
+        crashed = type("P", (), {"stdout": "", "stderr": "Traceback", "returncode": 139})()
+        with patch("executor.subprocess.run", return_value=crashed), pytest.raises(RuntimeError, match="no reply \(exit 139\)"):
+            executor.run_helper("make_sandbox", {"path": "/x", "files": []})
+
+    def test_user_code_children_run_as_the_runner_uid_under_prlimit(self):
+        calls = []
+
+        class FakePopen:
+            returncode = 0
+            pid = 4242
+
+            def __init__(self, cmd, **kwargs):
+                calls.append((cmd, kwargs))
+
+            def communicate(self, input=None, timeout=None):
+                return "", ""
+
+        with patch("executor.run_helper", return_value=[]), patch("executor.subprocess.Popen", FakePopen), \
+             patch("executor.kill_group"), patch("executor.clear_scratch", return_value=[]), patch("executor.os.path.exists", return_value=True):
+            CodeExecutor.execute(language="c", code="int main(){return 0;}")
+        assert len(calls) == 2  # compile and run
+        for cmd, kwargs in calls:
+            assert cmd[0] == "prlimit" and "--nproc=256" in cmd and not any(a.startswith("--as") for a in cmd)
+            assert kwargs["user"] == 61001 and kwargs["group"] == 61001 and kwargs["extra_groups"] == []
+            assert kwargs["start_new_session"] is True
+            assert kwargs["env"]["PYTHONPATH"] == "/opt/runner/python"
+
+    def test_the_sandbox_is_made_and_removed_by_the_helper_around_a_successful_run(self):
+        class FakePopen:
+            returncode = 0
+            pid = 4243
+
+            def __init__(self, cmd, **kwargs):
+                pass
+
+            def communicate(self, input=None, timeout=None):
+                return "hi\n", ""
+
+        with patch("executor.run_helper", return_value=[]) as helper, patch("executor.clear_scratch", return_value=[]), \
+             patch("executor.subprocess.Popen", FakePopen), patch("executor.kill_group"), \
+             patch("executor.os.path.exists", return_value=True):
+            res = CodeExecutor.execute(language="python", code="print(1)")
+        assert res.error is None and res.stdout == "hi\n"
+        commands = [c.args[0] for c in helper.call_args_list]
+        assert commands[0] == "make_sandbox" and commands[-1] == "remove_tree"
+
+    def test_clear_scratch_runs_the_helper_as_both_uids_then_verifies(self):
+        with patch("executor.run_helper", return_value=[]) as helper, patch("executor.verify_clean", return_value=[]):
+            assert executor.clear_scratch() == []
+        assert [c.args[0] for c in helper.call_args_list] == ["clean_uid", "clean_uid"]
+        assert [c.args[2] if len(c.args) > 2 else c.kwargs.get("kind") for c in helper.call_args_list] == ["runner", "pkg"]
+
+    def test_a_broken_helper_or_leftovers_are_cleanup_failures(self):
+        with patch("executor.run_helper", side_effect=RuntimeError("boom")), patch("executor.verify_clean", return_value=["process:7"]):
+            failed = executor.clear_scratch()
+        assert any("boom" in f for f in failed) and "process:7" in failed
+
+    def test_verify_clean_finds_leftover_entries_ipc_objects_and_processes(self, isolated_scratch, monkeypatch):
+        me = os.getuid()
+        monkeypatch.setattr("executor.sandbox_user.isolated_uids", lambda: (me,))  # "the runner uid" is this test's own uid
+        monkeypatch.setattr("executor.runner_helper.sysv_objects", lambda uid: [("-m", "7")])
+        (isolated_scratch[0] / "left").write_text("x")
+        os.symlink("/nonexistent", isolated_scratch[1] / "dangling")  # an owned entry counts even if it points nowhere
+        left = executor.verify_clean()
+        assert str(isolated_scratch[0] / "left") in left and str(isolated_scratch[1] / "dangling") in left
+        assert "sysv-ipc:-m7" in left and f"process:{os.getpid()}" in left
+
+    def test_verify_clean_skips_the_sandbox_base_itself_but_not_a_sibling_owned_by_the_uid(self, isolated_scratch, monkeypatch):
+        monkeypatch.setattr("executor.sandbox_user.isolated_uids", lambda: (os.getuid(),))
+        monkeypatch.setattr("executor.runner_helper.sysv_objects", lambda uid: [])
+        monkeypatch.setattr("executor.isolated_processes", lambda: [])
+        executor.ensure_sandbox_base()  # owned by "the isolated uid" too: only the base itself is exempt
+        (isolated_scratch[0] / "sibling").write_text("x")
+        left = executor.verify_clean()
+        assert executor.SANDBOX_BASE not in left and str(isolated_scratch[0] / "sibling") in left
+
+    def test_verify_clean_ignores_entries_of_other_uids(self, isolated_scratch, monkeypatch):
+        monkeypatch.setattr("executor.sandbox_user.isolated_uids", lambda: (os.getuid() + 12345,))
+        monkeypatch.setattr("executor.runner_helper.sysv_objects", lambda uid: [])
+        monkeypatch.setattr("executor.isolated_processes", lambda: [])
+        (isolated_scratch[0] / "server-file").write_text("x")
+        assert executor.verify_clean() == []
+
+    def test_verify_clean_reports_an_unlistable_root(self, monkeypatch):
+        monkeypatch.setattr("executor.sandbox_user.isolated_uids", lambda: (os.getuid(),))
+        monkeypatch.setattr("executor.runner_helper.sysv_objects", lambda uid: [])
+        monkeypatch.setattr("executor.isolated_processes", lambda: [])
+        real = os.listdir
+
+        def listdir(path="."):
+            if str(path) == executor.SCRATCH_ROOTS[0]:
+                raise PermissionError("denied")
+            return real(path)
+
+        monkeypatch.setattr("executor.os.listdir", listdir)
+        assert executor.SCRATCH_ROOTS[0] in executor.verify_clean()
+
+    def test_isolated_processes_finds_live_processes_of_the_uid(self, monkeypatch):
+        monkeypatch.setattr("executor.sandbox_user.isolated_uids", lambda: (os.getuid(),))
+        assert str(os.getpid()) in executor.isolated_processes()
+        monkeypatch.setattr("executor.sandbox_user.isolated_uids", lambda: (os.getuid() + 12345,))
+        assert executor.isolated_processes() == []
+
+    def test_a_missing_or_unreadable_helper_reply_is_never_a_success(self):
+        for stdout, code in (("", 0), ("not json\n", 0)):
+            done = type("P", (), {"stdout": stdout, "stderr": "", "returncode": code})()
+            with patch("executor.subprocess.run", return_value=done), pytest.raises(RuntimeError, match="no reply"):
+                executor.run_helper("make_sandbox", {"path": "/x", "files": []})
+
+    def test_the_dev_mode_helper_rejects_an_unknown_command_and_never_kills_or_removes_ipc(self, monkeypatch):
+        monkeypatch.setenv("CODE_RUNNER_ALLOW_UNPRIVILEGED", "1")
+        with pytest.raises(RuntimeError, match="unknown helper command"):
+            executor.run_helper("nope", {})
+        with patch("executor.runner_helper.clean_uid", return_value=[]) as clean:
+            executor.run_helper("clean_uid", {"roots": [], "sandbox_base": "/x"})
+        assert clean.call_args.kwargs == {"kill_processes": False, "remove_ipc": False}  # kill(-1) would kill the developer's session
+
+
+@pytest.mark.parametrize("bad", ["/run/keys/CODE_RUNNER_API_KEY", "../escape.py", "a/../../escape.py"])
+def test_an_entry_file_outside_the_sandbox_is_rejected_before_the_server_reads_it(bad):
+    with patch("executor.run_helper", return_value=[]) as helper:
+        prep = CodeExecutor.prepare_sandbox(language="sql", files=[{"path": "query.sql", "content": "select 1;"}], entry_file=bad)
+    assert prep["error"] == "Invalid entry file path."
+    helper.assert_not_called()
+
+
+def test_a_normal_nested_entry_file_is_accepted(isolated_scratch):
+    prep = CodeExecutor.prepare_sandbox(language="python", files=[{"path": "pkg/main.py", "content": "print(1)"}], entry_file="pkg/main.py")
+    try:
+        assert prep["error"] is None and prep["written_entry_file"].endswith("/pkg/main.py") and prep["cwd"].endswith("/pkg")
+    finally:
+        executor.remove_sandbox(prep["sandbox_dir"])

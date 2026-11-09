@@ -10,8 +10,14 @@ Applies to `docker/` and the services it defines. Rule 9 in `docs/standards/codi
 - Install system packages with `--no-install-recommends` and delete apt lists in the same `RUN`. Use `pip install --no-cache-dir` and `npm ci`.
 - Copy dependency manifests first, install, then copy source, so layers cache.
 - A service that needs no toolchain gets its own slim image: the code-runner relay uses `Dockerfile.relay`, not the runner image, so `my-ai-code-runner` is built once.
-- Run as a non-root user (`appuser`, `runner`, `relay`, `pwuser`). Switch to root only to install packages, then drop back.
+- Run as a non-root user (`appuser`, `relay`, `pwuser`; the code runner's `runner` is uid 61001 with no home or shell, see the exception below). Switch to root only to install packages, then drop back.
   No `--privileged` or extra capabilities.
+- **Exception: `code_runner_runtime`** (approved by the user, 2026-11-10). Its server runs as root holding only `SETUID`, `SETGID` and
+  `KILL`, with `no-new-privileges`, `init` and a read-only root filesystem, and drops every user-code and package-install process to
+  dedicated uids (`runner` 61001, `runner-pkg` 61002) that are not real host uids. Root is needed because only a root process can
+  start children as another uid; without `CAP_DAC_OVERRIDE`, `CAP_CHOWN` and `CAP_FOWNER` it still cannot read or clear what those uids
+  own, so a helper running as the uid creates and cleans each sandbox. No other service may copy this; see "Tools and sandboxing" in
+  `docs/standards/security.md`.
 
 ## Compose (`docker/docker-compose.yml`)
 

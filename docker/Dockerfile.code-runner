@@ -11,7 +11,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && npm install -g tsx \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-RUN useradd -m -s /bin/bash runner
+# Two dedicated uids that are not real host uids (RLIMIT_NPROC is counted host-wide per uid, and a host-owned file
+# would be owned by user code): `runner` runs user code (no home: HOME is inside each sandbox), `runner-pkg` runs
+# package installs into /opt/runner, which user code can read but not write.
+RUN groupadd --gid 61001 runner && useradd --uid 61001 --gid 61001 --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin runner \
+    && groupadd --gid 61002 runner-pkg && useradd --uid 61002 --gid 61002 --no-create-home --home-dir /opt/runner/pkg-home --shell /usr/sbin/nologin runner-pkg \
+    && mkdir -p /opt/runner/python /opt/runner/node /opt/runner/pkg-home \
+    && chown runner-pkg:runner-pkg /opt/runner/python /opt/runner/node /opt/runner/pkg-home \
+    && chmod 0755 /opt/runner /opt/runner/python /opt/runner/node && chmod 0700 /opt/runner/pkg-home
 WORKDIR /app
 
 # Manifests first so the dependency layers are cached until a manifest changes.
@@ -21,6 +28,7 @@ RUN pip install --no-cache-dir -r requirements.txt -r requirements-sandbox.txt
 
 COPY code_runner_mcp/ /app/
 
-USER runner
+# The server runs as root but holds only SETUID, SETGID and KILL (docker/docker-compose.yml) and drops every user-code
+# and package-install process to the uids above; see docs/standards/docker.md ("Exception: code_runner_runtime").
 EXPOSE 8100
 CMD ["python", "server.py"]

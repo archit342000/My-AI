@@ -85,10 +85,22 @@
 - Per-user rate limits (`backend/auth/rate_limit.py`, in memory, one window per user, reset by a restart): turn starts per minute (`RATE_LIMIT_TURNS_PER_MINUTE`) and web searches per day (`RATE_LIMIT_SEARCHES_PER_DAY`), so one user cannot use up shared inference or Tavily capacity. Sends and resumes answer `429` before anything is written; a search over the limit returns `Error: Daily web search limit reached.`, also for a chat with no owner (fail closed). The admin is exempt unless `RATE_LIMIT_EXEMPT_ADMIN` is false.
 - Code runs are serialised in the app and again by a lock inside the runner, and bounded per user (`CODE_RUNNER_MAX_QUEUED_PER_USER`, default 2; waits longer
   than `CODE_RUNNER_QUEUE_TIMEOUT`, default 120 s, are refused with a "busy" message), so one user cannot queue the runner full.
-  Between runs the runner removes everything in `/tmp`, `/var/tmp`, `/dev/shm` and its sandbox base, gives each run its own `HOME`
-  and `TMPDIR` inside the sandbox, and kills the run's whole process group (backgrounded children included) when it ends, times out
-  or the client disconnects. If a leftover cannot be removed the next run is refused ("Runner cleanup failed."); a failed
-  clean-up after a run is reported on that run. Residuals: the bounded clean-up covers those directories only, not other paths the `runner` user may write (for example `/home/runner`, which also holds installed packages); a process that escapes its session with `setsid` (or double-forks) is not killed and can outlive the run; a live run whose client disconnects while queued still starts and is killed on its first receive; and a silent program is stopped by its timeout, not by a client that stays connected without reading.
+  User code runs as the dedicated uid `runner` (61001) and installs as `runner-pkg` (61002), neither a real host uid (`RLIMIT_NPROC` is
+  counted host-wide per uid). The runtime server is root with only `SETUID`, `SETGID` and `KILL`, `no-new-privileges`, `init` and a
+  read-only root filesystem (exception recorded in `docs/standards/docker.md`); the writable paths are the tmpfs mounts `/tmp` (exec),
+  `/var/tmp`, `/dev/shm` and `/dev/mqueue`. Children start with `subprocess(user=, group=, extra_groups=[])` and a `prlimit` wrapper
+  (process and open-file limits only; memory is the cgroup's). Each run gets its own `HOME` and `TMPDIR` inside its sandbox, which a
+  helper running as the runner uid creates; after every run a helper kills every process of the uid, removes its SysV IPC objects and
+  its files in the scratch roots, `/dev/mqueue` and the sandbox base, and the server verifies nothing is left (`/proc/sysvipc`, `/proc`, the
+  directories). If anything cannot be cleaned the next run is refused ("Runner cleanup failed.") and a failed clean-up after a run is
+  reported on that run. The API key lives in a root-only `0700` tmpfs directory (`/run/keys`), so user code can neither read it nor the
+  server's environment, signal or ptrace the server, nor write `/opt/runner` (installed packages), `/app` or any persistent path.
+  Residuals: the host key file must stay readable by root (mode 644 or root-owned: the server has no `CAP_DAC_OVERRIDE`); user code
+  shares the kernel and the default seccomp profile (no profile change here); `/dev/mqueue` is writable and is cleaned like scratch;
+  tmpfs pages count against the container's memory limit, so user code can fill it (the cgroup, not the tmpfs sizes, is the bound);
+  a silent program is stopped by its timeout, not by a client that stays connected without reading; a live run whose client
+  disconnects while it is still queued for the lock starts and is killed on its first receive; the source tree mounted at `/app`
+  must be world-readable because the helper runs from it as the runner uid.
 - Git tools accept only subcommands on the allow-list (`GIT_DEFAULT_ALLOWED_COMMANDS`, editable in system settings).
 - Server-side fetches of user-controlled URLs must reject non-http(s) schemes and private, loopback, link-local and multicast addresses
   (the SSRF check in `playwright_mcp/server.py`). Any new fetcher reuses that check or an equivalent.
