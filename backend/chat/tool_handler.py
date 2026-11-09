@@ -41,6 +41,14 @@ class ToolHandler:
             self._user_id = db.get_chat_owner(self.chat_id)
         return self._user_id
 
+    @property
+    def owner_is_admin(self) -> bool:
+        """True when the chat owner is an admin. A missing owner or an unknown user is not (fail closed)."""
+        if not self.user_id:
+            return False
+        owner = db.get_user(self.user_id)
+        return bool(owner and owner.get('role') == 'admin')
+
     async def handle_tool_calls(
         self, 
         tool_calls: List[Dict[str, Any]]
@@ -107,6 +115,27 @@ class ToolHandler:
                             }
                         }
                     }]
+                }) + "\n\n"
+                continue
+
+            # Admin-only tools (git, package installs) are refused for any other owner, even when the model names
+            # one that was never offered to it.
+            spec = ToolRegistry.get_spec(name)
+            if spec is not None and spec.admin_only and not self.owner_is_admin:
+                log_event("tool_admin_only_denied", {"chat_id": self.chat_id, "name": name, "id": tc_id})
+                denied_msg = "Error: This tool is not available."
+                from backend.database import db
+                db.add_tool_result(
+                    chat_id=self.chat_id,
+                    tool_call_id=tc_id,
+                    name=name,
+                    content=denied_msg,
+                    parent_id=self.parent_message_id,
+                    parent_type=self.parent_type
+                )
+                yield "data: " + json.dumps({
+                    "parent_type": self.parent_type,
+                    "choices": [{"delta": {"tool_result": {"name": name, "content": denied_msg, "tool_call_id": tc_id}}}]
                 }) + "\n\n"
                 continue
 

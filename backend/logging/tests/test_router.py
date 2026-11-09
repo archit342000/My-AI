@@ -6,9 +6,11 @@ from backend.logging.router import logs_bp, _tail_file
 from unittest.mock import patch, mock_open
 
 @pytest.fixture
-def app():
+def app(login_as, admin_a):
+    """The logs app logged in as an admin; a regular user is tested with `login_as(app, user_b)`."""
     app = Flask(__name__)
     app.register_blueprint(logs_bp, url_prefix='/logs')
+    login_as(app, admin_a)
     return app
 
 @pytest.fixture
@@ -185,4 +187,28 @@ def test_get_db_tables_and_data(mock_make_connection, client):
         "SELECT * FROM workspaces ORDER BY rowid DESC LIMIT ?",
         (200,)
     )
+
+
+LOGS_ROUTES = ["/logs/ui", "/logs", "/logs/", "/logs/detail?file=x", "/logs/events", "/logs/app", "/logs/app/lines",
+               "/logs/db/tables", "/logs/db/table/chats", "/logs/db/table/messages?chat_id=c1"]
+
+
+@pytest.mark.parametrize("url", LOGS_ROUTES)
+@patch('backend.logging.router.make_connection')
+@patch('backend.logging.router.send_from_directory')
+@patch('backend.logging.router.os.path.exists', return_value=True)
+@patch('builtins.open')
+def test_every_logs_route_is_403_for_a_user_and_reads_nothing(mock_open_file, mock_exists, mock_send, mock_conn, url, app, login_as, user_b):
+    login_as(app, user_b)
+    response = app.test_client().get(url)
+    assert response.status_code == 403 and response.get_json() == {"error": "Forbidden"}
+    mock_conn.assert_not_called()  # no raw rows of any user
+    mock_send.assert_not_called()
+    mock_open_file.assert_not_called()
+
+
+def test_logs_routes_are_403_without_a_user():
+    app = Flask(__name__)  # not logged in
+    app.register_blueprint(logs_bp, url_prefix='/logs')
+    assert app.test_client().get('/logs/db/tables').status_code == 403
 

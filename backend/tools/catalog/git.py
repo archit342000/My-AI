@@ -27,6 +27,7 @@ GIT_AGENT = ToolSpec(
     tool_type=ToolType.AGENT,
     scopes=(ToolScope.MAIN,),
     requires_mode="git_mode",
+    admin_only=True,
 )
 
 EXECUTE_GIT = ToolSpec(
@@ -68,6 +69,7 @@ EXECUTE_GIT = ToolSpec(
     implementation="backend.tools.implementations.git_executor.execute_git",
     tool_type=ToolType.PURE,
     scopes=(ToolScope.GIT,),
+    admin_only=True,  # also dispatchable by name through the tool handler, not only when offered to the model
 )
 
 SPECS = [GIT_AGENT, EXECUTE_GIT]

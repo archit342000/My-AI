@@ -16,6 +16,7 @@ def mock_global_db():
 @pytest.fixture
 def mock_registry():
     with patch('backend.chat.tool_handler.ToolRegistry') as mock:
+        mock.get_spec.return_value = MagicMock(admin_only=False)  # ordinary tools unless a test says otherwise
         yield mock
 
 @pytest.fixture
@@ -479,4 +480,39 @@ async def test_handle_tool_calls_clipboard_enforcement_bypass(mock_db_instance, 
     assert any("mocked_chunk" in c for c in chunks)
     assert tool_handler.chat_handler._validation_bypass_next is False # Check it was reset
 
+
+async def _run_calls(handler, name):
+    return [c async for c in handler.handle_tool_calls([{"id": "call_1", "function": {"name": name, "arguments": "{}"}}])]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("tool", ["git_agent", "execute_git", "install_packages"])
+@pytest.mark.parametrize("role,owner", [("user", "u1"), (None, "u1"), ("admin", None)])  # a user, an unknown user, no owner
+async def test_admin_only_tools_are_refused_for_a_non_admin_owner_and_nothing_runs(tool, role, owner, tool_handler):
+    tool_handler._user_id = owner
+    user_row = {"id": "u1", "role": role} if role else None
+    with patch('backend.chat.tool_handler.db') as handler_db, patch('backend.database.db') as global_db, \
+         patch('backend.chat.tool_handler.ToolRegistry.resolve_implementation') as resolve, \
+         patch('backend.chat.tool_handler.log_event') as events:
+        handler_db.get_user.return_value = user_row
+        global_db.get_messages.return_value = []
+        chunks = await _run_calls(tool_handler, tool)
+    resolve.assert_not_called()  # neither the implementation nor the agent is resolved, let alone run
+    assert "Error: This tool is not available." in "".join(chunks)
+    assert any(c.args[0] == "tool_admin_only_denied" for c in events.call_args_list)
+    global_db.add_tool_result.assert_called_once()
+
+
+@pytest.mark.anyio
+async def test_install_packages_runs_for_an_admin_owner(tool_handler, mock_registry):
+    tool_handler._user_id = "a1"
+    mock_registry.get_tool.return_value = {"type": "pure"}
+    mock_registry.get_spec.return_value = MagicMock(admin_only=True)
+    mock_registry.resolve_implementation.return_value = lambda **kw: "installed"
+    with patch('backend.chat.tool_handler.db') as handler_db, patch('backend.database.db') as global_db:
+        handler_db.get_user.return_value = {"id": "a1", "role": "admin"}
+        global_db.get_messages.return_value = []
+        chunks = await _run_calls(tool_handler, "install_packages")
+    assert "not available" not in "".join(chunks)
+    mock_registry.resolve_implementation.assert_called()
 

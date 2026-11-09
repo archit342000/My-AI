@@ -4,7 +4,7 @@
 ## 📄 Core Files
 | File | Purpose | Key Symbols/Exports |
 | :--- | :--- | :--- |
-| `__init__.py` | Model config loading, per-role model getters, and the `/api/models` pass-through blueprint. | `models_bp`, `load_model_config`, `get_embedding_model`, `get_model_metadata` |
+| `__init__.py` | Model config loading, per-role model getters, and the `/api/models` pass-through blueprint (the model list is open; load, unload and other non-GET calls are admin only; the caller's Access JWT, cookies and Authorization are never forwarded). | `models_bp`, `load_model_config`, `get_embedding_model`, `get_model_metadata` |
 
 ## 🧩 Architectural Context
 *   **Dependencies:** `backend.config` (`AI_PROXY_URL`), `requests`.

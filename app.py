@@ -24,7 +24,7 @@ if os.name != 'nt' and hasattr(time, 'tzset'):
 from backend import config
 from backend.rag import RAGProvider
 from backend.database import db
-from backend.auth.context import set_current_user, reset_current_user, user_context
+from backend.auth.context import admin_required, set_current_user, reset_current_user, user_context
 from backend.auth.ownership import owns_chat
 from backend.auth.providers import get_provider
 from backend.database.init_db import init_db
@@ -338,14 +338,17 @@ def react_assets(path):
 
 @app.route(LEGACY_PREFIX + '/')
 @app.route(LEGACY_PREFIX + '/index.html')
+@admin_required
 def legacy_index():
     return _serve_legacy_page('index.html')
 
 @app.route(LEGACY_PREFIX + '/logs.html')
+@admin_required
 def legacy_logs():
     return _serve_legacy_page('logs.html')
 
 @app.route(LEGACY_PREFIX + '/<path:path>')
+@admin_required
 def legacy_assets(path):
     return send_from_directory('static', path)
 

@@ -588,3 +588,18 @@ async def test_initiate_chat_on_a_missing_chat_raises_and_creates_nothing(mock_d
             pass
     mock_db.ensure_chat_exists.assert_not_called()
     mock_db.update_chat.assert_not_called()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("role,expect_git", [("user", False), (None, False), ("admin", True)])
+async def test_initiate_chat_drops_git_mode_for_a_non_admin_owner(mock_db, role, expect_git):
+    mock_db.get_chat_owner.return_value = "owner-1"
+    mock_db.get_user.return_value = {"id": "owner-1", "role": role} if role else None
+    with patch('backend.chat.handler.log_event') as events:
+        await _run_initiate_chat(mock_db, gitMode=True)
+    updates = {}
+    for call in mock_db.update_chat.call_args_list:
+        updates.update(call.kwargs)
+    assert ("git_mode" in updates and updates["git_mode"] == 1) is expect_git
+    assert any(c.args[0] == "chat_git_mode_denied" for c in events.call_args_list) is (not expect_git)
+

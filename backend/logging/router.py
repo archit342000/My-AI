@@ -3,9 +3,16 @@ import os
 import json
 import collections
 from backend import config
+from backend.auth.context import forbid_non_admin
 from backend.database.db_layer import make_connection
 
 logs_bp = Blueprint('logs', __name__)
+
+
+@logs_bp.before_request
+def admin_only():
+    """The logs and the raw database tables hold every user's data: admin only, for every current and future route."""
+    return forbid_non_admin()
 
 @logs_bp.route('/ui')
 def logs_page():

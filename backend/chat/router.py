@@ -5,7 +5,7 @@ import time
 from typing import Dict, Any
 
 from backend.chat.handler import ChatHandler
-from backend.auth.context import current_user_id
+from backend.auth.context import current_user, current_user_id
 from backend.auth.ownership import claim_chat, reject_foreign_chat, require_chat_owner, require_workspace_owner
 from backend.chat.message_edit import merge_edited_user_content
 from backend.database import db
@@ -302,6 +302,18 @@ def get_chat_history_full(chat_id):
         logger.error(f"Error fetching history for chat {chat_id}: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
 
+def _forbid_git_mode_for_non_admin(body):
+    """
+    403 when the request turns git mode on and the caller is not an admin (git reaches host-wide tools).
+
+    Returns None when the request does not enable git mode or the caller is an admin.
+    """
+    user = current_user()
+    if isinstance(body, dict) and body.get('gitMode') and not (user and user.get('role') == 'admin'):
+        return jsonify({"error": "Forbidden"}), 403
+    return None
+
+
 @openai_bp.route('/completions', methods=['POST'])
 def chat_completions():
     """
@@ -323,6 +335,11 @@ def chat_completions():
 
     # Another user's chat is a 404 before anything else, so the file check below cannot reveal what that chat holds.
     denied = reject_foreign_chat(chat_id)
+    if denied:
+        return denied
+
+    # Before anything is written or claimed: git mode is admin only.
+    denied = _forbid_git_mode_for_non_admin(data)
     if denied:
         return denied
 
@@ -558,6 +575,9 @@ def resume_chat(chat_id):
     resume_body, err = read_json_object(required=False)
     if err:
         return err
+    denied = _forbid_git_mode_for_non_admin(resume_body)
+    if denied:
+        return denied
     # Keep a reference so the release in call_on_close targets the manager that took the claim,
     # even if the module-level name is rebound later (as tests do).
     turns = task_manager

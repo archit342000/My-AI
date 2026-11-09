@@ -1,7 +1,7 @@
 from flask import Blueprint, request, jsonify, Response
 import json
 import logging
-from backend.auth.context import current_user_id
+from backend.auth.context import admin_required, current_user_id
 from backend.auth.ownership import require_chat_owner
 from backend.tools.callbacks import callback_registry
 from backend.logging import log_event
@@ -176,6 +176,7 @@ def reset_preferences():
 # --- Agent Config Routes ---
 
 @tools_bp.route('/config/agents', methods=['GET'])
+@admin_required
 def get_agents_config():
     from backend import config
     from backend.chat.agent_handler import AGENT_PROFILES
@@ -214,6 +215,7 @@ def get_agents_config():
     })
 
 @tools_bp.route('/config/agents/<agent_name>', methods=['PATCH'])
+@admin_required
 def update_agent_config(agent_name):
     from backend import config
     import backend.chat.agent_handler as agent_handler
@@ -258,11 +260,13 @@ def update_agent_config(agent_name):
 # --- Browser Config Routes ---
 
 @tools_bp.route('/config/browser', methods=['GET'])
+@admin_required
 def get_browser_config():
     from backend import config
     return jsonify({"stealth_level": config.BROWSER_STEALTH_LEVEL})
 
 @tools_bp.route('/config/browser', methods=['PATCH'])
+@admin_required
 def update_browser_config():
     from backend import config
     data, err = read_json_object()
@@ -346,6 +350,7 @@ def proxy_portal_init():
 # --- Global System Settings Routes ---
 
 @tools_bp.route('/config/settings', methods=['GET'])
+@admin_required
 def get_system_settings():
     from backend.database import db
     from backend import config
@@ -374,6 +379,7 @@ def get_system_settings():
     return jsonify(settings)
 
 @tools_bp.route('/config/settings', methods=['POST'])
+@admin_required
 def update_system_settings():
     from backend.database import db
     from backend import config

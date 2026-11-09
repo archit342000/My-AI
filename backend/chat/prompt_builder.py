@@ -11,6 +11,7 @@ class PromptContext:
     chat_metadata: Dict[str, Any]
     preferences: List[Dict] = field(default_factory=list)
     skills: List[Dict] = field(default_factory=list)
+    is_admin: bool = False  # the chat owner is an admin: admin-only tools (git, package installs) are offered
 
     @property
     def is_research_mode(self) -> bool:
@@ -28,6 +29,7 @@ class PromptContext:
             'code_execution_mode': bool(self.chat_metadata.get('code_execution_mode', 1)),
             'browsing_mode': bool(self.chat_metadata.get('browsing_mode')),
             'research_mode': self.is_research_mode,
+            'admin': self.is_admin,
         }
 
     @property

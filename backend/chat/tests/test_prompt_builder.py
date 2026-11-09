@@ -42,7 +42,7 @@ def test_prompt_builder_mode_directives():
         "file_system_mode": 1,
         "git_mode": 1,
         "code_execution_mode": 1
-    })
+    }, is_admin=True)  # the git directive is admin only (see the test below)
     builder = PromptBuilder(ctx)
     prompt = builder.build()
     
@@ -94,3 +94,20 @@ def test_prompt_builder_skills():
     assert "# Available Skills" in prompt
     assert "- /skill1: Doing task 1" in prompt
     assert "- /skill2: Doing task 2" in prompt
+
+
+def test_active_modes_carry_the_admin_flag_and_default_to_no_admin():
+    assert PromptContext(chat_metadata={}).active_modes["admin"] is False
+    assert PromptContext(chat_metadata={}, is_admin=True).active_modes["admin"] is True
+
+
+def test_the_prompt_omits_admin_only_tool_directives_for_a_user_with_git_and_code_on():
+    from backend.tools import ToolRegistry
+    meta = {"git_mode": 1, "code_execution_mode": 1}
+    user_prompt = PromptBuilder(PromptContext(chat_metadata=meta)).build()
+    admin_prompt = PromptBuilder(PromptContext(chat_metadata=meta, is_admin=True)).build()
+    for name in ("git_agent", "install_packages"):
+        directive = ToolRegistry.get_spec(name).directives.strip()
+        assert directive and directive in admin_prompt and directive not in user_prompt
+    assert "install_packages" not in user_prompt  # a user is never told to call a tool they cannot use
+    assert "`run_file`" in user_prompt  # the ordinary code directive stays

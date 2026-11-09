@@ -40,12 +40,26 @@ def user_context(user: Optional[dict]) -> Iterator[None]:
         reset_current_user(token)
 
 
+def forbid_non_admin() -> Optional[tuple]:
+    """
+    Check that the current user is an admin.
+
+    Returns:
+        None for an admin, else the `(response, 403)` tuple (a regular user, or no user: fail closed). For
+        `before_request` hooks, so every current and future route of a blueprint is covered.
+    """
+    user = current_user()
+    if not user or user.get("role") != "admin":
+        return jsonify({"error": "Forbidden"}), 403
+    return None
+
+
 def admin_required(fn: Callable) -> Callable:
     """Route decorator: return 403 unless the current user is an admin."""
     @wraps(fn)
     def wrapper(*args, **kwargs):
-        user = current_user()
-        if not user or user.get("role") != "admin":
-            return jsonify({"error": "Forbidden"}), 403
+        denied = forbid_non_admin()
+        if denied:
+            return denied
         return fn(*args, **kwargs)
     return wrapper

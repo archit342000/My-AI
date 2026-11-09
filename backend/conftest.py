@@ -20,6 +20,12 @@ def user_b():
 
 
 @pytest.fixture
+def admin_a(user_a):
+    """`user_a` as an admin (same id, so ownership mocks that name user_a still match)."""
+    return {**user_a, "role": "admin"}
+
+
+@pytest.fixture
 def two_users(user_a, user_b):
     """`(user_a, user_b)`."""
     return user_a, user_b

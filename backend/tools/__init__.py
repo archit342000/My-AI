@@ -84,6 +84,8 @@ class ToolRegistry:
             if s.requires_mode and active_modes is not None:
                 if not active_modes.get(s.requires_mode):
                     continue
+            if s.admin_only and not (active_modes and active_modes.get("admin")):
+                continue  # no active modes (agent scopes) means no admin
             directive = s.directives.strip()
             if directive:
                 directives_list.append(directive)
@@ -103,6 +105,8 @@ class ToolRegistry:
             if spec.requires_mode:
                 if not active_modes.get(spec.requires_mode):
                     continue
+            if spec.admin_only and not active_modes.get("admin"):
+                continue
             tools.append(spec.to_openai_schema())
         return tools
 

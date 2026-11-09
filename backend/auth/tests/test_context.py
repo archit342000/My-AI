@@ -1,7 +1,7 @@
 from flask import Flask
 
 from backend.auth.context import (
-    admin_required, current_user, current_user_id, reset_current_user, set_current_user, user_context,
+    admin_required, forbid_non_admin, current_user, current_user_id, reset_current_user, set_current_user, user_context,
 )
 
 ADMIN = {"id": "a1", "email": "a@x.io", "role": "admin"}
@@ -60,3 +60,13 @@ def test_admin_required_blocks_user_and_anonymous():
 def test_admin_required_allows_admin():
     with user_context(ADMIN):
         assert _client().get("/x").get_json() == {"ok": True}
+
+
+def test_forbid_non_admin_returns_none_for_an_admin_and_403_otherwise():
+    with Flask(__name__).app_context():
+        assert forbid_non_admin()[1] == 403  # no user: fail closed
+        with user_context(USER):
+            response, status = forbid_non_admin()
+            assert status == 403 and response.get_json() == {"error": "Forbidden"}
+        with user_context(ADMIN):
+            assert forbid_non_admin() is None
