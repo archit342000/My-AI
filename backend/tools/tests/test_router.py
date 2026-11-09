@@ -569,3 +569,13 @@ def test_config_routes_work_for_the_admin(method, url, body, client, mock_db):
     kwargs = {"json": body} if body is not None else {}
     assert getattr(client, method)(url, **kwargs).status_code in (200, 400)  # the route ran (400 = its own validation)
 
+
+
+@pytest.mark.parametrize("path", ["/tools/portal/vnc/vnc.html", "/tools/portal/vnc/"])
+def test_proxy_portal_vnc_entry_urls_are_served_not_redirected(client, path):
+    """/portal/vnc/vnc.html used to 308 to the canonical /portal/vnc/ (a defaults redirect), which broke the portal behind a proxy."""
+    with patch('backend.mcp_client.portal_vnc_auth_header', return_value={"Authorization": "Basic x"}), patch('httpx.Client.get') as mock_get:
+        mock_get.return_value = MagicMock(status_code=200, content=b"novnc", headers={"content-type": "text/html"})
+        resp = client.get(path + "?autoconnect=true&resize=scale")
+    assert resp.status_code == 200 and resp.data == b"novnc"
+    assert mock_get.call_args.args[0] == "http://playwright_mcp:6080/vnc.html"

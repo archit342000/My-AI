@@ -694,3 +694,15 @@ def test_a_chat_without_an_owner_gets_the_unavailable_frames_without_taking_the_
     slot.assert_not_called(); mock_connect.assert_not_called()
     events.assert_any_call("code_runner_no_owner_error", {"chat_id": "chat123"})
 
+
+
+def test_redirects_use_the_scheme_the_tunnel_forwards(client):
+    """Behind the tunnel the app sees plain HTTP: it must trust X-Forwarded-Proto so its own redirects stay https."""
+    response = client.get('/api/tools/portal/vnc', headers={"X-Forwarded-Proto": "https", "Host": "myai.example.dev"})
+    assert response.status_code in (301, 308)
+    assert response.headers["Location"].startswith("https://myai.example.dev/")
+
+
+def test_redirects_without_the_forwarded_header_keep_the_request_scheme(client):
+    response = client.get('/api/tools/portal/vnc', headers={"Host": "myai.example.dev"})
+    assert response.headers["Location"].startswith("http://myai.example.dev/")

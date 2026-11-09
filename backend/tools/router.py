@@ -281,7 +281,13 @@ def update_browser_config():
 
 # --- Browser Portal Proxy Routes ---
 
-@tools_bp.route('/portal/vnc/', defaults={'path': 'vnc.html'})
+@tools_bp.route('/portal/vnc/')
+def proxy_portal_vnc_index():
+    """The noVNC entry page. A separate rule rather than `defaults={'path': 'vnc.html'}`: with a defaults rule Werkzeug
+    redirects `/portal/vnc/vnc.html` to the canonical `/portal/vnc/`, which the browser then blocks behind a proxy."""
+    return proxy_portal_vnc('vnc.html')
+
+
 @tools_bp.route('/portal/vnc/<path:path>')
 def proxy_portal_vnc(path):
     """Reverse-proxy noVNC static files from the playwright_mcp container."""
