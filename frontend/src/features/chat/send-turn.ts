@@ -57,8 +57,15 @@ async function consume(
 ): Promise<void> {
   const store = useStreamStore.getState();
   let live = emptyLiveTurn();
+  let listRefreshed = false;
   try {
     for await (const raw of source) {
+      if (!listRefreshed) {
+        // The first chunk means the server accepted the send and stored the user message, so a new
+        // chat now has content and belongs in the sidebar before the reply finishes.
+        listRefreshed = true;
+        void queryClient.invalidateQueries({ queryKey: queryKeys.chats });
+      }
       live = applyChunk(live, raw as StreamChunk);
       store.update(live);
     }

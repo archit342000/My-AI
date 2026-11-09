@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { queryKeys } from '../../api/chats';
 import { artifactsApi, type Artifact, type ScopeRef } from '../../api/filesystem';
 import { Icon } from '../../components/icons/Icon';
 import { Button, IconButton } from '../../components/ui/Button';
@@ -81,6 +82,8 @@ export function ArtifactPanel({ scope, onClose }: ArtifactPanelProps) {
       }),
     onSuccess: async (res) => {
       await queryClient.invalidateQueries({ queryKey: ['artifacts', key] });
+      // A chat's own artifact counts as chat content, so the chat joins the sidebar list.
+      if (scope.chatId) await queryClient.invalidateQueries({ queryKey: queryKeys.chats });
       setSelected(res.id);
       setEditing(true);
     },
@@ -103,6 +106,7 @@ export function ArtifactPanel({ scope, onClose }: ArtifactPanelProps) {
       setSelected(null);
       setEditing(false);
       await queryClient.invalidateQueries({ queryKey: ['artifacts', key] });
+      if (scope.chatId) await queryClient.invalidateQueries({ queryKey: queryKeys.chats });
     },
     onError: (e) => showToast(e instanceof Error ? e.message : 'Delete failed', 'error'),
   });
