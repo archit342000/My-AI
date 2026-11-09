@@ -1,9 +1,14 @@
 import { create } from 'zustand';
 import type { SamplingParams } from '../api/completions';
+import { nsKey } from '../lib/user-storage';
+import { useUserStore } from './user-store';
 
 /**
  * Chat-level settings. Persisted under the same localStorage keys the legacy UI uses, so the
- * selected model, sampling values and mode toggles carry over.
+ * selected model, sampling values and mode toggles carry over. Every read and write goes through
+ * `nsKey`, so each user has their own settings: the admin keeps these exact key names, any other
+ * user gets `<key>:<userId>`. The store starts from defaults; `hydrate()` (called by `UserGate` once
+ * the user is known) is the only place that reads storage.
  */
 export const KEYS = {
   model: 'my_ai_selected_model',
@@ -22,11 +27,16 @@ export const DEFAULT_SAMPLING: SamplingParams = {
 };
 
 function read(key: string): string | null {
+  const namespaced = nsKey(key); // outside the try: a missing user is a bug to surface, not a storage error
   try {
-    return localStorage.getItem(key);
+    return localStorage.getItem(namespaced);
   } catch {
     return null;
   }
+}
+
+function write(key: string, value: string): void {
+  localStorage.setItem(nsKey(key), value);
 }
 
 function loadSampling(): SamplingParams {
@@ -37,6 +47,14 @@ function loadSampling(): SamplingParams {
     return DEFAULT_SAMPLING;
   }
 }
+
+const DEFAULT_MODES: ModeToggles = {
+  researchMode: false,
+  browsingMode: false,
+  gitMode: false,
+  codeExecutionMode: true,
+  fileSystemMode: false,
+};
 
 export interface ModeToggles {
   researchMode: boolean;
@@ -55,6 +73,8 @@ interface SettingsState {
   userPreferences: boolean;
   personaId: string | null;
   modes: ModeToggles;
+  /** Load this user's saved settings (call once the user is known). */
+  hydrate: () => void;
   setPersona: (id: string | null) => void;
   setModel: (id: string, name: string) => void;
   setSampling: (patch: Partial<SamplingParams>) => void;
@@ -64,41 +84,48 @@ interface SettingsState {
 }
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
-  model: read(KEYS.model),
-  modelName: read(KEYS.modelName),
-  sampling: loadSampling(),
-  visionEnabled: read(KEYS.vision) === 'true',
+  model: null,
+  modelName: null,
+  sampling: DEFAULT_SAMPLING,
+  visionEnabled: false,
   userPreferences: true,
   setUserPreferences: (on) => set({ userPreferences: on }),
-  personaId: read(KEYS.persona),
+  personaId: null,
+  modes: DEFAULT_MODES,
+  hydrate: () => {
+    set({
+      model: read(KEYS.model),
+      modelName: read(KEYS.modelName),
+      sampling: loadSampling(),
+      visionEnabled: read(KEYS.vision) === 'true',
+      personaId: read(KEYS.persona),
+      // gitMode is admin only (the server refuses it otherwise); it is never persisted, so it starts off.
+      modes: { ...DEFAULT_MODES, researchMode: read(KEYS.research) === 'true', gitMode: false },
+    });
+  },
   setPersona: (id) => {
-    if (id) localStorage.setItem(KEYS.persona, id);
-    else localStorage.removeItem(KEYS.persona);
+    if (id) write(KEYS.persona, id);
+    else localStorage.removeItem(nsKey(KEYS.persona));
     set({ personaId: id });
   },
-  modes: {
-    researchMode: read(KEYS.research) === 'true',
-    browsingMode: false,
-    gitMode: false,
-    codeExecutionMode: true,
-    fileSystemMode: false,
-  },
   setModel: (id, name) => {
-    localStorage.setItem(KEYS.model, id);
-    localStorage.setItem(KEYS.modelName, name);
+    write(KEYS.model, id);
+    write(KEYS.modelName, name);
     set({ model: id, modelName: name });
   },
   setSampling: (patch) => {
     const next = { ...get().sampling, ...patch };
-    localStorage.setItem(KEYS.sampling, JSON.stringify(next));
+    write(KEYS.sampling, JSON.stringify(next));
     set({ sampling: next });
   },
   setVisionEnabled: (on) => {
-    localStorage.setItem(KEYS.vision, on ? 'true' : 'false');
+    write(KEYS.vision, on ? 'true' : 'false');
     set({ visionEnabled: on });
   },
   setMode: (key, on) => {
-    if (key === 'researchMode') localStorage.setItem(KEYS.research, on ? 'true' : 'false');
+    if (key === 'researchMode') write(KEYS.research, on ? 'true' : 'false');
+    // A user cannot turn git mode on, whatever called this (the server would refuse it anyway).
+    if (key === 'gitMode' && on && useUserStore.getState().user?.role !== 'admin') return;
     set({ modes: { ...get().modes, [key]: on } });
   },
 }));

@@ -23,11 +23,11 @@ A React build missing from `dist/` returns 503 with the build command.
 | Path | Contents |
 |------|----------|
 | `src/api/` | Typed `fetch` client, SSE reader, endpoint modules per area |
-| `src/app/` | Router, root layout, sidebar |
+| `src/app/` | User gate, router, root layout, sidebar |
 | `src/components/` | Shared UI: `ui/` (Modal, Toast, ContextMenu, ConfirmDialog), `icons/`, `markdown/`, `background/` |
 | `src/features/` | `chat/`, `composer/`, `sidebar/`, `artifacts/`, `workspace/`, `settings/`, `tools/`, `logs/`, `home/`, `dev/` |
 | `src/lib/` | Pure logic with unit tests: markdown pipeline, chat model, scroll, particles, theme |
-| `src/state/` | Zustand stores: UI, settings, stream, modal |
+| `src/state/` | Zustand stores: UI, settings, stream, modal, current user |
 | `src/styles/legacy.css` | Legacy stylesheet, imported unchanged; class names are shared with the legacy UI |
 | `scripts/` | Generators for icon and tool-label data from `static/js/` |
 
@@ -36,7 +36,17 @@ A React build missing from `dist/` returns 503 with the build command.
 - **Server state:** TanStack Query. Query keys live in `api/chats.ts` and `api/settings.ts`.
 - **UI state:** Zustand. Stream state (`state/stream-store.ts`) holds the in-flight turn.
 - **Browser state:** `localStorage` keys keep the legacy names and formats (`my_ai_selected_model`,
-  `my_ai_sampling_params`, `chatWorkspaces`, ...). Do not rename them.
+  `my_ai_sampling_params`, `chatWorkspaces`, ...). Do not rename them. They are per user: every read and write goes
+  through `nsKey()` (`lib/user-storage.ts`), which keeps these exact names for the admin (who owns all existing
+  browser data) and uses `<key>:<userId>` for any other user. The theme and artifact-drawer width stay global (device
+  preferences).
+- **Current user:** `app/UserGate.tsx` loads `GET /api/me` before anything user-dependent renders (no retry on 401), records
+  the user in `state/user-store.ts`, calls `initUserStorage` and `settings-store.hydrate()` (the only place that reads
+  storage), then renders the app. A 401 shows "Your session has expired." with a Reload button (full page from the gate,
+  banner from `RootLayout` for a later request); a 403 shows a toast and still throws `ApiError`.
+- **Admin gating:** the UI hides what the server refuses for a user (`useIsAdmin()`): the Logs link and page, the runner
+  settings and the agent, model and stealth links in System Settings, the four admin dialogs in `DialogHost`, the Git Agent
+  toggle (a user's `gitMode` stays off) and the browser portal button. This is convenience only; the server enforces it.
 
 ## Conventions
 

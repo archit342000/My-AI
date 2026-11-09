@@ -1,4 +1,6 @@
 /** Thin fetch wrapper. Same-origin requests, JSON in and out, errors carry status and body. */
+import { showToast } from '../components/ui/toast-store';
+import { useUserStore } from '../state/user-store';
 
 export class ApiError extends Error {
   readonly status: number;
@@ -10,6 +12,11 @@ export class ApiError extends Error {
     this.status = status;
     this.body = body;
   }
+}
+
+/** Query retry rule: one retry, except for 401 and 403, which a retry cannot change (and would toast twice). */
+export function shouldRetryQuery(count: number, err: unknown): boolean {
+  return !(err instanceof ApiError && (err.status === 401 || err.status === 403)) && count < 1;
 }
 
 export interface RequestOptions extends Omit<RequestInit, 'body'> {
@@ -43,6 +50,10 @@ export async function apiRequest(path: string, options: RequestOptions = {}): Pr
       (parsed && typeof parsed === 'object' && 'error' in parsed && typeof parsed.error === 'string'
         ? parsed.error
         : null) ?? `${response.status} ${response.statusText || 'request failed'}`;
+    // 401: the Access session ended (RootLayout shows a reload banner). 403: the server refused the action
+    // for this user; tell them once per response and still throw so callers keep their own flow.
+    if (response.status === 401) useUserStore.getState().setSessionExpired(true);
+    else if (response.status === 403) showToast("You don't have access to that.", 'error');
     throw new ApiError(response.status, parsed, message);
   }
   return response;

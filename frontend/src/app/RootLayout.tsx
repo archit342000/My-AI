@@ -9,6 +9,7 @@ import { AmbientBackground } from '../components/background/AmbientBackground';
 import { ToastViewport } from '../components/ui/Toast';
 import { useThemeSync } from '../hooks/useThemeSync';
 import { useUiStore } from '../state/ui-store';
+import { useUserStore } from '../state/user-store';
 import { Sidebar } from './Sidebar';
 import { DialogHost } from '../features/settings/DialogHost';
 
@@ -35,6 +36,7 @@ export function RootLayout() {
   }, [path]);
   const onLogs = useLocation().pathname.startsWith('/logs');
   const sidebarCollapsed = useUiStore((s) => s.sidebarCollapsed);
+  const sessionExpired = useUserStore((s) => s.sessionExpired);
   // On phones the sidebar is a drawer: Escape closes it (through the modal stack, so it stays
   // the top-most layer) and the scrim or the top bar button closes it.
   useEffect(() => {
@@ -50,6 +52,14 @@ export function RootLayout() {
 
   return (
     <>
+      {sessionExpired ? (
+        <div className="session-banner" role="alert">
+          <span>Your session has expired.</span>
+          <button type="button" className="btn-secondary" onClick={() => window.location.reload()}>
+            Reload
+          </button>
+        </div>
+      ) : null}
       {/* The logs page has an opaque surface; the particle canvas would only compete with the data (F-52). */}
       {onLogs ? null : <AmbientBackground />}
       <div id="app-root">

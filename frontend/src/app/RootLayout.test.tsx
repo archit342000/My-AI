@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, screen } from '@testing-library/react';
+import { act, fireEvent, screen } from '@testing-library/react';
 import { renderWithProviders } from '../test/render';
 import { RootLayout } from './RootLayout';
 import { useUiStore } from '../state/ui-store';
 import { chatsApi } from '../api/chats';
+import { useUserStore } from '../state/user-store';
 
 describe('RootLayout', () => {
   afterEach(() => {
@@ -33,5 +34,15 @@ describe('RootLayout', () => {
     vi.spyOn(chatsApi, 'listWorkspaces').mockResolvedValue([]);
     renderWithProviders(<RootLayout />);
     expect(screen.queryByRole('button', { name: 'View files and artifacts' })).toBeNull();
+  });
+
+  it('shows a reload banner once the session has expired, and not before', () => {
+    vi.spyOn(chatsApi, 'list').mockResolvedValue([]);
+    vi.spyOn(chatsApi, 'listWorkspaces').mockResolvedValue([]);
+    renderWithProviders(<RootLayout />);
+    expect(screen.queryByText('Your session has expired.')).toBeNull();
+    act(() => useUserStore.getState().setSessionExpired(true));
+    expect(screen.getByText('Your session has expired.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reload' })).toBeInTheDocument();
   });
 });

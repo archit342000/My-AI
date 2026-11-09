@@ -2488,3 +2488,30 @@ body {
   color: var(--content-muted);
   padding: 0 4px 6px;
 }
+
+/* The signed-in user's email at the bottom of the sidebar. */
+.sidebar-user {
+  padding: 0.375rem 0.625rem;
+  font-size: 0.75rem;
+  color: var(--content-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Shown over the app when a request answers 401 (the Access session ended). */
+.session-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 0.625rem 1rem;
+  background: var(--danger, #b3261e);
+  color: #fff;
+  font-size: 0.875rem;
+}

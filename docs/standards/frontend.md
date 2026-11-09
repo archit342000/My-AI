@@ -30,7 +30,7 @@ Applies to `frontend/`. Layout, state placement and run commands are in `docs/fr
 
 - **Server data:** TanStack Query only. Keys are defined in `api/`. Invalidate, do not refetch by hand.
 - **UI state:** Zustand stores in `src/state/`, one concern per store, selectors in components (no whole-store subscriptions).
-- **Persisted browser state:** keep existing `localStorage` key names and formats (see `docs/frontend.md`).
+- **Persisted browser state:** keep existing `localStorage` key names and formats (see `docs/frontend.md`). User settings go through `nsKey()` (`lib/user-storage.ts`): the admin keeps the existing names and any other user's keys get a `:<userId>` suffix, so no key is renamed.
 
 ## Styling and accessibility
 

@@ -11,6 +11,7 @@ import { Tooltip } from '../components/ui/Tooltip';
 import { useUiStore } from '../state/ui-store';
 import { SidebarChats } from '../features/sidebar/RecentChats';
 import { useModalStore } from '../state/modal-store';
+import { useIsAdmin, useUserStore } from '../state/user-store';
 
 /**
  * Left navigation rail. Settings buttons are wired in phase 5.
@@ -22,6 +23,8 @@ export function Sidebar() {
   const showDialog = useModalStore((s) => s.show);
   const queryClient = useQueryClient();
   const temporaryChatId = useUiStore((s) => s.temporaryChatId);
+  const isAdmin = useIsAdmin();
+  const user = useUserStore((s) => s.user);
 
   function toggleTemporary() {
     // Navigate first: the temporary chat is started on the landing page (see shouldDiscardTemporaryChat).
@@ -166,11 +169,13 @@ export function Sidebar() {
               label="System settings"
               onClick={() => showDialog('system-settings')}
             />
-            <Tooltip content="Logs">
-              <a href="/logs" className="ui-icon-button sidebar-rail__link" aria-label="Logs">
-                <Icon name="logs" size={16} />
-              </a>
-            </Tooltip>
+            {isAdmin ? (
+              <Tooltip content="Logs">
+                <a href="/logs" className="ui-icon-button sidebar-rail__link" aria-label="Logs">
+                  <Icon name="logs" size={16} />
+                </a>
+              </Tooltip>
+            ) : null}
           </>
         ) : (
           <>
@@ -198,11 +203,18 @@ export function Sidebar() {
               <span className="sidebar-text">System</span>
               <span className="nav-tooltip">System Settings</span>
             </button>
-            <a href="/logs" className="sidebar-footer-btn" title="View Logs" aria-label="Logs">
-              <Icon name="logs" size={18} />
-              <span className="sidebar-text">Logs</span>
-              <span className="nav-tooltip">Logs</span>
-            </a>
+            {isAdmin ? (
+              <a href="/logs" className="sidebar-footer-btn" title="View Logs" aria-label="Logs">
+                <Icon name="logs" size={18} />
+                <span className="sidebar-text">Logs</span>
+                <span className="nav-tooltip">Logs</span>
+              </a>
+            ) : null}
+            {user ? (
+              <div className="sidebar-user sidebar-text" title={`Signed in as ${user.email} (${user.role})`}>
+                {user.email}
+              </div>
+            ) : null}
           </>
         )}
       </div>
