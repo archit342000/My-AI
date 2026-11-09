@@ -59,6 +59,8 @@
 - Served at `https://myai.architanand.dev` (Access team `architanand.cloudflareaccess.com`; the `CF_ACCESS_*` and `ADMIN_EMAIL`
   defaults in the compose file are the non-secret values of that deployment). Keep the Access policy **owner-only** until the
   per-user scoping of files, RAG and code runs is merged; only then allow other identities.
+- `app` trusts one hop of `X-Forwarded-Proto` (`ProxyFix`, `app.py`) so its own redirects stay https behind the tunnel; that is only safe because
+  `app` is reachable only through the tunnel and the internal network, never published. Do not publish it directly.
 - `app` sets `gw_priority: 1` on `secure-internal`, so its default route stays on My-AI's own network. A host firewall drops new
   connections from the edge subnet to private ranges and the host, so outbound traffic (inference server, LAN) must not leave via
   `edge`. After a deploy, `docker compose -f docker/docker-compose.yml exec app ip route` must not show a default via `10.250.0.1`.

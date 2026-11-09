@@ -1,4 +1,5 @@
 from contextlib import ExitStack
+from werkzeug.middleware.proxy_fix import ProxyFix
 from flask import Flask, request, jsonify, Response, send_from_directory, g
 from werkzeug.exceptions import RequestEntityTooLarge
 from backend.logging import log_event
@@ -47,6 +48,9 @@ from backend.models import models_bp
 # _agent_callbacks moved to ChatHandler
 
 app = Flask(__name__, static_folder='static')
+# The app is reached only through the Cloudflare tunnel (and the edge network), which terminates TLS: trust its
+# X-Forwarded-Proto so the app's own redirects stay https instead of dropping to http (a blocked mixed-content URL).
+app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1)
 # Register New Chat Architecture Blueprints
 app.register_blueprint(chat_bp, url_prefix='/api/chats')
 app.register_blueprint(personas_bp, url_prefix='/api')
