@@ -17,7 +17,6 @@
 | `callbacks.py` | Persistence and management of pending tool clarifications. | `callback_registry` |
 | `clarify.py` | Implementation for user clarification requests. | `request_clarification` |
 | `clipboard.py` | Out-of-band text sharing clipboard tool implementations. | `clipboard_write`, `clipboard_read`, `clipboard_copy_file` |
-| `files.py` | Tools for reading and searching **uploaded** files (RAG/Grep). | `read_file` |
 | `preferences.py` | Management of long-term user profile facts. | `manage_user_preferences` |
 | `spec.py` | ToolSpec dataclass and scope/type enumerations. | `ToolSpec`, `ToolScope`, `ToolType` |
 | `router.py` | API endpoints for interacting with tools and config. | `tools_bp` |

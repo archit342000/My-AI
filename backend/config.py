@@ -287,8 +287,6 @@ TEXT_ONLY_MODEL_MAX_FILES = None  # No limit by default
 # =============================================================================
 # FILE UPLOAD - ADDITIONAL SETTINGS
 # =============================================================================
-# Maximum characters to return from read_file tool
-READ_FILE_CONTENT_LIMIT = int(os.getenv("READ_FILE_CONTENT_LIMIT", 10000))
 # Maximum pages to extract from PDF for vision analysis
 PDF_PAGE_LIMIT = int(os.getenv("PDF_PAGE_LIMIT", 5))
 
