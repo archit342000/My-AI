@@ -8,6 +8,7 @@ from typing import Optional, List, Dict, Any
 from backend import config
 from backend.database import db
 from backend.file_system.utils import resolve_owner_and_physical_path
+from backend.logging import log_event
 from backend.tools.clarify import request_clarification
 from code_runner_mcp.safety import classify_code
 
@@ -39,6 +40,27 @@ def find_project_root(physical_path: str, root_dir: str) -> str:
         
     return root_dir_abs
 
+SETTINGS_TIMEOUT_ERROR = "Error: The code runner timeout setting is invalid. Fix it in Settings."
+
+
+def effective_code_runner_timeout() -> int:
+    """
+    The execution timeout from the `code_runner_timeout` setting, clamped to `1..CODE_RUNNER_MAX_TIMEOUT`.
+
+    Returns:
+        The timeout in seconds.
+
+    Raises:
+        ValueError: If the stored value is not an integer (or a digit string); there is no silent default.
+    """
+    value = db.get_setting("code_runner_timeout", config.CODE_RUNNER_DEFAULT_TIMEOUT)
+    is_digits = isinstance(value, str) and value.isascii() and value.isdigit() and len(value) <= 9
+    if isinstance(value, bool) or not (isinstance(value, int) or is_digits):
+        log_event("code_executor_timeout_invalid", {"value_type": type(value).__name__})
+        raise ValueError("code_runner_timeout setting is invalid")
+    return max(1, min(int(value), config.CODE_RUNNER_MAX_TIMEOUT))
+
+
 async def run_code(
     code: str,
     language: str,
@@ -54,8 +76,11 @@ async def run_code(
     stdin = stdin or ""
     sql_target = sql_target or "sqlite"
 
-    # Get timeout from settings
-    timeout = db.get_setting("code_runner_timeout", config.CODE_RUNNER_DEFAULT_TIMEOUT)
+    # Get timeout from settings (clamped to the maximum)
+    try:
+        timeout = effective_code_runner_timeout()
+    except ValueError:
+        return SETTINGS_TIMEOUT_ERROR
 
     # Perform safety classification check
     safety_status = classify_code(code, lang)
@@ -267,8 +292,11 @@ async def run_file(
     args = args or []
     sql_target = sql_target or "sqlite"
 
-    # Get timeout from settings
-    timeout = db.get_setting("code_runner_timeout", config.CODE_RUNNER_DEFAULT_TIMEOUT)
+    # Get timeout from settings (clamped to the maximum)
+    try:
+        timeout = effective_code_runner_timeout()
+    except ValueError:
+        return SETTINGS_TIMEOUT_ERROR
 
     # Read target code content for safety classification check
     target_code = ""

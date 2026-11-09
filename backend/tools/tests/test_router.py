@@ -392,3 +392,51 @@ def test_run_file_missing_file_is_a_404_through_the_real_resolver(client, tmp_pa
     assert missing.status_code == 404 and missing.json == {"error": "File not found"}
     assert present.status_code == 200 and present.json == {"result": "ok"}
     assert run.call_count == 1
+
+
+# ---- code_runner_timeout validation and the exposed maximum ---------------------------------------------------
+
+def test_settings_post_rejects_an_out_of_range_or_non_integer_timeout_and_writes_nothing(client, mock_db):
+    with patch('backend.config.CODE_RUNNER_MAX_TIMEOUT', 120):
+        for bad in (500, 121, 0, -1, True, False, "x", "4.5", 1.5, None, [30]):
+            resp = client.post('/tools/config/settings', json={"code_runner_timeout": bad, "other": 1})
+            assert resp.status_code == 400, bad
+            assert resp.json == {"error": "code_runner_timeout must be an integer from 1 to 120"}
+    mock_db.set_setting.assert_not_called()
+
+
+def test_settings_post_accepts_a_valid_timeout_with_other_keys(client, mock_db):
+    with patch('backend.config.CODE_RUNNER_MAX_TIMEOUT', 120):
+        for ok in (1, 60, 120, "45"):
+            mock_db.set_setting.reset_mock()
+            resp = client.post('/tools/config/settings', json={"code_runner_timeout": ok, "other": 1})
+            assert resp.status_code == 200, ok
+            assert mock_db.set_setting.call_count == 2
+
+
+def test_settings_post_stores_the_timeout_as_an_integer(client, mock_db):
+    with patch('backend.config.CODE_RUNNER_MAX_TIMEOUT', 120):
+        client.post('/tools/config/settings', json={"code_runner_timeout": "045"})
+    mock_db.set_setting.assert_called_once_with("code_runner_timeout", 45)
+
+
+def test_settings_post_rejects_an_absurdly_long_digit_string_with_400_not_500(client, mock_db):
+    with patch('backend.config.CODE_RUNNER_MAX_TIMEOUT', 120):
+        resp = client.post('/tools/config/settings', json={"code_runner_timeout": "9" * 5000})
+    assert resp.status_code == 400
+    mock_db.set_setting.assert_not_called()
+
+
+def test_settings_post_never_stores_the_read_only_maximum(client, mock_db):
+    resp = client.post('/tools/config/settings', json={"code_runner_max_timeout": 9999, "other": 1})
+    assert resp.status_code == 200
+    stored = [c.args[0] for c in mock_db.set_setting.call_args_list]
+    assert stored == ["other"]
+
+
+def test_settings_get_exposes_the_maximum(client, mock_db):
+    mock_db.get_all_settings.return_value = {}
+    with patch('backend.config.CODE_RUNNER_MAX_TIMEOUT', 120):
+        resp = client.get('/tools/config/settings')
+    assert resp.status_code == 200
+    assert resp.json["code_runner_max_timeout"] == 120

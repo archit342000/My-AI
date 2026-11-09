@@ -234,6 +234,39 @@ def test_code_execution_ws_proxy_defaults_sql_target_to_sqlite(mock_get_setting,
     assert sent_payload["sql_target"] == "sqlite"
 
 
+@patch('app.ws_client.create_connection')
+@patch('backend.tools.implementations.code_executor.collect_project_files')
+@patch('backend.database.db.get_setting')
+def test_code_execution_ws_proxy_sends_the_clamped_timeout(mock_get_setting, mock_collect_project_files, mock_create_connection):
+    import json
+    mock_get_setting.return_value = 9999
+    mock_collect_project_files.return_value = ("python", [{"path": "main.py", "content": "print(1)"}], "main.py")
+    mock_upstream = MagicMock()
+    mock_create_connection.return_value = mock_upstream
+    mock_ws = MagicMock()
+    mock_ws.receive.side_effect = [json.dumps({"type": "init", "filePath": "main.py", "chat_id": "chat123"}), None]
+    with patch('backend.tools.implementations.code_executor.config.CODE_RUNNER_MAX_TIMEOUT', 120):
+        flask_app.code_execution_ws_proxy(mock_ws)
+    assert json.loads(mock_upstream.send.call_args[0][0])["timeout"] == 120
+
+
+@patch('app.ws_client.create_connection')
+@patch('backend.tools.implementations.code_executor.collect_project_files')
+@patch('backend.database.db.get_setting')
+@patch('backend.tools.implementations.code_executor.log_event')
+def test_code_execution_ws_proxy_reports_an_invalid_timeout_setting_and_does_not_connect(mock_log, mock_get_setting, mock_collect_project_files, mock_create_connection):
+    import json
+    mock_get_setting.return_value = "abc"
+    mock_collect_project_files.return_value = ("python", [{"path": "main.py", "content": "print(1)"}], "main.py")
+    mock_ws = MagicMock()
+    mock_ws.receive.side_effect = [json.dumps({"type": "init", "filePath": "main.py", "chat_id": "chat123"}), None]
+    flask_app.code_execution_ws_proxy(mock_ws)
+    frames = [json.loads(c.args[0]) for c in mock_ws.send.call_args_list]
+    assert frames[0]["type"] == "stderr" and "timeout setting is invalid" in frames[0]["data"]
+    assert frames[-1] == {"type": "exit", "code": 1}
+    mock_create_connection.assert_not_called()
+
+
 
 # --- Frontend mode switch (FRONTEND=legacy|react) ---------------------------
 

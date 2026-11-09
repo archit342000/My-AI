@@ -1,14 +1,22 @@
 import hmac
 import json
+import logging
 import os
 import subprocess
 from typing import List, Dict, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, StrictInt
 from executor import CodeExecutor, ExecutionResult
 from fastapi import FastAPI, Header, HTTPException, Depends, status, WebSocket, WebSocketDisconnect
 import asyncio
 import shutil
 from package_names import validate_packages
+
+logger = logging.getLogger(__name__)
+
+# Ceiling for any client timeout (seconds). It stays below the 600 s idle timeout planned for relay.py,
+# so a long silent run is never cut by the relay before the runner times it out itself.
+MAX_TIMEOUT = 580
+DEFAULT_TIMEOUT = 30
 
 app = FastAPI(title="My-AI Sandboxed Code Runner")
 
@@ -59,7 +67,7 @@ class ExecuteRequest(BaseModel):
     code: Optional[str] = None
     language: str
     stdin: Optional[str] = ""
-    timeout: Optional[int] = 30
+    timeout: StrictInt | str | None = None   # a digit string is accepted; bools and floats are rejected (422)
     sql_target: Optional[str] = "sqlite"
     args: Optional[List[str]] = []
     entry_file: Optional[str] = None
@@ -70,14 +78,44 @@ class InstallRequest(BaseModel):
     packages: List[str]
     package_manager: str  # "pip" or "npm"
 
+def _parse_timeout(value: object) -> int:
+    """
+    Turns a client timeout into seconds within `1..MAX_TIMEOUT`.
+
+    Args:
+        value: `None` (the default of 30), an integer, or a string of ASCII digits.
+
+    Returns:
+        The timeout in seconds; out-of-range integers are clamped, not rejected.
+
+    Raises:
+        ValueError: If the value is a bool, a float, a non-digit string or any other type.
+    """
+    if value is None:
+        return DEFAULT_TIMEOUT
+    if isinstance(value, bool):
+        raise ValueError("timeout must be an integer")
+    if isinstance(value, str):
+        if not (value.isascii() and value.isdigit()):
+            raise ValueError("timeout must be an integer")
+        value = int(value)
+    if not isinstance(value, int):
+        raise ValueError("timeout must be an integer")
+    return max(1, min(value, MAX_TIMEOUT))
+
+
 # Endpoints
 @app.post("/execute", response_model=ExecutionResult, dependencies=[Depends(verify_api_key)])
 def execute_code(req: ExecuteRequest):
+    try:
+        timeout = _parse_timeout(req.timeout)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     return CodeExecutor.execute(
         language=req.language,
         code=req.code,
         stdin=req.stdin,
-        timeout=req.timeout,
+        timeout=timeout,
         sql_target=req.sql_target,
         args=req.args,
         entry_file=req.entry_file,
@@ -204,7 +242,13 @@ async def execute_ws(websocket: WebSocket, api_key: Optional[str] = None) -> Non
         entry_file = config_data.get("entry_file")
         args = config_data.get("args") or []
         sql_target = config_data.get("sql_target", "sqlite")
-        timeout = config_data.get("timeout", 30)
+        try:
+            timeout = _parse_timeout(config_data.get("timeout"))
+        except ValueError:
+            logger.warning("Rejected a live run with an invalid timeout")
+            await websocket.send_json({"type": "stderr", "data": "Error: timeout must be an integer.\n"})
+            await websocket.send_json({"type": "exit", "code": 1})
+            return
 
         # 2. Prepare sandbox using CodeExecutor
         prep = CodeExecutor.prepare_sandbox(
