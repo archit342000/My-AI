@@ -4,6 +4,7 @@
  */
 import type { QueryClient } from '@tanstack/react-query';
 import { chatsApi, queryKeys } from '../../api/chats';
+import { ApiError } from '../../api/client';
 import {
   buildCompletionBody,
   reattachStream,
@@ -42,6 +43,8 @@ async function consume(
   queryClient: QueryClient,
   chatId: string,
   source: AsyncGenerator<unknown>,
+  /** A 400 means the server refused the request before storing or starting anything (a send). */
+  refusalIsToastOnly = false,
 ): Promise<void> {
   const store = useStreamStore.getState();
   let live = emptyLiveTurn();
@@ -54,6 +57,10 @@ async function consume(
     if (err instanceof DOMException && err.name === 'AbortError') {
       // The user pressed Stop: keep what arrived, marked as stopped (F-15).
       store.interrupt({ chatId, live, kind: 'stopped', message: null });
+    } else if (refusalIsToastOnly && err instanceof ApiError && err.status === 400) {
+      // A send refused before anything was stored or started (for example while a reply is in
+      // progress): toast only, there is no partial reply to keep.
+      showToast(err.message, 'error');
     } else {
       const message = err instanceof Error ? err.message : 'Stream failed';
       // Keep the partial reply under an inline error with Retry (F-14).
@@ -180,7 +187,7 @@ export async function sendTurn({
 
   const body = completionBody(settings, settings.model, chatId, messages, { userPreferences: temporary ? false : settings.userPreferences, files });
 
-  await consume(queryClient, chatId, streamCompletion(body, controller.signal));
+  await consume(queryClient, chatId, streamCompletion(body, controller.signal), true);
 }
 
 /**
