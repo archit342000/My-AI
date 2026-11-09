@@ -13,6 +13,7 @@ import { Field, Section, Status } from './forms';
 import { inputStyle } from './form-styles';
 import { Toggle } from '../../components/ui/Toggle';
 import { SETTINGS_STALE_MS } from '../../api/settings';
+import { useIsAdmin } from '../../state/user-store';
 
 const THEMES: Array<[ThemeMode, string]> = [['light', 'Light'], ['dark', 'Dark'], ['system', 'System']];
 
@@ -22,9 +23,10 @@ export function SystemSettingsModal({ open, onClose }: { open: boolean; onClose:
   const themeMode = useUiStore((s) => s.themeMode);
   const setTheme = useUiStore((s) => s.setThemeMode);
   const showDialog = useModalStore((s) => s.show);
+  const isAdmin = useIsAdmin();
   const vision = useSettingsStore((s) => s.visionEnabled);
   const setVision = useSettingsStore((s) => s.setVisionEnabled);
-  const system = useQuery({ queryKey: settingsKeys.system, queryFn: settingsApi.getSystem, enabled: open, staleTime: SETTINGS_STALE_MS });
+  const system = useQuery({ queryKey: settingsKeys.system, queryFn: settingsApi.getSystem, enabled: open && isAdmin, staleTime: SETTINGS_STALE_MS });
   const version = useQuery({ queryKey: settingsKeys.version, queryFn: settingsApi.version, enabled: open, staleTime: SETTINGS_STALE_MS });
   const [runner, setRunner] = useState<CodeRunnerSettings | null>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -58,14 +60,18 @@ export function SystemSettingsModal({ open, onClose }: { open: boolean; onClose:
     },
   });
 
-  const links: Array<[DialogName, string]> = [
+  const userLinks: Array<[DialogName, string]> = [
     ['preferences', 'Memory & preferences'],
     ['skills', 'Skills'],
     ['personas', 'Personas'],
+  ];
+  // Agent, model and browser settings are process-wide: the server refuses them for anyone but the admin.
+  const adminLinks: Array<[DialogName, string]> = [
     ['agent-config', 'Agent configuration'],
     ['models', 'Model manager'],
     ['stealth', 'Browser stealth'],
   ];
+  const links = isAdmin ? [...userLinks, ...adminLinks] : userLinks;
 
   return (
     <Modal open={open} onClose={onClose} title="System Settings" maxWidth={680}>
@@ -87,28 +93,30 @@ export function SystemSettingsModal({ open, onClose }: { open: boolean; onClose:
         />
       </Section>
 
-      <Section title="Code runner">
-        {runner ? (
-          <form onSubmit={(e) => { e.preventDefault(); setStatus(null); saveRunner.mutate(runner); }}>
-            <Field label="Timeout (seconds)">
-              <input type="number" min={1} max={system.data?.code_runner_max_timeout} style={inputStyle} value={runner.code_runner_timeout} onChange={(e) => setRunner({ ...runner, code_runner_timeout: Number(e.target.value) })} />
-            </Field>
-            <Field label="Memory limit" hint="For example 512M or 1G">
-              <input style={inputStyle} value={runner.code_runner_memory_limit} onChange={(e) => setRunner({ ...runner, code_runner_memory_limit: e.target.value })} />
-            </Field>
-            <Field label="CPU limit (cores)">
-              <input style={inputStyle} value={runner.code_runner_cpu_limit} onChange={(e) => setRunner({ ...runner, code_runner_cpu_limit: e.target.value })} />
-            </Field>
-            <Field label="Max output (bytes)">
-              <input type="number" min={1024} style={inputStyle} value={runner.code_runner_max_output_size} onChange={(e) => setRunner({ ...runner, code_runner_max_output_size: Number(e.target.value) })} />
-            </Field>
-            <button type="submit" className="btn-primary" disabled={saveRunner.isPending}>Save code runner settings</button>
-            <Status message={status} tone={status === 'Saved' ? 'success' : 'error'} />
-          </form>
-        ) : (
-          <div style={{ color: 'var(--content-muted)' }}>Loading…</div>
-        )}
-      </Section>
+      {isAdmin ? (
+        <Section title="Code runner">
+          {runner ? (
+            <form onSubmit={(e) => { e.preventDefault(); setStatus(null); saveRunner.mutate(runner); }}>
+              <Field label="Timeout (seconds)">
+                <input type="number" min={1} max={system.data?.code_runner_max_timeout} style={inputStyle} value={runner.code_runner_timeout} onChange={(e) => setRunner({ ...runner, code_runner_timeout: Number(e.target.value) })} />
+              </Field>
+              <Field label="Memory limit" hint="For example 512M or 1G">
+                <input style={inputStyle} value={runner.code_runner_memory_limit} onChange={(e) => setRunner({ ...runner, code_runner_memory_limit: e.target.value })} />
+              </Field>
+              <Field label="CPU limit (cores)">
+                <input style={inputStyle} value={runner.code_runner_cpu_limit} onChange={(e) => setRunner({ ...runner, code_runner_cpu_limit: e.target.value })} />
+              </Field>
+              <Field label="Max output (bytes)">
+                <input type="number" min={1024} style={inputStyle} value={runner.code_runner_max_output_size} onChange={(e) => setRunner({ ...runner, code_runner_max_output_size: Number(e.target.value) })} />
+              </Field>
+              <button type="submit" className="btn-primary" disabled={saveRunner.isPending}>Save code runner settings</button>
+              <Status message={status} tone={status === 'Saved' ? 'success' : 'error'} />
+            </form>
+          ) : (
+            <div style={{ color: 'var(--content-muted)' }}>Loading…</div>
+          )}
+        </Section>
+      ) : null}
 
       <Section title="Manage">
         <div className="settings-links">

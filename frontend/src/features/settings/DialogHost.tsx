@@ -9,9 +9,11 @@ import { StealthDialog } from './StealthDialog';
 import { SystemSettingsModal } from './SystemSettingsModal';
 import { PortalDialog } from '../tools/PortalDialog';
 import { CodeHistoryDialog } from '../tools/CodeHistoryDialog';
+import { useIsAdmin } from '../../state/user-store';
 
 /** Renders whichever app-level dialog is open. Mounted once in the root layout. */
 export function DialogHost() {
+  const isAdmin = useIsAdmin();
   const open = useModalStore((s) => s.open);
   const close = useModalStore((s) => s.close);
   const show = useModalStore((s) => s.show);
@@ -24,10 +26,15 @@ export function DialogHost() {
       <PreferencesDialog open={open === 'preferences'} onClose={back} onBack={back} />
       <SkillsDialog open={open === 'skills'} onClose={back} onBack={back} />
       <PersonasDialog open={open === 'personas'} onClose={back} onBack={back} />
-      <AgentConfigDialog open={open === 'agent-config'} onClose={back} onBack={back} />
-      <ModelsDialog open={open === 'models'} onClose={back} onBack={back} />
-      <StealthDialog open={open === 'stealth'} onClose={back} onBack={back} />
-      <PortalDialog open={open === 'portal'} onClose={close} />
+      {/* Admin-only dialogs are not mounted for a user, so a stray show('models') cannot open them. */}
+      {isAdmin ? (
+        <>
+          <AgentConfigDialog open={open === 'agent-config'} onClose={back} onBack={back} />
+          <ModelsDialog open={open === 'models'} onClose={back} onBack={back} />
+          <StealthDialog open={open === 'stealth'} onClose={back} onBack={back} />
+          <PortalDialog open={open === 'portal'} onClose={close} />
+        </>
+      ) : null}
       <CodeHistoryDialog open={open === 'code-history'} onClose={close} />
     </>
   );

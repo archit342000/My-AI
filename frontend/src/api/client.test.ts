@@ -1,5 +1,7 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ApiError, apiJson } from './client';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ApiError, apiJson, shouldRetryQuery } from './client';
+import { useUserStore } from '../state/user-store';
+import { useToastStore } from '../components/ui/toast-store';
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -25,3 +27,42 @@ describe('apiJson', () => {
     await expect(apiJson('/api/x')).rejects.toMatchObject({ status: 500, message: '500 Boom' });
   });
 });
+
+describe('401 and 403 handling', () => {
+  beforeEach(() => {
+    useUserStore.setState({ sessionExpired: false });
+    useToastStore.setState({ toasts: [] });
+  });
+
+  it('a 401 marks the session as expired and still throws', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 })));
+    await expect(apiJson('/api/x')).rejects.toMatchObject({ status: 401 });
+    expect(useUserStore.getState().sessionExpired).toBe(true);
+  });
+
+  it('a 403 shows one toast per response and still throws an ApiError', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403 })));
+    await expect(apiJson('/api/x')).rejects.toBeInstanceOf(ApiError);
+    const toasts = useToastStore.getState().toasts.filter((t) => t.message === "You don't have access to that.");
+    expect(toasts).toHaveLength(1);
+    expect(useUserStore.getState().sessionExpired).toBe(false);
+  });
+
+  it('other errors neither expire the session nor toast', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 404 })));
+    await expect(apiJson('/api/x')).rejects.toMatchObject({ status: 404 });
+    expect(useUserStore.getState().sessionExpired).toBe(false);
+    expect(useToastStore.getState().toasts).toHaveLength(0);
+  });
+});
+
+describe('shouldRetryQuery', () => {
+  it('retries a failure once, but never a 401 or 403', () => {
+    expect(shouldRetryQuery(0, new Error('network'))).toBe(true);
+    expect(shouldRetryQuery(1, new Error('network'))).toBe(false);
+    expect(shouldRetryQuery(0, new ApiError(500, null, 'x'))).toBe(true);
+    expect(shouldRetryQuery(0, new ApiError(401, null, 'x'))).toBe(false);
+    expect(shouldRetryQuery(0, new ApiError(403, null, 'x'))).toBe(false);
+  });
+});
+

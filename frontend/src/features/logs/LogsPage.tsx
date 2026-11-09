@@ -8,6 +8,7 @@ import { Button } from '../../components/ui/Button';
 import { Badge, type BadgeTone } from '../../components/ui/Badge';
 import { SegmentedControl } from '../../components/ui/SegmentedControl';
 import { logsApi, toEntries, type LogStream } from './logsApi';
+import { useIsAdmin } from '../../state/user-store';
 import { LOG_LEVELS, columnLabel, levelOf, scalarColumns, type LogLevel } from './log-levels';
 
 const LIMITS = [50, 100, 200, 500];
@@ -27,8 +28,18 @@ const LEVEL_TONE: Record<LogLevel, BadgeTone> = {
   ERROR: 'danger',
 };
 
-/** Logs viewer: network calls, events, app log lines and database rows. Large entries are truncated. */
+/** Logs viewer: network calls, events, app log lines and database rows. Admin only; large entries are truncated. */
 export function LogsPage() {
+  const isAdmin = useIsAdmin();
+  // The content is a separate component so none of its queries are even created for a user.
+  return isAdmin ? (
+    <LogsContent />
+  ) : (
+    <EmptyState icon="info" title="Not available" description="The logs are only available to the administrator." />
+  );
+}
+
+function LogsContent() {
   const [stream, setStream] = useState<LogStream>('network');
   const [limit, setLimit] = useState(100);
   const [filter, setFilter] = useState('');

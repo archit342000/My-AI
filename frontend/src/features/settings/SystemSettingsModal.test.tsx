@@ -3,6 +3,7 @@ import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { renderWithProviders } from '../../test/render';
 import { SystemSettingsModal } from './SystemSettingsModal';
 import { settingsApi } from '../../api/settings';
+import { ADMIN, USER, signInAs } from '../../test/roles';
 
 const system = {
   code_runner_timeout: 30,
@@ -44,5 +45,37 @@ describe('SystemSettingsModal code runner timeout', () => {
     const body = save.mock.calls[0]?.[0];
     expect(body).toEqual(system);
     expect(Object.keys(body ?? {})).not.toContain('code_runner_max_timeout');
+  });
+});
+
+describe('SystemSettingsModal by role', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('a user sees no runner settings and no admin links, and the system settings are never fetched', async () => {
+    signInAs(USER);
+    const getSystem = vi.spyOn(settingsApi, 'getSystem').mockResolvedValue({ ...system });
+    vi.spyOn(settingsApi, 'version').mockResolvedValue({ version: '1.0.0' });
+    renderWithProviders(<SystemSettingsModal open onClose={() => undefined} />);
+    expect(await screen.findByText('Version 1.0.0')).toBeInTheDocument();
+    expect(screen.queryByText('Code runner')).toBeNull();
+    expect(screen.queryByLabelText('Timeout (seconds)')).toBeNull();
+    for (const name of ['Agent configuration', 'Model manager', 'Browser stealth']) {
+      expect(screen.queryByRole('button', { name })).toBeNull();
+    }
+    for (const name of ['Memory & preferences', 'Skills', 'Personas', 'Reset preferences']) {
+      expect(screen.getByRole('button', { name })).toBeInTheDocument();
+    }
+    expect(getSystem).not.toHaveBeenCalled();
+  });
+
+  it('the admin sees the runner settings and every link', async () => {
+    signInAs(ADMIN);
+    vi.spyOn(settingsApi, 'getSystem').mockResolvedValue({ ...system });
+    vi.spyOn(settingsApi, 'version').mockResolvedValue({ version: '1.0.0' });
+    renderWithProviders(<SystemSettingsModal open onClose={() => undefined} />);
+    expect(await screen.findByLabelText('Timeout (seconds)')).toBeInTheDocument();
+    for (const name of ['Agent configuration', 'Model manager', 'Browser stealth', 'Skills']) {
+      expect(screen.getByRole('button', { name })).toBeInTheDocument();
+    }
   });
 });

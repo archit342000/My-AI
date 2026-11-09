@@ -5,6 +5,7 @@ import { Popover } from '../../components/ui/Popover';
 import { Toggle } from '../../components/ui/Toggle';
 import { useSettingsStore, type ModeToggles } from '../../state/settings-store';
 import { useModalStore } from '../../state/modal-store';
+import { useIsAdmin } from '../../state/user-store';
 
 const MODES: Array<[keyof ModeToggles, string, string]> = [
   ['researchMode', 'Research Agent', 'Multi-step autonomous agent'],
@@ -24,6 +25,9 @@ export function ToolsMenu() {
   const modes = useSettingsStore((s) => s.modes);
   const setMode = useSettingsStore((s) => s.setMode);
   const show = useModalStore((s) => s.show);
+  const isAdmin = useIsAdmin();
+  // Git and the browser portal reach host-wide tools: admin only.
+  const modeList = isAdmin ? MODES : MODES.filter(([key]) => key !== 'gitMode');
 
   return (
     <div id="tools-container">
@@ -52,7 +56,7 @@ export function ToolsMenu() {
         width={320}
       >
         <div className="tools-panel">
-          {MODES.map(([key, name, desc]) => (
+          {modeList.map(([key, name, desc]) => (
             <Toggle
               key={key}
               checked={modes[key]}
@@ -62,15 +66,17 @@ export function ToolsMenu() {
             />
           ))}
           <div className="tools-panel__divider" />
-          <Button
-            variant="ghost"
-            onClick={() => {
-              setOpen(false);
-              show('portal');
-            }}
-          >
-            Open browser portal
-          </Button>
+          {isAdmin ? (
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setOpen(false);
+                show('portal');
+              }}
+            >
+              Open browser portal
+            </Button>
+          ) : null}
           <Button
             variant="ghost"
             onClick={() => {

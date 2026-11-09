@@ -7,6 +7,7 @@ import { useUiStore } from '../state/ui-store';
 import { useModalStore } from '../state/modal-store';
 import { chatsApi } from '../api/chats';
 import { useToastStore } from '../components/ui/toast-store';
+import { ADMIN, USER, signInAs } from '../test/roles';
 
 /** Shows the current pathname so tests can assert navigation. */
 function LocationProbe() {
@@ -82,5 +83,38 @@ describe('Sidebar', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Temporary Chat' }));
     expect(screen.getByTestId('location').textContent).toBe('/');
     expect(useUiStore.getState().temporaryChatId).not.toBeNull();
+  });
+});
+
+describe('Sidebar by role', () => {
+  beforeEach(() => {
+    vi.spyOn(chatsApi, 'list').mockResolvedValue([]);
+    vi.spyOn(chatsApi, 'listWorkspaces').mockResolvedValue([]);
+    useUiStore.setState({ sidebarCollapsed: false });
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it('shows who is signed in, with the role on hover', () => {
+    signInAs(USER);
+    renderWithProviders(<Sidebar />);
+    const who = screen.getByText('user@test.io');
+    expect(who.getAttribute('title')).toContain('user');
+  });
+
+  it('a user has no Logs link, in the full or the collapsed sidebar', () => {
+    signInAs(USER);
+    const { unmount } = renderWithProviders(<Sidebar />);
+    expect(screen.queryByRole('link', { name: 'Logs' })).toBeNull();
+    unmount();
+    useUiStore.setState({ sidebarCollapsed: true });
+    renderWithProviders(<Sidebar />);
+    expect(screen.queryByRole('link', { name: 'Logs' })).toBeNull();
+  });
+
+  it('the admin has the Logs link and sees their email', () => {
+    signInAs(ADMIN);
+    renderWithProviders(<Sidebar />);
+    expect(screen.getByRole('link', { name: 'Logs' })).toBeInTheDocument();
+    expect(screen.getByText('admin@test.io')).toBeInTheDocument();
   });
 });
