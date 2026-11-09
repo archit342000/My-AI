@@ -20,7 +20,7 @@ Applies to `docker/` and the services it defines. Rule 9 in `docs/standards/codi
 - Mount only what a service needs; use `:ro` for credentials and keys. Persistent data lives in the data volume or a named volume.
 - Set `restart: unless-stopped` on long-running services.
 - Anything that runs untrusted or heavy work sets `deploy.resources.limits` (see `code_runner_runtime` and `mysql_db`).
-- Health checks: `code_runner_runtime` and the relay `code_runner_mcp` define one (`GET /health`), `pkg-proxy` one on `/healthz`; other services define none yet. Add a `healthcheck:` to any service you add or substantially change.
+- Health checks: `code_runner_runtime` and the relay `code_runner_mcp` define one (`GET /health`), `pkg-proxy` one on `/healthz`, `playwright_mcp` a TCP check on 8001; other services define none yet. Add a `healthcheck:` to any service you add or substantially change.
 
 ## Tool containers (MCP)
 

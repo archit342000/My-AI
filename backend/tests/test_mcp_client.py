@@ -60,3 +60,18 @@ async def test_mcp_client_connect_retry_cleanup(mock_sse, mock_session):
         await client.connect()
         assert client.session is not None
         mock_cleanup.assert_called()
+
+
+def test_portal_vnc_auth_header_is_a_basic_credential_with_the_key():
+    import base64
+    from backend.mcp_client import portal_vnc_auth_header
+    with patch("backend.mcp_client.get_secret", return_value="s3cret"):
+        header = portal_vnc_auth_header()
+    assert header == {"Authorization": "Basic " + base64.b64encode(b"portal:s3cret").decode()}
+
+
+def test_portal_vnc_auth_header_is_empty_without_a_key():
+    from backend.mcp_client import portal_vnc_auth_header
+    for key in ("", None):
+        with patch("backend.mcp_client.get_secret", return_value=key):
+            assert portal_vnc_auth_header() == {}
