@@ -1,16 +1,23 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { renderWithProviders } from '../../test/render';
 import { WorkspacePage } from './WorkspacePage';
 import { chatsApi } from '../../api/chats';
 import * as client from '../../api/client';
 import { useToastStore } from '../../components/ui/toast-store';
+import { artifactsApi } from '../../api/filesystem';
+import { useUiStore } from '../../state/ui-store';
 
 const ws = [{ id: 'w1', name: 'Research', icon: null }];
 const chats = [{ id: 'c1', title: 'Paper draft', workspace_id: 'w1' }];
 
 describe('WorkspacePage', () => {
+  beforeEach(() => {
+    useUiStore.setState({ artifactsOpen: false });
+  });
+
   afterEach(() => {
+    useUiStore.setState({ artifactsOpen: false });
     vi.restoreAllMocks();
     useToastStore.setState({ toasts: [] });
   });
@@ -79,5 +86,46 @@ describe('WorkspacePage', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Delete workspace' }));
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
     await waitFor(() => expect(useToastStore.getState().toasts.some((t) => t.type === 'error')).toBe(true), { timeout: 500 });
+  });
+
+  describe('files panel (the Files toggle)', () => {
+    const renderPage = () => {
+      vi.spyOn(chatsApi, 'listWorkspaces').mockResolvedValue(ws as never);
+      vi.spyOn(chatsApi, 'list').mockResolvedValue(chats as never);
+      vi.spyOn(artifactsApi, 'list').mockResolvedValue([] as never);
+      return renderWithProviders(<WorkspacePage />, { route: '/workspace/w1', path: '/workspace/:workspaceId' });
+    };
+
+    it('is hidden while the toggle is off', async () => {
+      renderPage();
+      expect(await screen.findByRole('heading', { name: 'Research' })).toBeTruthy();
+      expect(screen.queryByRole('region', { name: 'Artifacts' })).toBeNull();
+      expect(screen.queryByRole('heading', { name: 'Files' })).toBeNull();
+    });
+
+    it('is shown while the toggle is on', async () => {
+      useUiStore.setState({ artifactsOpen: true });
+      renderPage();
+      expect(await screen.findByRole('region', { name: 'Artifacts' })).toBeTruthy();
+      // the page's own heading and the panel's heading both read "Files"
+      expect(screen.getAllByRole('heading', { name: 'Files' })).toHaveLength(2);
+    });
+
+    it('follows the toggle after the page has rendered', async () => {
+      renderPage();
+      await screen.findByRole('heading', { name: 'Research' });
+      act(() => useUiStore.getState().toggleArtifacts());
+      expect(await screen.findByRole('region', { name: 'Artifacts' })).toBeTruthy();
+      act(() => useUiStore.getState().toggleArtifacts());
+      await waitFor(() => expect(screen.queryByRole('region', { name: 'Artifacts' })).toBeNull());
+    });
+
+    it('closes from its own close button', async () => {
+      useUiStore.setState({ artifactsOpen: true });
+      renderPage();
+      fireEvent.click(await screen.findByRole('button', { name: 'Close files panel' }));
+      expect(useUiStore.getState().artifactsOpen).toBe(false);
+      await waitFor(() => expect(screen.queryByRole('region', { name: 'Artifacts' })).toBeNull());
+    });
   });
 });
