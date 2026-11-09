@@ -34,7 +34,7 @@ There is no version table. `init_db()` runs on every start and must be idempoten
 
 1. Add new tables with `CREATE TABLE IF NOT EXISTS`.
 2. Add columns by checking `PRAGMA table_info` and then `ALTER TABLE ... ADD COLUMN` with a default.
-3. Renames and constraint changes recreate the table inside one transaction and also recreate child tables that reference it.
+3. Renames and constraint changes recreate the table inside one transaction and also recreate child tables that reference it. Step 11 does this with `_rebuild_table_with_cascade` in `backend/database/init_db.py`: new table, copy by column name, drop, rename, re-create indexes, inside a per-table savepoint with foreign keys off (steps 0-10 are committed first, so each earlier step must stay idempotent), so a failed copy leaves the original table untouched. `_repair_leftover_old_tables` restores `<table>_old` leftovers from earlier failed runs on start, or logs them when both tables hold rows.
 4. Backfill data in the same step. Never drop user data without an explicit, documented decision.
 5. Add a test in `backend/database/tests/` that runs `init_db()` twice and against a database created by the previous schema.
 
