@@ -12,7 +12,7 @@ rm -f /tmp/.X11-unix/X99
 # These are symlinks referencing old container hostnames that prevent Chromium
 # from starting after a container is recreated (new hostname).
 echo "Cleaning stale Chromium profile locks..."
-for profile_dir in /app/playwright_data/portal_profile /app/playwright_data/default_profile; do
+for profile_dir in /app/playwright_data/portal_profile /app/playwright_data/profiles/*; do
     rm -f "$profile_dir/SingletonLock" "$profile_dir/SingletonCookie" "$profile_dir/SingletonSocket" 2>/dev/null
 done
 

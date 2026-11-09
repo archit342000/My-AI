@@ -497,9 +497,18 @@ async def fetch_and_encode_image_tool(url: str) -> str:
 
 # --- Browsing Agent Tools ---
 
+# A browser profile id is chosen by the backend (the chat owner's user id): lowercase letters, digits, "_" and "-".
+PROFILE_ID_PATTERN = r"[a-z0-9_-]{1,64}"
+
 @mcp.tool()
-async def browser_start_session(session_id: str, stealth_level: str = "minimal", scope: Optional[List[str]] = None) -> str:
-    """Creates or joins a persistent browser session. Stealth levels: minimal, advanced."""
+async def browser_start_session(session_id: str, profile_id: str, stealth_level: str = "minimal",
+                                scope: Optional[List[str]] = None, attach_portal: bool = False) -> str:
+    """
+    Creates or joins a persistent browser session. Stealth levels: minimal, advanced.
+
+    `profile_id` selects the persistent profile directory (`playwright_data/profiles/<profile_id>`), so each user has their
+    own cookies and logins. Only a session with `attach_portal=True` (the admin's) attaches to the portal Chromium over CDP.
+    """
     global _sessions
     await _cleanup_expired_sessions()
     if session_id in _sessions:
@@ -507,12 +516,14 @@ async def browser_start_session(session_id: str, stealth_level: str = "minimal",
         if scope is not None:
             _sessions[session_id]["scope"] = scope
         return json.dumps({"status": "exists", "session_id": session_id})
+    if not isinstance(profile_id, str) or not re.fullmatch(PROFILE_ID_PATTERN, profile_id):
+        return json.dumps({"error": "Invalid profile_id"})
     
     try:
         p = await _get_playwright()
         
-        # If the portal Chromium is running, connect to it via CDP
-        if _portal_process and _portal_process.poll() is None:
+        # If the portal Chromium is running and this is the admin's session, connect to it via CDP
+        if attach_portal and _portal_process and _portal_process.poll() is None:
             logger.info("Connecting to portal Chromium via CDP...")
             browser = await p.chromium.connect_over_cdp(f"http://localhost:{_portal_cdp_port}")
             context = browser.contexts[0] if browser.contexts else browser.contexts[0] # Actually we should get the context
@@ -535,7 +546,7 @@ async def browser_start_session(session_id: str, stealth_level: str = "minimal",
             return json.dumps({"status": "connected_cdp", "session_id": session_id, "stealth_level": stealth_level})
         
         # Fallback: launch standalone Playwright context
-        user_data_dir = os.path.join(os.getcwd(), "playwright_data", "default_profile")
+        user_data_dir = os.path.join(os.getcwd(), "playwright_data", "profiles", profile_id)
         os.makedirs(user_data_dir, exist_ok=True)
 
         # In persistent mode, we launch the context directly. 

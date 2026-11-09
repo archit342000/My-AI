@@ -423,6 +423,11 @@ CODE_RUNNER_DEFAULT_TIMEOUT = int(os.getenv("CODE_RUNNER_DEFAULT_TIMEOUT", "30")
 # Keep this at or below the runtime ceiling MAX_TIMEOUT in code_runner_mcp/server.py (it clamps silently above it).
 CODE_RUNNER_MAX_TIMEOUT = int(os.getenv("CODE_RUNNER_MAX_TIMEOUT", "120"))
 CODE_RUNNER_MAX_OUTPUT_SIZE = int(os.getenv("CODE_RUNNER_MAX_OUTPUT_SIZE", "65536"))  # 64KB
+# Code runs are serialised process-wide (backend/tools/implementations/run_slot.py): a user may hold this many places
+# (the running run plus queued ones), and a run waits at most this many seconds for the slot.
+# Clamped to at least 1 place and a non-negative wait, so a bad value cannot refuse every run.
+CODE_RUNNER_MAX_QUEUED_PER_USER = max(1, int(os.getenv("CODE_RUNNER_MAX_QUEUED_PER_USER", "2")))
+CODE_RUNNER_QUEUE_TIMEOUT = max(0, int(os.getenv("CODE_RUNNER_QUEUE_TIMEOUT", "120")))
 CODE_RUNNER_MEMORY_LIMIT = os.getenv("CODE_RUNNER_MEMORY_LIMIT", "512M")
 CODE_RUNNER_CPU_LIMIT = os.getenv("CODE_RUNNER_CPU_LIMIT", "1.0")
 

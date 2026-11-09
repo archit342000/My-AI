@@ -1,3 +1,4 @@
+from contextlib import ExitStack
 from flask import Flask, request, jsonify, Response, send_from_directory, g
 from werkzeug.exceptions import RequestEntityTooLarge
 from backend.logging import log_event
@@ -24,8 +25,9 @@ if os.name != 'nt' and hasattr(time, 'tzset'):
 from backend import config
 from backend.rag import RAGProvider
 from backend.database import db
-from backend.auth.context import admin_required, set_current_user, reset_current_user, user_context
+from backend.auth.context import admin_required, forbid_non_admin, set_current_user, reset_current_user, user_context
 from backend.auth.ownership import owns_chat
+from backend.tools.implementations.run_slot import RunQueueFull, RunQueueTimeout, run_slot
 from backend.auth.providers import get_provider
 from backend.database.init_db import init_db
 from backend.models import get_embedding_model
@@ -135,6 +137,7 @@ def code_execution_ws_proxy(ws):
     closed = threading.Event()
     upstream = None
     chat_id = None
+    slot = ExitStack()  # holds the run slot (once taken) until the session ends
     try:
         init_msg_raw = ws.receive()
         if not init_msg_raw:
@@ -155,6 +158,22 @@ def code_execution_ws_proxy(ws):
         # The chat must be the caller's, before any of its files are read.
         if not isinstance(chat_id, str) or not owns_chat(chat_id):
             ws.send(json.dumps({"type": "stderr", "data": "Error: Chat not found.\n"}))
+            ws.send(json.dumps({"type": "exit", "code": 1}))
+            return
+
+        # Runs never overlap: hold the process-wide run slot, keyed by the chat owner, for the whole session.
+        owner = db.get_chat_owner(chat_id)
+        if not owner:
+            log_event("code_runner_no_owner_error", {"chat_id": chat_id})
+            ws.send(json.dumps({"type": "stderr", "data": "Error: Code runner is unavailable for this request.\n"}))
+            ws.send(json.dumps({"type": "exit", "code": 1}))
+            return
+        try:
+            slot.enter_context(run_slot(owner))
+        except (RunQueueFull, RunQueueTimeout) as busy:
+            log_event("code_runner_queue_full_error" if isinstance(busy, RunQueueFull) else "code_runner_queue_timeout_error",
+                      {"chat_id": chat_id})
+            ws.send(json.dumps({"type": "stderr", "data": "Error: Code runner is busy; try again shortly.\n"}))
             ws.send(json.dumps({"type": "exit", "code": 1}))
             return
             
@@ -257,6 +276,7 @@ def code_execution_ws_proxy(ws):
                 upstream.close()
             except Exception:
                 pass
+        slot.close()
 
 # Limit request size to 100MB to match FILE_UPLOAD_MAX_SIZE config
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024
@@ -390,6 +410,14 @@ def bind_user_to_stream(response: Response) -> Response:
     if user is not None and response.is_streamed and not response.direct_passthrough:
         response.response = _iter_as_user(user, response.response)
     return response
+
+
+@app.before_request
+def require_admin_for_portal():
+    """The browser portal (VNC files, init and the VNC WebSocket) drives the admin's own Chromium: admin only."""
+    if request.path.startswith('/api/tools/portal/'):
+        return forbid_non_admin()
+    return None
 
 
 @app.teardown_request

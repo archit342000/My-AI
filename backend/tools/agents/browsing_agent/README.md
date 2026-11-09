@@ -21,6 +21,7 @@
 *   **Planning First:** Mechanically enforces the creation of a task list via `manage_task_list` before allowing any browser actions.
 *   **Turn Management:** Implements a hard limit on browsing actions (`BROWSING_AGENT_MAX_TURNS`) to prevent runaway costs/loops, with a graceful wrap-up injection.
 *   **Scope Restriction:** Can be restricted to specific domains via the `scope` parameter, which is enforced both in the system prompt and at the MCP server level.
+*   **Per-user profile:** `_browser_profile()` passes the chat owner as `profile_id` to `browser_start_session` (own persistent profile per user; an owner is required, otherwise the run fails). Only the admin's runs set `attach_portal`, so only they share the portal browser, which is admin only.
 *   **Resumption:** Automatically detects existing history and attempts to re-attach to the previous browser session if still active.
 
 ## 🛠️ Key Symbols/Exports

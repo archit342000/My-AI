@@ -1,4 +1,5 @@
 # backend/tools/agents/browsing_agent/agent.py
+import json
 import logging
 import uuid
 from typing import AsyncGenerator, Dict, Any, List
@@ -67,6 +68,33 @@ class BrowsingAgent(BaseAgent):
             if m.get("role") == "tool" and m.get("name", "").startswith("browser_")
         )
 
+    def _browser_profile(self) -> dict:
+        """
+        The browser profile for this chat's owner, chosen here (never by the model).
+
+        Returns `{"profile_id": <owner id>, "attach_portal": <owner is an admin>}`: each user has their own persistent
+        profile, and only the admin's sessions may attach to the portal Chromium. Raises when the chat has no owner.
+        """
+        owner = db.get_chat_owner(self.chat_id)
+        if not owner:
+            raise RuntimeError(f"Chat {self.chat_id} has no owner; no browser session is started")
+        user = db.get_user(owner)
+        return {"profile_id": owner, "attach_portal": bool(user and user.get("role") == "admin")}
+
+    @staticmethod
+    def _raise_on_start_error(result) -> None:
+        """`browser_start_session` reports failures (an invalid profile id, a launch error) as `{"error": ...}` in its
+        result rather than raising; turn that into an exception so the run fails at start with a clear message."""
+        if getattr(result, "isError", False) is True:
+            text = getattr(getattr(result, "content", [None])[0], "text", "") if getattr(result, "content", None) else ""
+            raise RuntimeError(f"Could not start the browser session: {text or 'tool error'}")
+        try:
+            data = json.loads(result.content[0].text)
+        except (AttributeError, IndexError, TypeError, ValueError):
+            return
+        if isinstance(data, dict) and data.get("error"):
+            raise RuntimeError(f"Could not start the browser session: {data['error']}")
+
     async def on_start(self, **kwargs) -> None:
         try:
             session_id = f"sess_{self.chat_id}_{uuid.uuid4().hex[:8]}"
@@ -77,11 +105,12 @@ class BrowsingAgent(BaseAgent):
                 session_id = chat_meta["browsing_session_id"]
             
             await playwright_client.connect()
-            await playwright_client.execute_tool("browser_start_session", {
+            self._raise_on_start_error(await playwright_client.execute_tool("browser_start_session", {
                 "session_id": session_id,
+                **self._browser_profile(),
                 "stealth_level": config.BROWSER_STEALTH_LEVEL,
                 "scope": kwargs.get("scope")
-            })
+            }))
         except Exception as e:
             db.update_chat(self.chat_id, browsing_session_id=None)
             raise e
@@ -96,11 +125,12 @@ class BrowsingAgent(BaseAgent):
             logger.info(f"Resuming but session_id was missing. Initialized new session: {session_id}")
             
         await playwright_client.connect()
-        await playwright_client.execute_tool("browser_start_session", {
+        self._raise_on_start_error(await playwright_client.execute_tool("browser_start_session", {
             "session_id": session_id,
+            **self._browser_profile(),
             "stealth_level": config.BROWSER_STEALTH_LEVEL,
             "scope": kwargs.get("scope")
-        })
+        }))
 
     async def on_cleanup(self) -> None:
         chat_meta = db.get_chat(self.chat_id)

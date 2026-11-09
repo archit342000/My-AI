@@ -6,6 +6,7 @@
 | Folder | Responsibility |
 | :--- | :--- |
 | `agents/` | Implementation logic for autonomous sub-agents (research, browsing, etc.). |
+| `implementations/` | Tool implementations. Code-runner calls hold a run slot (`run_slot.py`: runs are serialised process-wide; a user may hold at most `CODE_RUNNER_MAX_QUEUED_PER_USER` places, the running one plus queued ones, and a wait is capped by `CODE_RUNNER_QUEUE_TIMEOUT`). A refusal comes back as a tool result: "busy" for a full or timed-out queue, "unavailable" for a chat without an owner. |
 | `catalog/` | Unified ToolSpec definition files organized by domain. |
 | Scratch area | Temporary workspace for transient tool-related data (created at runtime). |
 

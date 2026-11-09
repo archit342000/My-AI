@@ -1,11 +1,119 @@
+import logging
 import os
 import re
 import shutil
+import signal
 import subprocess
+import sys
+import threading
 import time
 import uuid
 from typing import Dict, List, Optional, Any
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
+
+# Where every run's sandbox lives, and the directories user code can write to outside it. They are cleared before and
+# after each run (see clear_scratch). Module attributes, read on every call, so tests can point them at a temp dir.
+SANDBOX_BASE = "/tmp/sandbox"
+SCRATCH_ROOTS = ("/tmp", "/var/tmp", "/dev/shm")
+CLEANUP_FAILED = "Runner cleanup failed."
+BUSY = "Code runner is busy; try again shortly."
+LOCK_WAIT = 600  # seconds a run waits for the runner lock before answering busy
+# The runner runs one thing at a time. The app already serialises its calls, but it can give up on a call (cancelled,
+# client timeout) while the runner is still busy; without this lock the next run would start, and clear_scratch() would
+# delete the directories, under the one still running. Held from the pre-run clear to the post-run clear.
+RUN_LOCK = threading.Lock()
+
+
+def scratch_roots() -> tuple:
+    """The directories user code can write to outside its sandbox (the sandbox base is cleared too, see clear_scratch)."""
+    return tuple(SCRATCH_ROOTS)
+
+
+def clear_scratch() -> List[str]:
+    """Remove everything inside each scratch root (the roots themselves stay). Symlinks are unlinked, never followed.
+    Returns the paths that could not be removed (and logs each as runner_cleanup_error); an empty list means clean."""
+    failed: List[str] = []
+
+    def record(path: str, exc: BaseException) -> None:
+        failed.append(path)
+        logger.error("runner_cleanup_error path=%s error=%s", path, exc)
+
+    for root in dict.fromkeys(scratch_roots() + (SANDBOX_BASE,)):
+        try:
+            entries = os.listdir(root)
+        except FileNotFoundError:
+            continue
+        except OSError as exc:
+            record(root, exc)
+            continue
+        for name in entries:
+            path = os.path.join(root, name)
+            try:
+                if os.path.isdir(path) and not os.path.islink(path):
+                    if sys.version_info >= (3, 12):
+                        shutil.rmtree(path, onexc=lambda _fn, p, exc: record(p, exc))
+                    else:
+                        shutil.rmtree(path, onerror=lambda _fn, p, info: record(p, info[1]))
+                else:
+                    os.unlink(path)
+            except FileNotFoundError:
+                continue
+            except OSError as exc:
+                record(path, exc)
+    return failed
+
+
+def kill_group(pid: int, wait: float = 1.0) -> None:
+    """SIGKILL the process group started for a run (user code and everything it spawned or backgrounded) and wait,
+    bounded, until no member is left, so the clean-up that follows does not race a dying process."""
+    try:
+        os.killpg(pid, signal.SIGKILL)
+    except ProcessLookupError:
+        return
+    deadline = time.monotonic() + wait
+    while time.monotonic() < deadline:
+        try:
+            os.killpg(pid, 0)
+        except ProcessLookupError:
+            return
+        time.sleep(0.01)
+
+
+def _run_in_group(cmd, cwd, env, timeout, input_text=None, text=True):
+    """Run cmd in its own session so its whole process group can be killed afterwards. Returns
+    (returncode, stdout, stderr); raises subprocess.TimeoutExpired after killing the group."""
+    proc = subprocess.Popen(
+        cmd,
+        stdin=subprocess.PIPE if input_text is not None else subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        cwd=cwd,
+        env=env,
+        text=text,
+        start_new_session=True,
+    )
+    try:
+        out, err = proc.communicate(input=input_text, timeout=timeout)
+        return proc.returncode, out, err
+    except subprocess.TimeoutExpired:
+        kill_group(proc.pid)
+        try:
+            proc.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            # something outside the group (setsid) still holds the pipes: give up on its output rather than hang
+            # while holding the runner lock
+            for stream in (proc.stdout, proc.stderr, proc.stdin):
+                try:
+                    if stream:
+                        stream.close()
+                except Exception:
+                    pass
+        raise
+    finally:
+        kill_group(proc.pid)
+
 
 class ExecutionResult(BaseModel):
     stdout: str
@@ -32,8 +140,12 @@ class CodeExecutor:
         
         # 1. Create a unique sandbox directory
         sandbox_id = uuid.uuid4().hex
-        sandbox_dir = os.path.join("/tmp/sandbox", sandbox_id)
+        sandbox_dir = os.path.join(SANDBOX_BASE, sandbox_id)
         os.makedirs(sandbox_dir, exist_ok=True)
+        home_dir = os.path.join(sandbox_dir, "home")
+        tmp_dir = os.path.join(sandbox_dir, "tmp")
+        os.makedirs(home_dir, exist_ok=True)
+        os.makedirs(tmp_dir, exist_ok=True)
 
         try:
             # MySQL is not served here: the runner has no database credentials or route.
@@ -102,9 +214,9 @@ class CodeExecutor:
             # 3. Setup stripped environment
             env = {
                 "PATH": os.environ.get("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"),
-                "HOME": os.environ.get("HOME", "/home/runner"),
+                "HOME": home_dir,
                 "LANG": os.environ.get("LANG", "en_US.UTF-8"),
-                "TMPDIR": "/tmp",
+                "TMPDIR": tmp_dir,
                 "PYTHONPATH": "/home/runner/.local/lib/python3.12/site-packages",
                 "NODE_PATH": "/home/runner/node_modules",
                 "PYTHONUNBUFFERED": "1"
@@ -166,7 +278,30 @@ class CodeExecutor:
             return {"error": str(e), "sandbox_dir": sandbox_dir}
 
     @classmethod
-    def execute(
+    def execute(cls, language: str, *args, **kwargs) -> ExecutionResult:
+        """Run code between two scratch clean-ups: leftovers of earlier runs are removed first (a failure refuses the
+        run), and whatever this run left behind (files, background processes' files) is removed afterwards (a failure
+        is reported on the result)."""
+        if not RUN_LOCK.acquire(timeout=LOCK_WAIT):
+            return ExecutionResult(stdout="", stderr="", exit_code=1, execution_time_ms=0,
+                                   language=language.lower(), timed_out=False, error=BUSY)
+        try:
+            if clear_scratch():
+                return ExecutionResult(stdout="", stderr="", exit_code=1, execution_time_ms=0,
+                                       language=language.lower(), timed_out=False, error=CLEANUP_FAILED)
+            try:
+                result = cls._execute(language, *args, **kwargs)
+            except BaseException:
+                clear_scratch()  # an unexpected error must not leave this run's files for the next one
+                raise
+            if clear_scratch():
+                result.error = f"{result.error} {CLEANUP_FAILED}" if result.error else CLEANUP_FAILED
+            return result
+        finally:
+            RUN_LOCK.release()
+
+    @classmethod
+    def _execute(
         cls,
         language: str,
         code: Optional[str] = None,
@@ -179,7 +314,7 @@ class CodeExecutor:
         max_output_size: int = 65536
     ) -> ExecutionResult:
         stdin = stdin or ""
-        
+
         prep = cls.prepare_sandbox(
             language=language,
             code=code,
@@ -212,18 +347,12 @@ class CodeExecutor:
         try:
             # Compilation phase if required
             if compile_cmd:
-                comp_res = subprocess.run(
-                    compile_cmd,
-                    capture_output=True,
-                    cwd=cwd,
-                    env=env,
-                    timeout=15
-                )
-                if comp_res.returncode != 0:
+                comp_code, _comp_out, comp_err = _run_in_group(compile_cmd, cwd, env, 15, text=False)
+                if comp_code != 0:
                     return ExecutionResult(
                         stdout="",
-                        stderr=comp_res.stderr.decode("utf-8", errors="replace"),
-                        exit_code=comp_res.returncode,
+                        stderr=comp_err.decode("utf-8", errors="replace"),
+                        exit_code=comp_code,
                         execution_time_ms=0,
                         language=lang,
                         timed_out=False,
@@ -243,18 +372,7 @@ class CodeExecutor:
                 cmd = ["sqlite3", "sandbox.db", "-header", "-column"]
 
                 try:
-                    res = subprocess.run(
-                        cmd,
-                        input=sql_content,
-                        text=True,
-                        capture_output=True,
-                        cwd=cwd,
-                        env=env,
-                        timeout=timeout
-                    )
-                    stdout = res.stdout
-                    stderr = res.stderr
-                    exit_code = res.returncode
+                    exit_code, stdout, stderr = _run_in_group(cmd, cwd, env, timeout, input_text=sql_content)
                 except subprocess.TimeoutExpired:
                     timed_out = True
                     stdout = ""
@@ -263,18 +381,7 @@ class CodeExecutor:
             else:
                 # Standard language run
                 try:
-                    res = subprocess.run(
-                        run_cmd,
-                        input=stdin,
-                        text=True,
-                        capture_output=True,
-                        cwd=cwd,
-                        env=env,
-                        timeout=timeout
-                    )
-                    stdout = res.stdout
-                    stderr = res.stderr
-                    exit_code = res.returncode
+                    exit_code, stdout, stderr = _run_in_group(run_cmd, cwd, env, timeout, input_text=stdin)
                 except subprocess.TimeoutExpired:
                     timed_out = True
                     stdout = ""
@@ -312,5 +419,5 @@ class CodeExecutor:
                 error=str(e)
             )
         finally:
-            # Clean up the sandbox directory
+            # Remove this run's sandbox; the scratch roots are cleared by execute()
             shutil.rmtree(sandbox_dir, ignore_errors=True)

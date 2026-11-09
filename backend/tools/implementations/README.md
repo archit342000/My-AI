@@ -9,6 +9,7 @@
 ## 📄 Core Files
 | File | Purpose | Key Symbols/Exports |
 | :--- | :--- | :--- |
+| `run_slot.py` | The process-wide code-run slot: runs of different users never overlap; per-user queue cap and bounded wait. | `run_slot`, `async_run_slot`, `RunQueueFull`, `RunQueueTimeout` |
 | `git_executor.py` | Validates, sanitizes, and executes allowed Git commands in a VFS-safe subprocess wrapper. | `execute_git` |
 
 ## 🧩 Architectural Context
