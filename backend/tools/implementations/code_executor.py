@@ -244,7 +244,7 @@ async def run_file(
         return f"Error: Failed to resolve file path: {e}"
     except Exception as e:
         # Not an input problem (for example a database failure): keep the detail in the log, not in the result.
-        logger.error(f"Failed to resolve file path for run_file: {e}", exc_info=True)
+        log_event("code_executor_resolve_error", {"chat_id": chat_id, "path": str(path)[:200], "error": type(e).__name__})
         return "Error: Failed to resolve file path."
 
     # Map extension to language
@@ -345,6 +345,7 @@ async def run_file(
         data = res.json()
     except Exception as e:
         logger.error(f"Failed to communicate with code runner service: {e}")
+        log_event("code_executor_run_file_error", {"chat_id": chat_id, "error": type(e).__name__})
         return "Error: Failed to execute file. Code runner service is unavailable."
 
     stdout = data.get("stdout", "")
@@ -438,7 +439,8 @@ async def install_packages(
         data = res.json()
     except Exception as e:
         logger.error(f"Failed to run package installation: {e}")
-        return f"Error: Failed to install packages. Code runner service is unavailable: {e}"
+        log_event("code_executor_install_packages_error", {"chat_id": chat_id, "error": type(e).__name__})
+        return "Error: Failed to install packages. Code runner service is unavailable."
 
     success = data.get("success", False)
     stdout = data.get("stdout", "")
@@ -469,7 +471,8 @@ async def list_packages(
         data = res.json()
     except Exception as e:
         logger.error(f"Failed to fetch packages list: {e}")
-        return f"Error: Failed to fetch packages. Code runner service is unavailable: {e}"
+        log_event("code_executor_list_packages_error", {"chat_id": chat_id, "error": type(e).__name__})
+        return "Error: Failed to fetch packages. Code runner service is unavailable."
 
     packages = data.get("packages", [])
     if not packages:
