@@ -67,7 +67,7 @@ cat ~/.ssh/id_rsa.pub > secrets/authorized_keys
 
 ### 3. Deploy Stack
 ```bash
-docker network create "${EDGE_NETWORK:-my-ai-edge}"  # once, unless the gateway already created it
+docker network create --subnet 10.250.0.0/24 edge  # once, unless the architanand.dev gateway stack created it
 docker compose -f docker/docker-compose.yml up --build -d
 ```
 The app refuses to start without the auth variables. Reach it through the Cloudflare Access hostname (only `app` joins the gateway's `edge` network); `AUTH_PROVIDER=static` is for local development only. Deployment rules: `docs/standards/security.md`.
