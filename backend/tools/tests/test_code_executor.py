@@ -169,3 +169,140 @@ async def test_run_file(mock_db, mock_requests):
     finally:
         shutil.rmtree(temp_chat_root)
 
+
+
+# ---- resolve_run_target and the run_file error strings ---------------------------------------------------------
+
+def test_resolve_run_target_returns_the_paths_for_an_existing_file(tmp_path):
+    from backend.tools.implementations.code_executor import resolve_run_target
+    (tmp_path / "main.py").write_text("print(1)")
+    with patch('backend.tools.implementations.code_executor.resolve_owner_and_physical_path') as resolve:
+        resolve.side_effect = lambda chat_id, path, **kw: (chat_id, None, str(tmp_path / path) if path else str(tmp_path))
+        assert resolve_run_target("c1", "main.py") == (str(tmp_path / "main.py"), str(tmp_path))
+
+
+def test_resolve_run_target_raises_for_a_missing_file_and_lets_resolver_errors_through(tmp_path):
+    from backend.tools.implementations.code_executor import resolve_run_target
+    with patch('backend.tools.implementations.code_executor.resolve_owner_and_physical_path') as resolve:
+        resolve.side_effect = lambda chat_id, path, **kw: (chat_id, None, str(tmp_path / path) if path else str(tmp_path))
+        with pytest.raises(FileNotFoundError):
+            resolve_run_target("c1", "nope.py")
+        resolve.side_effect = ValueError("reserved path")
+        with pytest.raises(ValueError):
+            resolve_run_target("c1", "workspace/x.py")
+        resolve.side_effect = RuntimeError("db down")
+        with pytest.raises(RuntimeError):
+            resolve_run_target("c1", "x.py")
+
+
+def test_run_file_for_a_missing_file_still_returns_the_agent_error_string(tmp_path):
+    import asyncio
+    with patch('backend.tools.implementations.code_executor.resolve_owner_and_physical_path') as resolve:
+        resolve.side_effect = lambda chat_id, path, **kw: (chat_id, None, str(tmp_path / path) if path else str(tmp_path))
+        res = asyncio.run(run_file(path="nope.py", chat_id="c1", tool_call_id="tc"))
+    assert res == "Error: File 'nope.py' does not exist."
+
+
+def test_run_file_runner_unavailable_message_has_no_exception_text(tmp_path, mock_db, mock_requests):
+    import asyncio
+    (tmp_path / "main.py").write_text("print(1)")
+    mock_requests.post.side_effect = RuntimeError("connect to 10.1.2.3:8100 refused")
+    with patch('backend.tools.implementations.code_executor.resolve_owner_and_physical_path') as resolve:
+        resolve.side_effect = lambda chat_id, path, **kw: (chat_id, None, str(tmp_path / path) if path else str(tmp_path))
+        res = asyncio.run(run_file(path="main.py", chat_id="c1", tool_call_id="tc"))
+    assert res == "Error: Failed to execute file. Code runner service is unavailable."
+    assert "10.1.2.3" not in res
+
+
+def test_run_file_non_input_resolver_failure_keeps_its_detail_out_of_the_result():
+    import asyncio
+    with patch('backend.tools.implementations.code_executor.resolve_owner_and_physical_path', side_effect=RuntimeError("db at /secret/chats.db locked")):
+        res = asyncio.run(run_file(path="a.py", chat_id="c1", tool_call_id="tc"))
+    assert res == "Error: Failed to resolve file path."
+
+
+def test_run_file_invalid_path_keeps_the_resolvers_message_for_the_agent():
+    import asyncio
+    with patch('backend.tools.implementations.code_executor.resolve_owner_and_physical_path', side_effect=ValueError("reserved path 'workspace/'")):
+        res = asyncio.run(run_file(path="workspace/a.py", chat_id="c1", tool_call_id="tc"))
+    assert res == "Error: Failed to resolve file path: reserved path 'workspace/'"
+
+
+def test_install_packages_reports_a_rejected_package_request_clearly(mock_db, mock_requests):
+    import asyncio
+    from backend.tools.implementations.code_executor import install_packages
+    mock_requests.post.return_value = MagicMock(status_code=400, json=lambda: {"detail": "Invalid package: '--index-url=x'"})
+    with patch('backend.tools.implementations.code_executor.request_clarification', return_value="Yes, install"):
+        res = asyncio.run(install_packages(packages=["--index-url=x"], package_manager="pip", chat_id="c1", tool_call_id="tc"))
+    assert res == "Error: Invalid package request: Invalid package: '--index-url=x'"
+    assert "unavailable" not in res
+
+
+def test_install_packages_other_failures_still_say_the_service_is_unavailable(mock_db, mock_requests):
+    import asyncio
+    from backend.tools.implementations.code_executor import install_packages
+    mock_requests.post.side_effect = RuntimeError("boom")
+    with patch('backend.tools.implementations.code_executor.request_clarification', return_value="Yes, install"):
+        res = asyncio.run(install_packages(packages=["requests"], package_manager="pip", chat_id="c1", tool_call_id="tc"))
+    assert res.startswith("Error: Failed to install packages. Code runner service is unavailable")
+
+
+# ---- timeout clamping ----------------------------------------------------------------------------------------------
+
+@pytest.mark.parametrize("stored,expected", [(30, 30), (500, 120), (120, 120), (0, 1), (-5, 1), ("45", 45), ("999", 120)])
+def test_effective_code_runner_timeout_is_clamped(stored, expected):
+    from backend.tools.implementations.code_executor import effective_code_runner_timeout
+    with patch('backend.tools.implementations.code_executor.db.get_setting', return_value=stored), \
+         patch('backend.tools.implementations.code_executor.config.CODE_RUNNER_MAX_TIMEOUT', 120):
+        assert effective_code_runner_timeout() == expected
+
+
+@pytest.mark.parametrize("stored", [True, False, "abc", "4.5", "-3", 1.5, None, [1], "٣", "9" * 5000])
+def test_effective_code_runner_timeout_rejects_a_stored_value_of_the_wrong_type(stored):
+    from backend.tools.implementations.code_executor import effective_code_runner_timeout
+    with patch('backend.tools.implementations.code_executor.db.get_setting', return_value=stored), \
+         patch('backend.tools.implementations.code_executor.log_event') as log:
+        with pytest.raises(ValueError):
+            effective_code_runner_timeout()
+    log.assert_called_once()
+    assert log.call_args.args[0] == "code_executor_timeout_invalid"
+
+
+def test_run_file_sends_the_clamped_timeout_and_waits_five_seconds_longer(tmp_path):
+    import asyncio
+    (tmp_path / "main.py").write_text("print(1)")
+    with patch('backend.tools.implementations.code_executor.resolve_owner_and_physical_path') as resolve, \
+         patch('backend.tools.implementations.code_executor.db') as db, \
+         patch('backend.tools.implementations.code_executor.requests') as req, \
+         patch('backend.tools.implementations.code_executor.config.CODE_RUNNER_MAX_TIMEOUT', 120):
+        resolve.side_effect = lambda chat_id, path, **kw: (chat_id, None, str(tmp_path / path) if path else str(tmp_path))
+        db.get_setting.side_effect = lambda key, default=None: 9999 if key == "code_runner_timeout" else default
+        req.post.return_value = MagicMock(json=lambda: {"stdout": "1\n", "stderr": "", "exit_code": 0, "execution_time_ms": 1, "timed_out": False})
+        asyncio.run(run_file(path="main.py", chat_id="c1", tool_call_id="tc"))
+    assert req.post.call_args.kwargs["json"]["timeout"] == 120
+    assert req.post.call_args.kwargs["timeout"] == 125
+
+
+def test_run_file_and_run_code_report_an_invalid_timeout_setting(tmp_path):
+    import asyncio
+    (tmp_path / "main.py").write_text("print(1)")
+    with patch('backend.tools.implementations.code_executor.resolve_owner_and_physical_path') as resolve, \
+         patch('backend.tools.implementations.code_executor.db') as db, \
+         patch('backend.tools.implementations.code_executor.log_event'):
+        resolve.side_effect = lambda chat_id, path, **kw: (chat_id, None, str(tmp_path / path) if path else str(tmp_path))
+        db.get_setting.side_effect = lambda key, default=None: "abc" if key == "code_runner_timeout" else default
+        res_file = asyncio.run(run_file(path="main.py", chat_id="c1", tool_call_id="tc"))
+        res_code = asyncio.run(run_code(code="print(1)", language="python", chat_id="c1", tool_call_id="tc"))
+    assert res_file == res_code == "Error: The code runner timeout setting is invalid. Fix it in Settings."
+
+
+def test_run_code_sends_the_clamped_timeout_and_waits_five_seconds_longer():
+    import asyncio
+    with patch('backend.tools.implementations.code_executor.db') as db, \
+         patch('backend.tools.implementations.code_executor.requests') as req, \
+         patch('backend.tools.implementations.code_executor.config.CODE_RUNNER_MAX_TIMEOUT', 120):
+        db.get_setting.side_effect = lambda key, default=None: 9999 if key == "code_runner_timeout" else default
+        req.post.return_value = MagicMock(json=lambda: {"stdout": "1\n", "stderr": "", "exit_code": 0, "execution_time_ms": 1, "timed_out": False})
+        asyncio.run(run_code(code="print(1)", language="python", chat_id="c1", tool_call_id="tc"))
+    assert req.post.call_args.kwargs["json"]["timeout"] == 120
+    assert req.post.call_args.kwargs["timeout"] == 125

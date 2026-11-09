@@ -55,6 +55,7 @@ app.register_blueprint(models_bp, url_prefix='/api/models')
 from flask_sock import Sock
 import websocket as ws_client
 import threading
+from backend.mcp_client import portal_vnc_auth_header
 sock = Sock(app)
 app.config['SOCK_SERVER_OPTIONS'] = {'subprotocols': ['binary']}
 
@@ -70,8 +71,13 @@ def portal_ws_proxy(ws):
     closed = threading.Event()
     upstream = None
 
+    auth = portal_vnc_auth_header()
+    if not auth:
+        logger.warning("Portal WS proxy: PLAYWRIGHT_MCP_API_KEY is not configured")
+        return
+
     try:
-        upstream = ws_client.create_connection(upstream_url)
+        upstream = ws_client.create_connection(upstream_url, header=[f"{name}: {value}" for name, value in auth.items()])
 
         # Thread: upstream (VNC) → browser
         def upstream_to_browser():
@@ -142,7 +148,9 @@ def code_execution_ws_proxy(ws):
             return
             
         # Walk and collect files like run_file does!
-        from backend.tools.implementations.code_executor import collect_project_files
+        from backend.tools.implementations.code_executor import (
+            collect_project_files, effective_code_runner_timeout, SETTINGS_TIMEOUT_ERROR,
+        )
         
         try:
             lang, files_list, entry_file = collect_project_files(chat_id, file_path)
@@ -151,8 +159,13 @@ def code_execution_ws_proxy(ws):
             ws.send(json.dumps({"type": "exit", "code": 1}))
             return
             
-        # Get configured code execution timeout
-        timeout = db.get_setting("code_runner_timeout", config.CODE_RUNNER_DEFAULT_TIMEOUT)
+        # Get configured code execution timeout (clamped to the maximum)
+        try:
+            timeout = effective_code_runner_timeout()
+        except ValueError:
+            ws.send(json.dumps({"type": "stderr", "data": SETTINGS_TIMEOUT_ERROR + "\n"}))
+            ws.send(json.dumps({"type": "exit", "code": 1}))
+            return
 
         # 2. Connect to code_runner_mcp
         api_key = config.CODE_RUNNER_API_KEY

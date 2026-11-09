@@ -1,31 +1,62 @@
+import hmac
 import json
+import logging
 import os
 import subprocess
 from typing import List, Dict, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, StrictInt
 from executor import CodeExecutor, ExecutionResult
 from fastapi import FastAPI, Header, HTTPException, Depends, status, WebSocket, WebSocketDisconnect
 import asyncio
 import shutil
+from package_names import validate_packages
+
+logger = logging.getLogger(__name__)
+
+# Ceiling for any client timeout (seconds). It stays below the 600 s idle timeout planned for relay.py,
+# so a long silent run is never cut by the relay before the runner times it out itself.
+MAX_TIMEOUT = 580
+DEFAULT_TIMEOUT = 30
 
 app = FastAPI(title="My-AI Sandboxed Code Runner")
 
-# Load API Key on startup
 API_KEY_FILE = os.environ.get("API_KEY_FILE", "")
-API_KEY = ""
-if API_KEY_FILE and os.path.exists(API_KEY_FILE):
-    try:
+
+
+def load_api_key() -> str:
+    """
+    Loads the API key: the file named by `API_KEY_FILE` if it exists, else `CODE_RUNNER_API_KEY`.
+
+    Returns:
+        The stripped, non-empty key.
+
+    Raises:
+        RuntimeError: If no key is configured, so the service refuses to start instead of running open.
+        OSError: If the key file exists but cannot be read.
+    """
+    key = ""
+    if API_KEY_FILE and os.path.exists(API_KEY_FILE):
         with open(API_KEY_FILE, "r") as f:
-            API_KEY = f.read().strip()
-    except Exception:
-        pass
+            key = f.read().strip()
+    if not key:
+        key = os.environ.get("CODE_RUNNER_API_KEY", "").strip()
+    if not key:
+        raise RuntimeError("No API key configured: set API_KEY_FILE (a readable file) or CODE_RUNNER_API_KEY")
+    return key
 
-if not API_KEY:
-    API_KEY = os.environ.get("CODE_RUNNER_API_KEY", "")
 
-def verify_api_key(x_api_key: Optional[str] = Header(None, alias="X-API-KEY")):
-    # If API_KEY is configured, enforce verification
-    if API_KEY and x_api_key != API_KEY:
+# Fail closed: importing this module (and so starting the service) needs a key.
+API_KEY = load_api_key()
+
+
+def _key_matches(candidate: Optional[str]) -> bool:
+    """Constant-time comparison of a presented key with the configured one; a missing key never matches."""
+    return candidate is not None and hmac.compare_digest(candidate.encode("utf-8"), API_KEY.encode("utf-8"))
+
+
+def verify_api_key(x_api_key: Optional[str] = Header(None, alias="X-API-KEY")) -> None:
+    """Dependency for the HTTP routes: 401 unless the `X-API-KEY` header carries the configured key."""
+    if not _key_matches(x_api_key):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or missing API key."
@@ -36,7 +67,7 @@ class ExecuteRequest(BaseModel):
     code: Optional[str] = None
     language: str
     stdin: Optional[str] = ""
-    timeout: Optional[int] = 30
+    timeout: StrictInt | str | None = None   # a digit string is accepted; bools and floats are rejected (422)
     sql_target: Optional[str] = "sqlite"
     args: Optional[List[str]] = []
     entry_file: Optional[str] = None
@@ -47,14 +78,44 @@ class InstallRequest(BaseModel):
     packages: List[str]
     package_manager: str  # "pip" or "npm"
 
+def _parse_timeout(value: object) -> int:
+    """
+    Turns a client timeout into seconds within `1..MAX_TIMEOUT`.
+
+    Args:
+        value: `None` (the default of 30), an integer, or a string of ASCII digits.
+
+    Returns:
+        The timeout in seconds; out-of-range integers are clamped, not rejected.
+
+    Raises:
+        ValueError: If the value is a bool, a float, a non-digit string or any other type.
+    """
+    if value is None:
+        return DEFAULT_TIMEOUT
+    if isinstance(value, bool):
+        raise ValueError("timeout must be an integer")
+    if isinstance(value, str):
+        if not (value.isascii() and value.isdigit()):
+            raise ValueError("timeout must be an integer")
+        value = int(value)
+    if not isinstance(value, int):
+        raise ValueError("timeout must be an integer")
+    return max(1, min(value, MAX_TIMEOUT))
+
+
 # Endpoints
 @app.post("/execute", response_model=ExecutionResult, dependencies=[Depends(verify_api_key)])
 def execute_code(req: ExecuteRequest):
+    try:
+        timeout = _parse_timeout(req.timeout)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     return CodeExecutor.execute(
         language=req.language,
         code=req.code,
         stdin=req.stdin,
-        timeout=req.timeout,
+        timeout=timeout,
         sql_target=req.sql_target,
         args=req.args,
         entry_file=req.entry_file,
@@ -63,12 +124,25 @@ def execute_code(req: ExecuteRequest):
     )
 
 @app.post("/install", dependencies=[Depends(verify_api_key)])
-def install_packages(req: InstallRequest):
+def install_packages(req: InstallRequest) -> dict:
+    """
+    Installs packages with pip or npm.
+
+    Only plain package names are accepted (see `package_names.py`): a leading `-`, a URL, a path or more than
+    the allowed number of packages is a 400 and nothing is run.
+    """
     mgr = req.package_manager.lower()
     pkgs = req.packages
-    
+
     if not pkgs:
         return {"stdout": "", "stderr": "", "exit_code": 0, "success": True}
+
+    if mgr not in ("pip", "npm"):
+        raise HTTPException(status_code=400, detail=f"Unsupported package manager: {mgr}")
+    try:
+        validate_packages(mgr, pkgs)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
     if mgr == "pip":
         # Install with --user to avoid permissions issue as runner user
@@ -79,8 +153,6 @@ def install_packages(req: InstallRequest):
         cmd = ["npm", "install", "--no-save"] + pkgs
         cwd = "/home/runner"
         os.makedirs(cwd, exist_ok=True)
-    else:
-        raise HTTPException(status_code=400, detail=f"Unsupported package manager: {mgr}")
 
     try:
         res = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd, timeout=120)
@@ -151,12 +223,11 @@ def list_packages(manager: str = "pip"):
 @app.websocket("/ws/execute")
 async def execute_ws(websocket: WebSocket) -> None:
     """Live code execution over a WebSocket. The key is read from the `X-API-KEY` header, like the HTTP routes."""
-    api_key = websocket.headers.get("x-api-key")
-    expected_api_key = API_KEY
-    if expected_api_key and api_key != expected_api_key:
+    if not _key_matches(websocket.headers.get("x-api-key")):
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Invalid API key.")
         return
-        
+
+
     await websocket.accept()
     
     sandbox_dir = None
@@ -171,7 +242,13 @@ async def execute_ws(websocket: WebSocket) -> None:
         entry_file = config_data.get("entry_file")
         args = config_data.get("args") or []
         sql_target = config_data.get("sql_target", "sqlite")
-        timeout = config_data.get("timeout", 30)
+        try:
+            timeout = _parse_timeout(config_data.get("timeout"))
+        except ValueError:
+            logger.warning("Rejected a live run with an invalid timeout")
+            await websocket.send_json({"type": "stderr", "data": "Error: timeout must be an integer.\n"})
+            await websocket.send_json({"type": "exit", "code": 1})
+            return
 
         # 2. Prepare sandbox using CodeExecutor
         prep = CodeExecutor.prepare_sandbox(
