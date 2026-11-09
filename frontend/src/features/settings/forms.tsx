@@ -40,13 +40,3 @@ export function Status({ message, tone = 'info' }: { message: string | null; ton
   const color = tone === 'error' ? 'var(--color-rose-500)' : tone === 'success' ? 'var(--color-emerald-500)' : 'var(--content-muted)';
   return <div role="status" style={{ fontSize: '0.8125rem', color, marginTop: 8 }}>{message}</div>;
 }
-
-export const inputStyle = {
-  width: '100%',
-  padding: '0.6rem 0.75rem',
-  borderRadius: 'var(--radius-md, 10px)',
-  border: '1.5px solid var(--glass-border)',
-  background: 'var(--glass-surface)',
-  color: 'var(--content-primary)',
-  font: 'inherit',
-} as const;
