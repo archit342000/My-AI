@@ -156,9 +156,10 @@ def code_execution_ws_proxy(ws):
 
         # 2. Connect to code_runner_mcp
         api_key = config.CODE_RUNNER_API_KEY
-        upstream_url = f"{config.CODE_RUNNER_URL.replace('http://', 'ws://').rstrip('/')}/ws/execute?api_key={api_key}"
-        
-        upstream = ws_client.create_connection(upstream_url)
+        upstream_url = f"{config.CODE_RUNNER_URL.replace('http://', 'ws://').rstrip('/')}/ws/execute"
+
+        # The key goes in a header, never in the URL (URLs end up in logs and exception text).
+        upstream = ws_client.create_connection(upstream_url, header=[f"X-API-KEY: {api_key or ''}"])
         
         # Send initial configuration to code_runner_mcp
         config_payload = {

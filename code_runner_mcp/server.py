@@ -149,8 +149,9 @@ def list_packages(manager: str = "pip"):
     }
 
 @app.websocket("/ws/execute")
-async def execute_ws(websocket: WebSocket, api_key: Optional[str] = None):
-    # Verify API key
+async def execute_ws(websocket: WebSocket) -> None:
+    """Live code execution over a WebSocket. The key is read from the `X-API-KEY` header, like the HTTP routes."""
+    api_key = websocket.headers.get("x-api-key")
     expected_api_key = API_KEY
     if expected_api_key and api_key != expected_api_key:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Invalid API key.")
