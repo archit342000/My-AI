@@ -41,6 +41,7 @@ Protocol: `tavily_mcp` (search), `playwright_mcp` (browsing/scraping) and
 | `backend/models/` | Model lifecycle and configuration |
 | `backend/rag/` | Retrieval and vector store coordination |
 | `backend/task_manager/` | Background task execution |
+| `backend/auth/` | Identity providers (Cloudflare Access JWT), current user, user CLI |
 | `backend/logging/` | Structured event auditing |
 | `backend/config.py` | The only place configuration is read (env and secrets) |
 | `inference_proxy/` | Proxy in front of llama.cpp |

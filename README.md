@@ -60,7 +60,7 @@ echo "your_tavily_api_key_here" > secrets/TAVILY_API_KEY
 echo "your_mcp_key_here" > secrets/MCP_API_KEY
 echo "your_playwright_key_here" > secrets/PLAYWRIGHT_MCP_API_KEY
 echo "/app/backend/data" > secrets/DATA_DIR
-echo "optional_password" > secrets/APP_PASSWORD
+# Auth (environment variables, not secrets): set ADMIN_EMAIL, CF_ACCESS_TEAM_DOMAIN and CF_ACCESS_AUD; see backend/auth/README.md
 cat ~/.ssh/id_rsa.pub > secrets/authorized_keys
 # Optional: echo "your_key" > secrets/AI_API_KEY
 # Optional: echo "your_key" > secrets/EMBEDDING_API_KEY
@@ -71,7 +71,7 @@ cat ~/.ssh/id_rsa.pub > secrets/authorized_keys
 ```bash
 docker compose -f docker/docker-compose.yml up --build -d
 ```
-The application will be accessible at `http://localhost:5000` (or via the Bastion SSH tunnel on port `2222`).
+The app refuses to start without the auth variables. Put it behind Cloudflare Access; for local use set `AUTH_PROVIDER=static` (development only).
 
 ## 🏗️ Architecture Note
 My-AI utilizes the **Model Context Protocol (MCP)** to isolate external tool executions. The main Flask app acts as a secure orchestrator, while dedicated containers handle web search, PDF extraction, browser-level scraping, and sandboxed code execution, ensuring high stability and a reduced security surface area.

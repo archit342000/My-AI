@@ -2,11 +2,14 @@ import json
 import pytest
 import os
 from unittest.mock import patch, MagicMock
+import jwt
 from werkzeug.exceptions import RequestEntityTooLarge
-import base64
+from backend.auth.providers import StaticProvider, CloudflareAccessProvider
+from backend.auth.context import current_user
 
 # Mock heavy initialization before importing app
 with patch('backend.database.init_db.init_db'), \
+     patch('backend.config.validate_auth_config'), \
      patch('backend.models.get_embedding_model'), \
      patch('backend.rag.RAGProvider.get_manager') as mock_get_manager, \
      patch('backend.task_manager.task_manager.recover_tasks'), \
@@ -21,13 +24,15 @@ with patch('backend.database.init_db.init_db'), \
     import app as flask_app
     from backend import config
 
+ADMIN_ROW = {"id": "admin-1", "email": "admin@test", "role": "admin", "is_active": True, "created_at": 0.0}
+
+
 @pytest.fixture(autouse=True)
-def _restore_app_password():
-    # Several auth tests set config.APP_PASSWORD. Restore it even when an assertion fails,
-    # otherwise every later request is answered with 401.
-    saved = config.APP_PASSWORD
-    yield
-    config.APP_PASSWORD = saved
+def _authenticated_admin():
+    """Every request is the active admin unless a test replaces the provider or the user lookup."""
+    with patch('app.get_provider', return_value=StaticProvider("admin@test")), \
+         patch('app.db.get_user_by_email', return_value=ADMIN_ROW):
+        yield
 
 @pytest.fixture
 def app():
@@ -67,42 +72,127 @@ def test_serve_static_route(client):
         assert response.data == b"static file content"
         mock_send.assert_called_with('static', 'some_static_file.js')
 
-def test_require_auth_no_password_configured(client):
-    """Test require_auth when APP_PASSWORD is not set."""
-    config.APP_PASSWORD = None
-    response = client.get('/')
-    # Should proceed normally, we mocked send_from_directory but let's check it doesn't return 401
-    assert response.status_code != 401
+class _StubJWKS:
+    def get_signing_key_from_jwt(self, token):
+        raise jwt.PyJWKClientError("unknown kid")
 
-def test_require_auth_missing_credentials(client):
-    """Test require_auth when APP_PASSWORD is set but no credentials provided."""
-    config.APP_PASSWORD = "testpassword"
-    response = client.get('/')
+
+def _cloudflare_provider():
+    return CloudflareAccessProvider("team.cloudflareaccess.com", "aud", jwks_client=_StubJWKS())
+
+
+@pytest.mark.parametrize("path", [
+    '/api/me',
+    '/',
+    '/some_static_file.js',
+    '/api/tools/code-execution/ws',
+])
+def test_authenticate_request_rejects_missing_identity(client, path):
+    """No Access JWT gives 401 on API, SPA shell, static and WebSocket-upgrade paths."""
+    with patch('app.get_provider', return_value=_cloudflare_provider()):
+        response = client.get(path, headers={'Connection': 'Upgrade', 'Upgrade': 'websocket'})
     assert response.status_code == 401
-    assert b'Could not verify your access level' in response.data
+    assert response.get_json() == {"error": "Unauthorized"}
 
-def test_require_auth_incorrect_credentials(client):
-    """Test require_auth when APP_PASSWORD is set but incorrect credentials provided."""
-    config.APP_PASSWORD = "testpassword"
-    headers = {
-        'Authorization': 'Basic ' + base64.b64encode(b'user:wrongpassword').decode('utf-8')
-    }
-    response = client.get('/', headers=headers)
+
+def test_authenticate_request_rejects_invalid_token(client):
+    with patch('app.get_provider', return_value=_cloudflare_provider()), patch('backend.auth.providers.log_event'):
+        response = client.get('/api/me', headers={'Cf-Access-Jwt-Assertion': 'garbage'})
     assert response.status_code == 401
 
-def test_require_auth_correct_credentials(client):
-    """Test require_auth when APP_PASSWORD is set and correct credentials provided."""
-    config.APP_PASSWORD = "testpassword"
-    headers = {
-        'Authorization': 'Basic ' + base64.b64encode(b'user:testpassword').decode('utf-8')
-    }
+
+@pytest.mark.parametrize("row", [None, {**ADMIN_ROW, "is_active": False}])
+def test_authenticate_request_rejects_unknown_or_inactive_user(client, row):
+    with patch('app.db.get_user_by_email', return_value=row), patch('app.log_event') as mock_log:
+        response = client.get('/api/me')
+    assert response.status_code == 403
+    assert response.get_json() == {"error": "Forbidden"}
+    reason = "unknown" if row is None else "inactive"
+    mock_log.assert_called_once_with("auth_unknown_user", {"email": "admin@test", "reason": reason})
+
+
+def test_api_me_returns_id_email_role(client):
+    response = client.get('/api/me')
+    assert response.status_code == 200
+    assert response.get_json() == {"id": "admin-1", "email": "admin@test", "role": "admin"}
+
+
+def test_current_user_is_set_in_the_request_and_reset_after(client):
+    seen = {}
+    real_jsonify = flask_app.jsonify
+
+    def spy(*args, **kwargs):
+        seen["user"] = current_user()
+        return real_jsonify(*args, **kwargs)
+
+    assert current_user() is None
+    with patch('app.jsonify', side_effect=spy):
+        assert client.get('/api/me').status_code == 200
+    assert seen["user"] == {"id": "admin-1", "email": "admin@test", "role": "admin"}
+    assert current_user() is None
+
+
+def test_streamed_response_runs_as_the_request_user(app):
+    """log_event inside a streamed body (read after teardown_request) still records the user."""
+    from flask import Response
+    seen = []
+
+    def body():
+        seen.append(current_user())
+        yield "a"
+        seen.append(current_user())
+        yield "b"
+
+    user = {"id": "u1", "email": "u@x.io", "role": "user"}
+    with app.test_request_context('/'):
+        from flask import g
+        g.user = user
+        response = flask_app.bind_user_to_stream(Response(body()))
+    assert current_user() is None
+    assert list(response.response) == ["a", "b"]
+    assert seen == [user, user]
+    assert current_user() is None
+
+
+def test_bind_user_to_stream_leaves_other_responses_alone(app):
+    from flask import Response
+    with app.test_request_context('/'):
+        from flask import g
+        g.user = {"id": "u1", "email": "u@x.io", "role": "user"}
+        plain = Response("text")
+        assert flask_app.bind_user_to_stream(plain).response == [b"text"]
+    with app.test_request_context('/'):
+        anonymous = Response(iter(["x"]))
+        original = anonymous.response
+        assert flask_app.bind_user_to_stream(anonymous).response is original
+
+
+def test_bind_user_to_stream_closes_the_source_generator(app):
+    from flask import Response, g
+    closed = []
+
+    def body():
+        try:
+            yield "a"
+            yield "b"
+        finally:
+            closed.append(True)
+
+    with app.test_request_context('/'):
+        g.user = {"id": "u1", "email": "u@x.io", "role": "user"}
+        response = flask_app.bind_user_to_stream(Response(body()))
+    assert next(iter(response.response)) == "a"
+    response.close()
+    assert closed == [True]
+
+
+def test_authenticate_request_allows_known_user_to_static_route(client):
     # Pin the legacy UI: under FRONTEND=react the root serves frontend/dist, which may not be built.
     with patch.object(config, 'FRONTEND', 'legacy'), patch('app.send_from_directory') as mock_send:
         mock_send.return_value = "authorized content"
-        response = client.get('/', headers=headers)
+        response = client.get('/')
         assert response.status_code == 200
         assert response.data == b"authorized content"
-    config.APP_PASSWORD = None # Reset for other tests
 
 def test_handle_large_file_error(client):
     """Test the 413 error handler."""

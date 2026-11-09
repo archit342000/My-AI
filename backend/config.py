@@ -14,9 +14,37 @@ DATA_DIR = get_secret("DATA_DIR", "./backend/data")
 os.makedirs(DATA_DIR, exist_ok=True)
 
 # =============================================================================
-# APP LEVEL AUTH
+# AUTHENTICATION
 # =============================================================================
-APP_PASSWORD = get_secret("APP_PASSWORD", None)
+# Identity provider: "cloudflare_access" (default, verifies the Access JWT) or "static"
+# (development only: every request is the user AUTH_STATIC_EMAIL, no verification).
+AUTH_PROVIDER = get_secret("AUTH_PROVIDER", "cloudflare_access").strip().lower()
+# Cloudflare Access team domain host (e.g. "myteam.cloudflareaccess.com") and application AUD tag.
+CF_ACCESS_TEAM_DOMAIN = get_secret("CF_ACCESS_TEAM_DOMAIN", "").strip().lower()
+CF_ACCESS_AUD = get_secret("CF_ACCESS_AUD", "").strip()
+# Email of the admin user seeded by init_db().
+ADMIN_EMAIL = get_secret("ADMIN_EMAIL", "").strip().lower()
+# Email used by the static provider; defaults to the admin.
+AUTH_STATIC_EMAIL = get_secret("AUTH_STATIC_EMAIL", "").strip().lower() or ADMIN_EMAIL
+
+AUTH_PROVIDERS = ("cloudflare_access", "static")
+
+
+def validate_auth_config():
+    """Raise ValueError if the auth settings are unusable. Called when the app is imported."""
+    if AUTH_PROVIDER not in AUTH_PROVIDERS:
+        raise ValueError(f"AUTH_PROVIDER must be one of {AUTH_PROVIDERS}, got {AUTH_PROVIDER!r}")
+    if not ADMIN_EMAIL:
+        raise ValueError("ADMIN_EMAIL is required")
+    if AUTH_PROVIDER == "cloudflare_access":
+        if not CF_ACCESS_TEAM_DOMAIN:
+            raise ValueError("CF_ACCESS_TEAM_DOMAIN is required when AUTH_PROVIDER=cloudflare_access")
+        if any(ch in CF_ACCESS_TEAM_DOMAIN for ch in "/:") or any(ch.isspace() for ch in CF_ACCESS_TEAM_DOMAIN):
+            raise ValueError("CF_ACCESS_TEAM_DOMAIN must be a bare host such as myteam.cloudflareaccess.com (no scheme, port, path or spaces)")
+        if not CF_ACCESS_AUD:
+            raise ValueError("CF_ACCESS_AUD is required when AUTH_PROVIDER=cloudflare_access")
+    elif not AUTH_STATIC_EMAIL:
+        raise ValueError("AUTH_STATIC_EMAIL is required when AUTH_PROVIDER=static")
 
 # Which UI Flask serves at "/": "react" (frontend/dist/, default) or "legacy" (static/).
 # The legacy UI stays reachable at /legacy/ in both modes.

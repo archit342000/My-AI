@@ -20,9 +20,13 @@ services:
       - TZ=Asia/Kolkata
       - AI_PROXY_URL=http://inference-proxy:5001
       - CODE_RUNNER_URL=http://code_runner_mcp:8100
+      - AUTH_PROVIDER=${AUTH_PROVIDER:-cloudflare_access}
+      - CF_ACCESS_TEAM_DOMAIN=${CF_ACCESS_TEAM_DOMAIN:-}
+      - CF_ACCESS_AUD=${CF_ACCESS_AUD:-}
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-}
+      - AUTH_STATIC_EMAIL=${AUTH_STATIC_EMAIL:-}
     secrets:
       - DATA_DIR
-      - APP_PASSWORD
       - AI_URL
       - AI_API_KEY
       - EMBEDDING_URL
@@ -238,8 +242,6 @@ secrets:
   # Defining secrets mapped to files in the ../secrets directory
   DATA_DIR:
     file: ../secrets/DATA_DIR
-  APP_PASSWORD:
-    file: ../secrets/APP_PASSWORD
   AI_URL:
     file: ../secrets/AI_URL
   AI_API_KEY:

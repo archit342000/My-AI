@@ -22,6 +22,7 @@
 | `settings_ops.py` | Dynamic system preferences and allowlist configurations. | `SettingsOpsMixin` |
 | `skill_ops.py` | Retrieval and execution details for custom assistant skills. | `SkillOpsMixin` |
 | `task_ops.py` | Persistence related to background tasks. | `TaskOpsMixin` |
+| `user_ops.py` | Users table: lookup by email or id, create, activate/deactivate, list. | `UserOpsMixin` |
 
 ## 🧩 Architectural Context
 *   **Composition:** These files are not intended to be used in isolation. They are inherited by `DatabaseWrapper` in `backend/database/db_wrapper.py` to form a unified interface.

@@ -5,6 +5,7 @@ import uuid
 import logging
 import logging.handlers
 from backend.config import DATA_DIR
+from backend.auth.context import current_user_id
 
 # Define log paths
 LOG_BASE_DIR = os.path.join(DATA_DIR, "logs")
@@ -157,6 +158,7 @@ def log_event(event_type, data):
         log_entry = {
             "timestamp": timestamp.isoformat(),
             "type": event_type,
+            "user_id": current_user_id(),
             "data": data
         }
         filename = f"{timestamp.strftime('%Y%m%d')}_events.jsonl"

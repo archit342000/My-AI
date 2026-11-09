@@ -4,13 +4,16 @@
 
 - Read secrets only through `get_secret` in `backend/config.py` (Docker secret file first, then environment variable).
 - `.env`, `.env.*` and `secrets/` are gitignored and in `.dockerignore`. Never commit keys, tokens or passwords.
-- Never log, echo or return secrets, API keys or the app password.
+- Never log, echo or return secrets, API keys or auth tokens.
 
 ## Authentication
 
-- `require_auth` in `app.py` is a `before_request` hook. When `APP_PASSWORD` is set, every route (API, static, legacy UI and
-  WebSocket upgrade requests) needs HTTP Basic auth. Do not add routes outside Flask (which would bypass the hook) or
-  exempt paths from it.
+- `authenticate_request` in `app.py` is a `before_request` hook. Every route (API, static, legacy UI and WebSocket upgrade
+  requests) needs an identity from the configured provider (`backend/auth/`): no valid identity is 401, an unknown or
+  inactive user is 403. Do not add routes outside Flask (which would bypass the hook) or exempt paths from it.
+- The default provider `cloudflare_access` verifies the `Cf-Access-Jwt-Assertion` header: RS256 only, with `aud`, `iss`, `exp`,
+  `iat` and `email` required. JWKS failures fail closed. Tokens are never logged. The `static` provider (`AUTH_PROVIDER=static`)
+  trusts every request and is for local development only; there is no network or header bypass.
 - Internal MCP services are reached only over Docker networks, with their own API keys, and their key checks fail closed: an unconfigured key rejects the protected routes. `playwright_mcp`'s `/portal/*` endpoints need the key too (the app adds it server-side). The portal VNC in `playwright_mcp` is gated by websockify HTTP auth with `PLAYWRIGHT_MCP_API_KEY` (`playwright_mcp/vnc_auth.py`); x11vnc stays passwordless on the container's localhost, so processes inside `playwright_mcp` can still reach it (accepted risk). Sandboxed code runs on `code_runner_runtime`, which sits only on `runner-net`, an internal-only network with no internet, database or app route. The app reaches it through `code_runner_mcp`, a TCP relay that joins `secure-internal` and `runner-net` and forwards only port 8100. `/install` goes through `pkg-proxy`, an nginx reverse proxy with three fixed upstreams (PyPI, `files.pythonhosted.org`, `registry.npmjs.org`) that serves GET and HEAD only; it joins `runner-net` and its own `pkg-egress` network, holds no secrets or mounts, and is not on `secure-internal`. Docker enforces the topology (`internal: true` removes the route out, separate bridges isolate networks) but has no per-destination egress allowlist, so the registry-only limit is enforced by the proxy configuration; the proxy container itself has general egress through `pkg-egress`. Optional, documented and not applied: a host `DOCKER-USER` rule that limits traffic from the `myai-pkg-egress` bridge to TCP 443 and DNS (UDP and TCP 53) and drops the rest (`iptables -I DOCKER-USER -i myai-pkg-egress -p tcp --dport 443 -j ACCEPT`, the same for `-p udp`/`-p tcp --dport 53`, then `-I DOCKER-USER -i myai-pkg-egress -j DROP` placed last); it limits ports only, not destinations. Residual: sandboxed code can reach the proxy, so it can send arbitrary GET requests (any path, query string and the headers nginx does not strip) to the three registry hosts and read the replies, a low-bandwidth outbound channel to public hosts that `/install` allows anyway; request bodies are not forwarded. The proxy shares `runner-net` with the runtime and the relay.
 
 ## Input and output

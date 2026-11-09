@@ -1,7 +1,8 @@
-from flask import Flask, request, jsonify, Response, send_from_directory
+from flask import Flask, request, jsonify, Response, send_from_directory, g
 from werkzeug.exceptions import RequestEntityTooLarge
 from backend.logging import log_event
 import logging
+from typing import Optional
 import os
 import time
 import json
@@ -23,6 +24,8 @@ if os.name != 'nt' and hasattr(time, 'tzset'):
 from backend import config
 from backend.rag import RAGProvider
 from backend.database import db
+from backend.auth.context import set_current_user, reset_current_user, user_context
+from backend.auth.providers import get_provider
 from backend.database.init_db import init_db
 from backend.models import get_embedding_model
 from backend.file_system import (
@@ -253,6 +256,7 @@ app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024
 
 
 # Initialize components with config - load models from model_loader (no fallbacks)
+config.validate_auth_config()
 init_db()
 embedding_model = get_embedding_model()
 
@@ -339,14 +343,57 @@ def legacy_assets(path):
     return send_from_directory('static', path)
 
 @app.before_request
-def require_auth():
-    if not config.APP_PASSWORD:
-        return
-    auth = request.authorization
-    if not auth or auth.password != config.APP_PASSWORD:
-        return Response('Could not verify your access level for that URL.\n'
-                        'You have to login with proper credentials', 401,
-                        {'WWW-Authenticate': 'Basic realm="Login Required"'})
+def authenticate_request():
+    """Verify the caller on every route, WebSocket upgrades included: 401 without a valid identity, 403 for an unknown or inactive user."""
+    identity = get_provider().authenticate(request.headers)
+    if identity is None:
+        return jsonify({"error": "Unauthorized"}), 401
+    user = db.get_user_by_email(identity.email)
+    if user is None or not user["is_active"]:
+        log_event("auth_unknown_user", {"email": identity.email, "reason": "unknown" if user is None else "inactive"})
+        return jsonify({"error": "Forbidden"}), 403
+    g.user = {"id": user["id"], "email": user["email"], "role": user["role"]}
+    g.user_token = set_current_user(g.user)
+
+
+def _iter_as_user(user, chunks):
+    """Yield `chunks`, running each step as `user` (a streamed body is read after teardown_request has reset the user)."""
+    iterator = iter(chunks)
+    try:
+        while True:
+            with user_context(user):
+                try:
+                    chunk = next(iterator)
+                except StopIteration:
+                    return
+            yield chunk
+    finally:
+        close = getattr(iterator, "close", None)
+        if close is not None:
+            close()
+
+
+@app.after_request
+def bind_user_to_stream(response: Response) -> Response:
+    """Make `log_event` inside a streamed response body record the request's user."""
+    user = g.get("user")
+    if user is not None and response.is_streamed and not response.direct_passthrough:
+        response.response = _iter_as_user(user, response.response)
+    return response
+
+
+@app.teardown_request
+def clear_current_user(exc: Optional[BaseException] = None) -> None:
+    """Reset the current-user ContextVar set by authenticate_request."""
+    token = g.pop("user_token", None)
+    if token is not None:
+        reset_current_user(token)
+
+
+@app.route('/api/me')
+def get_me():
+    """Return the authenticated user as {id, email, role}."""
+    return jsonify(g.user)
 
 @app.route('/<path:path>')
 def serve_static(path):

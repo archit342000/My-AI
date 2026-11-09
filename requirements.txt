@@ -18,6 +18,10 @@ markdown==3.7
 pdfkit==1.0.0
 pydantic>=2.0
 
+# Authentication (Cloudflare Access JWT verification)
+PyJWT[crypto]==2.15.1
+cryptography==50.0.2
+
 # File upload and processing
 python-magic==0.4.27
 python-magic-bin==0.4.27; platform_system=="Windows"

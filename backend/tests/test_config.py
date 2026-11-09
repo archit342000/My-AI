@@ -34,3 +34,76 @@ def test_config_paths(clean_env):
         with patch("os.makedirs"):
             importlib.reload(backend.config)
             assert backend.config.DATA_DIR == "/tmp/my-data"
+
+
+# --- validate_auth_config ---
+
+def _auth(**over):
+    base = {"AUTH_PROVIDER": "cloudflare_access", "ADMIN_EMAIL": "a@x.io",
+            "CF_ACCESS_TEAM_DOMAIN": "t.cloudflareaccess.com", "CF_ACCESS_AUD": "aud",
+            "AUTH_STATIC_EMAIL": ""}
+    base.update(over)
+    return patch.multiple("backend.config", **base)
+
+
+def test_validate_auth_config_cloudflare_ok():
+    from backend.config import validate_auth_config
+    with _auth():
+        validate_auth_config()
+
+
+def test_validate_auth_config_static_ok():
+    from backend.config import validate_auth_config
+    with _auth(AUTH_PROVIDER="static", AUTH_STATIC_EMAIL="a@x.io", CF_ACCESS_TEAM_DOMAIN="", CF_ACCESS_AUD=""):
+        validate_auth_config()
+
+
+@pytest.mark.parametrize("over,msg", [
+    ({"AUTH_PROVIDER": "basic"}, "AUTH_PROVIDER"),
+    ({"ADMIN_EMAIL": ""}, "ADMIN_EMAIL"),
+    ({"CF_ACCESS_TEAM_DOMAIN": ""}, "CF_ACCESS_TEAM_DOMAIN"),
+    ({"CF_ACCESS_AUD": ""}, "CF_ACCESS_AUD"),
+    ({"CF_ACCESS_TEAM_DOMAIN": "https://t.cloudflareaccess.com"}, "bare host"),
+    ({"CF_ACCESS_TEAM_DOMAIN": "t.cloudflareaccess.com/path"}, "bare host"),
+    ({"CF_ACCESS_TEAM_DOMAIN": "t .cloudflareaccess.com"}, "bare host"),
+    ({"CF_ACCESS_TEAM_DOMAIN": "t.cloudflareaccess.com:443"}, "bare host"),
+    ({"AUTH_PROVIDER": "static", "AUTH_STATIC_EMAIL": ""}, "AUTH_STATIC_EMAIL"),
+])
+def test_validate_auth_config_rejects(over, msg):
+    from backend.config import validate_auth_config
+    with _auth(**over):
+        with pytest.raises(ValueError, match=msg):
+            validate_auth_config()
+
+
+def test_team_domain_is_lowercased(clean_env):
+    import backend.config
+    env = {"CF_ACCESS_TEAM_DOMAIN": " MyTeam.CloudflareAccess.com ", "DATA_DIR": "/tmp/my-data"}
+    with patch.dict(os.environ, env):
+        with patch("os.makedirs"):
+            importlib.reload(backend.config)
+            assert backend.config.CF_ACCESS_TEAM_DOMAIN == "myteam.cloudflareaccess.com"
+    importlib.reload(backend.config)
+
+
+def test_empty_static_email_env_falls_back_to_admin_email(clean_env):
+    """Compose passes AUTH_STATIC_EMAIL="" when unset; that must still default to ADMIN_EMAIL."""
+    import backend.config
+    env = {"ADMIN_EMAIL": "admin@x.io", "AUTH_STATIC_EMAIL": "", "DATA_DIR": "/tmp/my-data"}
+    with patch.dict(os.environ, env):
+        with patch("os.makedirs"):
+            importlib.reload(backend.config)
+            assert backend.config.AUTH_STATIC_EMAIL == "admin@x.io"
+    importlib.reload(backend.config)
+
+
+def test_auth_emails_are_normalised(clean_env):
+    import backend.config
+    env = {"ADMIN_EMAIL": "  Admin@X.io ", "DATA_DIR": "/tmp/my-data"}
+    with patch.dict(os.environ, env):
+        with patch("os.makedirs"):
+            importlib.reload(backend.config)
+            assert backend.config.ADMIN_EMAIL == "admin@x.io"
+            assert backend.config.AUTH_STATIC_EMAIL == "admin@x.io"
+    # Restore the module to the real environment so later tests see the original values.
+    importlib.reload(backend.config)

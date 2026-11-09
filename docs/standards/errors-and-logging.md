@@ -27,7 +27,7 @@ Conventions:
 
 - `event_type` is `snake_case`, shaped `<component>_<event>` (`turn_handler_start`, `rag_collection_dropped`). Errors end in `_error`.
 - `data` is a flat, JSON-serializable dict with ids (`chat_id`, `message_id`) and an `error` string where relevant.
-- Never log secrets, tokens, the app password or raw uploaded documents. Truncate base64 and other large blobs before logging.
+- Never log secrets, tokens or raw uploaded documents. Truncate base64 and other large blobs before logging.
 - Log at boundaries (start/end of a turn, each external call, each failure), not inside tight loops.
 - The Logs page (`/logs`) reads these files through `/api/logs`; keep file names and formats stable.
 - Logs are not backed up and may be deleted (`docs/data.md`).
