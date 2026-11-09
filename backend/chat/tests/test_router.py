@@ -4,6 +4,9 @@ from unittest.mock import patch, MagicMock
 from flask import Flask
 
 from backend.chat.router import chat_bp, openai_bp, personas_bp, skills_bp
+from backend.chat.message_edit import NOTE_MARKER
+
+USER_ROW = {"id": 1, "role": "user", "content": "old"}
 
 @pytest.fixture
 def app():
@@ -330,10 +333,12 @@ def test_edit_message_endpoint(mock_db, client):
     response = client.put('/api/chats/chat1/messages/1', json={})
     assert response.status_code == 400
 
+    mock_db.get_message.return_value = USER_ROW
     mock_db.edit_message.return_value = True
     response = client.put('/api/chats/chat1/messages/1', json={"content": "new content"})
     assert response.status_code == 200
     assert response.json == {"success": True}
+    mock_db.get_message.assert_called_with("chat1", 1)
     mock_db.edit_message.assert_called_with("chat1", 1, "new content")
 
 @patch('backend.chat.router.db')
@@ -347,11 +352,55 @@ def test_edit_message_endpoint_rejects_empty_content(mock_db, client, content):
 @patch('backend.chat.router.db')
 @patch('backend.chat.router.log_event')
 def test_edit_message_endpoint_message_not_in_chat(mock_log_event, mock_db, client):
-    mock_db.edit_message.return_value = False
+    mock_db.get_message.return_value = None
     response = client.put('/api/chats/chat1/messages/99', json={"content": "new content"})
     assert response.status_code == 404
     assert response.json == {"error": "Message not found"}
     mock_log_event.assert_called_once_with("chat_edit_message_not_found", {"chat_id": "chat1", "message_id": 99})
+    mock_db.edit_message.assert_not_called()
+
+@patch('backend.chat.router.db')
+@patch('backend.chat.router.log_event')
+def test_edit_message_endpoint_message_removed_between_read_and_edit(mock_log_event, mock_db, client):
+    mock_db.get_message.return_value = USER_ROW
+    mock_db.edit_message.return_value = False
+    response = client.put('/api/chats/chat1/messages/1', json={"content": "new content"})
+    assert response.status_code == 404
+    assert response.json == {"error": "Message not found"}
+
+@patch('backend.chat.router.db')
+@patch('backend.chat.router.log_event')
+@pytest.mark.parametrize("role", ["assistant", "tool", "system"])
+def test_edit_message_endpoint_refuses_non_user_messages(mock_log_event, mock_db, client, role):
+    mock_db.get_message.return_value = {"id": 2, "role": role, "content": "reply"}
+    response = client.put('/api/chats/chat1/messages/2', json={"content": "hijack"})
+    assert response.status_code == 403
+    assert response.json == {"error": "Only user messages can be edited"}
+    mock_db.edit_message.assert_not_called()
+    mock_log_event.assert_called_once_with("chat_edit_rejected_role", {"chat_id": "chat1", "message_id": 2})
+
+@patch('backend.chat.router.db')
+def test_edit_message_endpoint_handles_missing_stored_content(mock_db, client):
+    mock_db.get_message.return_value = {"id": 1, "role": "user", "content": None}
+    mock_db.edit_message.return_value = True
+    response = client.put('/api/chats/chat1/messages/1', json={"content": "new content"})
+    assert response.status_code == 200
+    mock_db.edit_message.assert_called_with("chat1", 1, "new content")
+
+@patch('backend.chat.router.db')
+def test_edit_message_endpoint_keeps_images_and_the_attachment_note(mock_db, client):
+    note = "\n\n[System Note: The user has attached the following files.\n- a.pdf (ID: f1)]"
+    stored = json.dumps([
+        {"type": "text", "text": "look" + note},
+        {"type": "image_url", "image_url": {"url": "data:image/png;base64,AAA"}},
+    ])
+    mock_db.get_message.return_value = {"id": 1, "role": "user", "content": stored}
+    mock_db.edit_message.return_value = True
+    response = client.put('/api/chats/chat1/messages/1', json={"content": "look again"})
+    assert response.status_code == 200
+    saved = json.loads(mock_db.edit_message.call_args.args[2])
+    assert saved[0] == {"type": "text", "text": "look again" + note}
+    assert saved[1]["image_url"]["url"] == "data:image/png;base64,AAA"
 
 @patch('backend.chat.router.db')
 @patch('backend.chat.router.get_file_manager')
@@ -393,6 +442,7 @@ def test_chat_completions_with_images(mock_log_event, mock_chat_handler_class, m
     assert parsed_content[0]['type'] == 'text'
     assert "What is this?" in parsed_content[0]['text']
     assert "[System Note:" in parsed_content[0]['text']
+    assert NOTE_MARKER in parsed_content[0]['text']  # the edit helper finds the note by this prefix
     assert "test.pdf" in parsed_content[0]['text']
     assert "test.png" not in parsed_content[0]['text']
 
@@ -435,6 +485,7 @@ def test_chat_completions_without_images(mock_log_event, mock_chat_handler_class
     assert isinstance(content, str)
     assert "Just text" in content
     assert "[System Note:" in content
+    assert NOTE_MARKER in content  # the edit helper finds the note by this prefix
     assert "test.pdf" in content
     assert called_kwargs.get('attachments') == [{"file_id": "doc1", "name": "test.pdf", "mime_type": "application/pdf"}]
 

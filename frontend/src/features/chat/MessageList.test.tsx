@@ -63,6 +63,45 @@ describe('MessageList', () => {
     await waitFor(() => expect(onChanged).toHaveBeenCalled());
   });
 
+  it('Save & regenerate edits the message and resumes, without posting a new turn', async () => {
+    const edit = vi.spyOn(chatsApi, 'editMessage').mockResolvedValue({} as never);
+    const resume = vi.spyOn(sendTurnModule, 'resumeTurn').mockResolvedValue(undefined);
+    const send = vi.spyOn(sendTurnModule, 'sendTurn').mockResolvedValue(undefined);
+    renderWithProviders(<MessageList turns={toTurns([...msgs] as never)} chatId="c1" onChanged={() => undefined} />);
+    const row = document.querySelector('[data-message-id="1"]') as HTMLElement;
+    fireEvent.click(within(row).getByRole('button', { name: 'Edit message' }));
+    fireEvent.change(within(row).getByLabelText('Edit message', { selector: 'textarea' }), { target: { value: 'U1 edited' } });
+    fireEvent.click(within(row).getByRole('button', { name: /Save & regenerate/ }));
+    await waitFor(() => expect(resume).toHaveBeenCalledTimes(1));
+    expect(edit).toHaveBeenCalledWith('c1', '1', 'U1 edited');
+    expect(edit.mock.invocationCallOrder[0]).toBeLessThan(resume.mock.invocationCallOrder[0]!);
+    expect(resume.mock.calls[0]![1]).toBe('c1');
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('Save alone edits the message and does not regenerate', async () => {
+    const edit = vi.spyOn(chatsApi, 'editMessage').mockResolvedValue({} as never);
+    const resume = vi.spyOn(sendTurnModule, 'resumeTurn').mockResolvedValue(undefined);
+    renderWithProviders(<MessageList turns={toTurns([...msgs] as never)} chatId="c1" onChanged={() => undefined} />);
+    const row = document.querySelector('[data-message-id="1"]') as HTMLElement;
+    fireEvent.click(within(row).getByRole('button', { name: 'Edit message' }));
+    fireEvent.change(within(row).getByLabelText('Edit message', { selector: 'textarea' }), { target: { value: 'U1 edited' } });
+    fireEvent.click(within(row).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(edit).toHaveBeenCalledWith('c1', '1', 'U1 edited'));
+    expect(resume).not.toHaveBeenCalled();
+  });
+
+  it('a failed edit does not regenerate', async () => {
+    vi.spyOn(chatsApi, 'editMessage').mockRejectedValue(new Error('locked'));
+    const resume = vi.spyOn(sendTurnModule, 'resumeTurn').mockResolvedValue(undefined);
+    renderWithProviders(<MessageList turns={toTurns([...msgs] as never)} chatId="c1" onChanged={() => undefined} />);
+    const row = document.querySelector('[data-message-id="1"]') as HTMLElement;
+    fireEvent.click(within(row).getByRole('button', { name: 'Edit message' }));
+    fireEvent.click(within(row).getByRole('button', { name: /Save & regenerate/ }));
+    await waitFor(() => expect(useToastStore.getState().toasts.some((t) => t.message === 'locked')).toBe(true));
+    expect(resume).not.toHaveBeenCalled();
+  });
+
   it('a failed edit keeps the editor open and shows an error toast', async () => {
     vi.spyOn(chatsApi, 'editMessage').mockRejectedValue(new Error('locked'));
     renderWithProviders(<MessageList turns={toTurns([...msgs] as never)} chatId="c1" onChanged={() => undefined} />);

@@ -117,6 +117,21 @@ class MessageOpsMixin(BaseMixin):
         self._log_db_wrapper_op("GET_MESSAGES_END", chat_id, f"count={result_count} duration_ms={duration_ms:.2f}")
         return result
 
+    def get_message(self, chat_id: str, message_id: int) -> dict | None:
+        """
+        Return {"id", "role", "content"} for a main-chat message that belongs to `chat_id`,
+        or None if there is no such message in that chat.
+        """
+        conn = make_connection()
+        try:
+            conn.row_factory = sqlite3.Row
+            c = conn.cursor()
+            c.execute("SELECT id, role, content FROM messages WHERE id = ? AND chat_id = ?", (message_id, chat_id))
+            row = c.fetchone()
+            return dict(row) if row else None
+        finally:
+            conn.close()
+
     def get_last_assistant_message(self, chat_id: str, parent_message_id: int = None, parent_type: str = "main"):
         """
         Get the most recent assistant message for a chat or sub-agent turn.

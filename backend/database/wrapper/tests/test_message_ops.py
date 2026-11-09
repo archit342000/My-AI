@@ -205,3 +205,16 @@ def test_edit_message_is_scoped_to_chat(temp_db):
     assert [m["content"] for m in db.get_messages("edit_scope_a")] == ["a edited"]
     assert a_reply not in [m["id"] for m in db.get_messages("edit_scope_a")]
     assert [m["id"] for m in db.get_messages("edit_scope_b")] == [b_first, b_reply]
+
+
+def test_get_message_is_scoped_to_the_chat(temp_db):
+    db = temp_db
+    for chat in ("get_msg_a", "get_msg_b"):
+        db.ensure_chat_exists(chat)
+    user_id = db.add_message("get_msg_a", role="user", content="hello")
+    reply_id = db.add_message("get_msg_a", role="assistant", content="hi")
+
+    assert db.get_message("get_msg_a", user_id) == {"id": user_id, "role": "user", "content": "hello"}
+    assert db.get_message("get_msg_a", reply_id)["role"] == "assistant"
+    assert db.get_message("get_msg_b", user_id) is None  # another chat's id
+    assert db.get_message("get_msg_a", 999999) is None
