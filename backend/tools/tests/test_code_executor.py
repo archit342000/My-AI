@@ -1,4 +1,6 @@
 import asyncio
+import threading
+from contextlib import asynccontextmanager
 import pytest
 from unittest.mock import MagicMock, patch
 from backend.tools.implementations.code_executor import run_code, run_file, install_packages, list_packages
@@ -269,7 +271,7 @@ def test_effective_code_runner_timeout_rejects_a_stored_value_of_the_wrong_type(
     assert log.call_args.args[0] == "code_executor_timeout_invalid"
 
 
-def test_run_file_sends_the_clamped_timeout_and_waits_five_seconds_longer(tmp_path):
+def test_run_file_sends_the_clamped_timeout_and_waits_longer_than_compile_plus_run(tmp_path):
     import asyncio
     (tmp_path / "main.py").write_text("print(1)")
     with patch('backend.tools.implementations.code_executor.resolve_owner_and_physical_path') as resolve, \
@@ -281,7 +283,7 @@ def test_run_file_sends_the_clamped_timeout_and_waits_five_seconds_longer(tmp_pa
         req.post.return_value = MagicMock(json=lambda: {"stdout": "1\n", "stderr": "", "exit_code": 0, "execution_time_ms": 1, "timed_out": False})
         asyncio.run(run_file(path="main.py", chat_id="c1", tool_call_id="tc"))
     assert req.post.call_args.kwargs["json"]["timeout"] == 120
-    assert req.post.call_args.kwargs["timeout"] == 125
+    assert req.post.call_args.kwargs["timeout"] == 140  # 120 + the compile budget (15 s) + margin
 
 
 def test_run_file_and_run_code_report_an_invalid_timeout_setting(tmp_path):
@@ -297,7 +299,7 @@ def test_run_file_and_run_code_report_an_invalid_timeout_setting(tmp_path):
     assert res_file == res_code == "Error: The code runner timeout setting is invalid. Fix it in Settings."
 
 
-def test_run_code_sends_the_clamped_timeout_and_waits_five_seconds_longer():
+def test_run_code_sends_the_clamped_timeout_and_waits_longer_than_compile_plus_run():
     import asyncio
     with patch('backend.tools.implementations.code_executor.db') as db, \
          patch('backend.tools.implementations.code_executor.requests') as req, \
@@ -306,7 +308,7 @@ def test_run_code_sends_the_clamped_timeout_and_waits_five_seconds_longer():
         req.post.return_value = MagicMock(json=lambda: {"stdout": "1\n", "stderr": "", "exit_code": 0, "execution_time_ms": 1, "timed_out": False})
         asyncio.run(run_code(code="print(1)", language="python", chat_id="c1", tool_call_id="tc"))
     assert req.post.call_args.kwargs["json"]["timeout"] == 120
-    assert req.post.call_args.kwargs["timeout"] == 125
+    assert req.post.call_args.kwargs["timeout"] == 140  # 120 + the compile budget (15 s) + margin
 
 
 def test_run_code_runner_unavailable_message_has_no_exception_text_and_is_logged(mock_db, mock_requests):
@@ -386,3 +388,117 @@ def test_run_file_internal_resolver_failure_logs_a_capped_string_path_even_for_o
         res = asyncio.run(run_file(path=path, chat_id="c1", tool_call_id="tc"))
     assert res == "Error: Failed to resolve file path."
     log.assert_called_once_with("code_executor_resolve_error", {"chat_id": "c1", "path": logged, "error": "AttributeError"})
+
+
+# --- the run slot: runner calls are serialised, keyed by the chat owner, and never block the event loop ------
+
+from backend.tools.implementations import code_executor
+from backend.tools.implementations.run_slot import RunQueueFull, RunQueueTimeout
+
+RUNNER_CALLS = {
+    "run_code": lambda: code_executor.run_code(code="print(1)", language="python", chat_id="c1", tool_call_id="tc"),
+    "run_file": lambda: code_executor.run_file(path="main.py", chat_id="c1", tool_call_id="tc"),
+    "install_packages": lambda: _approved_install(),
+    "list_packages": lambda: code_executor.list_packages("pip", chat_id="c1"),
+}
+
+
+async def _approved_install():
+    with patch('backend.tools.implementations.code_executor.request_clarification', return_value="Yes, install"):
+        return await code_executor.install_packages(["requests"], "pip", chat_id="c1", tool_call_id="tc")
+
+
+@pytest.fixture
+def runner_env(tmp_path):
+    """A mocked db and runner so each tool reaches its runner call; yields (db, requests, slot_log)."""
+    (tmp_path / "main.py").write_text("print(1)")
+    slot_log = []
+
+    @asynccontextmanager
+    async def recording_slot(owner, *a, **k):
+        slot_log.append(("enter", owner))
+        try:
+            yield
+        finally:
+            slot_log.append(("exit", owner))
+
+    with patch('backend.tools.implementations.code_executor.resolve_owner_and_physical_path') as resolve, \
+         patch('backend.tools.implementations.code_executor.db') as db, \
+         patch('backend.tools.implementations.code_executor.requests') as req, \
+         patch('backend.tools.implementations.code_executor.async_run_slot', recording_slot), \
+         patch('backend.tools.implementations.code_executor.log_event') as events:
+        resolve.side_effect = lambda chat_id, path, **kw: (chat_id, None, str(tmp_path / path) if path else str(tmp_path))
+        db.get_setting.side_effect = lambda key, default=None: default
+        db.get_chat_owner.return_value = "owner-1"
+        response = MagicMock()
+        response.status_code = 200
+        response.json.return_value = {"stdout": "", "stderr": "", "exit_code": 0, "execution_time_ms": 1, "timed_out": False,
+                                      "success": True, "packages": []}
+        req.post.return_value = response
+        req.get.return_value = response
+        yield db, req, slot_log, events
+
+
+@pytest.mark.parametrize("name", list(RUNNER_CALLS))
+def test_every_runner_call_runs_inside_the_slot_of_the_chat_owner_in_a_worker_thread(name, runner_env):
+    db, req, slot_log, _ = runner_env
+    thread_of_call = []
+    request_fn = req.get if name == "list_packages" else req.post
+    request_fn.side_effect = lambda *a, **k: (thread_of_call.append(threading.current_thread()), request_fn.return_value)[1]
+    asyncio.run(RUNNER_CALLS[name]())
+    assert slot_log == [("enter", "owner-1"), ("exit", "owner-1")]  # the request happened between enter and exit
+    assert thread_of_call and thread_of_call[0] is not threading.main_thread()  # not on the event loop's thread
+    db.get_chat_owner.assert_called_with("c1")
+
+
+@pytest.mark.parametrize("name", list(RUNNER_CALLS))
+@pytest.mark.parametrize("error,event", [(RunQueueFull("u"), "code_runner_queue_full_error"), (RunQueueTimeout("u"), "code_runner_queue_timeout_error")])
+def test_a_full_or_timed_out_slot_returns_the_busy_message_and_logs(name, error, event, runner_env):
+    _, req, _, events = runner_env
+
+    @asynccontextmanager
+    async def refusing(owner, *a, **k):
+        raise error
+        yield
+
+    with patch('backend.tools.implementations.code_executor.async_run_slot', refusing):
+        result = asyncio.run(RUNNER_CALLS[name]())
+    assert result == "Error: Code runner is busy; try again shortly."
+    req.post.assert_not_called(); req.get.assert_not_called()  # nothing reached the runner
+    events.assert_any_call(event, {"chat_id": "c1"})
+
+
+@pytest.mark.parametrize("name", list(RUNNER_CALLS))
+@pytest.mark.parametrize("owner", [None, ""])
+def test_a_chat_without_an_owner_gets_the_unavailable_message_without_taking_the_slot(name, owner, runner_env):
+    db, req, slot_log, events = runner_env
+    db.get_chat_owner.return_value = owner
+    result = asyncio.run(RUNNER_CALLS[name]())
+    assert result == "Error: Code runner is unavailable for this request."
+    assert slot_log == []
+    req.post.assert_not_called(); req.get.assert_not_called()
+    events.assert_any_call("code_runner_no_owner_error", {"chat_id": "c1"})
+
+
+def test_a_call_without_a_chat_id_is_refused_too(runner_env):
+    _, req, slot_log, _ = runner_env
+    result = asyncio.run(code_executor.run_code(code="print(1)", language="python"))
+    assert result == "Error: Code runner is unavailable for this request." and slot_log == []
+
+
+@pytest.mark.parametrize("name", list(RUNNER_CALLS))
+def test_a_runner_connection_error_still_releases_the_slot(name, runner_env):
+    _, req, slot_log, _ = runner_env
+    req.post.side_effect = ConnectionError("runner down")
+    req.get.side_effect = ConnectionError("runner down")
+    result = asyncio.run(RUNNER_CALLS[name]())
+    assert "unavailable" in str(result)
+    assert slot_log == [("enter", "owner-1"), ("exit", "owner-1")]
+
+
+@pytest.mark.parametrize("name", ["run_code", "run_file"])
+def test_the_http_timeout_covers_compile_time_plus_the_run(name, runner_env):
+    _, req, _, _ = runner_env
+    asyncio.run(RUNNER_CALLS[name]())
+    assert req.post.call_args.kwargs["timeout"] >= 15 + 30 + 5  # compile 15 s + the run's default 30 s + margin
+

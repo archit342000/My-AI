@@ -1,3 +1,6 @@
+import os
+import re as _re
+import uuid
 import pytest
 import asyncio
 import time
@@ -314,4 +317,87 @@ def test_the_real_app_rejects_portal_init_without_a_key():
         assert client.post("/portal/init").status_code == 401
         assert client.post("/portal/init", headers={"X-MCP-API-KEY": "wrong"}).status_code == 401
         assert client.get("/sse").status_code == 401
+
+
+# --- per-user browser profiles ----------------------------------------------------------------
+
+from playwright_mcp import server as pw_server
+
+
+@pytest.fixture
+def fake_playwright(tmp_path, monkeypatch):
+    """A mocked Playwright object; sessions and the portal state are reset around each test."""
+    monkeypatch.chdir(tmp_path)
+    context = MagicMock()
+    context.pages = []
+    context.new_page = AsyncMock(return_value=MagicMock())
+    context.add_init_script = AsyncMock()
+    playwright = MagicMock()
+    playwright.chromium.launch_persistent_context = AsyncMock(return_value=context)
+    browser = MagicMock()
+    browser.contexts = [context]
+    playwright.chromium.connect_over_cdp = AsyncMock(return_value=browser)
+    pw_server._sessions.clear()
+    with patch.object(pw_server, "_get_playwright", AsyncMock(return_value=playwright)), \
+         patch.object(pw_server, "stealth_async", AsyncMock()):
+        yield playwright
+    pw_server._sessions.clear()
+
+
+@pytest.mark.anyio
+async def test_two_profiles_use_two_different_user_data_dirs(fake_playwright, tmp_path):
+    await pw_server.browser_start_session("s1", "profile-a")
+    await pw_server.browser_start_session("s2", "profile-b")
+    dirs = [c.kwargs["user_data_dir"] for c in fake_playwright.chromium.launch_persistent_context.call_args_list]
+    assert dirs == [os.path.join(str(tmp_path), "playwright_data", "profiles", "profile-a"),
+                    os.path.join(str(tmp_path), "playwright_data", "profiles", "profile-b")]
+    assert all(os.path.isdir(d) for d in dirs)
+    assert not os.path.exists(os.path.join(str(tmp_path), "playwright_data", "default_profile"))  # the shared profile is retired
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("bad", ["", "../etc", "a/b", "A_Upper", "x" * 65, "with space", "dot.dot", "a\\b"])
+async def test_an_invalid_profile_id_is_an_error_and_nothing_is_launched(fake_playwright, bad):
+    result = json.loads(await pw_server.browser_start_session("s1", bad))
+    assert "error" in result
+    fake_playwright.chromium.launch_persistent_context.assert_not_called()
+    fake_playwright.chromium.connect_over_cdp.assert_not_called()
+    assert "s1" not in pw_server._sessions
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("good", ["a", uuid.uuid4().hex, "user_1-b", "x" * 64])
+async def test_valid_profile_ids_are_accepted(fake_playwright, good):
+    assert json.loads(await pw_server.browser_start_session("s1", good))["status"] == "created"
+
+
+@pytest.mark.anyio
+async def test_a_session_never_attaches_over_cdp_unless_attach_portal_is_set(fake_playwright):
+    running = MagicMock()
+    running.poll.return_value = None  # the portal Chromium is running
+    with patch.object(pw_server, "_portal_process", running):
+        user = json.loads(await pw_server.browser_start_session("s-user", "user-1"))
+        admin = json.loads(await pw_server.browser_start_session("s-admin", "admin-1", attach_portal=True))
+    assert user["status"] == "created"  # its own profile, even though the portal is running
+    assert admin["status"] == "connected_cdp"
+    fake_playwright.chromium.connect_over_cdp.assert_awaited_once()
+    fake_playwright.chromium.launch_persistent_context.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_attach_portal_without_a_running_portal_falls_back_to_the_profile(fake_playwright):
+    result = json.loads(await pw_server.browser_start_session("s1", "admin-1", attach_portal=True))
+    assert result["status"] == "created"
+    fake_playwright.chromium.connect_over_cdp.assert_not_called()
+
+
+def test_profile_id_pattern_is_the_documented_one():
+    assert _re.fullmatch(pw_server.PROFILE_ID_PATTERN, "abc_123-x") and not _re.fullmatch(pw_server.PROFILE_ID_PATTERN, "ABC")
+
+
+def test_entrypoint_clears_locks_in_every_profile_and_no_longer_lists_default_profile():
+    text = open(os.path.join(os.path.dirname(__file__), "..", "entrypoint.sh")).read()
+    assert "/app/playwright_data/portal_profile" in text and "/app/playwright_data/profiles/*" in text
+    assert "default_profile" not in text
+    assert "SingletonLock" in text and "SingletonCookie" in text and "SingletonSocket" in text
 

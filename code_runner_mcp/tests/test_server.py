@@ -2,7 +2,10 @@ from fastapi.testclient import TestClient
 import os
 import subprocess
 import sys
+import threading
+import time
 import pytest
+from helpers import _gone, _grandchild_code
 from unittest.mock import MagicMock, patch
 
 # Mock API Key environment variables before importing server
@@ -271,7 +274,7 @@ def test_websocket_clamps_a_huge_timeout_and_the_run_uses_the_clamped_value():
 
     with patch("server.asyncio.wait_for", spy_wait_for):
         frames = _ws_run({"timeout": 10000})
-    assert waited and waited[-1] == server.MAX_TIMEOUT
+    assert server.MAX_TIMEOUT in waited  # the run itself waited the clamped value (sends use SEND_TIMEOUT)
     assert frames[-1] == {"type": "exit", "code": 0}
 
 
@@ -284,3 +287,218 @@ def test_websocket_rejects_a_non_integer_timeout_with_a_clear_frame(bad):
 def test_websocket_treats_a_null_or_missing_timeout_as_the_default():
     assert _ws_run({"timeout": None})[-1] == {"type": "exit", "code": 0}
     assert _ws_run({})[-1] == {"type": "exit", "code": 0}
+
+
+# --- the live-run WebSocket also kills the process group and clears the scratch --------------------------------
+
+def _scratch_leftovers():
+    import executor
+    return [e for root in executor.scratch_roots() for e in os.listdir(root)]
+
+
+def test_websocket_run_clears_the_sandbox_and_scratch_afterwards():
+    frames = _ws_run({"language": "python", "code": "import os, pathlib\npathlib.Path(os.environ['TMPDIR'], 'x').write_text('1')\nprint('ok')", "timeout": 5})
+    assert frames[-1] == {"type": "exit", "code": 0}
+    assert _scratch_leftovers() == []
+
+
+def test_websocket_timeout_kills_the_process_group(tmp_path):
+    pidfile = tmp_path / "pid"
+    frames = _ws_run({"language": "python", "code": _grandchild_code(pidfile) + "time.sleep(30)", "timeout": 2})
+    assert frames[-1] == {"type": "exit", "code": -1}
+    assert _gone(int(pidfile.read_text())), "a grandchild survived the live-run timeout"
+    assert _scratch_leftovers() == []
+
+
+def test_websocket_run_holds_the_runner_lock_until_it_has_cleaned_up():
+    import executor
+    seen = []
+    frames_holder = {}
+
+    def run():
+        frames_holder["f"] = _ws_run({"language": "python", "code": "import time\ntime.sleep(1)", "timeout": 5})
+
+    t = threading.Thread(target=run)
+    t.start()
+    end = time.time() + 5
+    while time.time() < end and not executor.RUN_LOCK.locked():
+        time.sleep(0.01)
+    seen.append(executor.RUN_LOCK.locked())
+    t.join()
+    assert seen == [True] and not executor.RUN_LOCK.locked()
+
+
+def test_websocket_compile_phase_is_bounded(monkeypatch):
+    import server
+    monkeypatch.setattr(server, "COMPILE_TIMEOUT", 0.001)
+    frames = _ws_run({"language": "c", "code": "int main(){return 0;}", "timeout": 5})
+    assert frames[-1] == {"type": "exit", "code": 1}
+    assert any(f["type"] == "stderr" and "timed out" in f["data"] for f in frames)
+    assert _scratch_leftovers() == []
+
+
+def test_websocket_compile_failure_clears_the_scratch():
+    frames = _ws_run({"language": "c", "code": "this is not C", "timeout": 5})
+    assert frames[-1]["type"] == "exit" and frames[-1]["code"] != 0
+    assert _scratch_leftovers() == []
+
+
+def test_http_execute_reports_a_failed_cleanup():
+    from unittest.mock import patch
+    with patch("executor.clear_scratch", side_effect=[[], ["/tmp/stuck"]]):
+        res = client.post("/execute", json={"language": "python", "code": "print(1)"}, headers=WS_AUTH)
+    assert res.status_code == 200 and res.json()["error"] == "Runner cleanup failed."
+
+
+def test_websocket_pre_run_clear_failure_refuses_the_run():
+    from unittest.mock import patch
+    with patch("server.clear_scratch", return_value=["/tmp/leftover"]), patch("server.asyncio.create_subprocess_exec") as spawn:
+        frames = _ws_run({"language": "python", "code": "print(1)", "timeout": 5})
+    assert frames == [{"type": "stderr", "data": "Error: Runner cleanup failed.\n"}, {"type": "exit", "code": 1}]
+    spawn.assert_not_called()
+
+
+def test_websocket_post_run_clear_failure_is_reported_with_a_stderr_frame():
+    from unittest.mock import patch
+    with patch("server.clear_scratch", side_effect=[[], ["/tmp/stuck"]]):
+        frames = _ws_run({"language": "python", "code": "print(1)", "timeout": 5})
+    assert {"type": "stderr", "data": "\nError: Runner cleanup failed.\n"} in frames
+    assert frames[-1] == {"type": "exit", "code": 0}
+
+
+def test_websocket_client_disconnect_kills_the_group_and_clears(tmp_path):
+    import executor
+    pidfile = tmp_path / "pid"
+    with client.websocket_connect("/ws/execute", headers=WS_AUTH) as ws:
+        ws.send_json({"language": "python", "code": _grandchild_code(pidfile) + "time.sleep(30)", "timeout": 20})
+        end = time.time() + 10
+        while time.time() < end and not pidfile.exists():
+            time.sleep(0.05)
+    assert _gone(int(pidfile.read_text())), "a grandchild survived the client disconnect"
+    end = time.time() + 10
+    while time.time() < end and executor.RUN_LOCK.locked():
+        time.sleep(0.05)
+    assert not executor.RUN_LOCK.locked() and _scratch_leftovers() == []
+
+
+def test_a_refused_websocket_does_not_clear_the_scratch_of_the_run_in_progress(monkeypatch):
+    import executor
+    monkeypatch.setattr(executor, "LOCK_WAIT", 0.2)
+    root = executor.SCRATCH_ROOTS[0]
+    marker = os.path.join(root, "owned-by-the-running-run")
+    open(marker, "w").write("x")
+    with executor.RUN_LOCK:  # another run holds the runner
+        busy = _ws_run({"language": "python", "code": "print(1)", "timeout": 5})
+        bad_timeout = _ws_run({"language": "python", "code": "print(1)", "timeout": "x"})
+        assert os.path.exists(marker)
+    assert busy[-1] == {"type": "exit", "code": 1} and "busy" in busy[0]["data"]
+    assert bad_timeout[-1] == {"type": "exit", "code": 1}
+
+
+@pytest.mark.parametrize("config", [
+    {"language": "python", "code": "print(1)", "timeout": 5},                                 # normal exit
+    {"language": "python", "code": "import time\ntime.sleep(30)", "timeout": 1},               # run timeout
+    {"language": "c", "code": "this is not C", "timeout": 5},                                  # compile failure
+    {"language": "python", "code": "print(1)", "timeout": 5, "sql_target": "mysql"},           # still a normal run
+    {"language": "cobol", "code": "x", "timeout": 5},                                          # sandbox preparation error
+])
+def test_websocket_never_holds_the_runner_lock_while_sending_the_closing_frames(config):
+    import executor
+    import server
+    from unittest.mock import patch
+    real = server.WebSocket.send_json
+    held_at_closing = []
+    seen_exit = []
+
+    async def spy(self, data, *a, **k):
+        if isinstance(data, dict) and (data.get("type") == "exit" or "Execution timed out" in str(data.get("data", "")) or "Error" in str(data.get("data", ""))):
+            held_at_closing.append(executor.RUN_LOCK.locked() and data.get("type") == "exit")
+        return await real(self, data, *a, **k)
+
+    with patch.object(server.WebSocket, "send_json", spy):
+        _ws_run(config)
+    assert held_at_closing and not any(held_at_closing)  # at every exit frame the runner is already free
+
+
+def test_a_client_that_stops_reading_cannot_hold_the_runner_lock(monkeypatch):
+    import asyncio
+    import executor
+    import server
+    from unittest.mock import patch
+    monkeypatch.setattr(server, "SEND_TIMEOUT", 0.2)
+    real = server.WebSocket.send_json
+
+    async def hang_on_timeout_frame(self, data, *a, **k):
+        if "timed out" in str(data.get("data", "")):
+            await asyncio.sleep(30)  # the client stopped reading
+        return await real(self, data, *a, **k)
+
+    with patch.object(server.WebSocket, "send_json", hang_on_timeout_frame):
+        with client.websocket_connect("/ws/execute", headers=WS_AUTH) as ws:
+            ws.send_json({"language": "python", "code": "import time\ntime.sleep(30)", "timeout": 1})
+            end = time.time() + 15
+            while time.time() < end and not executor.RUN_LOCK.locked():
+                time.sleep(0.02)
+            assert executor.RUN_LOCK.locked()
+            end = time.time() + 15
+            while time.time() < end and executor.RUN_LOCK.locked():
+                time.sleep(0.05)
+            assert not executor.RUN_LOCK.locked()
+
+
+def test_websocket_clears_the_scratch_while_it_still_holds_the_runner_lock():
+    import executor
+    from unittest.mock import patch
+    locked_at_clear = []
+    real = executor.clear_scratch
+
+    def spy():
+        locked_at_clear.append(executor.RUN_LOCK.locked())
+        return real()
+
+    with patch("server.clear_scratch", spy):
+        _ws_run({"language": "python", "code": "print(1)", "timeout": 5})
+    assert locked_at_clear and all(locked_at_clear)
+
+
+def test_a_failed_exit_send_is_not_mistaken_for_a_timeout_and_clears_nothing_twice(monkeypatch):
+    import asyncio
+    import executor
+    import server
+    from unittest.mock import patch
+    cleared = []
+    real_clear = executor.clear_scratch
+    real_send = server.WebSocket.send_json
+
+    async def failing_exit(self, data, *a, **k):
+        if data.get("type") == "exit":
+            raise asyncio.TimeoutError()  # what a stalled client's bounded send raises
+        return await real_send(self, data, *a, **k)
+
+    def spy():
+        cleared.append(executor.RUN_LOCK.locked())
+        return real_clear()
+
+    with patch.object(server.WebSocket, "send_json", failing_exit), patch("server.clear_scratch", spy):
+        with client.websocket_connect("/ws/execute", headers=WS_AUTH) as ws:
+            ws.send_json({"language": "python", "code": "print(1)", "timeout": 5})
+            end = time.time() + 10
+            while time.time() < end and (not cleared or executor.RUN_LOCK.locked()):
+                time.sleep(0.05)
+            time.sleep(0.3)
+    assert cleared == [True, True]  # once before the run, once after it, each while holding the lock; no third clear
+    assert not executor.RUN_LOCK.locked()
+
+
+def test_a_broken_stdin_frame_ends_the_run_and_frees_the_runner():
+    import executor
+    with client.websocket_connect("/ws/execute", headers=WS_AUTH) as ws:
+        ws.send_json({"language": "python", "code": "import time\ntime.sleep(30)", "timeout": 25})
+        end = time.time() + 10
+        while time.time() < end and not executor.RUN_LOCK.locked():
+            time.sleep(0.02)
+        ws.send_text("this is not json")
+        end = time.time() + 15
+        while time.time() < end and executor.RUN_LOCK.locked():
+            time.sleep(0.05)
+        assert not executor.RUN_LOCK.locked()

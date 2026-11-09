@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import os
@@ -10,9 +11,46 @@ from backend.database import db
 from backend.file_system.utils import resolve_owner_and_physical_path
 from backend.logging import log_event
 from backend.tools.clarify import request_clarification
+from backend.tools.implementations.run_slot import RunQueueFull, RunQueueTimeout, async_run_slot
 from code_runner_mcp.safety import classify_code
 
 logger = logging.getLogger(__name__)
+
+# Seconds added to a run's timeout for the HTTP call: the runner may spend up to 15 s compiling before the run itself
+# starts (code_runner_mcp/executor.py), plus a margin. A shorter client timeout would free the run slot too early.
+RUNNER_COMPILE_BUDGET = 20
+RUNNER_BUSY_MESSAGE = "Error: Code runner is busy; try again shortly."
+RUNNER_UNAVAILABLE_MESSAGE = "Error: Code runner is unavailable for this request."
+
+
+class RunnerRefused(Exception):
+    """The run slot could not be taken; the message is the tool result to return."""
+
+
+async def _call_runner(method: str, url: str, chat_id: Optional[str], **kwargs):
+    """
+    Send one request to the code runner inside the process-wide run slot, keyed by the chat owner.
+
+    The blocking `requests` call runs in a worker thread so the event loop is not stalled, and every runner call (runs,
+    installs, package lists) takes the slot, so nothing overlaps an install or a clean-up between runs.
+
+    Raises:
+        RunnerRefused: the chat has no owner, or the user's queue is full, or the wait timed out (message = tool result).
+    """
+    owner = db.get_chat_owner(chat_id) if chat_id else None
+    if not owner:
+        log_event("code_runner_no_owner_error", {"chat_id": chat_id})
+        raise RunnerRefused(RUNNER_UNAVAILABLE_MESSAGE)
+    try:
+        async with async_run_slot(owner):
+            return await asyncio.to_thread(getattr(requests, method), url, **kwargs)
+    except RunQueueFull:
+        log_event("code_runner_queue_full_error", {"chat_id": chat_id})
+        raise RunnerRefused(RUNNER_BUSY_MESSAGE)
+    except RunQueueTimeout:
+        log_event("code_runner_queue_timeout_error", {"chat_id": chat_id})
+        raise RunnerRefused(RUNNER_BUSY_MESSAGE)
+
 
 def find_project_root(physical_path: str, root_dir: str) -> str:
     """
@@ -115,9 +153,11 @@ async def run_code(
     }
 
     try:
-        res = requests.post(url, json=payload, headers=headers, timeout=timeout + 5)
+        res = await _call_runner("post", url, chat_id, json=payload, headers=headers, timeout=timeout + RUNNER_COMPILE_BUDGET)
         res.raise_for_status()
         data = res.json()
+    except RunnerRefused as refused:
+        return str(refused)
     except Exception as e:
         logger.error(f"Failed to communicate with code runner service: {e}")
         log_event("code_executor_run_code_error", {"chat_id": chat_id, "error": type(e).__name__})
@@ -340,9 +380,11 @@ async def run_file(
     }
 
     try:
-        res = requests.post(url, json=payload, headers=headers, timeout=timeout + 5)
+        res = await _call_runner("post", url, chat_id, json=payload, headers=headers, timeout=timeout + RUNNER_COMPILE_BUDGET)
         res.raise_for_status()
         data = res.json()
+    except RunnerRefused as refused:
+        return str(refused)
     except Exception as e:
         logger.error(f"Failed to communicate with code runner service: {e}")
         log_event("code_executor_run_file_error", {"chat_id": chat_id, "error": type(e).__name__})
@@ -428,7 +470,7 @@ async def install_packages(
     }
 
     try:
-        res = requests.post(url, json=payload, headers=headers, timeout=130)
+        res = await _call_runner("post", url, chat_id, json=payload, headers=headers, timeout=130)
         if res.status_code == 400:
             try:
                 detail = res.json().get("detail", "")
@@ -437,6 +479,8 @@ async def install_packages(
             return "Error: Invalid package request" + (f": {detail}" if detail else "")
         res.raise_for_status()
         data = res.json()
+    except RunnerRefused as refused:
+        return str(refused)
     except Exception as e:
         logger.error(f"Failed to run package installation: {e}")
         log_event("code_executor_install_packages_error", {"chat_id": chat_id, "error": type(e).__name__})
@@ -466,9 +510,11 @@ async def list_packages(
     headers = {"X-API-KEY": config.CODE_RUNNER_API_KEY}
 
     try:
-        res = requests.get(url, headers=headers, timeout=35)
+        res = await _call_runner("get", url, chat_id, headers=headers, timeout=35)
         res.raise_for_status()
         data = res.json()
+    except RunnerRefused as refused:
+        return str(refused)
     except Exception as e:
         logger.error(f"Failed to fetch packages list: {e}")
         log_event("code_executor_list_packages_error", {"chat_id": chat_id, "error": type(e).__name__})

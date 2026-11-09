@@ -1,3 +1,4 @@
+import time
 import hmac
 import json
 import logging
@@ -5,7 +6,8 @@ import os
 import subprocess
 from typing import List, Dict, Optional
 from pydantic import BaseModel, StrictInt
-from executor import CodeExecutor, ExecutionResult
+import executor as executor_module
+from executor import BUSY, CLEANUP_FAILED, RUN_LOCK, CodeExecutor, ExecutionResult, clear_scratch, kill_group
 from fastapi import FastAPI, Header, HTTPException, Depends, status, WebSocket, WebSocketDisconnect
 import asyncio
 import shutil
@@ -102,6 +104,9 @@ def _parse_timeout(value: object) -> int:
     if not isinstance(value, int):
         raise ValueError("timeout must be an integer")
     return max(1, min(value, MAX_TIMEOUT))
+
+
+COMPILE_TIMEOUT = 15  # seconds; the HTTP route uses the same bound
 
 
 # Endpoints
@@ -220,6 +225,19 @@ def list_packages(manager: str = "pip"):
         "package_manager": mgr
     }
 
+SEND_TIMEOUT = 10  # seconds; a client that stops reading must not hold the runner lock
+
+
+async def _send(websocket: WebSocket, frame: dict) -> None:
+    """Send a frame, giving up (TimeoutError, handled like a disconnect) if the client does not read it in time."""
+    await asyncio.wait_for(websocket.send_json(frame), timeout=SEND_TIMEOUT)
+
+
+async def _kill(pid: int) -> None:
+    """kill_group off the event loop (it waits, bounded, for the group to disappear)."""
+    await asyncio.to_thread(kill_group, pid)
+
+
 @app.websocket("/ws/execute")
 async def execute_ws(websocket: WebSocket) -> None:
     """Live code execution over a WebSocket. The key is read from the `X-API-KEY` header, like the HTTP routes."""
@@ -232,6 +250,9 @@ async def execute_ws(websocket: WebSocket) -> None:
     
     sandbox_dir = None
     process = None
+    comp_process = None
+    cleaned = []
+    holding_lock = False
     
     try:
         # 1. Receive initial configuration
@@ -246,8 +267,59 @@ async def execute_ws(websocket: WebSocket) -> None:
             timeout = _parse_timeout(config_data.get("timeout"))
         except ValueError:
             logger.warning("Rejected a live run with an invalid timeout")
-            await websocket.send_json({"type": "stderr", "data": "Error: timeout must be an integer.\n"})
-            await websocket.send_json({"type": "exit", "code": 1})
+            await _send(websocket, {"type": "stderr", "data": "Error: timeout must be an integer.\n"})
+            await _send(websocket, {"type": "exit", "code": 1})
+            return
+
+        # One run at a time on the runner, whatever the app thinks (see executor.RUN_LOCK); polled so a cancelled
+        # handler never leaves the lock held.
+        lock_deadline = time.monotonic() + executor_module.LOCK_WAIT
+        while not RUN_LOCK.acquire(blocking=False):
+            if time.monotonic() >= lock_deadline:
+                await _send(websocket, {"type": "stderr", "data": f"Error: {BUSY}\n"})
+                await _send(websocket, {"type": "exit", "code": 1})
+                return
+            await asyncio.sleep(0.05)
+        holding_lock = True
+
+        async def finish(code: int, message: str = "", clear: bool = True) -> None:
+            """Kill what the run left running, clear the scratch, release the runner, then tell the client: the lock is
+            not held across the closing frames, and every frame sent while it is held is bounded by SEND_TIMEOUT, so a client that stops reading cannot block the runner for good. Runs once: a second call
+            (for example after a failed send was mistaken for a timeout) does nothing."""
+            nonlocal holding_lock
+            if cleaned:
+                return
+            cleaned.append(True)
+            cleanup_failed = False
+            try:
+                for proc in (comp_process, process):
+                    if proc is not None:
+                        await _kill(proc.pid)
+                if sandbox_dir:
+                    shutil.rmtree(sandbox_dir, ignore_errors=True)
+                if clear and holding_lock:  # only the run that holds the runner clears the shared directories
+                    cleanup_failed = bool(clear_scratch())
+            finally:
+                # whatever happened above (even a cancellation during the awaited kill), the group is dead before the
+                # runner is handed to the next run
+                for proc in (comp_process, process):
+                    if proc is not None:
+                        try:
+                            kill_group(proc.pid, wait=0)
+                        except Exception:
+                            logger.exception("runner_kill_error")
+                if holding_lock:
+                    holding_lock = False
+                    RUN_LOCK.release()
+            if message:
+                await _send(websocket, {"type": "stderr", "data": message})
+            if cleanup_failed:
+                await _send(websocket, {"type": "stderr", "data": f"\nError: {CLEANUP_FAILED}\n"})
+            await _send(websocket, {"type": "exit", "code": code})
+
+        # Nothing a previous run left behind may be visible to this one; if it cannot be removed, refuse the run.
+        if clear_scratch():
+            await finish(1, f"Error: {CLEANUP_FAILED}\n", clear=False)
             return
 
         # 2. Prepare sandbox using CodeExecutor
@@ -262,8 +334,7 @@ async def execute_ws(websocket: WebSocket) -> None:
         
         sandbox_dir = prep.get("sandbox_dir")
         if prep.get("error"):
-            await websocket.send_json({"type": "stderr", "data": prep["error"]})
-            await websocket.send_json({"type": "exit", "code": 1})
+            await finish(1, prep["error"])
             return
             
         cwd = prep["cwd"]
@@ -275,26 +346,30 @@ async def execute_ws(websocket: WebSocket) -> None:
 
         # 3. Compilation phase
         if compile_cmd:
-            await websocket.send_json({"type": "stdout", "data": "Compiling...\n"})
+            await _send(websocket, {"type": "stdout", "data": "Compiling...\n"})
             comp_process = await asyncio.create_subprocess_exec(
                 *compile_cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=cwd,
-                env=env
+                env=env,
+                start_new_session=True
             )
-            comp_stdout, comp_stderr = await comp_process.communicate()
+            try:
+                comp_stdout, comp_stderr = await asyncio.wait_for(comp_process.communicate(), timeout=COMPILE_TIMEOUT)
+            except asyncio.TimeoutError:
+                await _kill(comp_process.pid)
+                await _send(websocket, {"type": "stderr", "data": f"Compilation timed out after {COMPILE_TIMEOUT} seconds.\n"})
+                await finish(1)
+                return
             if comp_process.returncode != 0:
-                await websocket.send_json({
+                await _send(websocket, {
                     "type": "stderr",
                     "data": comp_stderr.decode("utf-8", errors="replace")
                 })
-                await websocket.send_json({
-                    "type": "exit",
-                    "code": comp_process.returncode
-                })
+                await finish(comp_process.returncode)
                 return
-            await websocket.send_json({"type": "stdout", "data": "Compilation successful!\n"})
+            await _send(websocket, {"type": "stdout", "data": "Compilation successful!\n"})
 
         # 4. Start execution process
         if lang == "sql":
@@ -310,7 +385,8 @@ async def execute_ws(websocket: WebSocket) -> None:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=cwd,
-                env=env
+                env=env,
+                start_new_session=True
             )
             process.stdin.write(sql_content.encode("utf-8"))
             process.stdin.close()
@@ -321,7 +397,8 @@ async def execute_ws(websocket: WebSocket) -> None:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=cwd,
-                env=env
+                env=env,
+                start_new_session=True
             )
 
         # 5. Concurrent tasks for stdout/stderr streaming and stdin reading
@@ -331,12 +408,12 @@ async def execute_ws(websocket: WebSocket) -> None:
                     data = await process.stdout.read(1024)
                     if not data:
                         break
-                    await websocket.send_json({
+                    await _send(websocket, {
                         "type": "stdout",
                         "data": data.decode("utf-8", errors="replace")
                     })
             except Exception:
-                pass
+                await _kill(process.pid)  # the client stopped reading or went away: do not hold the runner for it
 
         async def read_stderr():
             try:
@@ -344,12 +421,12 @@ async def execute_ws(websocket: WebSocket) -> None:
                     data = await process.stderr.read(1024)
                     if not data:
                         break
-                    await websocket.send_json({
+                    await _send(websocket, {
                         "type": "stderr",
                         "data": data.decode("utf-8", errors="replace")
                     })
             except Exception:
-                pass
+                await _kill(process.pid)
 
         async def read_stdin():
             try:
@@ -358,39 +435,22 @@ async def execute_ws(websocket: WebSocket) -> None:
                     if msg.get("type") == "stdin" and msg.get("data") is not None:
                         stdin_data = msg["data"].encode("utf-8")
                         process.stdin.write(stdin_data)
-                        await process.stdin.drain()
-            except WebSocketDisconnect:
-                try:
-                    process.terminate()
-                except Exception:
-                    pass
-            except Exception:
-                pass
+                        await asyncio.wait_for(process.stdin.drain(), timeout=SEND_TIMEOUT)
+            except Exception:  # a disconnect or a broken stdin: either way the run has no client any more
+                await _kill(process.pid)
 
         stdout_task = asyncio.create_task(read_stdout())
         stderr_task = asyncio.create_task(read_stderr())
         stdin_task = asyncio.create_task(read_stdin())
         
+        timed_out = False
+        exit_code = -1
         try:
             exit_code = await asyncio.wait_for(process.wait(), timeout=timeout)
             await asyncio.sleep(0.1)
-            await websocket.send_json({
-                "type": "exit",
-                "code": exit_code
-            })
         except asyncio.TimeoutError:
-            try:
-                process.kill()
-            except Exception:
-                pass
-            await websocket.send_json({
-                "type": "stderr",
-                "data": f"\nExecution timed out after {timeout} seconds."
-            })
-            await websocket.send_json({
-                "type": "exit",
-                "code": -1
-            })
+            timed_out = True
+            await _kill(process.pid)
         finally:
             stdout_task.cancel()
             stderr_task.cancel()
@@ -401,15 +461,38 @@ async def execute_ws(websocket: WebSocket) -> None:
             except Exception:
                 pass
 
+        # Outside the try above, so a failed send in finish() cannot be mistaken for a run timeout
+        if timed_out:
+            await finish(-1, f"\nExecution timed out after {timeout} seconds.")
+        else:
+            await finish(exit_code)
+
     except Exception as e:
-        try:
-            await websocket.send_json({"type": "stderr", "data": f"\nServer error during execution: {e}"})
-            await websocket.send_json({"type": "exit", "code": 1})
-        except Exception:
-            pass
+        if not cleaned:  # finish() already told the client (or tried to)
+            try:
+                await _send(websocket, {"type": "stderr", "data": f"\nServer error during execution: {e}"})
+                await _send(websocket, {"type": "exit", "code": 1})
+            except Exception:
+                pass
     finally:
-        if sandbox_dir:
-            shutil.rmtree(sandbox_dir, ignore_errors=True)
+        # Whatever path got here (error, disconnect, cancellation), nothing of the run may survive it. Synchronous on
+        # purpose: under cancellation an awaited call here would be cancelled again and the lock would never be freed.
+        try:
+            if not cleaned:  # finish() already did all of this, before releasing the lock
+                for proc in (comp_process, process):
+                    if proc is not None:
+                        try:
+                            kill_group(proc.pid)
+                        except Exception:
+                            logger.exception("runner_kill_error")
+                if sandbox_dir:
+                    shutil.rmtree(sandbox_dir, ignore_errors=True)
+                if holding_lock:  # only the run that holds the runner may clear the shared directories
+                    clear_scratch()
+        finally:
+            if holding_lock:
+                holding_lock = False
+                RUN_LOCK.release()
 
 @app.get("/health")
 def health_check():

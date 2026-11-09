@@ -44,6 +44,8 @@
     The registry offers such tools only when `active_modes["admin"]` (the chat owner's role), and `ToolHandler` refuses them for any
     other owner even when the model names one. Turning git mode on (`gitMode` in completions or resume) is a `403` for non-admins,
     and the handler drops it as a second line of defence.
+  - The browser portal (`/api/tools/portal/*`) is admin only (a `before_request` in `app.py`, 403 for everyone else). It shows the
+    one shared portal browser, so only the admin may see or drive it, and only the admin's browsing runs attach to it.
 
 ## Input and output
 
@@ -60,6 +62,16 @@
 
 - Code execution runs only in `code_runner_runtime` (static safety analysis in `code_runner_mcp/safety.py`, then an isolated container with CPU and memory limits). `code_runner_mcp` is the relay in front of it.
   Browsing runs only in `playwright_mcp`. Never run either inside the Flask process.
+- Browser state is per user: each user's browsing agent gets its own persistent profile, `playwright_data/profiles/<user id>`
+  (cookies, logins, storage), chosen server-side from the chat owner and validated against `[a-z0-9_-]{1,64}`. Users never share a
+  profile. Only the admin's runs may attach to the portal browser. The old shared `default_profile` is retired (saved logins in it
+  are not carried over).
+- Code runs are serialised in the app and again by a lock inside the runner, and bounded per user (`CODE_RUNNER_MAX_QUEUED_PER_USER`, default 2; waits longer
+  than `CODE_RUNNER_QUEUE_TIMEOUT`, default 120 s, are refused with a "busy" message), so one user cannot queue the runner full.
+  Between runs the runner removes everything in `/tmp`, `/var/tmp`, `/dev/shm` and its sandbox base, gives each run its own `HOME`
+  and `TMPDIR` inside the sandbox, and kills the run's whole process group (backgrounded children included) when it ends, times out
+  or the client disconnects. If a leftover cannot be removed the next run is refused ("Runner cleanup failed."); a failed
+  clean-up after a run is reported on that run. Residuals: the bounded clean-up covers those directories only, not other paths the `runner` user may write (for example `/home/runner`, which also holds installed packages); a process that escapes its session with `setsid` (or double-forks) is not killed and can outlive the run; a live run whose client disconnects while queued still starts and is killed on its first receive; and a silent program is stopped by its timeout, not by a client that stays connected without reading.
 - Git tools accept only subcommands on the allow-list (`GIT_DEFAULT_ALLOWED_COMMANDS`, editable in system settings).
 - Server-side fetches of user-controlled URLs must reject non-http(s) schemes and private, loopback, link-local and multicast addresses
   (the SSRF check in `playwright_mcp/server.py`). Any new fetcher reuses that check or an equivalent.

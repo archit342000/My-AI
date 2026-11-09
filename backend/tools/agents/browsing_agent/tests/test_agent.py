@@ -36,6 +36,8 @@ def mock_config():
 def mock_db():
     with patch('backend.tools.agents.base.db') as db_mock:
         with patch('backend.tools.agents.browsing_agent.agent.db', new=db_mock):
+            db_mock.get_chat_owner.return_value = "user-1"  # the chat owner: a regular user by default
+            db_mock.get_user.return_value = {"id": "user-1", "role": "user"}
             yield db_mock
 
 @pytest.fixture
@@ -79,6 +81,8 @@ async def test_flow_fn_first_run_text_model(mock_agent, mock_config, mock_db, mo
     assert mock_playwright_client.connect.called
     mock_playwright_client.execute_tool.assert_any_call("browser_start_session", {
         "session_id": mock_playwright_client.execute_tool.call_args_list[0][0][1]["session_id"],
+        "profile_id": "user-1",
+        "attach_portal": False,
         "stealth_level": 1,
         "scope": None
     })
@@ -158,6 +162,8 @@ async def test_flow_fn_with_scope_and_criteria(mock_agent, mock_config, mock_db,
     # Check that update session with scope was called
     mock_playwright_client.execute_tool.assert_any_call("browser_start_session", {
         "session_id": "sess_123",
+        "profile_id": "user-1",
+        "attach_portal": False,
         "stealth_level": 1,
         "scope": ["github.com", "python.org"]
     })
@@ -181,6 +187,8 @@ async def test_flow_fn_resume_run(mock_agent, mock_config, mock_db, mock_playwri
     # Session resumed
     mock_playwright_client.execute_tool.assert_any_call("browser_start_session", {
         "session_id": "sess_resume_123",
+        "profile_id": "user-1",
+        "attach_portal": False,
         "stealth_level": 1,
         "scope": None
     })
@@ -342,6 +350,8 @@ async def test_flow_fn_resume_missing_session_id(mock_agent, mock_config, mock_d
     # And start session was called with this new session_id
     mock_playwright_client.execute_tool.assert_any_call("browser_start_session", {
         "session_id": mock_playwright_client.execute_tool.call_args_list[0][0][1]["session_id"],
+        "profile_id": "user-1",
+        "attach_portal": False,
         "stealth_level": 1,
         "scope": None
     })
@@ -403,3 +413,80 @@ async def test_flow_fn_execution_error(mock_agent, mock_config, mock_db, mock_pl
     
     # Verify browser_end_session was still called in finally block
     mock_playwright_client.execute_tool.assert_any_call("browser_end_session", {"session_id": "sess_123"})
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("role,attach", [("user", False), ("admin", True)])
+async def test_the_profile_comes_from_the_chat_owner_and_only_an_admin_attaches_to_the_portal(
+        role, attach, mock_agent, mock_config, mock_db, mock_playwright_client, mock_load_model_config):
+    mock_db.get_chat_owner.return_value = "owner-9"
+    mock_db.get_user.return_value = {"id": "owner-9", "role": role}
+    mock_db.get_messages.side_effect = [[], [], [{"role": "assistant"}]]
+    mock_db.get_chat.return_value = {"browsing_session_id": "sess_1"}
+    mock_db.get_task_list.return_value = [{"id": "task1"}]
+    [chunk async for chunk in flow_fn(mock_agent, "browsing_agent", "search")]
+    starts = [c.args[1] for c in mock_playwright_client.execute_tool.call_args_list if c.args[0] == "browser_start_session"]
+    assert starts and all(a["profile_id"] == "owner-9" and a["attach_portal"] is attach for a in starts)
+
+
+def _agent(chat_id="test_chat"):
+    from backend.tools.agents.browsing_agent.agent import BrowsingAgent
+    agent = BrowsingAgent.__new__(BrowsingAgent)
+    agent.chat_id = chat_id
+    return agent
+
+
+@pytest.mark.anyio
+async def test_a_chat_without_an_owner_starts_no_browser_session(mock_db, mock_playwright_client):
+    mock_db.get_chat_owner.return_value = None
+    with pytest.raises(RuntimeError, match="has no owner"):
+        await _agent().on_start()
+    assert not mock_playwright_client.execute_tool.called
+    mock_db.update_chat.assert_any_call("test_chat", browsing_session_id=None)  # the half-started session is reset
+
+
+@pytest.mark.anyio
+async def test_a_resumed_chat_without_an_owner_starts_no_browser_session(mock_db, mock_playwright_client):
+    mock_db.get_chat_owner.return_value = None
+    mock_db.get_chat.return_value = {"browsing_session_id": "sess_1"}
+    with pytest.raises(RuntimeError, match="has no owner"):
+        await _agent().on_resume()
+    assert not mock_playwright_client.execute_tool.called
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("hook", ["on_start", "on_resume"])
+async def test_a_start_error_from_the_playwright_server_fails_the_run(hook, mock_db, mock_playwright_client):
+    mock_db.get_chat_owner.return_value = "owner-9"
+    mock_db.get_user.return_value = {"id": "owner-9", "role": "user"}
+    mock_db.get_chat.return_value = {"browsing_session_id": "sess_1"}
+    result = MagicMock()
+    result.content = [MagicMock(text=json.dumps({"error": "Invalid profile_id"}))]
+    mock_playwright_client.execute_tool.return_value = result
+    with pytest.raises(RuntimeError, match="Invalid profile_id"):
+        await getattr(_agent(), hook)()
+
+
+@pytest.mark.anyio
+async def test_a_successful_start_result_is_accepted(mock_db, mock_playwright_client):
+    mock_db.get_chat_owner.return_value = "owner-9"
+    mock_db.get_user.return_value = {"id": "owner-9", "role": "user"}
+    mock_db.get_chat.return_value = {"browsing_session_id": "sess_1"}
+    result = MagicMock()
+    result.content = [MagicMock(text=json.dumps({"status": "started"}))]
+    mock_playwright_client.execute_tool.return_value = result
+    await _agent().on_start()
+
+
+
+@pytest.mark.anyio
+async def test_a_tool_level_error_from_the_playwright_server_fails_the_run(mock_db, mock_playwright_client):
+    mock_db.get_chat_owner.return_value = "owner-9"
+    mock_db.get_user.return_value = {"id": "owner-9", "role": "user"}
+    mock_db.get_chat.return_value = {"browsing_session_id": "sess_1"}
+    result = MagicMock()
+    result.isError = True
+    result.content = [MagicMock(text="launch failed")]
+    mock_playwright_client.execute_tool.return_value = result
+    with pytest.raises(RuntimeError, match="launch failed"):
+        await _agent().on_start()

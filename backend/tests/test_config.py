@@ -107,3 +107,35 @@ def test_auth_emails_are_normalised(clean_env):
             assert backend.config.AUTH_STATIC_EMAIL == "admin@x.io"
     # Restore the module to the real environment so later tests see the original values.
     importlib.reload(backend.config)
+
+
+def _reload_with(monkeypatch, **env):
+    import backend.config as c
+    for key in ("CODE_RUNNER_MAX_QUEUED_PER_USER", "CODE_RUNNER_QUEUE_TIMEOUT"):
+        monkeypatch.delenv(key, raising=False)
+    for key, value in env.items():
+        monkeypatch.setenv(key, value)
+    importlib.reload(c)
+    return c
+
+
+def test_run_queue_settings_have_defaults(clean_env, monkeypatch):
+    try:
+        c = _reload_with(monkeypatch)
+        assert c.CODE_RUNNER_MAX_QUEUED_PER_USER == 2
+        assert c.CODE_RUNNER_QUEUE_TIMEOUT == 120
+    finally:
+        monkeypatch.undo()
+        importlib.reload(c)
+
+
+def test_run_queue_settings_read_the_environment_and_clamp_bad_values(clean_env, monkeypatch):
+    import backend.config as c
+    try:
+        c = _reload_with(monkeypatch, CODE_RUNNER_MAX_QUEUED_PER_USER="5", CODE_RUNNER_QUEUE_TIMEOUT="30")
+        assert (c.CODE_RUNNER_MAX_QUEUED_PER_USER, c.CODE_RUNNER_QUEUE_TIMEOUT) == (5, 30)
+        c = _reload_with(monkeypatch, CODE_RUNNER_MAX_QUEUED_PER_USER="0", CODE_RUNNER_QUEUE_TIMEOUT="-4")
+        assert (c.CODE_RUNNER_MAX_QUEUED_PER_USER, c.CODE_RUNNER_QUEUE_TIMEOUT) == (1, 0)  # never refuses every run
+    finally:
+        monkeypatch.undo()
+        importlib.reload(c)

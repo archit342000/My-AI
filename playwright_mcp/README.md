@@ -29,7 +29,7 @@
 | Symbol | Purpose |
 | :--- | :--- |
 | `visit_page_tool` | One-shot page visit and markdown extraction. |
-| `browser_start_session` | Initializes a persistent browser context for sequential actions. |
+| `browser_start_session` | Initializes a persistent browser context for sequential actions. Takes a required `profile_id` (`[a-z0-9_-]{1,64}`, else `{"error": "Invalid profile_id"}`): the profile lives in `playwright_data/profiles/<profile_id>`, one per user. With `attach_portal=true` and a running portal browser it attaches to the portal over CDP instead (the app sets this only for the admin). The former shared `default_profile` is retired; its saved logins are not migrated. |
 | `browser_click` / `browser_type` | Interaction tools for active sessions. |
 | `browser_read_page` | Extracts markdown from the current state of a session. |
 | `fetch_and_encode_image_tool` | Downloads an image and returns it as a base64 data URI. |

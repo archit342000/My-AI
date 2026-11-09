@@ -26,8 +26,8 @@ with patch('backend.database.init_db.init_db'), \
 
 @pytest.fixture(autouse=True)
 def _caller_owns_the_chat():
-    """The code-execution WebSocket checks the chat owner; by default the caller owns every chat."""
-    with patch('app.owns_chat', return_value=True) as owns:
+    """The code-execution WebSocket checks the chat owner; by default the caller owns every chat (owner id "owner-1")."""
+    with patch('app.owns_chat', return_value=True) as owns, patch('app.db.get_chat_owner', return_value="owner-1"):
         yield owns
 
 
@@ -594,4 +594,103 @@ def test_legacy_ui_is_403_for_a_user_and_200_for_the_admin(client, path):
     send.assert_not_called(); page.assert_not_called()  # nothing is served
     with patch('app.send_from_directory', return_value="static asset"), patch('app._serve_legacy_page', return_value="legacy page"):
         assert client.get(path).status_code == 200  # the autouse fixture's user is the admin
+
+
+@pytest.mark.parametrize("method,path", [("get", "/api/tools/portal/vnc/"), ("get", "/api/tools/portal/vnc/vnc.html"), ("post", "/api/tools/portal/init"),
+                                          ("get", "/api/tools/portal/ws"), ("get", "/api/tools/portal/anything/new")])
+def test_the_portal_is_403_for_a_user_and_never_contacted(client, method, path):
+    user_row = {**ADMIN_ROW, "id": "user-1", "email": "u@test", "role": "user"}
+    with patch('app.db.get_user_by_email', return_value=user_row), patch('httpx.Client') as http, \
+         patch('app.ws_client.create_connection') as ws_connect:
+        response = getattr(client, method)(path, headers={"Connection": "Upgrade", "Upgrade": "websocket"})
+    assert response.status_code == 403 and response.get_json() == {"error": "Forbidden"}
+    ws_connect.assert_not_called()  # the VNC websocket upstream is never opened
+    http.assert_not_called()
+
+
+def test_the_portal_hook_lets_the_admin_through_and_ignores_other_paths(client):
+    upstream = MagicMock(status_code=200, content=b"novnc", headers={"content-type": "text/html"})
+    with patch('backend.mcp_client.portal_vnc_auth_header', return_value={"Authorization": "Basic x"}), \
+         patch('httpx.Client') as http:  # no real network: the proxy talks to a fake upstream
+        http.return_value.__enter__.return_value.get.return_value = upstream
+        response = client.get('/api/tools/portal/vnc/')  # the autouse fixture's user is the admin
+    assert response.status_code == 200 and response.data == b"novnc"
+    http.return_value.__enter__.return_value.get.assert_called_once_with("http://playwright_mcp:6080/vnc.html", headers={"Authorization": "Basic x"})
+    assert client.get('/api/version').status_code == 200  # other paths are not affected
+
+
+def test_the_portal_is_refused_without_an_authenticated_user_and_never_contacted(client):
+    with patch('app.db.get_user_by_email', return_value=None), patch('httpx.Client') as http, \
+         patch('app.ws_client.create_connection') as ws_connect:
+        responses = [client.get('/api/tools/portal/vnc/'), client.post('/api/tools/portal/init'), client.get('/api/tools/portal/ws')]
+    assert all(r.status_code in (401, 403) for r in responses)
+    http.assert_not_called(); ws_connect.assert_not_called()
+
+
+# --- the live-run WebSocket takes the run slot ---------------------------------------------------------
+
+from contextlib import contextmanager
+from backend.tools.implementations.run_slot import RunQueueFull, RunQueueTimeout
+
+
+def _ws_with_init(chat_id="chat123"):
+    import json
+    ws = MagicMock()
+    ws.receive.side_effect = [json.dumps({"type": "init", "filePath": "main.py", "chat_id": chat_id}), None]
+    return ws
+
+
+@patch('app.ws_client.create_connection')
+@patch('backend.tools.implementations.code_executor.collect_project_files')
+@patch('backend.database.db.get_setting', return_value=30)
+def test_the_live_run_holds_the_slot_of_the_chat_owner_for_the_whole_session(mock_setting, mock_collect, mock_connect):
+    log = []
+
+    @contextmanager
+    def recording_slot(owner, *a, **k):
+        log.append(("enter", owner))
+        yield
+        log.append(("exit", owner))
+
+    mock_collect.return_value = ("python", [{"path": "main.py", "content": "print(1)"}], "main.py")
+    upstream = MagicMock()
+    upstream.send.side_effect = lambda *a, **k: log.append(("upstream", None))
+    mock_connect.return_value = upstream
+    with patch('app.run_slot', recording_slot):
+        flask_app.code_execution_ws_proxy(_ws_with_init())
+    assert log[0] == ("enter", "owner-1") and log[-1] == ("exit", "owner-1")
+    assert ("upstream", None) in log  # the runner was used between enter and exit
+
+
+@pytest.mark.parametrize("error", [RunQueueFull("u"), RunQueueTimeout("u")])
+@patch('app.ws_client.create_connection')
+@patch('backend.tools.implementations.code_executor.collect_project_files')
+def test_a_busy_runner_gets_stderr_and_exit_frames_and_no_upstream_connection(mock_collect, mock_connect, error):
+    import json
+
+    @contextmanager
+    def refusing(owner, *a, **k):
+        raise error
+        yield
+
+    ws = _ws_with_init()
+    with patch('app.run_slot', refusing), patch('app.log_event') as events:
+        flask_app.code_execution_ws_proxy(ws)
+    sent = [json.loads(c.args[0]) for c in ws.send.call_args_list]
+    assert sent == [{"type": "stderr", "data": "Error: Code runner is busy; try again shortly.\n"}, {"type": "exit", "code": 1}]
+    mock_connect.assert_not_called()
+    assert events.call_args_list[-1].args[0] in ("code_runner_queue_full_error", "code_runner_queue_timeout_error")
+
+
+@patch('app.ws_client.create_connection')
+@patch('backend.tools.implementations.code_executor.collect_project_files')
+def test_a_chat_without_an_owner_gets_the_unavailable_frames_without_taking_the_slot(mock_collect, mock_connect):
+    import json
+    ws = _ws_with_init()
+    with patch('app.db.get_chat_owner', return_value=None), patch('app.run_slot') as slot, patch('app.log_event') as events:
+        flask_app.code_execution_ws_proxy(ws)
+    sent = [json.loads(c.args[0]) for c in ws.send.call_args_list]
+    assert sent == [{"type": "stderr", "data": "Error: Code runner is unavailable for this request.\n"}, {"type": "exit", "code": 1}]
+    slot.assert_not_called(); mock_connect.assert_not_called()
+    events.assert_any_call("code_runner_no_owner_error", {"chat_id": "chat123"})
 
