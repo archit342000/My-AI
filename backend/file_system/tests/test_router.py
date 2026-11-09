@@ -435,6 +435,18 @@ def test_export_fs_file_html_endpoint(): pass
 def test_get_channel_status(): pass
 def test_remove_fs_file_tag(): pass
 def test_navigate_to_version_endpoint(): pass
+
+
+def test_navigate_version_passes_ids_in_order(client):
+    """The route must give the manager chat_id and file_system_id by name (they were swapped positionally)."""
+    with patch('backend.file_system.manager.navigate_file_system_version', autospec=True) as mock_navigate:
+        mock_navigate.return_value = {"success": True, "version_number": 2}
+        response = client.post('/api/file_system/fs1/navigate-version', json={"chat_id": "c1", "version_number": 2})
+    assert response.status_code == 200
+    assert response.get_json() == {"success": True, "version_number": 2}
+    mock_navigate.assert_awaited_once_with(chat_id="c1", file_system_id="fs1", version_number=2)
+
+
 def test_add_file_system_tag(): pass
 def test_get_file_system_current_version_endpoint(): pass
 def test_set_file_system_tags(): pass
