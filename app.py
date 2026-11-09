@@ -25,6 +25,7 @@ from backend import config
 from backend.rag import RAGProvider
 from backend.database import db
 from backend.auth.context import set_current_user, reset_current_user, user_context
+from backend.auth.ownership import owns_chat
 from backend.auth.providers import get_provider
 from backend.database.init_db import init_db
 from backend.models import get_embedding_model
@@ -149,6 +150,12 @@ def code_execution_ws_proxy(ws):
         
         if not file_path or not chat_id:
             ws.send(json.dumps({"type": "stderr", "data": "Error: Missing filePath or chat_id.\n"}))
+            return
+
+        # The chat must be the caller's, before any of its files are read.
+        if not isinstance(chat_id, str) or not owns_chat(chat_id):
+            ws.send(json.dumps({"type": "stderr", "data": "Error: Chat not found.\n"}))
+            ws.send(json.dumps({"type": "exit", "code": 1}))
             return
             
         # Walk and collect files like run_file does!

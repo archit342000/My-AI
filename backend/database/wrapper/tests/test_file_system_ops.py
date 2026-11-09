@@ -84,9 +84,8 @@ def test_file_system_ops(temp_db):
         content="content 2",
         comment="Init"
     )    
-    # 6. get_all_file_systems
-    all_fs = db.get_all_file_systems()
-    assert len(all_fs) >= 2
+    # 6. get_all_file_systems was removed: no code path may list every user's file systems
+    assert not hasattr(db, "get_all_file_systems")
     
     # 7. get_owner_file_systems
     owner_fs = db.get_owner_file_systems(chat_id=chat_id)

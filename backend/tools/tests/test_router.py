@@ -510,3 +510,27 @@ def test_settings_get_exposes_the_maximum(client, mock_db):
         resp = client.get('/tools/config/settings')
     assert resp.status_code == 200
     assert resp.json["code_runner_max_timeout"] == 120
+
+
+# --- code execution: the chat owner is checked -------------------------------------------------
+
+def test_execution_history_and_run_file_refuse_another_users_chat(app, login_as, user_a, user_b, owned_by_user_a, mock_db):
+    from unittest.mock import AsyncMock
+    owned_by_user_a.get_chat_owner.return_value = user_a["id"]
+    login_as(app, user_b)
+    client = app.test_client()
+    with patch('backend.tools.implementations.code_executor.resolve_run_target') as resolve, \
+         patch('backend.tools.implementations.code_executor.run_file', new_callable=AsyncMock) as run:
+        history = client.get('/tools/code-execution/history/chat-of-a')
+        run_resp = client.post('/tools/code-execution/run-file', json={"path": "main.py", "chat_id": "chat-of-a"})
+    assert history.status_code == 404 and run_resp.status_code == 404
+    mock_db.get_code_execution_history.assert_not_called()  # nothing about the foreign chat is read
+    resolve.assert_not_called()
+    run.assert_not_called()  # and nothing is executed
+
+
+def test_execution_history_for_the_owner_still_works(client, mock_db):
+    mock_db.get_code_execution_history.return_value = [{"id": 1}]
+    assert client.get('/tools/code-execution/history/chat1').get_json() == [{"id": 1}]
+    mock_db.get_code_execution_history.assert_called_once_with("chat1", limit=50, offset=0)
+

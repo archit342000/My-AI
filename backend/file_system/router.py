@@ -3,7 +3,7 @@ import logging
 import json
 import os
 import mimetypes
-from backend.auth.ownership import claim_chat, require_workspace_owner
+from backend.auth.ownership import claim_chat, owns_chat, reject_foreign_chat, require_chat_owner, require_workspace_owner
 from backend.database import db
 from backend.utils import read_json_object
 from backend import config
@@ -57,6 +57,85 @@ def normalize_workspace_id():
             # Update request JSON dictionary
             if isinstance(data, dict) and 'workspace_id' in data:
                 data['workspace_id'] = resolved_ws_id
+
+# Routes that may name a chat that does not exist yet: they create it with `claim_chat`.
+_CHAT_CREATING_ENDPOINTS = {"file_system.create_fs_file_route", "file_system.create_directory_route"}
+# Read routes that may name a chat that does not exist yet and just return an empty result (the UI lists a new chat's
+# artifacts before the chat row exists); another user's existing chat is still 404.
+_MISSING_CHAT_OK_ENDPOINTS = _CHAT_CREATING_ENDPOINTS | {"file_system.list_file_systems_endpoint"}
+
+
+def _request_ids():
+    """
+    Every chat_id and workspace_id the request carries, from the query string, the JSON body and the URL.
+
+    Routes differ in which source they read (some prefer the query, some the body), so all of them are collected and
+    every one must be owned. Returns `(chat_ids, workspace_ids)` as lists of non-empty strings, or None when a value
+    is not a string.
+    """
+    chat_ids, workspace_ids = [], []
+    sources = [(request.args.getlist('chat_id'), chat_ids), (request.args.getlist('workspace_id'), workspace_ids)]
+    body = request.get_json(silent=True) if request.is_json else None
+    if isinstance(body, dict):
+        sources += [([body.get('chat_id')], chat_ids), ([body.get('workspace_id')], workspace_ids)]
+    sources.append(([(request.view_args or {}).get('chat_id')], chat_ids))
+    for values, target in sources:
+        for value in values:
+            if value in (None, ""):
+                continue
+            if not isinstance(value, str):
+                return None
+            target.append(value)
+    return chat_ids, workspace_ids
+
+
+@file_system_bp.before_request
+def require_fs_owner():
+    """
+    Owner check for every file-system route, run after `normalize_workspace_id` so it sees the resolved workspace.
+
+    Each chat and workspace the request names must belong to the current user, otherwise 404 (nothing is read or
+    written). A chat that does not exist yet passes only on the two creating routes (which then `claim_chat`) and the list route. The
+    "default" workspace sentinel (a chat with no workspace) passes only next to a chat that passed its own check above (owned, or
+    on the create and list routes not yet existing: nothing foreign is read or written, "default" meaning "no workspace"). No ids at all passes:
+    the route's own "required" check answers.
+    """
+    ids = _request_ids()
+    if ids is None:
+        return jsonify({"error": "Invalid chat_id or workspace_id"}), 400
+    chat_ids, workspace_ids = ids
+    missing_ok = request.endpoint in _MISSING_CHAT_OK_ENDPOINTS
+    for chat_id in chat_ids:
+        denied = reject_foreign_chat(chat_id) if missing_ok else require_chat_owner(chat_id)
+        if denied:
+            return denied
+    for workspace_id in workspace_ids:
+        if workspace_id == "default" and chat_ids:
+            continue  # "no workspace": the chat check above governs
+        denied = require_workspace_owner(workspace_id)
+        if denied:
+            return denied
+    return None
+
+
+def _fs_meta_or_404(file_system_id, chat_id, workspace_id=None):
+    """
+    Look up a file system's metadata under the caller's chat or workspace.
+
+    Returns `(meta, None)`, or `(None, response)` with a 404 when the id is unknown under that chat or workspace
+    (which is also what another user's file system looks like). A `disk:` id returns `(None, None)`: it has no row.
+    """
+    if file_system_id.startswith("disk:"):
+        return None, None  # a file that exists only on disk has no row; the owner check already ran and the route answers as before
+    # Workspace artifacts are stored without a chat_id: look under the chat's workspace too, as the manager does.
+    if not workspace_id and chat_id:
+        from backend.file_system.utils import get_workspace_for_chat
+        workspace_id = get_workspace_for_chat(chat_id)
+    meta = db.get_file_system_meta(file_system_id=file_system_id, chat_id=chat_id, workspace_id=workspace_id)
+    if not meta:
+        return None, (jsonify({"success": False, "error": "FileSystem not found"}), 404)
+    return meta, None
+
 
 @file_system_bp.route('', methods=['POST'])
 @file_system_bp.route('/', methods=['POST'])
@@ -131,6 +210,12 @@ async def create_directory_route():
     if (not chat_id and not workspace_id) or not path:
         return jsonify({"error": "Missing chat_id/workspace_id or path"}), 400
 
+    # The hook lets a new chat through; create it for the caller (or refuse one another user created meanwhile).
+    if chat_id:
+        denied = claim_chat(chat_id)
+        if denied:
+            return denied
+
     try:
         result = await create_directory_tool(chat_id=chat_id, path=path, workspace_id=workspace_id)
         return jsonify(result)
@@ -173,7 +258,14 @@ async def list_file_systems_endpoint():
     workspace_id = request.args.get('workspace_id')
     from backend.file_system.manager import get_fs_file_content
     from backend.file_system.utils import get_workspace_for_chat
-    
+
+    # A chat that does not exist yet (the UI lists a new chat's artifacts) has nothing to list, and a leftover directory
+    # of a deleted chat must not be readable by naming its id. The hook already refused another user's chat.
+    if chat_id and not owns_chat(chat_id):
+        chat_id = None  # never read the chat's rows or directory
+        if not workspace_id or workspace_id == "default":
+            return jsonify({"success": True, "file_systems": []})
+
     file_systems_with_content = []
     
     if chat_id:
@@ -191,8 +283,8 @@ async def list_file_systems_endpoint():
             if not wc['filename'].startswith("workspace/"):
                 wc['filename'] = "workspace/" + wc['filename']
     else:
-        file_systems = db.get_all_file_systems()
-        
+        return jsonify({"error": "chat_id or workspace_id is required"}), 400
+
     for file_system in file_systems:
         # Resolve actual owner for content fetching
         actual_chat_id = file_system.get('chat_id')
@@ -221,102 +313,76 @@ async def list_file_systems_endpoint():
 
         file_systems_with_content.append(file_system_copy)
         
-    if chat_id or workspace_id:
-        try:
-            from backend.file_system.manager import is_binary_file
-            from backend.file_system.utils import FILE_SYSTEMS_DIR, WORKSPACES_DIR, sanitize_filename
+    try:
+        from backend.file_system.manager import is_binary_file
+        from backend.file_system.utils import FILE_SYSTEMS_DIR, WORKSPACES_DIR, sanitize_filename
+        
+        def scan_physical_items(current_path, rel_path=""):
+            items = []
+            if not os.path.exists(current_path): return items
             
-            def scan_physical_items(current_path, rel_path=""):
-                items = []
-                if not os.path.exists(current_path): return items
-                
-                if os.path.basename(current_path) == '.git' or os.path.basename(current_path).startswith('.git'):
-                    return items
-                
-                try:
-                    entries = os.listdir(current_path)
-                except Exception:
-                    return items
-                    
-                for item in entries:
-                    if item == '.git' or item.startswith('.git/'):
-                        continue
-                    full_item_path = os.path.join(current_path, item)
-                    new_rel = f"{rel_path}/{item}" if rel_path else item
-                    
-                    if os.path.isdir(full_item_path):
-                        items.append({
-                            "id": f"disk:{new_rel}",
-                            "type": "directory",
-                            "filename": new_rel,
-                            "title": item
-                        })
-                        items.extend(scan_physical_items(full_item_path, new_rel))
-                    elif os.path.isfile(full_item_path):
-                        mtime = os.path.getmtime(full_item_path)
-                        size = os.path.getsize(full_item_path)
-                        ext = os.path.splitext(item)[1].lower()
-                        lang = ext.lstrip('.') if ext else 'markdown'
-                        
-                        items.append({
-                            "id": f"disk:{new_rel}",
-                            "filename": new_rel,
-                            "title": item,
-                            "type": "file",
-                            "timestamp": mtime,
-                            "file_size": size,
-                            "language": lang
-                        })
+            if os.path.basename(current_path) == '.git' or os.path.basename(current_path).startswith('.git'):
+                return items
+            
+            try:
+                entries = os.listdir(current_path)
+            except Exception:
                 return items
                 
-            added_filenames = {item['filename'] for item in file_systems_with_content}
+            for item in entries:
+                if item == '.git' or item.startswith('.git/'):
+                    continue
+                full_item_path = os.path.join(current_path, item)
+                new_rel = f"{rel_path}/{item}" if rel_path else item
                 
-            if chat_id:
-                base_chat_dir = os.path.join(FILE_SYSTEMS_DIR, sanitize_filename(chat_id))
-                chat_physical = scan_physical_items(base_chat_dir)
-                for item in chat_physical:
-                    if item['filename'] not in added_filenames:
-                        if item.get('type') == 'file':
-                            filepath = os.path.join(base_chat_dir, item['filename'])
-                            if is_binary_file(filepath):
-                                item['content'] = "[Binary File] This file contains binary content and cannot be displayed in the text editor."
-                            else:
-                                try:
-                                    with open(filepath, 'r', encoding='utf-8', errors='replace') as f:
-                                        item['content'] = f.read(5000)
-                                except Exception:
-                                    item['content'] = ""
-                        file_systems_with_content.append(item)
-                        added_filenames.add(item['filename'])
-                
-                chat_workspace_id = get_workspace_for_chat(chat_id)
-                if chat_workspace_id:
-                    base_ws_dir = os.path.join(WORKSPACES_DIR, sanitize_filename(chat_workspace_id))
-                    ws_physical = scan_physical_items(base_ws_dir)
-                    for item in ws_physical:
-                        old_rel = item['filename']
-                        item['filename'] = "workspace/" + old_rel
-                        if item.get('id'):
-                            item['id'] = "disk:workspace/" + old_rel
-                            
-                        if item['filename'] not in added_filenames:
-                            if item.get('type') == 'file':
-                                filepath = os.path.join(base_ws_dir, old_rel)
-                                if is_binary_file(filepath):
-                                    item['content'] = "[Binary File] This file contains binary content and cannot be displayed in the text editor."
-                                else:
-                                    try:
-                                        with open(filepath, 'r', encoding='utf-8', errors='replace') as f:
-                                            item['content'] = f.read(5000)
-                                    except Exception:
-                                        item['content'] = ""
-                            file_systems_with_content.append(item)
-                            added_filenames.add(item['filename'])
+                if os.path.isdir(full_item_path):
+                    items.append({
+                        "id": f"disk:{new_rel}",
+                        "type": "directory",
+                        "filename": new_rel,
+                        "title": item
+                    })
+                    items.extend(scan_physical_items(full_item_path, new_rel))
+                elif os.path.isfile(full_item_path):
+                    mtime = os.path.getmtime(full_item_path)
+                    size = os.path.getsize(full_item_path)
+                    ext = os.path.splitext(item)[1].lower()
+                    lang = ext.lstrip('.') if ext else 'markdown'
                     
-                    if not any(c.get('type') == 'directory' and c.get('filename') == 'workspace' for c in file_systems_with_content):
-                         file_systems_with_content.append({"type": "directory", "filename": "workspace", "title": "workspace"})
-            elif workspace_id:
-                base_ws_dir = os.path.join(WORKSPACES_DIR, sanitize_filename(workspace_id))
+                    items.append({
+                        "id": f"disk:{new_rel}",
+                        "filename": new_rel,
+                        "title": item,
+                        "type": "file",
+                        "timestamp": mtime,
+                        "file_size": size,
+                        "language": lang
+                    })
+            return items
+            
+        added_filenames = {item['filename'] for item in file_systems_with_content}
+            
+        if chat_id:
+            base_chat_dir = os.path.join(FILE_SYSTEMS_DIR, sanitize_filename(chat_id))
+            chat_physical = scan_physical_items(base_chat_dir)
+            for item in chat_physical:
+                if item['filename'] not in added_filenames:
+                    if item.get('type') == 'file':
+                        filepath = os.path.join(base_chat_dir, item['filename'])
+                        if is_binary_file(filepath):
+                            item['content'] = "[Binary File] This file contains binary content and cannot be displayed in the text editor."
+                        else:
+                            try:
+                                with open(filepath, 'r', encoding='utf-8', errors='replace') as f:
+                                    item['content'] = f.read(5000)
+                            except Exception:
+                                item['content'] = ""
+                    file_systems_with_content.append(item)
+                    added_filenames.add(item['filename'])
+            
+            chat_workspace_id = get_workspace_for_chat(chat_id)
+            if chat_workspace_id:
+                base_ws_dir = os.path.join(WORKSPACES_DIR, sanitize_filename(chat_workspace_id))
                 ws_physical = scan_physical_items(base_ws_dir)
                 for item in ws_physical:
                     old_rel = item['filename']
@@ -337,12 +403,37 @@ async def list_file_systems_endpoint():
                                     item['content'] = ""
                         file_systems_with_content.append(item)
                         added_filenames.add(item['filename'])
-                        
+                
                 if not any(c.get('type') == 'directory' and c.get('filename') == 'workspace' for c in file_systems_with_content):
                      file_systems_with_content.append({"type": "directory", "filename": "workspace", "title": "workspace"})
-                     
-        except Exception as e:
-            logger.error(f"Error scanning physical items for frontend: {e}")
+        elif workspace_id:
+            base_ws_dir = os.path.join(WORKSPACES_DIR, sanitize_filename(workspace_id))
+            ws_physical = scan_physical_items(base_ws_dir)
+            for item in ws_physical:
+                old_rel = item['filename']
+                item['filename'] = "workspace/" + old_rel
+                if item.get('id'):
+                    item['id'] = "disk:workspace/" + old_rel
+                    
+                if item['filename'] not in added_filenames:
+                    if item.get('type') == 'file':
+                        filepath = os.path.join(base_ws_dir, old_rel)
+                        if is_binary_file(filepath):
+                            item['content'] = "[Binary File] This file contains binary content and cannot be displayed in the text editor."
+                        else:
+                            try:
+                                with open(filepath, 'r', encoding='utf-8', errors='replace') as f:
+                                    item['content'] = f.read(5000)
+                            except Exception:
+                                item['content'] = ""
+                    file_systems_with_content.append(item)
+                    added_filenames.add(item['filename'])
+                    
+            if not any(c.get('type') == 'directory' and c.get('filename') == 'workspace' for c in file_systems_with_content):
+                 file_systems_with_content.append({"type": "directory", "filename": "workspace", "title": "workspace"})
+                 
+    except Exception as e:
+        logger.error(f"Error scanning physical items for frontend: {e}")
 
     return jsonify({"success": True, "file_systems": file_systems_with_content})
 
@@ -922,6 +1013,9 @@ async def get_file_system_versions_endpoint(file_system_id):
         return jsonify({"error": "chat_id is required"}), 400
         
     workspace_id = request.args.get('workspace_id')
+    _, missing = _fs_meta_or_404(file_system_id, chat_id, workspace_id)
+    if missing:
+        return missing
     from backend.file_system.manager import get_file_system_versions
     versions = get_file_system_versions(file_system_id, chat_id, workspace_id=workspace_id)
     if not versions:
@@ -1001,6 +1095,9 @@ async def get_fs_file_diff_endpoint(file_system_id):
         return jsonify({"success": False, "error": "version1 and version2 are required"}), 400
 
     workspace_id = request.args.get('workspace_id')
+    _, missing = _fs_meta_or_404(file_system_id, chat_id, workspace_id)
+    if missing:
+        return missing
     from backend.file_system.manager import get_fs_file_diff
     result = get_fs_file_diff(file_system_id, chat_id, version1, version2, workspace_id=workspace_id)
     if result['success']:
@@ -1049,6 +1146,9 @@ async def navigate_to_version_endpoint(file_system_id):
     if not chat_id or version_number is None:
         return jsonify({"success": False, "error": "chat_id and version_number are required"}), 400
 
+    _, missing = _fs_meta_or_404(file_system_id, chat_id, request.args.get('workspace_id'))
+    if missing:
+        return missing
     from backend.file_system.manager import navigate_file_system_version
     result = await navigate_file_system_version(
         chat_id=chat_id, file_system_id=file_system_id, version_number=version_number

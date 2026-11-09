@@ -1,7 +1,7 @@
 import json
 import pytest
 import time
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, AsyncMock
 from backend.rag.file_rag import FileRAG
 
 @pytest.fixture
@@ -204,3 +204,30 @@ async def test_store_file_refuses_a_stored_wrapper_with_an_invalid_payload(mock_
     bad = json.dumps({"format": "pages", "pages": "not a list", "padding": "x" * 80})
     with pytest.raises(ValueError):
         await file_rag.store_file("file1", "chat1", bad, filename="data.json")
+
+
+@pytest.mark.anyio
+async def test_retrieve_for_file_pins_the_files_chat_with_an_and_filter(mock_rag_manager):
+    file_rag = FileRAG(mock_rag_manager)
+    with patch.object(file_rag, "retrieve_by_query", new=AsyncMock(return_value=[])) as retrieve:
+        await file_rag.retrieve_for_file("f1", "q", n_results=3, chat_id="current", file_chat_id="file-chat")
+        retrieve.assert_awaited_once_with("q", n_results=3, where={"$and": [{"file_id": "f1"}, {"chat_id": "file-chat"}]},
+                                          hybrid=True, chat_id="current")
+        retrieve.reset_mock()
+        await file_rag.retrieve_for_file("f1", "q")  # without file_chat_id the filter is unchanged
+        assert retrieve.call_args.kwargs["where"] == {"file_id": "f1"}
+
+
+def test_and_filter_returns_only_the_matching_chats_chunks_on_a_real_chroma_store(tmp_path):
+    """The `$and` syntax must work on the installed ChromaDB: two chats' chunks, one file id used in both."""
+    import chromadb
+    client = chromadb.PersistentClient(path=str(tmp_path))
+    collection = client.create_collection("chunks", embedding_function=None)
+    vec = [1.0, 0.0, 0.0]
+    collection.add(ids=["a1", "a2", "b1"], embeddings=[vec, vec, vec], documents=["A chunk 1", "A chunk 2", "B chunk"],
+                   metadatas=[{"file_id": "f1", "chat_id": "chat-a"}, {"file_id": "f1", "chat_id": "chat-a"},
+                              {"file_id": "f1", "chat_id": "chat-b"}])
+    where = {"$and": [{"file_id": "f1"}, {"chat_id": "chat-a"}]}
+    assert sorted(collection.get(where=where)["ids"]) == ["a1", "a2"]
+    assert sorted(collection.query(query_embeddings=[vec], n_results=3, where=where)["ids"][0]) == ["a1", "a2"]
+

@@ -260,19 +260,6 @@ class FileSystemOpsMixin(BaseMixin):
         cache_layer.invalidate("file_systems")
         return 1
 
-    def get_all_file_systems(self):
-        """Get all file_systems across all chats."""
-        def _fetch():
-            conn = make_connection()
-            try:
-                conn.row_factory = sqlite3.Row
-                c = conn.cursor()
-                c.execute("SELECT * FROM file_systems ORDER BY timestamp DESC")
-                return [dict(row) for row in c.fetchall()]
-            finally:
-                conn.close()
-        return cache_layer.get_table("file_systems", _fetch, key_extractor=lambda row: row.get('id', ''), ttl=300)
-
     def get_owner_file_systems(self, chat_id: str = None, workspace_id: str = None):
         """Get all file_systems for a chat or workspace."""
         def _fetch():
