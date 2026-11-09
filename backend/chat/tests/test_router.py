@@ -980,3 +980,73 @@ def test_delete_skill(mock_db, client):
     assert response.status_code == 200
     assert response.json == {"success": True}
     mock_db.delete_skill.assert_called_with("s1")
+
+
+# Routes that need a JSON body: a missing, malformed or non-object body is a 400 JSON error, not a 500 or an HTML page.
+CHAT_REQUIRED_BODY_ROUTES = [
+    ("post", "/api/chats/workspaces", {}),
+    ("post", "/api/chats/save", {}),
+    ("patch", "/api/chats/chat1", {}),
+    ("patch", "/api/chats/chat1/messages/1", {}),
+    ("put", "/api/chats/chat1/messages/1", {}),
+    ("post", "/v1/chat/completions", {}),
+    ("post", "/api/personas", {"success": False}),
+    ("put", "/api/personas/p1", {"success": False}),
+    ("post", "/api/skills", {"success": False}),
+    ("put", "/api/skills/s1", {"success": False}),
+]
+CHAT_BAD_BODIES = [
+    {},
+    {"data": "null", "content_type": "application/json"},
+    {"data": "[1]", "content_type": "application/json"},
+    {"data": "{bad", "content_type": "application/json"},
+    {"data": '{"a": 1}', "content_type": "text/plain"},
+]
+
+
+@patch('backend.chat.router.db')
+@pytest.mark.parametrize("method,url,extra", CHAT_REQUIRED_BODY_ROUTES)
+@pytest.mark.parametrize("body", CHAT_BAD_BODIES)
+def test_chat_required_body_routes_return_a_400_json_error(mock_db, client, method, url, extra, body):
+    resp = getattr(client, method)(url, **body)
+    assert resp.status_code == 400
+    assert resp.get_json() == {"error": "Request body must be a JSON object", **extra}
+
+
+@patch('backend.chat.router.db')
+@pytest.mark.parametrize("body", [{"data": "[1]", "content_type": "application/json"},
+                                  {"data": "{bad", "content_type": "application/json"}])
+def test_chat_optional_body_routes_still_reject_an_invalid_body(mock_db, client, body):
+    for method, url in (("patch", "/api/chats/workspaces/ws1"), ("post", "/api/chats/chat1/resume")):
+        resp = getattr(client, method)(url, **body)
+        assert resp.status_code == 400 and resp.get_json() == {"error": "Request body must be a JSON object"}, url
+
+
+@patch('backend.chat.router.db')
+def test_rename_workspace_without_a_body_reaches_its_own_validation(mock_db, client):
+    resp = client.patch('/api/chats/workspaces/ws1')
+    assert resp.status_code == 400
+    assert "Missing workspace update fields" in resp.get_json()["error"]
+
+
+@patch('backend.chat.router.db')
+@patch('backend.chat.router.ChatHandler')
+def test_resume_chat_accepts_no_body_and_a_null_body(mock_chat_handler_class, mock_db, client):
+    mock_db.get_messages.return_value = [{"role": "user", "content": "resume this"}]
+    mock_db.get_chat.return_value = {"last_model": "db-model"}
+
+    async def mock_initiate_chat(**kwargs):
+        yield "data: chunk1\n\n"
+
+    mock_chat_handler_class.return_value.initiate_chat.side_effect = lambda **kw: mock_initiate_chat()
+    for request_kwargs in ({}, {"data": "null", "content_type": "application/json"}):
+        response = client.post('/api/chats/chat1/resume', **request_kwargs)
+        assert response.status_code == 200 and response.mimetype == 'text/event-stream'
+        assert "data: chunk1\n\n" in response.get_data(as_text=True)
+
+
+def test_resume_chat_with_a_bad_body_does_not_take_the_turn_claim(client):
+    with patch('backend.chat.router.task_manager') as turns:
+        resp = client.post('/api/chats/chat1/resume', data="[1]", content_type="application/json")
+    assert resp.status_code == 400
+    turns.claim_turn.assert_not_called()

@@ -3,6 +3,7 @@ import json
 import logging
 from backend.tools.callbacks import callback_registry
 from backend.logging import log_event
+from backend.utils import read_json_object
 
 logger = logging.getLogger(__name__)
 tools_bp = Blueprint('tools', __name__)
@@ -66,7 +67,9 @@ def clarification_response():
     """
     callback_registry.clear_expired() # Periodic cleanup
     
-    data = request.json
+    data, err = read_json_object()
+    if err:
+        return err
     cb_id = data.get('callback_id')
     
     if not cb_id:
@@ -105,7 +108,9 @@ def get_preferences():
 @tools_bp.route('/preferences', methods=['POST'])
 def add_preference():
     from backend.database import db
-    data = request.json
+    data, err = read_json_object()
+    if err:
+        return err
     content = data.get('content')
     tag = data.get('tag')
     if not content or not tag:
@@ -116,7 +121,9 @@ def add_preference():
 @tools_bp.route('/preferences/<preference_id>', methods=['PUT'])
 def update_preference(preference_id):
     from backend.database import db
-    data = request.json
+    data, err = read_json_object()
+    if err:
+        return err
     content = data.get('content')
     tag = data.get('tag')
     if not content or not tag:
@@ -124,7 +131,8 @@ def update_preference(preference_id):
     success = db.update_preference(preference_id, content, tag)
     if success:
         return jsonify({"success": True})
-    return jsonify({"error": "Failed to update preference"}), 500
+    log_event("tools_preference_update_not_found", {"preference_id": preference_id})
+    return jsonify({"error": "Preference not found"}), 404
 
 @tools_bp.route('/preferences/<preference_id>', methods=['DELETE'])
 def delete_preference(preference_id):
@@ -189,7 +197,9 @@ def update_agent_config(agent_name):
     from backend import config
     import backend.chat.agent_handler as agent_handler
     
-    data = request.json
+    data, err = read_json_object()
+    if err:
+        return err
     
     # Update Thinking Profile
     if 'thinking_profile' in data:
@@ -234,7 +244,9 @@ def get_browser_config():
 @tools_bp.route('/config/browser', methods=['PATCH'])
 def update_browser_config():
     from backend import config
-    data = request.json
+    data, err = read_json_object()
+    if err:
+        return err
     stealth_level = data.get('stealth_level')
     if stealth_level in ['minimal', 'advanced']:
         config.BROWSER_STEALTH_LEVEL = stealth_level
@@ -319,10 +331,9 @@ def get_system_settings():
 @tools_bp.route('/config/settings', methods=['POST'])
 def update_system_settings():
     from backend.database import db
-    data = request.json
-    if not isinstance(data, dict):
-        return jsonify({"error": "Data must be a JSON object"}), 400
-    
+    data, err = read_json_object()
+    if err:
+        return err
     for key, val in data.items():
         if key == 'github_pat' and val == '__REDACTED__':
             # User submitted placeholder, ignore it
@@ -347,7 +358,9 @@ async def api_run_file():
     """Direct file execution (user-triggered, not AI-triggered)."""
     import uuid
     from backend.tools.implementations.code_executor import run_file
-    data = request.json or {}
+    data, err = read_json_object(required=False)
+    if err:
+        return err
     path = data.get("path")
     chat_id = data.get("chat_id")
     stdin = data.get("stdin", "")

@@ -22,6 +22,7 @@ Client code lives in `frontend/src/api/`.
 - Error body is `{"error": "<short message>"}`. The personas and skills routes also include `"success": false`; keep that there for
   compatibility but use the plain form elsewhere. Do not return stack traces or `str(e)` of internal exceptions from new code.
 - Validate before acting, and fail with `400` (not a partial write).
+- Routes that read a JSON body use `read_json_object` (`backend/utils.py`): a missing, malformed or non-object body is `400 {"error": "Request body must be a JSON object"}` (the personas and skills routes add `"success": false`), never Flask's HTML 400/415 page or a 500. Pass `required=False` only when every field is optional: an absent body (nothing, `null`, `[]`) is then accepted as `{}`, while a malformed or non-object body is still a 400.
 
 ## Streaming (SSE)
 

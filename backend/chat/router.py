@@ -1,4 +1,4 @@
-from flask import Blueprint, request, Response, jsonify
+from flask import Blueprint, Response, jsonify
 import logging
 import json
 import time
@@ -9,6 +9,7 @@ from backend.chat.message_edit import merge_edited_user_content
 from backend.database import db
 from backend.logging import log_event
 from backend.task_manager import task_manager
+from backend.utils import read_json_object
 from backend.file_system import FileSystemChannelManager
 from backend.files.router import get_file_manager
 from backend import config
@@ -39,7 +40,9 @@ def list_workspaces():
 
 @chat_bp.route('/workspaces', methods=['POST'])
 def create_workspace():
-    data = request.json
+    data, err = read_json_object()
+    if err:
+        return err
     name = data.get('name')
     if not name:
         return jsonify({"error": "Missing workspace name"}), 400
@@ -50,7 +53,9 @@ def create_workspace():
 
 @chat_bp.route('/workspaces/<workspace_id>', methods=['PATCH'])
 def rename_workspace(workspace_id):
-    data = request.json or {}
+    data, err = read_json_object(required=False)
+    if err:
+        return err
     new_name = data.get('name')
     has_icon = 'icon' in data
     if not new_name and not has_icon:
@@ -78,7 +83,9 @@ def clear_all_chats():
 
 @chat_bp.route('/save', methods=['POST'])
 def save_chat_endpoint():
-    data = request.json
+    data, err = read_json_object()
+    if err:
+        return err
     chat_id = data.get('chat_id')
     title = data.get('title', 'New Chat')
     messages = data.get('messages')
@@ -131,7 +138,9 @@ def save_chat_endpoint():
 
 @chat_bp.route('/<chat_id>', methods=['PATCH'])
 def patch_chat_endpoint(chat_id):
-    data = request.json
+    data, err = read_json_object()
+    if err:
+        return err
     new_title = data.get('title')
     last_model = data.get('last_model')
     vision_model = data.get('vision_model')
@@ -256,7 +265,9 @@ def chat_completions():
     Primary OpenAI-compatible endpoint for chat streaming.
     Endpoint: POST /v1/chat/completions
     """
-    data = request.json
+    data, err = read_json_object()
+    if err:
+        return err
     chat_id = data.get('chatId')
     user_message_raw = data.get('messages')[-1] if data.get('messages') else None
     
@@ -479,6 +490,9 @@ def resume_chat(chat_id):
     Returns 400 {"error": "a response is already in progress"} if a turn for the chat is running or
     starting (sends and resumes share one claim per chat, docs/standards/api.md).
     """
+    resume_body, err = read_json_object(required=False)
+    if err:
+        return err
     # Keep a reference so the release in call_on_close targets the manager that took the claim,
     # even if the module-level name is rebound later (as tests do).
     turns = task_manager
@@ -497,7 +511,7 @@ def resume_chat(chat_id):
             turns.release_turn_claim(chat_id)
             return jsonify({"error": "No user message found to resume from."}), 400
 
-        model = request.json.get('model')
+        model = resume_body.get('model')
         # Fallback: if frontend didn't send a model (e.g. models not yet loaded),
         # derive from DB to prevent NoneType crash in sub-agent inference
         if not model:
@@ -509,7 +523,7 @@ def resume_chat(chat_id):
         # Strip mode flags — DB already has the correct state from the original turn.
         # Syncing from the frontend would corrupt mid-execution state (R2 fix).
         RESUME_STRIP_KEYS = {'model', 'researchMode', 'userPreferences', 'fileSystemMode', 'browsingMode'}
-        extra_body = {k: v for k, v in request.json.items() if k not in RESUME_STRIP_KEYS}
+        extra_body = {k: v for k, v in resume_body.items() if k not in RESUME_STRIP_KEYS}
         
         def generate_stream():
             import asyncio
@@ -575,7 +589,9 @@ def stop_chat(chat_id):
 
 @chat_bp.route('/<chat_id>/messages/<int:message_id>', methods=['PUT', 'PATCH'])
 def edit_message_endpoint(chat_id, message_id):
-    data = request.json
+    data, err = read_json_object()
+    if err:
+        return err
     content = data.get('content')
     if not isinstance(content, str) or not content.strip():
         return jsonify({"error": "Content required"}), 400
@@ -670,7 +686,9 @@ def get_personas():
 
 @personas_bp.route('/personas', methods=['POST'])
 def create_persona():
-    data = request.json
+    data, err = read_json_object(extra={"success": False})
+    if err:
+        return err
     name = data.get('name')
     content = data.get('content')
     is_default = data.get('is_default', 0)
@@ -689,7 +707,9 @@ def create_persona():
 
 @personas_bp.route('/personas/<persona_id>', methods=['PUT'])
 def update_persona(persona_id):
-    data = request.json
+    data, err = read_json_object(extra={"success": False})
+    if err:
+        return err
     name = data.get('name')
     content = data.get('content')
     is_default = data.get('is_default', 0)
@@ -733,7 +753,9 @@ def get_skills():
 
 @skills_bp.route('/skills', methods=['POST'])
 def create_skill():
-    data = request.json
+    data, err = read_json_object(extra={"success": False})
+    if err:
+        return err
     name = data.get('name')
     description = data.get('description')
     instructions = data.get('instructions')
@@ -759,7 +781,9 @@ def create_skill():
 
 @skills_bp.route('/skills/<skill_id>', methods=['PUT'])
 def update_skill(skill_id):
-    data = request.json
+    data, err = read_json_object(extra={"success": False})
+    if err:
+        return err
     name = data.get('name')
     description = data.get('description')
     instructions = data.get('instructions')

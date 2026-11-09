@@ -541,3 +541,56 @@ def test_disk_prefixed_file_system_operations(client):
         
         m_open.assert_called_once_with("/some/path/to/.gitignore", "w", encoding="utf-8")
         m_open().write.assert_called_once_with("new ignore rules")
+
+
+# Every route that reads a JSON body: an invalid body (malformed, not an object, wrong content type) is a 400 JSON error.
+FS_BODY_ROUTES = [
+    ("post", "/api/file_system/"),
+    ("post", "/api/file_system/directory"),
+    ("patch", "/api/file_system/fs1"),
+    ("post", "/api/file_system/fs1/folder"),
+    ("post", "/api/file_system/fs1/tags"),
+    ("post", "/api/file_system/fs1/versions/1/restore"),
+    ("post", "/api/file_system/fs1/diff"),
+    ("post", "/api/file_system/fs1/navigate-version"),
+    ("post", "/api/file_system/fs1/delete-future-versions"),
+]
+
+
+@pytest.mark.parametrize("method,url", FS_BODY_ROUTES)
+@pytest.mark.parametrize("body", [{"data": "[1]", "content_type": "application/json"},
+                                  {"data": "{bad", "content_type": "application/json"},
+                                  {"data": '{"a": 1}', "content_type": "text/plain"}])
+def test_fs_body_routes_return_a_400_json_error_for_an_invalid_body(client, method, url, body):
+    resp = getattr(client, method)(url, **body)
+    assert resp.status_code == 400
+    assert resp.get_json() == {"error": "Request body must be a JSON object"}
+
+
+# Every FS route reads an optional body: with no body or `null` the route's own validation answers (a JSON
+# error about its fields), not the body check and not an HTML page.
+@pytest.mark.parametrize("method,url", FS_BODY_ROUTES)
+@pytest.mark.parametrize("body", [{}, {"data": "null", "content_type": "application/json"}])
+def test_fs_optional_body_routes_accept_no_body_and_a_null_body(client, method, url, body):
+    resp = getattr(client, method)(url, **body)
+    payload = resp.get_json()
+    assert payload is not None and "error" in payload, resp.get_data(as_text=True)[:80]
+    assert payload != {"error": "Request body must be a JSON object"}
+
+
+@pytest.mark.parametrize("body", ['"workspace_id"', '["workspace_id"]', "5"])
+def test_fs_before_request_hook_survives_a_non_object_body(client, body):
+    # The hook rewrites workspace_id only in object bodies; any other JSON value must reach the route's 400, not a 500.
+    with patch('backend.file_system.utils.get_workspace_for_chat', return_value="ws-9"):
+        resp = client.post('/api/file_system/?chat_id=c1&workspace_id=default', data=body, content_type="application/json")
+    assert resp.status_code == 400 and resp.get_json() == {"error": "Request body must be a JSON object"}
+
+
+def test_fs_before_request_workspace_rewrite_still_reaches_the_route(client):
+    with patch('backend.file_system.create_fs_file', new_callable=AsyncMock) as mock_create, \
+         patch('backend.file_system.utils.get_workspace_for_chat', return_value="ws-9"):
+        mock_create.return_value = {"success": True, "file_system_id": "fs-1", "path": "x"}
+        resp = client.post('/api/file_system/', json={"chat_id": "c1", "content": "hi", "workspace_id": "default"})
+    assert resp.status_code == 200
+    assert "ws-9" in str(mock_create.call_args)   # the hook rewrote "default" before the route read the body
+    assert "default" not in str(mock_create.call_args)
