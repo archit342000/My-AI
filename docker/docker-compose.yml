@@ -6,9 +6,15 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
     networks:
-      - secure-internal
-      # The gateway's tunnel connector reaches the app at http://app:5000 over this network. Only the app joins it.
-      - edge
+      # gw_priority 1 keeps the default route on My-AI's own network: a host firewall drops new connections from the
+      # edge subnet (10.250.0.0/24) to private ranges and the host, so the app's outbound traffic (inference server,
+      # LAN) must leave through secure-internal. Check: `docker compose exec app ip route` must not default via 10.250.0.1.
+      secure-internal:
+        gw_priority: 1
+      # The gateway's tunnel connector reaches the app as http://my-ai:5000 over this network. Only the app joins it.
+      edge:
+        aliases:
+          - my-ai
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -23,9 +29,9 @@ services:
       - AI_PROXY_URL=http://inference-proxy:5001
       - CODE_RUNNER_URL=http://code_runner_mcp:8100
       - AUTH_PROVIDER=${AUTH_PROVIDER:-cloudflare_access}
-      - CF_ACCESS_TEAM_DOMAIN=${CF_ACCESS_TEAM_DOMAIN:-}
-      - CF_ACCESS_AUD=${CF_ACCESS_AUD:-}
-      - ADMIN_EMAIL=${ADMIN_EMAIL:-}
+      - CF_ACCESS_TEAM_DOMAIN=${CF_ACCESS_TEAM_DOMAIN:-architanand.cloudflareaccess.com}
+      - CF_ACCESS_AUD=${CF_ACCESS_AUD:-39c2a56781aaf35e80632ce59d41dd9637ea1fa0fd5dc5f9eedd38bf811c991d}
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-archit342000@gmail.com}
       - AUTH_STATIC_EMAIL=${AUTH_STATIC_EMAIL:-}
     secrets:
       - DATA_DIR
@@ -224,12 +230,11 @@ services:
 networks:
   secure-internal:
     driver: bridge
-  # Created by the gateway (the repo that runs cloudflared), which attaches its connector to it. Only `app` joins it:
-  # never bastion_ssh (2222) or inference-proxy (5001). Create it once with `docker network create ${EDGE_NETWORK:-my-ai-edge}` when
-  # there is no gateway (a local or throwaway stack).
+  # Created by the architanand.dev gateway stack (subnet 10.250.0.0/24), which attaches its cloudflared connector to it.
+  # Only `app` joins it: never bastion_ssh (2222) or inference-proxy (5001). With no gateway, create it once with
+  # `docker network create --subnet 10.250.0.0/24 edge`.
   edge:
     external: true
-    name: ${EDGE_NETWORK:-my-ai-edge}
   # Internal only: no route to the internet or to mysql_db. The relay code_runner_mcp and the package proxy pkg-proxy
   # join it as well; the app does not.
   runner-net:

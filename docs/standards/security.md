@@ -50,12 +50,18 @@
 ## Deployment
 
 - Only `app` is routed through the Cloudflare tunnel: it is the only service on the external `edge` network
-  (`docker/docker-compose.yml`, `${EDGE_NETWORK:-my-ai-edge}`, created by the gateway). Never route or attach `bastion_ssh`
+  (`docker/docker-compose.yml`, created by the architanand.dev gateway stack, with the alias `my-ai`). Never route or attach `bastion_ssh`
   (port 2222) or `inference-proxy` (port 5001), and publish no new ports. The app itself publishes none.
 - Set `ADMIN_EMAIL` (seeded as the admin on every start), `CF_ACCESS_TEAM_DOMAIN` and `CF_ACCESS_AUD`; add other users inside
   the app container with `docker compose -f docker/docker-compose.yml exec app python -m backend.auth.cli add <email>` (see
-  `backend/auth/README.md`). With no gateway, create the network once: `docker network create ${EDGE_NETWORK:-my-ai-edge}`. `AUTH_PROVIDER=static` trusts every request and is for
+  `backend/auth/README.md`). With no gateway, create the network once: `docker network create --subnet 10.250.0.0/24 edge`. `AUTH_PROVIDER=static` trusts every request and is for
   local development only.
+- Served at `https://myai.architanand.dev` (Access team `architanand.cloudflareaccess.com`; the `CF_ACCESS_*` and `ADMIN_EMAIL`
+  defaults in the compose file are the non-secret values of that deployment). Keep the Access policy **owner-only** until the
+  per-user scoping of files, RAG and code runs is merged; only then allow other identities.
+- `app` sets `gw_priority: 1` on `secure-internal`, so its default route stays on My-AI's own network. A host firewall drops new
+  connections from the edge subnet to private ranges and the host, so outbound traffic (inference server, LAN) must not leave via
+  `edge`. After a deploy, `docker compose -f docker/docker-compose.yml exec app ip route` must not show a default via `10.250.0.1`.
 
 ## Input and output
 
