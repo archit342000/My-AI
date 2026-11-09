@@ -9,7 +9,8 @@ import { settingsApi, preferencesApi, settingsKeys, type CodeRunnerSettings } fr
 import { useSettingsStore } from '../../state/settings-store';
 import { useUiStore, type ThemeMode } from '../../state/ui-store';
 import { useModalStore, type DialogName } from '../../state/modal-store';
-import { Field, Section, Status, inputStyle } from './forms';
+import { Field, Section, Status } from './forms';
+import { inputStyle } from './form-styles';
 import { Toggle } from '../../components/ui/Toggle';
 import { SETTINGS_STALE_MS } from '../../api/settings';
 
