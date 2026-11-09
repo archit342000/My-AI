@@ -448,3 +448,22 @@ def test_a_normal_nested_entry_file_is_accepted(isolated_scratch):
         assert prep["error"] is None and prep["written_entry_file"].endswith("/pkg/main.py") and prep["cwd"].endswith("/pkg")
     finally:
         executor.remove_sandbox(prep["sandbox_dir"])
+
+
+class TestTaint:
+    @pytest.fixture(autouse=True)
+    def clean_flag(self, monkeypatch):
+        monkeypatch.setattr(executor, "TAINTED", False)
+
+    def test_a_failed_cleanup_taints_and_the_next_successful_one_clears_it(self):
+        with patch("executor.run_helper", return_value=["/tmp/stuck"]), patch("executor.verify_clean", return_value=[]):
+            assert executor.clear_scratch() == ["/tmp/stuck"]
+        assert executor.TAINTED is True
+        with patch("executor.run_helper", return_value=[]), patch("executor.verify_clean", return_value=[]):
+            assert executor.clear_scratch() == []
+        assert executor.TAINTED is False
+
+    def test_leftovers_found_by_the_verification_also_taint(self):
+        with patch("executor.run_helper", return_value=[]), patch("executor.verify_clean", return_value=["process:7"]):
+            executor.clear_scratch()
+        assert executor.TAINTED is True
