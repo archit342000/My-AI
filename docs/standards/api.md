@@ -10,14 +10,14 @@ Client code lives in `frontend/src/api/`.
 - Routes stay thin: parse and validate input, call the domain code, shape the response. Business logic lives outside the router.
 - Resources are plural nouns (`/chats`, `/skills/<id>`). Use `GET` read, `POST` create/action, `PUT` replace, `PATCH` partial update, `DELETE` remove.
   Action endpoints are `POST /<resource>/<id>/<verb>` (for example `/chats/<id>/stop`).
-- Every route is behind `require_auth` (`app.py`). New routes need no extra wiring and must not bypass it (see `docs/standards/security.md`).
+- Every route is behind `authenticate_request` (`app.py`). New routes need no extra wiring and must not bypass it (see `docs/standards/security.md`).
 - Changing a response shape, path or `localStorage` key is a breaking change: update `frontend/src/api/` and the legacy UI in the same change.
 
 ## Requests and responses
 
 - JSON in, JSON out (`jsonify`). Field names are `snake_case` on the server; the typed client in `frontend/src/api/` maps them.
 - Success returns the resource or `{"success": true}`; creates return the new resource.
-- Status codes: `200` ok, `400` invalid input, `401` not authenticated (set by `require_auth`), `403` forbidden operation,
+- Status codes: `200` ok, `400` invalid input, `401` not authenticated (set by `authenticate_request`), `403` forbidden operation (also an unknown or inactive user),
   `404` not found, `413` upload too large, `500` unexpected failure.
 - Error body is `{"error": "<short message>"}`. The personas and skills routes also include `"success": false`; keep that there for
   compatibility but use the plain form elsewhere. Do not return stack traces or `str(e)` of internal exceptions from new code.
@@ -40,7 +40,7 @@ Client code lives in `frontend/src/api/`.
 ## WebSockets
 
 - `flask-sock` routes: `/api/tools/portal/ws` (browser portal) and `/api/tools/code-execution/ws` (live code runs).
-  They pass through `require_auth` like HTTP. Message framing is documented in the owning module.
+  They pass through `authenticate_request` like HTTP. Message framing is documented in the owning module.
 
 ## Versioning
 

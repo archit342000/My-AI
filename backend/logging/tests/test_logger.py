@@ -143,6 +143,20 @@ def test_log_event(mock_ts, temp_logs):
     event_data = json.loads(lines[0])
     assert event_data["type"] == "TEST_EVENT"
     assert event_data["data"] == {"info": "data"}
+    assert event_data["user_id"] is None
+
+
+@patch('backend.logging.logger._get_timestamp')
+def test_log_event_records_user_id_from_context(mock_ts, temp_logs):
+    from backend.auth.context import user_context
+    mock_time = datetime.datetime(2023, 1, 1, 12, 0, 0)
+    mock_ts.return_value = mock_time
+
+    with user_context({"id": "u1", "email": "u@x.io", "role": "user"}):
+        logger.log_event("TEST_EVENT", {"info": "data"})
+
+    filepath = temp_logs / "general" / (mock_time.strftime('%Y%m%d') + "_events.jsonl")
+    assert json.loads(filepath.read_text().splitlines()[0])["user_id"] == "u1"
 
 @patch('backend.logging.logger.logging.error')
 @patch('builtins.open')

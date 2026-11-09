@@ -3,6 +3,9 @@ import sqlite3
 import os
 import logging
 import re
+import time
+import uuid
+from backend import config
 from backend.database.db_layer import make_connection, DB_PATH
 from backend.logging import log_event
 
@@ -145,6 +148,26 @@ def _create_indexes(c: sqlite3.Cursor) -> None:
     c.execute('CREATE INDEX IF NOT EXISTS idx_exec_history_created ON code_execution_history(created_at)')
 
 
+def _seed_admin(c: sqlite3.Cursor) -> None:
+    """
+    Seed the admin user from config.ADMIN_EMAIL: insert it, or make an existing row an active admin.
+    Idempotent, so it is safe on every start. With ADMIN_EMAIL unset nothing is seeded.
+    """
+    if not config.ADMIN_EMAIL:
+        return
+    c.execute("SELECT id FROM users WHERE email = ? COLLATE NOCASE", (config.ADMIN_EMAIL,))
+    if c.fetchone():
+        c.execute(
+            "UPDATE users SET role = 'admin', is_active = 1 WHERE email = ? COLLATE NOCASE",
+            (config.ADMIN_EMAIL,),
+        )
+    else:
+        c.execute(
+            "INSERT INTO users (id, email, role, is_active, created_at) VALUES (?, ?, 'admin', 1, ?)",
+            (uuid.uuid4().hex, config.ADMIN_EMAIL, time.time()),
+        )
+
+
 def init_db():
     """
     Initialize the database schema and perform necessary migrations.
@@ -181,6 +204,16 @@ def init_db():
             logger.error(f"Error renaming DB tables from canvas to file_system: {e}")
         
         # 1. Create Core Tables
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                id TEXT PRIMARY KEY,
+                email TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                role TEXT NOT NULL CHECK(role IN ('admin','user')),
+                is_active INTEGER NOT NULL DEFAULT 1,
+                created_at REAL
+            )
+        ''')
+
         c.execute('''
             CREATE TABLE IF NOT EXISTS workspaces (
                 id TEXT PRIMARY KEY,
@@ -1682,6 +1715,9 @@ def init_db():
         # it any more. Explicit decision (docs/data.md, Migrations rule 4): it held only per-owner sequence
         # numbers, no user data, and artifacts with older numeric ids keep their ids in file_systems.
         c.execute("DROP TABLE IF EXISTS file_system_counters")
+
+        # 15. Seed the admin user from ADMIN_EMAIL (idempotent; see _seed_admin).
+        _seed_admin(c)
 
         conn.commit()
     except Exception as e:

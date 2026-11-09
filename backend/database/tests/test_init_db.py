@@ -862,3 +862,52 @@ def test_files_index_exists_right_after_a_cascade_rebuild_of_files():
         assert "ON DELETE CASCADE" in _ddl(conn, "files") and _count(conn, "files") == 1
         assert "idx_files_chat_id" in _index_names(conn, "files")
         conn.close()
+
+
+def _users(conn):
+    return conn.execute("SELECT email, role, is_active FROM users").fetchall()
+
+
+def test_init_db_seeds_one_admin_idempotently(temp_db_path):
+    with patch("backend.config.ADMIN_EMAIL", "admin@x.io"):
+        init_db()
+        init_db()
+    conn = make_connection()
+    assert _users(conn) == [("admin@x.io", "admin", 1)]
+    conn.close()
+
+
+def test_init_db_without_admin_email_seeds_nothing(temp_db_path):
+    with patch("backend.config.ADMIN_EMAIL", ""):
+        init_db()
+    conn = make_connection()
+    assert _users(conn) == []
+    conn.close()
+
+
+def test_init_db_promotes_existing_user_with_admin_email(temp_db_path):
+    with patch("backend.config.ADMIN_EMAIL", ""):
+        init_db()
+    conn = make_connection()
+    conn.execute("INSERT INTO users (id, email, role, is_active) VALUES ('u1', 'Admin@X.io', 'user', 0)")
+    conn.commit()
+    conn.close()
+    with patch("backend.config.ADMIN_EMAIL", "admin@x.io"):
+        init_db()
+    conn = make_connection()
+    assert _users(conn) == [("Admin@X.io", "admin", 1)]
+    conn.close()
+
+
+def test_users_table_is_added_to_the_previous_schema(temp_db_path):
+    with patch("backend.config.ADMIN_EMAIL", ""):
+        init_db()
+    conn = make_connection()
+    conn.execute("DROP TABLE users")
+    conn.commit()
+    conn.close()
+    with patch("backend.config.ADMIN_EMAIL", "admin@x.io"):
+        init_db()
+    conn = make_connection()
+    assert _users(conn) == [("admin@x.io", "admin", 1)]
+    conn.close()

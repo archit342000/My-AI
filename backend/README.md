@@ -4,6 +4,7 @@
 ## 📂 Subdirectories
 | Folder | Responsibility |
 | :--- | :--- |
+| `auth/` | Identity providers, per-request current user and the user CLI. |
 | `chat/` | High-level orchestration and turn management. |
 | `database/` | Persistent storage and hybrid caching layer. |
 | `file_system/` | Virtualized file artifact management and versioning. |
