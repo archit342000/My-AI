@@ -169,3 +169,22 @@ async def test_run_file(mock_db, mock_requests):
     finally:
         shutil.rmtree(temp_chat_root)
 
+
+
+def test_install_packages_reports_a_rejected_package_request_clearly(mock_db, mock_requests):
+    import asyncio
+    from backend.tools.implementations.code_executor import install_packages
+    mock_requests.post.return_value = MagicMock(status_code=400, json=lambda: {"detail": "Invalid package: '--index-url=x'"})
+    with patch('backend.tools.implementations.code_executor.request_clarification', return_value="Yes, install"):
+        res = asyncio.run(install_packages(packages=["--index-url=x"], package_manager="pip", chat_id="c1", tool_call_id="tc"))
+    assert res == "Error: Invalid package request: Invalid package: '--index-url=x'"
+    assert "unavailable" not in res
+
+
+def test_install_packages_other_failures_still_say_the_service_is_unavailable(mock_db, mock_requests):
+    import asyncio
+    from backend.tools.implementations.code_executor import install_packages
+    mock_requests.post.side_effect = RuntimeError("boom")
+    with patch('backend.tools.implementations.code_executor.request_clarification', return_value="Yes, install"):
+        res = asyncio.run(install_packages(packages=["requests"], package_manager="pip", chat_id="c1", tool_call_id="tc"))
+    assert res.startswith("Error: Failed to install packages. Code runner service is unavailable")

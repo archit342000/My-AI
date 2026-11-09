@@ -379,6 +379,12 @@ async def install_packages(
 
     try:
         res = requests.post(url, json=payload, headers=headers, timeout=130)
+        if res.status_code == 400:
+            try:
+                detail = res.json().get("detail", "")
+            except Exception:
+                detail = ""
+            return "Error: Invalid package request" + (f": {detail}" if detail else "")
         res.raise_for_status()
         data = res.json()
     except Exception as e:
