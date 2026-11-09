@@ -17,7 +17,7 @@
 | `file_system_ops.py` | Operations for file system artifacts and versions. | `FileSystemOpsMixin` |
 | `history_ops.py` | Logic for weaving message history and turn anchoring. | `HistoryOpsMixin` |
 | `message_ops.py` | CRUD for messages and sub-agent messages. | `MessageOpsMixin` |
-| `persona_ops.py` | CRUD operations for AI system Personas. | `PersonaOpsMixin` |
+| `persona_ops.py` | CRUD operations for AI system Personas. | `PersonaOperations` |
 | `preference_ops.py` | Operations for user preferences and profile memories. | `PreferenceOpsMixin` |
 | `settings_ops.py` | Dynamic system preferences and allowlist configurations. | `SettingsOpsMixin` |
 | `skill_ops.py` | Retrieval and execution details for custom assistant skills. | `SkillOpsMixin` |

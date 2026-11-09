@@ -567,6 +567,15 @@ class TestWorkspaceOps:
         workspaces = temp_db.get_all_workspaces()
         assert any(w["name"] == "Beta Renamed" for w in workspaces)
 
+    def test_workspace_name_exists(self, temp_db):
+        ws = temp_db.create_workspace("Dup Name")
+        other = temp_db.create_workspace("Other Name")
+        assert temp_db.workspace_name_exists("Dup Name") is True
+        assert temp_db.workspace_name_exists("  dup NAME ") is True  # case and surrounding spaces
+        assert temp_db.workspace_name_exists("Unrelated Name") is False
+        assert temp_db.workspace_name_exists("Dup Name", exclude_id=ws["id"]) is False  # its own name
+        assert temp_db.workspace_name_exists("Dup Name", exclude_id=other["id"]) is True
+
     def test_update_chat_workspace(self, temp_db):
         ws = temp_db.create_workspace("Gamma")
         temp_db.ensure_chat_exists("chat_ws")

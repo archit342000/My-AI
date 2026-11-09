@@ -43,6 +43,8 @@ def create_workspace():
     name = data.get('name')
     if not name:
         return jsonify({"error": "Missing workspace name"}), 400
+    if db.workspace_name_exists(name):
+        return jsonify({"error": f"A workspace named '{name}' already exists"}), 400
     workspace = db.create_workspace(name)
     return jsonify(workspace)
 
@@ -53,6 +55,9 @@ def rename_workspace(workspace_id):
     has_icon = 'icon' in data
     if not new_name and not has_icon:
         return jsonify({"error": "Missing workspace update fields (name or icon)"}), 400
+    # Check before any write so a rejected rename changes neither the name nor the icon.
+    if new_name and db.workspace_name_exists(new_name, exclude_id=workspace_id):
+        return jsonify({"error": f"A workspace named '{new_name}' already exists"}), 400
     if has_icon:
         db.update_workspace_icon(workspace_id, data.get('icon'))
     if new_name:
@@ -675,6 +680,8 @@ def create_persona():
 
     if not name or not content:
         return jsonify({"success": False, "error": "Name and content are required"}), 400
+    if db.persona_name_exists(name):
+        return jsonify({"success": False, "error": f"A persona named '{name}' already exists"}), 400
 
     persona = db.create_persona(name, content, is_default, research_mode, file_system_mode, browsing_mode)
     return jsonify({"success": True, "persona": persona}), 201
@@ -692,6 +699,8 @@ def update_persona(persona_id):
 
     if not name or not content:
         return jsonify({"success": False, "error": "Name and content are required"}), 400
+    if db.persona_name_exists(name, exclude_id=persona_id):
+        return jsonify({"success": False, "error": f"A persona named '{name}' already exists"}), 400
 
     success = db.update_persona(persona_id, name, content, is_default, research_mode, file_system_mode, browsing_mode)
     if not success:

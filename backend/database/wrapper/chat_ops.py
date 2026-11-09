@@ -100,6 +100,30 @@ class ChatOpsMixin(BaseMixin):
                 conn.close()
         return cache_layer.get_table("workspaces", _fetch, key_extractor=lambda row: row.get('id', ''), ttl=300)
 
+    def workspace_name_exists(self, name: str, exclude_id: str | None = None) -> bool:
+        """
+        Whether another workspace already uses this name (case-insensitive, ignoring surrounding spaces).
+
+        Args:
+            name: The candidate workspace name.
+            exclude_id: A workspace id to leave out, so renaming a workspace to its own name is allowed.
+
+        Returns:
+            True if a different workspace has the same name.
+        """
+        conn = make_connection()
+        try:
+            c = conn.cursor()
+            sql = "SELECT 1 FROM workspaces WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))"
+            params = [name]
+            if exclude_id is not None:
+                sql += " AND id != ?"
+                params.append(exclude_id)
+            c.execute(sql + " LIMIT 1", params)
+            return c.fetchone() is not None
+        finally:
+            conn.close()
+
     def create_workspace(self, name: str, icon: str = None):
         """Create a new workspace."""
         import uuid
