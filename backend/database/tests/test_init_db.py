@@ -30,6 +30,7 @@ def test_init_db(temp_db_path):
     assert "chats" in tables
     assert "messages" in tables
     assert "file_systems" in tables
+    assert "file_system_counters" not in tables
     conn.close()
 
 def test_init_db_with_legacy_data(temp_db_path):
@@ -103,6 +104,10 @@ def test_init_db_with_legacy_data(temp_db_path):
     c.execute("SELECT reasoning_content FROM messages WHERE id=2")
     reasoning = c.fetchone()[0]
     assert reasoning == "hmm"
+
+    # The legacy counter tables are gone (canvas_counters is renamed on the way, then dropped)
+    c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('canvas_counters', 'file_system_counters')")
+    assert c.fetchall() == []
 
     # The ON DELETE CASCADE recreate keeps rows and adds the attachments column
     c.execute("PRAGMA table_info(messages)")
@@ -488,3 +493,28 @@ def test_messages_attachments_backfilled_on_cascade_recreate_path():
     conn.close()
     assert json.loads(rows[1]) == [{"file_id": "f1", "name": "a.txt", "size": 3, "mime_type": "text/plain"}]
     assert rows[2] is None
+
+
+def test_init_db_drops_file_system_counters_and_keeps_numeric_id_artifacts():
+    # A database from the previous schema: current tables plus the counter table, holding an artifact
+    # with an old per-owner numeric id.
+    init_db()
+    conn = make_connection()
+    conn.execute("CREATE TABLE file_system_counters (owner_id TEXT PRIMARY KEY, counter INTEGER DEFAULT 0)")
+    conn.execute("INSERT INTO file_system_counters (owner_id, counter) VALUES ('chat_old', 7)")
+    conn.execute("INSERT INTO chats (id, title, timestamp) VALUES ('chat_old', 't', 1.0)")
+    conn.execute("INSERT INTO file_systems (id, chat_id, workspace_id, title, filename, timestamp, folder, current_version) "
+                 "VALUES ('7', 'chat_old', NULL, 'Old', 'old.txt', 1.0, '', 1)")
+    conn.execute("INSERT INTO file_system_versions (file_system_id, chat_id, workspace_id, version_number, content, author, timestamp, comment) "
+                 "VALUES ('7', 'chat_old', NULL, 1, 'old body', 'system', 1.0, 'init')")
+    conn.commit()
+    conn.close()
+
+    init_db()
+    init_db()  # idempotent
+
+    conn = make_connection()
+    assert conn.execute("SELECT name FROM sqlite_master WHERE name = 'file_system_counters'").fetchall() == []
+    assert conn.execute("SELECT title FROM file_systems WHERE id = '7' AND chat_id = 'chat_old'").fetchone()[0] == "Old"
+    assert conn.execute("SELECT content FROM file_system_versions WHERE file_system_id = '7' AND chat_id = 'chat_old'").fetchone()[0] == "old body"
+    conn.close()

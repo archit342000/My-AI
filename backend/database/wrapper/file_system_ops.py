@@ -413,26 +413,6 @@ class FileSystemOpsMixin(BaseMixin):
         owner_key = f"ws:{workspace_id}" if workspace_id else f"chat:{chat_id}"
         return cache_layer.get("file_systems", f"{owner_key}:{file_system_id}:current_version", _fetch, ttl=300)
 
-    def get_next_file_system_counter(self, chat_id: str = None, workspace_id: str = None):
-        """Get and atomically increment file_system counter for a chat or workspace."""
-        owner_id = chat_id or workspace_id
-        conn = make_connection()
-        try:
-            c = conn.cursor()
-            c.execute("BEGIN IMMEDIATE")
-            try:
-                c.execute("INSERT INTO file_system_counters (owner_id, counter) VALUES (?, 1) ON CONFLICT(owner_id) DO UPDATE SET counter = counter + 1", (owner_id,))
-                c.execute("SELECT counter FROM file_system_counters WHERE owner_id = ?", (owner_id,))
-                row = c.fetchone()
-                val = row[0] if row else 1
-                conn.commit()
-                return val
-            except:
-                conn.rollback()
-                raise
-        finally:
-            conn.close()
-
     def delete_file_system(self, file_system_id: str, chat_id: str = None, workspace_id: str = None):
         """Delete a file_system and all associated data."""
         owner_id = chat_id or workspace_id
