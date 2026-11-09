@@ -282,13 +282,21 @@ def proxy_portal_vnc(path):
 @tools_bp.route('/portal/init', methods=['POST'])
 def proxy_portal_init():
     import httpx
+    from backend.config import get_secret
     from backend.mcp_client import playwright_server_url
-    
+
     base_url = playwright_server_url.replace('/sse', '')
-    
+    key = get_secret("PLAYWRIGHT_MCP_API_KEY", "")
+    if not key:
+        log_event("portal_init_unconfigured", {})
+        return jsonify({"error": "Browser portal is not configured"}), 503
+
     try:
         with httpx.Client() as client:
-            resp = client.post(f"{base_url}/portal/init", timeout=60.0)
+            resp = client.post(f"{base_url}/portal/init", headers={"X-MCP-API-KEY": key}, timeout=60.0)
+            if resp.status_code == 401:
+                log_event("portal_init_auth_failed", {"status": 401})
+                return jsonify({"error": "Browser portal authentication failed"}), 502
             if resp.status_code != 200:
                 logger.error(f"Portal init proxy failed with status {resp.status_code}: {resp.text}")
                 return jsonify({"error": f"MCP Server error: {resp.text}"}), resp.status_code

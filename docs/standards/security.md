@@ -11,7 +11,7 @@
 - `require_auth` in `app.py` is a `before_request` hook. When `APP_PASSWORD` is set, every route (API, static, legacy UI and
   WebSocket upgrade requests) needs HTTP Basic auth. Do not add routes outside Flask (which would bypass the hook) or
   exempt paths from it.
-- Internal MCP services are reached only over Docker networks, with their own API keys. Sandboxed code runs on `code_runner_runtime`, which sits only on `runner-net`, an internal-only network with no internet, database or app route. The app reaches it through `code_runner_mcp`, a TCP relay that joins `secure-internal` and `runner-net` and forwards only port 8100.
+- Internal MCP services are reached only over Docker networks, with their own API keys, and their key checks fail closed: an unconfigured key rejects the protected routes. `playwright_mcp`'s `/portal/*` endpoints need the key too (the app adds it server-side). Sandboxed code runs on `code_runner_runtime`, which sits only on `runner-net`, an internal-only network with no internet, database or app route. The app reaches it through `code_runner_mcp`, a TCP relay that joins `secure-internal` and `runner-net` and forwards only port 8100.
 
 ## Input and output
 
