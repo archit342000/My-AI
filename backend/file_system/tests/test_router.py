@@ -438,7 +438,8 @@ def test_navigate_to_version_endpoint(): pass
 
 def test_navigate_version_passes_ids_in_order(client):
     """The route must give the manager chat_id and file_system_id by name (they were swapped positionally)."""
-    with patch('backend.file_system.manager.navigate_file_system_version', autospec=True) as mock_navigate:
+    with patch('backend.file_system.manager.navigate_file_system_version', autospec=True) as mock_navigate, \
+         patch('backend.file_system.router._fs_meta_or_404', return_value=({"id": "fs1"}, None)):  # the file system exists for c1
         mock_navigate.return_value = {"success": True, "version_number": 2}
         response = client.post('/api/file_system/fs1/navigate-version', json={"chat_id": "c1", "version_number": 2})
     assert response.status_code == 200
