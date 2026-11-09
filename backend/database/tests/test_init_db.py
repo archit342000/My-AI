@@ -19,6 +19,7 @@ def patch_db_path(temp_db_path):
 # Every index the schema defines (all of them live in init_db._create_indexes).
 EXPECTED_INDEXES = {
     "messages": {"idx_messages_chat_id"},
+    "files": {"idx_files_chat_id"},
     "file_systems": {"idx_file_systems_chat_id", "idx_file_systems_title"},
     "file_system_versions": {"idx_file_system_versions_file_system_id"},
     "file_system_permissions": {"idx_file_system_permissions_file_system_id"},
@@ -808,6 +809,56 @@ def test_init_db_finishes_and_restores_indexes_when_a_rebuild_fails():
     assert conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0] == 1
     # The tables that were not rebuilt keep every index and the rebuilt messages table has its index again.
     for table, expected in EXPECTED_INDEXES.items():
-        if table != "files":
-            assert expected <= _index_names(conn, table), table
+        assert expected <= _index_names(conn, table), table
     conn.close()
+
+
+@pytest.mark.parametrize("sql", [
+    "SELECT * FROM files WHERE chat_id = ? ORDER BY created_at DESC",   # artifact_ops.get_chat_files
+    "DELETE FROM files WHERE chat_id = ?",                              # chat_ops.delete_all_chats
+    "SELECT c.id FROM chats c WHERE EXISTS (SELECT 1 FROM files f WHERE f.chat_id = c.id) AND c.id = ?",  # sidebar filter
+])
+def test_files_chat_id_queries_use_the_index(sql):
+    init_db()
+    conn = make_connection()
+    plan = " ".join(r[3] for r in conn.execute("EXPLAIN QUERY PLAN " + sql, ("c1",)))
+    assert "idx_files_chat_id" in plan, plan
+    conn.close()
+
+
+def test_files_index_is_added_to_the_previous_schema_without_a_rebuild():
+    # The previous schema: files already cascades (so step 11 does not rebuild it) but has no chat_id index.
+    def setup(conn):
+        conn.execute("CREATE TABLE files (id TEXT PRIMARY KEY, chat_id TEXT NOT NULL, original_filename TEXT NOT NULL, "
+                     "stored_filename TEXT NOT NULL, mime_type TEXT NOT NULL, file_size INTEGER NOT NULL, content_text TEXT, "
+                     "processing_status TEXT DEFAULT 'pending', created_at REAL DEFAULT (strftime('%s', 'now')), "
+                     "FOREIGN KEY(chat_id) REFERENCES chats(id) ON DELETE CASCADE)")
+        conn.execute("INSERT INTO files (id, chat_id, original_filename, stored_filename, mime_type, file_size) "
+                     "VALUES ('f1', 'c1', 'a.txt', 's.txt', 'text/plain', 3)")
+    _seed(setup)
+    conn = make_connection()
+    assert "idx_files_chat_id" not in _index_names(conn, "files")
+    conn.close()
+    for _ in range(2):
+        init_db()
+        conn = make_connection()
+        assert "idx_files_chat_id" in _index_names(conn, "files") and _count(conn, "files") == 1
+        assert not {n for n in _table_names(conn) if n.endswith(("_old", "_new"))}
+        conn.close()
+
+
+def test_files_index_exists_right_after_a_cascade_rebuild_of_files():
+    # A pre-cascade files table is rebuilt by migration 11 in this very run; the index must survive it.
+    def setup(conn):
+        conn.execute("CREATE TABLE files (id TEXT PRIMARY KEY, chat_id TEXT NOT NULL, original_filename TEXT NOT NULL, "
+                     "stored_filename TEXT NOT NULL, mime_type TEXT NOT NULL, file_size INTEGER NOT NULL, content_text TEXT, "
+                     "processing_status TEXT DEFAULT 'pending', created_at REAL)")
+        conn.execute("INSERT INTO files (id, chat_id, original_filename, stored_filename, mime_type, file_size) "
+                     "VALUES ('f1', 'c1', 'a.txt', 's.txt', 'text/plain', 3)")
+    _seed(setup)
+    for _ in range(2):
+        init_db()
+        conn = make_connection()
+        assert "ON DELETE CASCADE" in _ddl(conn, "files") and _count(conn, "files") == 1
+        assert "idx_files_chat_id" in _index_names(conn, "files")
+        conn.close()

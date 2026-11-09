@@ -130,6 +130,7 @@ def _create_indexes(c: sqlite3.Cursor) -> None:
         c: Cursor on the connection `init_db()` is migrating.
     """
     c.execute('CREATE INDEX IF NOT EXISTS idx_messages_chat_id ON messages(chat_id)')
+    c.execute('CREATE INDEX IF NOT EXISTS idx_files_chat_id ON files(chat_id)')
     c.execute('CREATE INDEX IF NOT EXISTS idx_file_systems_chat_id ON file_systems(chat_id)')
     c.execute('CREATE INDEX IF NOT EXISTS idx_file_systems_title ON file_systems(title)')
     c.execute('CREATE INDEX IF NOT EXISTS idx_file_system_versions_file_system_id ON file_system_versions(file_system_id)')
