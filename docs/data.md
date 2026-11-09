@@ -21,6 +21,8 @@ Mount it as a volume; losing it loses chats, files and vectors.
 - Main tables: `workspaces`, `chats`, `messages`, `sub_agent_messages`, `personas`, `skills`, `memories`, `files`, `collections`,
   `file_systems` (+ `file_system_versions`, `file_system_permissions`, `file_system_counters`), `pending_callbacks`,
   `system_settings`, `clipboard`, `code_execution_history`. `backend/database/init_db.py` is the authority for columns.
+- Artifact (`file_systems`) ids are UUID4 strings. Older artifacts may still have per-owner numeric ids, which keep working.
+  `file_system_counters` is legacy and no longer used to create ids.
 - One writer at a time. Keep transactions short and never hold one across `await` or network calls (`docs/pitfalls.md`).
 
 ## Migrations

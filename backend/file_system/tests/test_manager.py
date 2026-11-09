@@ -2,8 +2,10 @@ import pytest
 from unittest.mock import patch, MagicMock, AsyncMock
 import os
 import json
+import uuid
 
 from backend.file_system import manager
+from backend.file_system.utils import generate_fs_file_id as real_generate_fs_file_id
 from backend.file_system.fuzzy_matcher import MatchNotFoundError, MultipleMatchesError
 
 @pytest.fixture
@@ -106,6 +108,16 @@ async def test_create_fs_file(mock_db, mock_channel, mock_utils, mock_aiofiles):
     assert res["success"] is False
     assert "Invalid path" in res["error"]
     mock_utils["sanitize_path"].side_effect = lambda x: x
+
+@pytest.mark.anyio
+async def test_create_fs_file_assigns_uuid4_id(mock_db, mock_channel, mock_utils, mock_aiofiles):
+    """The create path uses the real id helper (not the fixture's mock) and gets a UUID4."""
+    mock_db.get_file_system_meta_by_path.return_value = None
+    with patch('backend.file_system.manager.generate_fs_file_id', new=real_generate_fs_file_id):
+        res = await manager.create_fs_file("chat_123", "test.txt", "content")
+    assert res["success"] is True
+    assert uuid.UUID(res["file_system_id"]).version == 4
+    assert mock_db.create_file_system_with_version.call_args.kwargs["file_system_id"] == res["file_system_id"]
 
 @pytest.mark.anyio
 async def test_create_fs_file_language_inference(mock_db, mock_channel, mock_utils, mock_aiofiles):
@@ -288,6 +300,22 @@ def test_update_file_system_metadata(mock_db, mock_os, mock_utils):
         res = manager.update_file_system_metadata("c1", "old.txt", new_path="new.txt")
         assert res["success"] is True
         mock_os.rename.assert_called()
+
+def test_update_file_system_metadata_owner_change_uses_uuid(mock_db, mock_os, mock_utils):
+    mock_utils["resolve_owner_and_physical_path"].return_value = (None, "ws_1", "/physical/new")
+    mock_os.path.exists.return_value = False
+    with patch('backend.file_system.manager.resolve_path_to_fs_file') as m_res:
+        m_res.return_value = {"id": "1", "chat_id": "c1", "workspace_id": None}
+        mock_db.get_file_system_meta_by_path.return_value = None
+
+        res = manager.update_file_system_metadata("c1", "old.txt", new_path="workspace/new.txt")
+
+    assert res["success"] is True
+    new_id = mock_db.migrate_file_system_owner.call_args.kwargs["new_id"]
+    assert str(uuid.UUID(new_id)) == new_id
+    assert uuid.UUID(new_id).version == 4
+    assert new_id != "1"
+    assert res["file_system_id"] == new_id
 
 @pytest.mark.anyio
 async def test_navigate_file_system_version(mock_db, mock_aiofiles, mock_utils):

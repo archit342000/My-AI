@@ -1,9 +1,10 @@
 import os
+import uuid
 import pytest
 from unittest.mock import patch, MagicMock
 from backend.file_system.utils import (
     sanitize_path, get_workspace_for_chat, resolve_owner_and_physical_path,
-    ensure_physical_dir_exists, generate_fs_file_id, sanitize_filename, _extract_fs_file_type
+    ensure_physical_dir_exists, generate_fs_file_id, new_fs_file_id, sanitize_filename, _extract_fs_file_type
 )
 
 @pytest.fixture
@@ -79,9 +80,20 @@ def test_ensure_physical_dir_exists(mock_makedirs):
 @pytest.mark.anyio
 @patch("backend.database.db.get_next_file_system_counter")
 async def test_generate_fs_file_id(mock_get_counter):
-    mock_get_counter.return_value = 42
-    res = await generate_fs_file_id("chat1")
-    assert res == "42"
+    first = await generate_fs_file_id("chat1")
+    second = await generate_fs_file_id("chat1")
+    assert str(uuid.UUID(first)) == first
+    assert uuid.UUID(first).version == 4
+    assert first != second
+    # The legacy per-owner counter must no longer be used for ids.
+    mock_get_counter.assert_not_called()
+
+def test_new_fs_file_id():
+    ids = {new_fs_file_id() for _ in range(5)}
+    assert len(ids) == 5
+    for fs_id in ids:
+        assert str(uuid.UUID(fs_id)) == fs_id
+        assert uuid.UUID(fs_id).version == 4
 
 def test_sanitize_filename():
     assert sanitize_filename("foo/bar") == "foo_bar"

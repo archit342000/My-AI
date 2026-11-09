@@ -1,4 +1,5 @@
 import os
+import uuid
 import pytest
 import tempfile
 import shutil
@@ -148,6 +149,29 @@ def test_file_system_ops(temp_db):
     # 19. delete_file_system
     db.delete_file_system("fs_123_migrated", chat_id=chat_id_new)
     assert db.get_file_system_meta("fs_123_migrated", chat_id=chat_id_new) is None
+
+def test_legacy_numeric_id_still_readable_and_migratable(temp_db):
+    db = temp_db
+    for chat in ("legacy_a", "legacy_b", "legacy_c"):
+        db.ensure_chat_exists(chat)
+    for chat in ("legacy_a", "legacy_b"):
+        db.create_file_system_with_version(
+            file_system_id="1", chat_id=chat, title="Legacy", filename="legacy.txt", content="v1"
+        )
+    assert db.get_file_system_meta("1", chat_id="legacy_a") is not None
+    assert db.get_file_system_meta("1", chat_id="legacy_b") is not None
+
+    new_id = str(uuid.uuid4())
+    db.migrate_file_system_owner(
+        old_id="1", new_id=new_id,
+        old_chat_id="legacy_a", old_workspace_id=None,
+        new_chat_id="legacy_c", new_workspace_id=None,
+        new_filename="moved.txt", new_title="Moved"
+    )
+    assert db.get_file_system_meta("1", chat_id="legacy_a") is None
+    assert db.get_file_system_meta(new_id, chat_id="legacy_c")["filename"] == "moved.txt"
+    assert len(db.get_file_system_versions(new_id, chat_id="legacy_c")) == 1
+    assert db.get_file_system_meta("1", chat_id="legacy_b") is not None
 
 def test_file_system_workspace_isolation(temp_db):
     db = temp_db

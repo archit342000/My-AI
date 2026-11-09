@@ -1,5 +1,6 @@
 import os
 import re
+import uuid
 from typing import Optional, List, Tuple
 from backend.config import DATA_DIR
 from backend.database import db
@@ -92,12 +93,17 @@ def ensure_physical_dir_exists(physical_path: str, is_file_path: bool = True):
         dir_path = physical_path
     os.makedirs(dir_path, exist_ok=True)
 
+def new_fs_file_id() -> str:
+    """Return a new globally unique file_system ID (UUID4 string)."""
+    return str(uuid.uuid4())
+
 async def generate_fs_file_id(chat_id: str = None, workspace_id: str = None, file_system_type: str = "custom") -> str:
     """
-    Generate a unique file_system ID using the atomic SQLite counter-based system.
+    Generate a globally unique file_system ID (a UUID4 string).
+
+    The owner and type arguments are kept for signature compatibility; they do not affect the id.
     """
-    counter = db.get_next_file_system_counter(chat_id=chat_id, workspace_id=workspace_id)
-    return str(counter)
+    return new_fs_file_id()
 
 def sanitize_filename(text: str) -> str:
     """
