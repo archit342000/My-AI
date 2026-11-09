@@ -10,7 +10,7 @@
 | :--- | :--- | :--- |
 | `__init__.py` | Package entry point and export aggregator. | `log_event`, `log_llm_call`, `log_tool_call` |
 | `logger.py` | Core logging logic and structured data persistence. | `log_event`, `log_llm_call`, `log_tool_call`, `log_embedding_call` |
-| `router.py` | API endpoints for log retrieval and log UI support. | `logs_bp` |
+| `router.py` | API endpoints for log retrieval and log UI support. Admin only (a blueprint `before_request`), since the logs and raw database tables hold every user's data. | `logs_bp` |
 
 ## 🧩 Architectural Context
 *   **Dependencies:**

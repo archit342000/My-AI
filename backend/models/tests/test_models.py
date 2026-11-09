@@ -27,10 +27,11 @@ def reset_caching():
     backend.models._cached_config = None
 
 @pytest.fixture
-def test_app():
-    """Create a minimal Flask app with models blueprint registered."""
+def test_app(login_as, admin_a):
+    """A minimal Flask app with the models blueprint, logged in as an admin (users are tested with `login_as(test_app, user_b)`)."""
     app = Flask(__name__)
     app.register_blueprint(models_bp, url_prefix='/api/models')
+    login_as(app, admin_a)
     return app
 
 @pytest.fixture
@@ -263,4 +264,44 @@ def test_pass_through_trailing_and_non_trailing_slashes(mock_req, client):
         # Check forwarded URL
         _, kwargs = mock_req.call_args_list[-1]
         assert kwargs["url"] == "http://localhost:5001/api/models/"
+
+
+@pytest.mark.parametrize("method,path", [("post", "/api/models/load"), ("put", "/api/models/x"), ("delete", "/api/models/x"),
+                                          ("post", "/api/models/unload"), ("options", "/api/models/load")])
+@patch("backend.models.requests.request")
+def test_model_changes_are_403_for_a_user_and_nothing_is_forwarded(mock_req, method, path, test_app, login_as, user_b):
+    login_as(test_app, user_b)
+    response = getattr(test_app.test_client(), method)(path, json={"model": "m"})
+    assert response.status_code == 403
+    mock_req.assert_not_called()  # no load, unload or any other call reaches the proxy
+
+
+@patch("backend.models.requests.request")
+def test_model_list_stays_open_to_a_user_and_identity_headers_are_not_forwarded(mock_req, test_app, login_as, user_b):
+    mock_response = MagicMock()
+    mock_response.iter_content.return_value = [b"[]"]
+    mock_response.status_code = 200
+    mock_response.headers = {"Content-Type": "application/json"}
+    mock_req.return_value = mock_response
+    login_as(test_app, user_b)
+    response = test_app.test_client().get("/api/models/", headers={
+        "Cf-Access-Jwt-Assertion": "jwt-token", "Cookie": "CF_Authorization=abc", "Authorization": "Bearer secret",
+        "X-Custom": "kept", "Accept": "application/json"})
+    assert response.status_code == 200
+    forwarded = {k.lower(): v for k, v in mock_req.call_args.kwargs["headers"].items()}
+    assert not {"cf-access-jwt-assertion", "cookie", "authorization", "host"} & set(forwarded)
+    assert forwarded["x-custom"] == "kept" and forwarded["accept"] == "application/json"
+
+
+@patch("backend.models.requests.request")
+def test_the_admin_can_still_change_models_and_headers_are_stripped_for_every_method(mock_req, test_app):
+    mock_response = MagicMock()
+    mock_response.iter_content.return_value = [b"ok"]
+    mock_response.status_code = 200
+    mock_response.headers = {}
+    mock_req.return_value = mock_response
+    response = test_app.test_client().post("/api/models/load", json={"model": "m"}, headers={"Cookie": "CF_Authorization=abc", "CF-ACCESS-JWT-ASSERTION": "t"})
+    assert response.status_code == 200
+    forwarded = {k.lower() for k in mock_req.call_args.kwargs["headers"]}
+    assert "cookie" not in forwarded and "cf-access-jwt-assertion" not in forwarded
 

@@ -4,6 +4,7 @@ from flask import Blueprint, request, Response
 import requests
 
 from backend import config
+from backend.auth.context import forbid_non_admin
 
 models_bp = Blueprint('models', __name__)
 
@@ -49,13 +50,25 @@ DEFAULT_HARDCODED_CONFIG = {
     }
 }
 
+# Never sent upstream: the caller's identity and session.
+_NOT_FORWARDED_HEADERS = {'host', 'cookie', 'authorization', 'cf-access-jwt-assertion'}
+
 @models_bp.route('/<path:path>', methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'])
 @models_bp.route('/', defaults={'path': ''}, endpoint='pass_through_slash', methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'])
 @models_bp.route('', defaults={'path': ''}, methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'])
 def pass_through(path):
-    """Stateless pass-through forwarding all /api/models requests directly to the proxy microservice."""
+    """
+    Stateless pass-through forwarding /api/models requests to the proxy microservice.
+
+    Reading the model list (GET) is open to every user; loading, unloading and any other change is admin only. The
+    caller's identity (the Access JWT, cookies, Authorization) is never forwarded: the proxy uses its own keys.
+    """
+    if request.method not in ('GET', 'HEAD'):
+        denied = forbid_non_admin()
+        if denied:
+            return denied
     url = f"{config.AI_PROXY_URL.rstrip('/')}/api/models/{path}"
-    headers = {key: value for key, value in request.headers if key.lower() != 'host'}
+    headers = {key: value for key, value in request.headers if key.lower() not in _NOT_FORWARDED_HEADERS}
     response = requests.request(
         method=request.method,
         url=url,

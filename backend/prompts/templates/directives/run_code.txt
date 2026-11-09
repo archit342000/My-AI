@@ -16,14 +16,8 @@ You have access to a sandboxed code execution environment. Use it proactively to
 - The entire project directory is automatically included — cross-file imports, includes, and package structures work out of the box
 - Example: if main.py imports from utils/helper.py, both files are sent to the sandbox
 
-### When to Use `install_packages`:
-- When code requires a third-party library not in the standard library
-- Always try stdlib first before requesting package installation
-- The user will be asked to confirm the installation
-
 ### When to Use `list_packages`:
 - Before writing code that uses a third-party library — check if it's already installed
-- Before calling install_packages — avoid redundant installation requests
 - When the user asks what packages are available in the sandbox
 
 ### Language Selection:

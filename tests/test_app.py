@@ -583,3 +583,15 @@ def test_code_execution_ws_proxy_refuses_a_chat_the_caller_does_not_own(mock_col
     mock_collect_project_files.assert_not_called()  # the foreign chat's files are never read
     mock_create_connection.assert_not_called()
 
+
+@pytest.mark.parametrize("path", ["/legacy/", "/legacy/index.html", "/legacy/logs.html", "/legacy/js/app.js"])
+def test_legacy_ui_is_403_for_a_user_and_200_for_the_admin(client, path):
+    user_row = {**ADMIN_ROW, "id": "user-1", "email": "u@test", "role": "user"}
+    with patch('app.send_from_directory', return_value="static asset") as send, patch('app._serve_legacy_page', return_value="legacy page") as page, \
+         patch('app.db.get_user_by_email', return_value=user_row):
+        denied = client.get(path)
+    assert denied.status_code == 403 and denied.get_json() == {"error": "Forbidden"}
+    send.assert_not_called(); page.assert_not_called()  # nothing is served
+    with patch('app.send_from_directory', return_value="static asset"), patch('app._serve_legacy_page', return_value="legacy page"):
+        assert client.get(path).status_code == 200  # the autouse fixture's user is the admin
+

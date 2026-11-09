@@ -1336,3 +1336,50 @@ def test_save_chat_with_a_foreign_persona_is_404_and_writes_nothing(mock_db, as_
     assert response.status_code == 404 and response.get_json() == {"error": "Persona not found"}
     mock_db.get_persona.assert_called_once_with("persona-of-a", user_b["id"])
     mock_db.save_chat.assert_not_called()
+
+
+# =============================================================================
+# Git mode is admin only
+# =============================================================================
+
+@pytest.mark.parametrize("url,body", [
+    ('/v1/chat/completions', {"chatId": "chat1", "model": "m", "messages": [{"role": "user", "content": "hi"}], "gitMode": True}),
+    ('/api/chats/chat1/resume', {"gitMode": True}),
+])
+@patch('backend.chat.router.task_manager')
+@patch('backend.chat.router.db')
+def test_enabling_git_mode_is_403_for_a_user_and_writes_nothing(mock_db, mock_tm, url, body, client, owned_by_user_a):
+    response = client.post(url, json=body)
+    assert response.status_code == 403 and response.get_json() == {"error": "Forbidden"}
+    mock_tm.claim_turn.assert_not_called()  # no turn claimed
+    owned_by_user_a.ensure_chat_exists.assert_not_called()  # no chat created
+    assert [c for c in mock_db.mock_calls if not c[0].startswith("get_")] == []  # no message, no write
+
+
+@pytest.mark.parametrize("url,body", [
+    ('/v1/chat/completions', {"chatId": "chat1", "model": "m", "messages": [{"role": "user", "content": "hi"}], "gitMode": False}),
+    ('/v1/chat/completions', {"chatId": "chat1", "model": "m", "messages": [{"role": "user", "content": "hi"}]}),
+    ('/api/chats/chat1/resume', {"gitMode": 0}),
+])
+@patch('backend.chat.router.ChatHandler')
+@patch('backend.chat.router.task_manager')
+@patch('backend.chat.router.db')
+def test_a_user_without_git_mode_is_not_blocked(mock_db, mock_tm, mock_handler, url, body, client):
+    mock_tm.claim_turn.return_value = True
+    mock_db.get_messages.return_value = [{"role": "user", "content": "x"}]
+    mock_db.get_chat.return_value = {"last_model": "m"}
+    mock_db.add_message.return_value = 1
+    assert client.post(url, json=body).status_code != 403
+
+
+@patch('backend.chat.router.ChatHandler')
+@patch('backend.chat.router.task_manager')
+@patch('backend.chat.router.db')
+def test_the_admin_can_enable_git_mode(mock_db, mock_tm, mock_handler, app, login_as, admin_a):
+    login_as(app, admin_a)
+    mock_tm.claim_turn.return_value = True
+    mock_db.get_messages.return_value = [{"role": "user", "content": "x"}]
+    mock_db.get_chat.return_value = {"last_model": "m"}
+    response = app.test_client().post('/api/chats/chat1/resume', json={"gitMode": True})
+    assert response.status_code != 403
+

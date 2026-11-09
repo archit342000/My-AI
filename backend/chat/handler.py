@@ -103,6 +103,8 @@ class ChatHandler:
         owner = db.get_chat_owner(self.chat_id)
         if owner is None:
             raise ValueError(f"Chat {self.chat_id} does not exist")
+        owner_user = db.get_user(owner)
+        owner_is_admin = bool(owner_user and owner_user.get('role') == 'admin')
 
         # Clear resume_suppressed flag on new normal turn
         db.update_chat(self.chat_id, resume_suppressed=0)
@@ -117,6 +119,10 @@ class ChatHandler:
             ('codeExecutionMode', 'code_execution_mode')
         ]:
             val = kwargs.get(flag_name)
+            if flag_name == 'gitMode' and val and not owner_is_admin:
+                # Git reaches host-wide tools: only admin-owned chats get it (the routes already answer 403).
+                log_event("chat_git_mode_denied", {"chat_id": self.chat_id})
+                continue
             if val is not None:
                 db_updates[db_col] = 1 if val else 0
         
@@ -312,10 +318,12 @@ class ChatHandler:
                     from backend.chat.prompt_builder import PromptBuilder, PromptContext
                     
                     owner = chat_metadata.get('user_id')
+                    owner_user = db.get_user(owner) if owner else None
                     ctx = PromptContext(
                         chat_metadata=chat_metadata,
                         preferences=db.get_all_preferences(owner) if is_user_preferences else [],
                         skills=db.get_all_skills(owner),
+                        is_admin=bool(owner_user and owner_user.get('role') == 'admin'),
                     )
                     system_prompt = PromptBuilder(ctx).build()
                     skills_by_name = {s['name']: s for s in ctx.skills}

@@ -5,10 +5,11 @@ from unittest.mock import MagicMock, patch
 from backend.tools.router import tools_bp
 
 @pytest.fixture
-def app(login_as, user_a):
+def app(login_as, admin_a):
+    """The tools app logged in as an admin (same id as user_a); the admin-only routes are tested with user_b."""
     app = Flask(__name__)
     app.register_blueprint(tools_bp, url_prefix='/tools')
-    login_as(app, user_a)
+    login_as(app, admin_a)
     return app
 
 @pytest.fixture(autouse=True)
@@ -533,4 +534,38 @@ def test_execution_history_for_the_owner_still_works(client, mock_db):
     mock_db.get_code_execution_history.return_value = [{"id": 1}]
     assert client.get('/tools/code-execution/history/chat1').get_json() == [{"id": 1}]
     mock_db.get_code_execution_history.assert_called_once_with("chat1", limit=50, offset=0)
+
+
+# --- admin-only config routes -------------------------------------------------------------------
+
+ADMIN_ONLY_CONFIG_ROUTES = [
+    ("get", "/tools/config/agents", None),
+    ("patch", "/tools/config/agents/search_web", {"thinking_profile": "none", "max_tokens": 1}),
+    ("get", "/tools/config/browser", None),
+    ("patch", "/tools/config/browser", {"stealth_level": "advanced"}),
+    ("get", "/tools/config/settings", None),
+    ("post", "/tools/config/settings", {"github_pat": "stolen", "git_allowed_commands": ["push"]}),
+]
+
+
+@pytest.mark.parametrize("method,url,body", ADMIN_ONLY_CONFIG_ROUTES)
+def test_config_routes_are_403_for_a_user_and_change_nothing(method, url, body, app, login_as, user_b, mock_db):
+    from backend import config
+    from backend.chat.agent_handler import AGENT_PROFILES
+    login_as(app, user_b)
+    before = (config.BROWSER_STEALTH_LEVEL, config.SEARCH_WEB_AGENT_MAX_TOKENS, dict(AGENT_PROFILES))
+    kwargs = {"json": body} if body is not None else {}
+    response = getattr(app.test_client(), method)(url, **kwargs)
+    assert response.status_code == 403
+    assert response.get_json() == {"error": "Forbidden"}
+    assert (config.BROWSER_STEALTH_LEVEL, config.SEARCH_WEB_AGENT_MAX_TOKENS, dict(AGENT_PROFILES)) == before
+    mock_db.set_setting.assert_not_called()
+    mock_db.get_all_settings.assert_not_called()  # not even read (the settings hold the git allow-list)
+
+
+@pytest.mark.parametrize("method,url,body", ADMIN_ONLY_CONFIG_ROUTES)
+def test_config_routes_work_for_the_admin(method, url, body, client, mock_db):
+    mock_db.get_all_settings.return_value = {}
+    kwargs = {"json": body} if body is not None else {}
+    assert getattr(client, method)(url, **kwargs).status_code in (200, 400)  # the route ran (400 = its own validation)
 

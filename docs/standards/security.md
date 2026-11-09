@@ -30,9 +30,20 @@
   a `file_id` call `file_for_chat(file_id, chat_id)` (same-owner check, so a user's other chats still work) and answer "File not found";
   RAG retrieval for a file also filters on the file's `chat_id`. Code execution (run-file, history, the live-run WebSocket) checks the
   chat owner before reading or running anything.
-- Every chat, workspace, file, file-system, RAG, code-execution, persona, skill and preference path is now owner-checked. Not yet
-  covered (a later change makes them admin-only): the logs viewer routes (`/api/logs/db/...` read every user's rows), the admin tools
-  and run serialisation.
+- Every chat, workspace, file, file-system, RAG, code-execution, persona, skill and preference path is now owner-checked.
+
+## Admin-only
+- Everything that changes process-wide state, exposes other users' data or reaches host-wide tools is admin only (`admin` role,
+  `backend/auth/context.py`): non-admins get `403 {"error": "Forbidden"}` with no side effect.
+  - Routes: system, agent and browser settings (`/api/tools/config/*`, GET too, since they hold the git allow-list and runner limits),
+    the whole logs blueprint (`/api/logs/*`, via a `before_request` using `forbid_non_admin`, so new routes are covered; it includes the
+    raw database tables), model load, unload and every non-GET `/api/models` call (reading the model list stays open), and `/legacy/*` (with `FRONTEND=legacy` the same static files are the main UI for every user, a deployment choice; the data routes behind them stay checked).
+  - The model pass-through never forwards the caller's identity: `Host`, `Cookie`, `Authorization` and `Cf-Access-Jwt-Assertion`
+    are dropped for every method.
+  - Tools: set `admin_only=True` on a `ToolSpec` that reaches host-wide state (today `git_agent`, `execute_git`, `install_packages`).
+    The registry offers such tools only when `active_modes["admin"]` (the chat owner's role), and `ToolHandler` refuses them for any
+    other owner even when the model names one. Turning git mode on (`gitMode` in completions or resume) is a `403` for non-admins,
+    and the handler drops it as a second line of defence.
 
 ## Input and output
 

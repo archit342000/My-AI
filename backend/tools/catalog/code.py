@@ -90,6 +90,7 @@ INSTALL_PACKAGES = ToolSpec(
     tool_type=ToolType.PURE,
     scopes=(ToolScope.MAIN,),
     requires_mode="code_execution_mode",
+    admin_only=True,
 )
 
 LIST_PACKAGES = ToolSpec(

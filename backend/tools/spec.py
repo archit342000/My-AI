@@ -34,6 +34,7 @@ class ToolSpec:
     tool_type: ToolType = ToolType.PURE
     scopes: tuple = ()                   # Tuple of ToolScope values (frozen dataclass needs hashable)
     requires_mode: Optional[str] = None  # Mode flag name (e.g. "research_mode") — tool only appears when this mode is active
+    admin_only: bool = False             # Reaches host-wide state (git, package installs): offered to and runnable by admin-owned chats only
 
     @property
     def directives(self) -> str:
