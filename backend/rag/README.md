@@ -9,7 +9,7 @@
 | File | Purpose | Key Symbols/Exports |
 | :--- | :--- | :--- |
 | `__init__.py` | Package entry point and high-level export aggregator. | `RAGManager`, `FileRAG` |
-| `chunking.py` | Language-aware text splitting and metadata extraction. | `chunk_code_text`, `chunk_document_text` |
+| `chunking.py` | Language-aware text splitting and metadata extraction. | `chunk_code_text`, `chunk_document_text`, `content_to_index_text` |
 | `embeddings.py` | Integration with external embedding inference services. | `AIEmbeddingFunction` |
 | `file_rag.py` | Semantic search and indexing for user-uploaded files. | `FileRAG` |
 | `manager.py` | Central controller for vector collections and lifecycle. | `RAGManager` |
@@ -23,7 +23,7 @@
     - `tiktoken`: Used for token-aware chunking.
     - `backend.config`: Stores vector store paths and embedding model settings.
 *   **Flow:**
-    1. **Ingestion:** Documents are passed through `chunking.py` to create semantically meaningful segments.
+    1. **Ingestion:** Stored file content is JSON (`pages` for PDFs, `text` for everything else); `content_to_index_text` unwraps it (pages become page markers, text becomes plain text) before the documents are passed through `chunking.py` (file type is detected on that plain text, so CSV and TSV uploads now use the row-based spreadsheet chunker; a stored wrapper with an invalid payload raises and the file is not indexed) to create semantically meaningful segments. The stored content is not changed.
     2. **Embedding:** Segments are converted to vectors via `AIEmbeddingFunction`.
     3. **Storage:** Vectors and metadata are stored in specialized ChromaDB collections managed by `RAGManager`.
     4. **Retrieval:** Agents perform hybrid (semantic + keyword) searches to gather relevant context for LLM prompts.

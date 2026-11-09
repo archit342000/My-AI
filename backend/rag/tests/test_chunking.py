@@ -1,3 +1,4 @@
+import json
 import unittest
 from backend.rag.chunking import (
     ChunkResult, strip_page_markers, resolve_page_number, detect_file_type,
@@ -5,7 +6,7 @@ from backend.rag.chunking import (
     _analyze_document_content, _ensure_hard_limit, _find_function_end,
     _split_mixed_content, chunk_code_text, _chunk_by_code_structure,
     _chunk_by_lines, chunk_spreadsheet_text, chunk_mixed_text,
-    chunk_document_text, extract_code_metadata, extract_document_metadata
+    chunk_document_text, extract_code_metadata, extract_document_metadata, content_to_index_text
 )
 
 class TestChunking(unittest.TestCase):
@@ -180,6 +181,32 @@ class TestChunking(unittest.TestCase):
         self.assertIn("Section 2", meta['section_headers'])
         self.assertIn("Subsection 1.1", meta['subsection_headers'])
         self.assertIn("Subsection 2.1", meta['subsection_headers'])
+
+class TestContentToIndexText(unittest.TestCase):
+
+    def test_page_json_becomes_page_markers_that_strip_back_to_the_page_text(self):
+        content = json.dumps({"format": "pages", "pages": ["First page.\nSecond line.", "", "Third page."]})
+        text = content_to_index_text(content)
+        self.assertNotIn('"format"', text)
+        clean, page_map = strip_page_markers(text)
+        self.assertIn("First page.\nSecond line.", clean)
+        self.assertIn("Third page.", clean)
+        self.assertEqual([p for _, p in page_map], [1, 2, 3])  # the empty page keeps its number
+
+    def test_text_json_is_unwrapped(self):
+        raw = "line one\nline \"two\"\n"
+        self.assertEqual(content_to_index_text(json.dumps({"format": "text", "text": raw})), raw)
+
+    def test_other_input_is_returned_unchanged(self):
+        for value in ("plain text", "[1, 2, 3]", '{"format": "other", "text": "x"}', '{"no": "format"}', "42"):
+            self.assertEqual(content_to_index_text(value), value)
+
+    def test_known_format_with_an_invalid_payload_raises(self):
+        for value in ('{"format": "pages", "pages": "not a list"}', '{"format": "pages", "pages": [1, 2]}',
+                      '{"format": "text", "text": 5}'):
+            with self.assertRaises(ValueError):
+                content_to_index_text(value)
+
 
 if __name__ == '__main__':
     unittest.main()

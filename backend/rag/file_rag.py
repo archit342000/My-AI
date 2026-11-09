@@ -13,7 +13,8 @@ from backend.rag.chunking import (
     extract_code_metadata,
     extract_document_metadata,
     strip_page_markers,
-    resolve_page_number
+    resolve_page_number,
+    content_to_index_text
 )
 
 class FileRAG(RAGStore):
@@ -31,14 +32,16 @@ class FileRAG(RAGStore):
         if not self._initialized or not content_text or len(content_text.strip()) < 50:
             return []
 
+        # Stored content is JSON (pages or text): index the text itself, with page markers for PDFs.
+        # Strip the markers and build the page map before detecting the type, so JSON or marker lines
+        # do not skew the classification.
+        clean_text, page_map = strip_page_markers(content_to_index_text(content_text))
+
         if file_type_override is not None:
             file_type = file_type_override
             detection_meta = {"overridden": True}
         else:
-            file_type, detection_meta = detect_file_type(filename or "", content_text)
-
-        # Pre-process content to strip page markers and build page map
-        clean_text, page_map = strip_page_markers(content_text)
+            file_type, detection_meta = detect_file_type(filename or "", clean_text)
 
         if file_type == 'spreadsheet':
             chunks = chunk_spreadsheet_text(clean_text, config.EMBEDDING_MAX_TOKENS_FILE)

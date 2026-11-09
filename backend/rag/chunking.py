@@ -7,6 +7,7 @@ This module provides:
 - Row-based chunking for spreadsheet data
 - Hybrid chunking for mixed content
 """
+import json
 import re
 from typing import Tuple, List, Dict, Optional
 import bisect
@@ -52,6 +53,49 @@ def strip_page_markers(text: str) -> Tuple[str, List[Tuple[int, int]]]:
         clean_lines.append(line)
         
     return '\n'.join(clean_lines), page_map
+
+def content_to_index_text(content: str) -> str:
+    """
+    Turns stored file content into the text that is chunked and embedded.
+
+    Uploads are stored as JSON: `{"format": "pages", "pages": [...]}` for PDFs and
+    `{"format": "text", "text": "..."}` for everything else. Page JSON becomes
+    `--- PAGE_START_N ---` / `--- PAGE_END_N ---` marker blocks (1-indexed, empty pages kept so the
+    numbers match `read_file_range`), text JSON becomes its plain text, and any other input is returned
+    unchanged. The stored content itself is never modified.
+
+    A user-uploaded JSON file that happens to have a top-level `format` key is stored as is, so it is
+    read like a stored wrapper here: a valid payload is unwrapped, an invalid one raises (the callers log
+    it and the file is not indexed), the same way `FileManager` reads it.
+
+    Args:
+        content: The stored `content_text` of a file.
+
+    Returns:
+        The text to chunk.
+
+    Raises:
+        ValueError: If the content has a known `format` but an invalid payload.
+    """
+    try:
+        data = json.loads(content)
+    except json.JSONDecodeError:
+        return content
+    if not isinstance(data, dict):
+        return content
+    fmt = data.get("format")
+    if fmt == "pages":
+        pages = data.get("pages")
+        if not isinstance(pages, list) or not all(isinstance(p, str) for p in pages):
+            raise ValueError("pages content must hold a list of strings")
+        return "\n".join(f"--- PAGE_START_{n} ---\n{page}\n--- PAGE_END_{n} ---" for n, page in enumerate(pages, 1))
+    if fmt == "text":
+        text = data.get("text")
+        if not isinstance(text, str):
+            raise ValueError("text content must hold a string")
+        return text
+    return content
+
 
 def resolve_page_number(line_number: int, page_map: List[Tuple[int, int]]) -> Optional[int]:
     """Finds the page number for a given line using the page map."""

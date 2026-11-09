@@ -1,3 +1,4 @@
+import json
 import pytest
 import time
 from unittest.mock import patch, MagicMock
@@ -149,3 +150,57 @@ def test_cleanup_chat(mock_rag_manager):
         res = file_rag.cleanup_chat("chat1")
         assert res is True
         mock_clean.assert_called_once_with({"chat_id": "chat1"})
+
+
+async def _stored_chunks(file_rag, content, filename):
+    captured = {}
+
+    async def fake_store(documents, metadatas, ids, **kwargs):
+        captured.update(documents=documents, metadatas=metadatas)
+        return ids
+
+    with patch.object(file_rag, 'store', side_effect=fake_store):
+        await file_rag.store_file("file1", "chat1", content, filename=filename)
+    return captured
+
+
+@pytest.mark.anyio
+async def test_store_file_indexes_page_json_as_page_text_with_page_numbers(mock_rag_manager):
+    file_rag = FileRAG(mock_rag_manager)
+    # Long pages, so each page ends up in its own chunk(s)
+    pages = [("Quarterly revenue grew by twelve percent over the previous quarter.\n") * 200,
+             ("Operating costs fell because of the new supplier contract signed in May.\n") * 200]
+    captured = await _stored_chunks(file_rag, json.dumps({"format": "pages", "pages": pages}), "report.pdf")
+    joined = "\n".join(captured["documents"])
+    assert '"format"' not in joined and '\\n' not in joined and "PAGE_START" not in joined
+    assert "Quarterly revenue" in joined and "Operating costs" in joined
+    assert {m.get("page_number") for m in captured["metadatas"]} == {1, 2}
+    assert all(m.get("line_start") is None for m in captured["metadatas"])
+
+
+@pytest.mark.anyio
+async def test_store_file_indexes_text_json_without_json_escapes(mock_rag_manager):
+    file_rag = FileRAG(mock_rag_manager)
+    text = "\n".join(f"Line number {n} of a plain notes file with enough words in it." for n in range(1, 6))
+    captured = await _stored_chunks(file_rag, json.dumps({"format": "text", "text": text}), "notes.txt")
+    joined = "\n".join(captured["documents"])
+    assert '"format"' not in joined and '\\n' not in joined
+    assert "Line number 3 of a plain notes file" in joined
+    assert min(m["line_start"] for m in captured["metadatas"]) == 1
+
+
+@pytest.mark.anyio
+async def test_store_file_classifies_csv_text_json_as_a_spreadsheet(mock_rag_manager):
+    file_rag = FileRAG(mock_rag_manager)
+    csv = "\n".join(["name,amount,region"] + [f"customer {n},{n * 10},north" for n in range(1, 30)])
+    captured = await _stored_chunks(file_rag, json.dumps({"format": "text", "text": csv}), "sales.csv")
+    assert {m["file_type"] for m in captured["metadatas"]} == {"spreadsheet"}
+    assert "customer 7,70,north" in "\n".join(captured["documents"])
+
+
+@pytest.mark.anyio
+async def test_store_file_refuses_a_stored_wrapper_with_an_invalid_payload(mock_rag_manager):
+    file_rag = FileRAG(mock_rag_manager)
+    bad = json.dumps({"format": "pages", "pages": "not a list", "padding": "x" * 80})
+    with pytest.raises(ValueError):
+        await file_rag.store_file("file1", "chat1", bad, filename="data.json")
