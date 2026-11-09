@@ -220,8 +220,26 @@ async def test_execute_pure_tool_sync_exception(mock_registry, tool_handler):
         raise ValueError("sync error")
         
     mock_registry.resolve_implementation.return_value = mock_impl
-    result = await tool_handler._execute_pure_tool("tool1", {})
-    assert "Error: sync error" in result
+    with patch('backend.chat.tool_handler.log_event') as log:
+        result = await tool_handler._execute_pure_tool("tool1", {})
+    # The model gets a fixed message without the exception text; the detail goes to the log event.
+    assert result.startswith("Error") and "tool1" in result
+    assert "sync error" not in result
+    log.assert_any_call("tool_handler_tool_error", {
+        "chat_id": tool_handler.chat_id, "name": "tool1", "id": None,
+        "error_type": "ValueError", "error": "sync error",
+    })
+
+@pytest.mark.anyio
+async def test_execute_pure_tool_async_exception(mock_registry, tool_handler):
+    async def mock_impl():
+        raise RuntimeError("/secret/path failed")
+
+    mock_registry.resolve_implementation.return_value = mock_impl
+    with patch('backend.chat.tool_handler.log_event') as log:
+        result = await tool_handler._execute_pure_tool("tool2", {}, tc_id="tc9")
+    assert result.startswith("Error") and "tool2" in result and "/secret/path" not in result
+    assert log.call_args.args[1]["error"] == "/secret/path failed" and log.call_args.args[1]["id"] == "tc9"
 
 @pytest.mark.anyio
 @patch('backend.database.db')

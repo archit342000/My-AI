@@ -300,4 +300,10 @@ class ToolHandler:
                 return await loop.run_in_executor(None, lambda: impl(**full_args))
         except Exception as e:
             logger.error(f"Error executing tool {name}: {e}", exc_info=True)
-            return f"Error: {str(e)}"
+            log_event("tool_handler_tool_error", {
+                "chat_id": self.chat_id, "name": name, "id": tc_id,
+                "error_type": type(e).__name__, "error": str(e)[:500],
+            })
+            # The model gets a fixed message; the exception detail (paths, internals) stays in the logs.
+            return (f"Error: Tool '{name}' failed unexpectedly. "
+                    "Check the arguments and try again, or use a different approach.")
