@@ -14,8 +14,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN useradd -m -s /bin/bash runner
 WORKDIR /app
 
+# Manifests first so the dependency layers are cached until a manifest changes.
+COPY code_runner_mcp/requirements.txt code_runner_mcp/requirements-sandbox.txt /app/
+# The server's own dependencies plus the common packages sandboxed code can import without installing.
+RUN pip install --no-cache-dir -r requirements.txt -r requirements-sandbox.txt
+
 COPY code_runner_mcp/ /app/
-RUN pip install --no-cache-dir -r requirements.txt
 
 USER runner
 EXPOSE 8100
