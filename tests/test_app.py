@@ -128,9 +128,10 @@ def test_get_version_endpoint(client):
             assert data['minor'] == 2
             assert data['patch'] == 3
 
+@patch('app.portal_vnc_auth_header', return_value={"Authorization": "Basic cG9ydGFsOms="})
 @patch('app.logger.error')
 @patch('app.ws_client.create_connection')
-def test_portal_ws_proxy(mock_create_connection, mock_logger_error):
+def test_portal_ws_proxy(mock_create_connection, mock_logger_error, mock_auth):
     """Test the WebSocket proxy function directly."""
     mock_upstream = MagicMock()
     mock_create_connection.return_value = mock_upstream
@@ -149,14 +150,16 @@ def test_portal_ws_proxy(mock_create_connection, mock_logger_error):
     flask_app.portal_ws_proxy(mock_ws)
 
     # Check if upstream was called correctly
-    mock_create_connection.assert_called_with("ws://playwright_mcp:6080/websockify")
+    mock_create_connection.assert_called_with(
+        "ws://playwright_mcp:6080/websockify", header=["Authorization: Basic cG9ydGFsOms="])
     mock_upstream.send_binary.assert_called_with(b"test_data")
     mock_upstream.send.assert_called_with("string_data")
     mock_upstream.close.assert_called_once()
 
+@patch('app.portal_vnc_auth_header', return_value={"Authorization": "Basic cG9ydGFsOms="})
 @patch('app.logger.error')
 @patch('app.ws_client.create_connection')
-def test_portal_ws_proxy_connection_failure(mock_create_connection, mock_logger_error):
+def test_portal_ws_proxy_connection_failure(mock_create_connection, mock_logger_error, mock_auth):
     """Test that connection failures in the WebSocket proxy are caught and logged."""
     mock_create_connection.side_effect = Exception("Connection refused")
     
@@ -166,6 +169,15 @@ def test_portal_ws_proxy_connection_failure(mock_create_connection, mock_logger_
     # Check that error was logged
     mock_logger_error.assert_called_once()
     assert "Portal WS proxy error: Connection refused" in mock_logger_error.call_args[0][0]
+
+@patch('app.portal_vnc_auth_header', return_value={})
+@patch('app.logger.warning')
+@patch('app.ws_client.create_connection')
+def test_portal_ws_proxy_without_a_key_does_not_connect(mock_create_connection, mock_logger_warning, mock_auth):
+    flask_app.portal_ws_proxy(MagicMock())
+    mock_create_connection.assert_not_called()
+    mock_logger_warning.assert_called_once()
+
 
 @patch('app.logger.error')
 @patch('app.ws_client.create_connection')

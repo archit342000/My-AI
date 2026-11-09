@@ -157,14 +157,32 @@ async def run_code(
     result_str += f"\n\n**stdout:**\n```\n{stdout}\n```\n\n**stderr:**\n```\n{stderr}\n```"
     return result_str
 
-def collect_project_files(chat_id: str, path: str):
-    """Walk and collect files in directory tree for code execution."""
+def resolve_run_target(chat_id: str, path: str) -> tuple[str, str]:
+    """
+    Resolves the file to run and the chat's root directory on disk.
+
+    Args:
+        chat_id: The chat (or workspace) that owns the file.
+        path: The file's path in the virtual file system.
+
+    Returns:
+        `(physical_target_path, chat_root_dir)`.
+
+    Raises:
+        FileNotFoundError: If the target file does not exist.
+        ValueError: If the path cannot be resolved (invalid input); other resolver failures propagate unchanged.
+    """
     _, _, physical_target_path = resolve_owner_and_physical_path(chat_id, path)
     _, _, chat_root_dir = resolve_owner_and_physical_path(chat_id, "")
-    
     if not os.path.exists(physical_target_path):
         raise FileNotFoundError(f"File '{path}' does not exist.")
-        
+    return physical_target_path, chat_root_dir
+
+
+def collect_project_files(chat_id: str, path: str):
+    """Walk and collect files in directory tree for code execution."""
+    physical_target_path, chat_root_dir = resolve_run_target(chat_id, path)
+
     ext = os.path.splitext(physical_target_path)[1].lower()
     lang = config.CODE_EXTENSION_MAP.get(ext)
     if not lang:
@@ -218,13 +236,15 @@ async def run_file(
 
     # Resolve target file relative path to physical file path
     try:
-        _, _, physical_target_path = resolve_owner_and_physical_path(chat_id, path)
-        _, _, chat_root_dir = resolve_owner_and_physical_path(chat_id, "")
-    except Exception as e:
-        return f"Error: Failed to resolve file path: {e}"
-
-    if not os.path.exists(physical_target_path):
+        physical_target_path, chat_root_dir = resolve_run_target(chat_id, path)
+    except FileNotFoundError:
         return f"Error: File '{path}' does not exist."
+    except ValueError as e:
+        return f"Error: Failed to resolve file path: {e}"
+    except Exception as e:
+        # Not an input problem (for example a database failure): keep the detail in the log, not in the result.
+        logger.error(f"Failed to resolve file path for run_file: {e}", exc_info=True)
+        return "Error: Failed to resolve file path."
 
     # Map extension to language
     ext = os.path.splitext(physical_target_path)[1].lower()
@@ -324,7 +344,7 @@ async def run_file(
         data = res.json()
     except Exception as e:
         logger.error(f"Failed to communicate with code runner service: {e}")
-        return f"Error: Failed to execute file. Code runner service is unavailable: {e}"
+        return "Error: Failed to execute file. Code runner service is unavailable."
 
     stdout = data.get("stdout", "")
     stderr = data.get("stderr", "")
@@ -407,6 +427,12 @@ async def install_packages(
 
     try:
         res = requests.post(url, json=payload, headers=headers, timeout=130)
+        if res.status_code == 400:
+            try:
+                detail = res.json().get("detail", "")
+            except Exception:
+                detail = ""
+            return "Error: Invalid package request" + (f": {detail}" if detail else "")
         res.raise_for_status()
         data = res.json()
     except Exception as e:
