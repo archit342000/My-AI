@@ -103,7 +103,9 @@ def get_preferences():
         prefs = db.get_all_preferences()
         return jsonify({"success": True, "preferences": prefs})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        logger.exception("Failed to load preferences")
+        log_event("tools_preferences_get_error", {"error": str(e)})
+        return jsonify({"error": "Failed to load preferences"}), 500
 
 @tools_bp.route('/preferences', methods=['POST'])
 def add_preference():
@@ -150,7 +152,9 @@ def reset_preferences():
         deleted = db.clear_preferences()
         return jsonify({"success": True, "deleted": deleted})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        logger.exception("Failed to reset preferences")
+        log_event("tools_preferences_reset_error", {"error": str(e)})
+        return jsonify({"error": "Failed to reset preferences"}), 500
 
 # --- Agent Config Routes ---
 
@@ -261,12 +265,21 @@ def update_browser_config():
 def proxy_portal_vnc(path):
     """Reverse-proxy noVNC static files from the playwright_mcp container."""
     import httpx
+    from backend.mcp_client import portal_vnc_auth_header
+
+    auth = portal_vnc_auth_header()
+    if not auth:
+        log_event("portal_vnc_unconfigured", {})
+        return jsonify({"error": "Browser portal is not configured"}), 503
 
     upstream_url = f"http://playwright_mcp:6080/{path}"
     try:
         with httpx.Client(timeout=10.0) as client:
-            resp = client.get(upstream_url)
-            
+            resp = client.get(upstream_url, headers=auth)
+            if resp.status_code == 401:
+                log_event("portal_vnc_auth_failed", {"status": 401})
+                return jsonify({"error": "Could not reach browser portal service"}), 502
+
             # Determine content type from upstream response
             content_type = resp.headers.get('content-type', 'application/octet-stream')
             
@@ -282,21 +295,35 @@ def proxy_portal_vnc(path):
 @tools_bp.route('/portal/init', methods=['POST'])
 def proxy_portal_init():
     import httpx
+    from backend.config import get_secret
     from backend.mcp_client import playwright_server_url
-    
+
     base_url = playwright_server_url.replace('/sse', '')
-    
+    key = get_secret("PLAYWRIGHT_MCP_API_KEY", "")
+    if not key:
+        log_event("portal_init_unconfigured", {})
+        return jsonify({"error": "Browser portal is not configured"}), 503
+
     try:
         with httpx.Client() as client:
-            resp = client.post(f"{base_url}/portal/init", timeout=60.0)
+            resp = client.post(f"{base_url}/portal/init", headers={"X-MCP-API-KEY": key}, timeout=60.0)
+            if resp.status_code == 401:
+                log_event("portal_init_auth_failed", {"status": 401})
+                return jsonify({"error": "Browser portal authentication failed"}), 502
             if resp.status_code != 200:
-                logger.error(f"Portal init proxy failed with status {resp.status_code}: {resp.text}")
-                return jsonify({"error": f"MCP Server error: {resp.text}"}), resp.status_code
+                logger.error(f"Portal init proxy failed with status {resp.status_code}: {resp.text[:500]}")
+                log_event("tools_portal_init_error", {"status_code": resp.status_code, "error": resp.text[:500]})
+                return jsonify({"error": "Browser portal failed to start"}), 502
             data = resp.json()
             return jsonify(data)
+    except httpx.HTTPError as e:
+        logger.error(f"Portal init proxy could not reach the service: {e}")
+        log_event("tools_portal_init_error", {"error": str(e)})
+        return jsonify({"error": "Could not reach browser portal service"}), 502
     except Exception as e:
         logger.error(f"Portal init proxy exception: {e}")
-        return jsonify({"error": str(e)}), 500
+        log_event("tools_portal_init_error", {"error": str(e)})
+        return jsonify({"error": "Failed to start browser portal"}), 500
 
 
 # --- Global System Settings Routes ---
@@ -325,18 +352,33 @@ def get_system_settings():
     settings['code_runner_memory_limit'] = settings.get('code_runner_memory_limit', config.CODE_RUNNER_MEMORY_LIMIT)
     settings['code_runner_cpu_limit'] = settings.get('code_runner_cpu_limit', config.CODE_RUNNER_CPU_LIMIT)
     settings['code_runner_max_output_size'] = settings.get('code_runner_max_output_size', config.CODE_RUNNER_MAX_OUTPUT_SIZE)
+    settings['code_runner_max_timeout'] = config.CODE_RUNNER_MAX_TIMEOUT   # read-only: the ceiling for code_runner_timeout
 
     return jsonify(settings)
 
 @tools_bp.route('/config/settings', methods=['POST'])
 def update_system_settings():
     from backend.database import db
+    from backend import config
     data, err = read_json_object()
     if err:
         return err
+    # Validate before writing anything, so a rejected request changes nothing.
+    if 'code_runner_timeout' in data:
+        value = data['code_runner_timeout']
+        max_timeout = config.CODE_RUNNER_MAX_TIMEOUT
+        is_int = isinstance(value, int) and not isinstance(value, bool)
+        if not is_int and isinstance(value, str) and value.isascii() and value.isdigit() and len(value) <= 9:
+            value, is_int = int(value), True
+        if not is_int or not 1 <= value <= max_timeout:
+            return jsonify({"error": f"code_runner_timeout must be an integer from 1 to {max_timeout}"}), 400
+        data['code_runner_timeout'] = value   # store the integer, whatever form it arrived in
     for key, val in data.items():
         if key == 'github_pat' and val == '__REDACTED__':
             # User submitted placeholder, ignore it
+            continue
+        if key == 'code_runner_max_timeout':
+            # Read-only: shown to clients, never stored
             continue
         db.set_setting(key, val)
         logger.info(f"Updated system setting: {key}")
@@ -357,7 +399,7 @@ def get_execution_history(chat_id):
 async def api_run_file():
     """Direct file execution (user-triggered, not AI-triggered)."""
     import uuid
-    from backend.tools.implementations.code_executor import run_file
+    from backend.tools.implementations.code_executor import run_file, resolve_run_target
     data, err = read_json_object(required=False)
     if err:
         return err
@@ -369,7 +411,18 @@ async def api_run_file():
     
     if not path or not chat_id:
         return jsonify({"error": "Missing path or chat_id"}), 400
-        
+
+    try:
+        resolve_run_target(chat_id, path)
+    except FileNotFoundError:
+        return jsonify({"error": "File not found"}), 404
+    except ValueError:
+        return jsonify({"error": "Invalid file path"}), 400
+    except Exception as e:
+        logger.error(f"Error resolving file for direct run: {e}", exc_info=True)
+        log_event("tools_run_file_error", {"chat_id": chat_id, "path": path[:200], "error": str(e)})
+        return jsonify({"error": "Failed to run file"}), 500
+
     try:
         result = await run_file(
             path=path,
@@ -382,6 +435,7 @@ async def api_run_file():
         return jsonify({"result": result})
     except Exception as e:
         logger.error(f"Error running file directly: {e}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        log_event("tools_run_file_error", {"chat_id": chat_id, "path": path[:200], "error": str(e)})
+        return jsonify({"error": "Failed to run file"}), 500
 
 

@@ -1,0 +1,12 @@
+# Packages baked into the runner image so most sandboxed runs never need /install.
+# Exact pins (latest stable release with a CPython 3.12 wheel, 2026-11-09); update them deliberately.
+numpy==2.5.4
+pandas==3.1.1
+scipy==1.18.1
+matplotlib==3.11.2
+requests==2.34.2
+sympy==1.14.0
+beautifulsoup4==4.15.0
+pyyaml==6.0.3
+pillow==13.0.0
+tabulate==0.10.0

@@ -1,3 +1,4 @@
+import json
 import pytest
 import os
 from unittest.mock import patch, MagicMock
@@ -128,9 +129,10 @@ def test_get_version_endpoint(client):
             assert data['minor'] == 2
             assert data['patch'] == 3
 
+@patch('app.portal_vnc_auth_header', return_value={"Authorization": "Basic cG9ydGFsOms="})
 @patch('app.logger.error')
 @patch('app.ws_client.create_connection')
-def test_portal_ws_proxy(mock_create_connection, mock_logger_error):
+def test_portal_ws_proxy(mock_create_connection, mock_logger_error, mock_auth):
     """Test the WebSocket proxy function directly."""
     mock_upstream = MagicMock()
     mock_create_connection.return_value = mock_upstream
@@ -149,14 +151,16 @@ def test_portal_ws_proxy(mock_create_connection, mock_logger_error):
     flask_app.portal_ws_proxy(mock_ws)
 
     # Check if upstream was called correctly
-    mock_create_connection.assert_called_with("ws://playwright_mcp:6080/websockify")
+    mock_create_connection.assert_called_with(
+        "ws://playwright_mcp:6080/websockify", header=["Authorization: Basic cG9ydGFsOms="])
     mock_upstream.send_binary.assert_called_with(b"test_data")
     mock_upstream.send.assert_called_with("string_data")
     mock_upstream.close.assert_called_once()
 
+@patch('app.portal_vnc_auth_header', return_value={"Authorization": "Basic cG9ydGFsOms="})
 @patch('app.logger.error')
 @patch('app.ws_client.create_connection')
-def test_portal_ws_proxy_connection_failure(mock_create_connection, mock_logger_error):
+def test_portal_ws_proxy_connection_failure(mock_create_connection, mock_logger_error, mock_auth):
     """Test that connection failures in the WebSocket proxy are caught and logged."""
     mock_create_connection.side_effect = Exception("Connection refused")
     
@@ -166,6 +170,15 @@ def test_portal_ws_proxy_connection_failure(mock_create_connection, mock_logger_
     # Check that error was logged
     mock_logger_error.assert_called_once()
     assert "Portal WS proxy error: Connection refused" in mock_logger_error.call_args[0][0]
+
+@patch('app.portal_vnc_auth_header', return_value={})
+@patch('app.logger.warning')
+@patch('app.ws_client.create_connection')
+def test_portal_ws_proxy_without_a_key_does_not_connect(mock_create_connection, mock_logger_warning, mock_auth):
+    flask_app.portal_ws_proxy(MagicMock())
+    mock_create_connection.assert_not_called()
+    mock_logger_warning.assert_called_once()
+
 
 @patch('app.logger.error')
 @patch('app.ws_client.create_connection')
@@ -188,8 +201,14 @@ def test_code_execution_ws_proxy(mock_get_setting, mock_collect_project_files, m
     ]
     
     # Run the proxy function
-    flask_app.code_execution_ws_proxy(mock_ws)
-    
+    with patch.object(config, "CODE_RUNNER_API_KEY", "testkey"):
+        flask_app.code_execution_ws_proxy(mock_ws)
+
+    # The key travels in a header, never in the URL
+    url = mock_create_connection.call_args.args[0]
+    assert url.endswith("/ws/execute") and "api_key" not in url and "testkey" not in url
+    assert mock_create_connection.call_args.kwargs["header"] == ["X-API-KEY: testkey"]
+
     # Check if correct helper functions are called and upstream receives setup configuration
     mock_collect_project_files.assert_called_once_with("chat123", "main.py")
     mock_create_connection.assert_called_once()
@@ -198,6 +217,21 @@ def test_code_execution_ws_proxy(mock_get_setting, mock_collect_project_files, m
     sent_payload = json.loads(mock_upstream.send.call_args[0][0])
     assert sent_payload["language"] == "python"
     assert sent_payload["entry_file"] == "main.py"
+
+
+@patch('app.ws_client.create_connection')
+@patch('backend.tools.implementations.code_executor.collect_project_files')
+@patch('backend.database.db.get_setting')
+def test_code_execution_ws_proxy_sends_an_empty_header_not_the_word_none_without_a_key(mock_get_setting, mock_collect_project_files, mock_create_connection):
+    import json
+    mock_get_setting.return_value = 30
+    mock_collect_project_files.return_value = ("python", [{"path": "main.py", "content": "print(1)"}], "main.py")
+    mock_create_connection.return_value = MagicMock()
+    mock_ws = MagicMock()
+    mock_ws.receive.side_effect = [json.dumps({"type": "init", "filePath": "main.py", "chat_id": "chat123"}), None]
+    with patch.object(config, "CODE_RUNNER_API_KEY", None):
+        flask_app.code_execution_ws_proxy(mock_ws)
+    assert mock_create_connection.call_args.kwargs["header"] == ["X-API-KEY: "]
 
 
 @patch('app.ws_client.create_connection')
@@ -220,6 +254,100 @@ def test_code_execution_ws_proxy_defaults_sql_target_to_sqlite(mock_get_setting,
 
     sent_payload = json.loads(mock_upstream.send.call_args[0][0])
     assert sent_payload["sql_target"] == "sqlite"
+
+
+@patch('app.ws_client.create_connection')
+@patch('backend.tools.implementations.code_executor.collect_project_files')
+@patch('backend.database.db.get_setting')
+def test_code_execution_ws_proxy_sends_the_clamped_timeout(mock_get_setting, mock_collect_project_files, mock_create_connection):
+    import json
+    mock_get_setting.return_value = 9999
+    mock_collect_project_files.return_value = ("python", [{"path": "main.py", "content": "print(1)"}], "main.py")
+    mock_upstream = MagicMock()
+    mock_create_connection.return_value = mock_upstream
+    mock_ws = MagicMock()
+    mock_ws.receive.side_effect = [json.dumps({"type": "init", "filePath": "main.py", "chat_id": "chat123"}), None]
+    with patch('backend.tools.implementations.code_executor.config.CODE_RUNNER_MAX_TIMEOUT', 120):
+        flask_app.code_execution_ws_proxy(mock_ws)
+    assert json.loads(mock_upstream.send.call_args[0][0])["timeout"] == 120
+
+
+@patch('app.ws_client.create_connection')
+@patch('backend.tools.implementations.code_executor.collect_project_files')
+@patch('backend.database.db.get_setting')
+@patch('backend.tools.implementations.code_executor.log_event')
+def test_code_execution_ws_proxy_reports_an_invalid_timeout_setting_and_does_not_connect(mock_log, mock_get_setting, mock_collect_project_files, mock_create_connection):
+    import json
+    mock_get_setting.return_value = "abc"
+    mock_collect_project_files.return_value = ("python", [{"path": "main.py", "content": "print(1)"}], "main.py")
+    mock_ws = MagicMock()
+    mock_ws.receive.side_effect = [json.dumps({"type": "init", "filePath": "main.py", "chat_id": "chat123"}), None]
+    flask_app.code_execution_ws_proxy(mock_ws)
+    frames = [json.loads(c.args[0]) for c in mock_ws.send.call_args_list]
+    assert frames[0]["type"] == "stderr" and "timeout setting is invalid" in frames[0]["data"]
+    assert frames[-1] == {"type": "exit", "code": 1}
+    mock_create_connection.assert_not_called()
+
+
+# ---- live-run WebSocket: fixed messages for unexpected errors, our own messages unchanged ----------------------
+
+def _run_ws_proxy(init=None):
+    mock_ws = MagicMock()
+    mock_ws.receive.side_effect = [json.dumps(init or {"type": "init", "filePath": "main.py", "chat_id": "chat123"}), None]
+    flask_app.code_execution_ws_proxy(mock_ws)
+    return [json.loads(c.args[0]) for c in mock_ws.send.call_args_list]
+
+
+@pytest.mark.parametrize("error", [
+    FileNotFoundError("File 'x.py' does not exist."),
+    ValueError("File extension '.xyz' is not supported for execution."),
+])
+@patch('app.log_event')
+@patch('backend.tools.implementations.code_executor.collect_project_files')
+def test_code_execution_ws_proxy_keeps_its_own_user_facing_messages(mock_collect, mock_log, error):
+    mock_collect.side_effect = error
+    frames = _run_ws_proxy()
+    assert frames == [{"type": "stderr", "data": f"Error: {error}\n"}, {"type": "exit", "code": 1}]
+    mock_log.assert_not_called()
+
+
+@patch('app.log_event')
+@patch('backend.tools.implementations.code_executor.collect_project_files')
+def test_code_execution_ws_proxy_hides_an_unexpected_prepare_error_and_logs_it(mock_collect, mock_log):
+    mock_collect.side_effect = RuntimeError("db path /secret/x locked")
+    frames = _run_ws_proxy()
+    assert frames == [{"type": "stderr", "data": "Error: Could not prepare the file for execution.\n"}, {"type": "exit", "code": 1}]
+    assert "/secret" not in json.dumps(frames)
+    mock_log.assert_called_once_with("code_execution_ws_prepare_error", {"chat_id": "chat123", "file_path": "main.py", "error": "RuntimeError"})
+
+
+@patch('app.log_event')
+@patch('app.logger.error')
+@patch('app.ws_client.create_connection')
+@patch('backend.tools.implementations.code_executor.collect_project_files')
+@patch('backend.database.db.get_setting', return_value=30)
+def test_code_execution_ws_proxy_hides_a_connection_error_and_never_logs_the_key(mock_setting, mock_collect, mock_create, mock_logger_error, mock_log):
+    mock_collect.return_value = ("python", [{"path": "main.py", "content": "print(1)"}], "main.py")
+    mock_create.side_effect = ConnectionRefusedError("ws://code_runner_mcp:8100/ws/execute?api_key=SECRETKEY")
+    frames = _run_ws_proxy()
+    assert frames == [{"type": "stderr", "data": "Error: Code runner is unavailable.\n"}]
+    assert "SECRETKEY" not in json.dumps(frames) and "code_runner_mcp" not in json.dumps(frames)
+    mock_log.assert_called_once_with("code_execution_ws_proxy_error", {"chat_id": "chat123", "stage": "connect", "error": "ConnectionRefusedError"})
+    assert "SECRETKEY" not in str(mock_logger_error.call_args)
+
+
+@patch('app.log_event')
+@patch('app.logger.error')
+@patch('app.ws_client.create_connection')
+@patch('backend.tools.implementations.code_executor.collect_project_files')
+@patch('backend.database.db.get_setting', side_effect=RuntimeError("settings table at /secret is locked"))
+def test_code_execution_ws_proxy_does_not_blame_the_runner_for_other_failures(mock_setting, mock_collect, mock_create, mock_logger_error, mock_log):
+    mock_collect.return_value = ("python", [{"path": "main.py", "content": "print(1)"}], "main.py")
+    frames = _run_ws_proxy()
+    assert frames == [{"type": "stderr", "data": "Error: Code execution failed.\n"}]
+    assert "/secret" not in json.dumps(frames)
+    mock_create.assert_not_called()
+    mock_log.assert_called_once_with("code_execution_ws_proxy_error", {"chat_id": "chat123", "stage": "proxy", "error": "RuntimeError"})
 
 
 

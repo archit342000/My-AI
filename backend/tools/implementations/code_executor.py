@@ -8,6 +8,7 @@ from typing import Optional, List, Dict, Any
 from backend import config
 from backend.database import db
 from backend.file_system.utils import resolve_owner_and_physical_path
+from backend.logging import log_event
 from backend.tools.clarify import request_clarification
 from code_runner_mcp.safety import classify_code
 
@@ -39,6 +40,27 @@ def find_project_root(physical_path: str, root_dir: str) -> str:
         
     return root_dir_abs
 
+SETTINGS_TIMEOUT_ERROR = "Error: The code runner timeout setting is invalid. Fix it in Settings."
+
+
+def effective_code_runner_timeout() -> int:
+    """
+    The execution timeout from the `code_runner_timeout` setting, clamped to `1..CODE_RUNNER_MAX_TIMEOUT`.
+
+    Returns:
+        The timeout in seconds.
+
+    Raises:
+        ValueError: If the stored value is not an integer (or a digit string); there is no silent default.
+    """
+    value = db.get_setting("code_runner_timeout", config.CODE_RUNNER_DEFAULT_TIMEOUT)
+    is_digits = isinstance(value, str) and value.isascii() and value.isdigit() and len(value) <= 9
+    if isinstance(value, bool) or not (isinstance(value, int) or is_digits):
+        log_event("code_executor_timeout_invalid", {"value_type": type(value).__name__})
+        raise ValueError("code_runner_timeout setting is invalid")
+    return max(1, min(int(value), config.CODE_RUNNER_MAX_TIMEOUT))
+
+
 async def run_code(
     code: str,
     language: str,
@@ -54,8 +76,11 @@ async def run_code(
     stdin = stdin or ""
     sql_target = sql_target or "sqlite"
 
-    # Get timeout from settings
-    timeout = db.get_setting("code_runner_timeout", config.CODE_RUNNER_DEFAULT_TIMEOUT)
+    # Get timeout from settings (clamped to the maximum)
+    try:
+        timeout = effective_code_runner_timeout()
+    except ValueError:
+        return SETTINGS_TIMEOUT_ERROR
 
     # Perform safety classification check
     safety_status = classify_code(code, lang)
@@ -95,7 +120,8 @@ async def run_code(
         data = res.json()
     except Exception as e:
         logger.error(f"Failed to communicate with code runner service: {e}")
-        return f"Error: Failed to execute code. Code runner service is unavailable: {e}"
+        log_event("code_executor_run_code_error", {"chat_id": chat_id, "error": type(e).__name__})
+        return "Error: Failed to execute code. Code runner service is unavailable."
 
     stdout = data.get("stdout", "")
     stderr = data.get("stderr", "")
@@ -132,14 +158,32 @@ async def run_code(
     result_str += f"\n\n**stdout:**\n```\n{stdout}\n```\n\n**stderr:**\n```\n{stderr}\n```"
     return result_str
 
-def collect_project_files(chat_id: str, path: str):
-    """Walk and collect files in directory tree for code execution."""
+def resolve_run_target(chat_id: str, path: str) -> tuple[str, str]:
+    """
+    Resolves the file to run and the chat's root directory on disk.
+
+    Args:
+        chat_id: The chat (or workspace) that owns the file.
+        path: The file's path in the virtual file system.
+
+    Returns:
+        `(physical_target_path, chat_root_dir)`.
+
+    Raises:
+        FileNotFoundError: If the target file does not exist.
+        ValueError: If the path cannot be resolved (invalid input); other resolver failures propagate unchanged.
+    """
     _, _, physical_target_path = resolve_owner_and_physical_path(chat_id, path)
     _, _, chat_root_dir = resolve_owner_and_physical_path(chat_id, "")
-    
     if not os.path.exists(physical_target_path):
         raise FileNotFoundError(f"File '{path}' does not exist.")
-        
+    return physical_target_path, chat_root_dir
+
+
+def collect_project_files(chat_id: str, path: str):
+    """Walk and collect files in directory tree for code execution."""
+    physical_target_path, chat_root_dir = resolve_run_target(chat_id, path)
+
     ext = os.path.splitext(physical_target_path)[1].lower()
     lang = config.CODE_EXTENSION_MAP.get(ext)
     if not lang:
@@ -193,13 +237,15 @@ async def run_file(
 
     # Resolve target file relative path to physical file path
     try:
-        _, _, physical_target_path = resolve_owner_and_physical_path(chat_id, path)
-        _, _, chat_root_dir = resolve_owner_and_physical_path(chat_id, "")
-    except Exception as e:
-        return f"Error: Failed to resolve file path: {e}"
-
-    if not os.path.exists(physical_target_path):
+        physical_target_path, chat_root_dir = resolve_run_target(chat_id, path)
+    except FileNotFoundError:
         return f"Error: File '{path}' does not exist."
+    except ValueError as e:
+        return f"Error: Failed to resolve file path: {e}"
+    except Exception as e:
+        # Not an input problem (for example a database failure): keep the detail in the log, not in the result.
+        log_event("code_executor_resolve_error", {"chat_id": chat_id, "path": str(path)[:200], "error": type(e).__name__})
+        return "Error: Failed to resolve file path."
 
     # Map extension to language
     ext = os.path.splitext(physical_target_path)[1].lower()
@@ -247,8 +293,11 @@ async def run_file(
     args = args or []
     sql_target = sql_target or "sqlite"
 
-    # Get timeout from settings
-    timeout = db.get_setting("code_runner_timeout", config.CODE_RUNNER_DEFAULT_TIMEOUT)
+    # Get timeout from settings (clamped to the maximum)
+    try:
+        timeout = effective_code_runner_timeout()
+    except ValueError:
+        return SETTINGS_TIMEOUT_ERROR
 
     # Read target code content for safety classification check
     target_code = ""
@@ -296,7 +345,8 @@ async def run_file(
         data = res.json()
     except Exception as e:
         logger.error(f"Failed to communicate with code runner service: {e}")
-        return f"Error: Failed to execute file. Code runner service is unavailable: {e}"
+        log_event("code_executor_run_file_error", {"chat_id": chat_id, "error": type(e).__name__})
+        return "Error: Failed to execute file. Code runner service is unavailable."
 
     stdout = data.get("stdout", "")
     stderr = data.get("stderr", "")
@@ -379,11 +429,18 @@ async def install_packages(
 
     try:
         res = requests.post(url, json=payload, headers=headers, timeout=130)
+        if res.status_code == 400:
+            try:
+                detail = res.json().get("detail", "")
+            except Exception:
+                detail = ""
+            return "Error: Invalid package request" + (f": {detail}" if detail else "")
         res.raise_for_status()
         data = res.json()
     except Exception as e:
         logger.error(f"Failed to run package installation: {e}")
-        return f"Error: Failed to install packages. Code runner service is unavailable: {e}"
+        log_event("code_executor_install_packages_error", {"chat_id": chat_id, "error": type(e).__name__})
+        return "Error: Failed to install packages. Code runner service is unavailable."
 
     success = data.get("success", False)
     stdout = data.get("stdout", "")
@@ -414,7 +471,8 @@ async def list_packages(
         data = res.json()
     except Exception as e:
         logger.error(f"Failed to fetch packages list: {e}")
-        return f"Error: Failed to fetch packages. Code runner service is unavailable: {e}"
+        log_event("code_executor_list_packages_error", {"chat_id": chat_id, "error": type(e).__name__})
+        return "Error: Failed to fetch packages. Code runner service is unavailable."
 
     packages = data.get("packages", [])
     if not packages:
