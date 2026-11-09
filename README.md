@@ -62,16 +62,15 @@ echo "your_playwright_key_here" > secrets/PLAYWRIGHT_MCP_API_KEY
 echo "/app/backend/data" > secrets/DATA_DIR
 # Auth (environment variables, not secrets): set ADMIN_EMAIL, CF_ACCESS_TEAM_DOMAIN and CF_ACCESS_AUD; see backend/auth/README.md
 cat ~/.ssh/id_rsa.pub > secrets/authorized_keys
-# Optional: echo "your_key" > secrets/AI_API_KEY
-# Optional: echo "your_key" > secrets/EMBEDDING_API_KEY
-# Optional: echo "your_hf_token" > secrets/HF_TOKEN
+# Optional, same form: secrets/AI_API_KEY, secrets/EMBEDDING_API_KEY, secrets/HF_TOKEN
 ```
 
 ### 3. Deploy Stack
 ```bash
+docker network create "${EDGE_NETWORK:-my-ai-edge}"  # once, unless the gateway already created it
 docker compose -f docker/docker-compose.yml up --build -d
 ```
-The app refuses to start without the auth variables. Put it behind Cloudflare Access; for local use set `AUTH_PROVIDER=static` (development only).
+The app refuses to start without the auth variables. Reach it through the Cloudflare Access hostname (only `app` joins the gateway's `edge` network); `AUTH_PROVIDER=static` is for local development only. Deployment rules: `docs/standards/security.md`.
 
 ## 🏗️ Architecture Note
 My-AI utilizes the **Model Context Protocol (MCP)** to isolate external tool executions. The main Flask app acts as a secure orchestrator, while dedicated containers handle web search, PDF extraction, browser-level scraping, and sandboxed code execution, ensuring high stability and a reduced security surface area.

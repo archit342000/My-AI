@@ -15,7 +15,7 @@ Applies to `docker/` and the services it defines. Rule 9 in `docs/standards/codi
 
 ## Compose (`docker/docker-compose.yml`)
 
-- Services share the `secure-internal` network and reach each other by service name. The sandboxed runtime (`code_runner_runtime`) is the exception: it sits only on the internal-only `runner-net`. The app reaches it through the relay `code_runner_mcp`, which joins both networks. The package proxy `pkg-proxy` is the other exception: it joins `runner-net` and the egress-only `pkg-egress` bridge (no `secure-internal`, no secrets, no mounts). Publish host ports only for services a user must reach.
+- Services share the `secure-internal` network and reach each other by service name. `app` also joins the external `edge` network (`${EDGE_NETWORK:-my-ai-edge}`, created by the gateway that runs the tunnel connector) and no other service does. The sandboxed runtime (`code_runner_runtime`) is the exception: it sits only on the internal-only `runner-net`. The app reaches it through the relay `code_runner_mcp`, which joins both networks. The package proxy `pkg-proxy` is the other exception: it joins `runner-net` and the egress-only `pkg-egress` bridge (no `secure-internal`, no secrets, no mounts). Publish host ports only for services a user must reach.
 - Secrets use Docker `secrets:` and are read through `get_secret` or a `*_FILE` variable. Never put secrets in `environment:`,
   images or committed files.
 - Mount only what a service needs; use `:ro` for credentials and keys. Persistent data lives in the data volume or a named volume.
