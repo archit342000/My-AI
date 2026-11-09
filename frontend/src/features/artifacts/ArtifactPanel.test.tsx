@@ -3,6 +3,7 @@ import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { renderWithProviders } from '../../test/render';
 import { ArtifactPanel } from './ArtifactPanel';
 import { artifactsApi } from '../../api/filesystem';
+import { chatListInvalidated } from '../../test/invalidation';
 import { useToastStore } from '../../components/ui/toast-store';
 
 const list = [
@@ -55,6 +56,28 @@ describe('ArtifactPanel', () => {
     renderWithProviders(<ArtifactPanel scope={{ chatId: 'c' }} />);
     fireEvent.click(await screen.findByRole('button', { name: 'New file' }));
     await waitFor(() => expect(create).toHaveBeenCalledWith({ chatId: 'c' }, { title: 'Untitled', content: '', language: 'markdown' }));
+  });
+
+  it('a chat file create/delete refreshes the chat list, a workspace file does not', async () => {
+    vi.spyOn(artifactsApi, 'create').mockResolvedValue({ id: 'new1' } as never);
+    vi.spyOn(artifactsApi, 'remove').mockResolvedValue(new Response(null) as never);
+
+    const chat = renderWithProviders(<ArtifactPanel scope={{ chatId: 'c' }} />);
+    const chatInvalidate = vi.spyOn(chat.client, 'invalidateQueries');
+    fireEvent.click(await screen.findByRole('button', { name: 'New file' }));
+    await waitFor(() => expect(chatListInvalidated(chatInvalidate)).toBe(true));
+    chatInvalidate.mockClear();
+    fireEvent.click(await screen.findByRole('button', { name: /notes.md/ }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete file' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    await waitFor(() => expect(chatListInvalidated(chatInvalidate)).toBe(true));
+    chat.unmount();
+
+    const ws = renderWithProviders(<ArtifactPanel scope={{ workspaceId: 'w' }} />);
+    const wsInvalidate = vi.spyOn(ws.client, 'invalidateQueries');
+    fireEvent.click(await screen.findByRole('button', { name: 'New file' }));
+    await waitFor(() => expect(wsInvalidate).toHaveBeenCalled());
+    expect(chatListInvalidated(wsInvalidate)).toBe(false);
   });
 
   it('after New file the new file is open in edit mode (N1)', async () => {

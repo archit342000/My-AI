@@ -41,6 +41,38 @@ class ChatOpsMixin(BaseMixin):
 
         return cache_layer.get_table("chats", _fetch, key_extractor=lambda row: row.get('id', ''), ttl=300)
 
+    def get_listed_chats(self) -> list[dict]:
+        """
+        Chats for the sidebar and workspace lists: only those that hold content (at least one message,
+        uploaded file or chat-scoped artifact). Empty chats come from uploads, artifact creation or the
+        first PATCH before any message exists, and would show up as blank "New Conversation" entries.
+
+        `get_all_chats` stays unfiltered on purpose: internal callers (stale channel cleanup, clearing all
+        chats) must see every row, including empty ones.
+
+        Returns:
+            Chat rows (same shape as `get_all_chats`, newest first), each with `workspace_name`.
+        """
+        def _fetch():
+            conn = make_connection()
+            try:
+                conn.row_factory = sqlite3.Row
+                c = conn.cursor()
+                c.execute('''
+                    SELECT c.*, w.name as workspace_name
+                    FROM chats c
+                    LEFT JOIN workspaces w ON c.workspace_id = w.id
+                    WHERE EXISTS (SELECT 1 FROM messages m WHERE m.chat_id = c.id)
+                       OR EXISTS (SELECT 1 FROM files f WHERE f.chat_id = c.id)
+                       OR EXISTS (SELECT 1 FROM file_systems fs WHERE fs.chat_id = c.id)
+                    ORDER BY c.timestamp DESC
+                ''')
+                return [dict(row) for row in c.fetchall()]
+            finally:
+                conn.close()
+
+        return cache_layer.get_table("chats", _fetch, key_extractor=lambda row: row.get('id', ''), ttl=300)
+
     # =========================================================================
     # WORKSPACE OPERATIONS
     # =========================================================================

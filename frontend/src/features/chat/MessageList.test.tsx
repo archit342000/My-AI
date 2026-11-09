@@ -4,6 +4,7 @@ import { renderWithProviders } from '../../test/render';
 import { MessageList } from './MessageList';
 import { toTurns } from '../../lib/chat-model';
 import { chatsApi } from '../../api/chats';
+import { chatListInvalidated } from '../../test/invalidation';
 import { useStreamStore } from '../../state/stream-store';
 import { useToastStore } from '../../components/ui/toast-store';
 import * as sendTurnModule from './send-turn';
@@ -152,6 +153,18 @@ describe('MessageList', () => {
       fireEvent.click(within(row).getByRole('button', { name: 'Save' }));
       await waitFor(() => expect(edit).toHaveBeenCalledWith('c1', '1', 'read this'));
     });
+  });
+
+  it('deleting a message refreshes the sidebar chat list too', async () => {
+    vi.spyOn(chatsApi, 'deleteMessage').mockResolvedValue(new Response(null, { status: 200 }));
+    const { client } = renderWithProviders(
+      <MessageList turns={toTurns([...msgs] as never)} chatId="c1" onChanged={() => undefined} />,
+    );
+    const invalidate = vi.spyOn(client, 'invalidateQueries');
+    const row = document.querySelector('[data-message-id="1"]') as HTMLElement;
+    fireEvent.click(within(row).getByRole('button', { name: 'Delete message' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    await waitFor(() => expect(chatListInvalidated(invalidate)).toBe(true));
   });
 
   it('a failed edit keeps the editor open and shows an error toast', async () => {

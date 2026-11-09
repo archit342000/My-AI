@@ -1,4 +1,4 @@
-import { ApiError } from './client';
+import { ApiError, apiRequest } from './client';
 import type { UploadedFile } from './completions';
 
 interface UploadResponse {
@@ -43,6 +43,11 @@ export function uploadFile(file: File, chatId: string, onProgress?: (fraction: n
     xhr.ontimeout = () => reject(new ApiError(0, null, 'Upload timed out; try again'));
     xhr.send(form);
   });
+}
+
+/** Deletes an uploaded file from the server (its row and the stored copy). */
+export async function deleteFile(fileId: string): Promise<void> {
+  await apiRequest(`/api/files/${encodeURIComponent(fileId)}`, { method: 'DELETE' });
 }
 
 export function fileUrl(fileId: string): string {
