@@ -544,11 +544,14 @@ def stop_chat(chat_id):
 def edit_message_endpoint(chat_id, message_id):
     data = request.json
     content = data.get('content')
-    if content is None:
+    if not isinstance(content, str) or not content.strip():
         return jsonify({"error": "Content required"}), 400
 
     success = db.edit_message(chat_id, message_id, content)
-    return jsonify({"success": success})
+    if not success:
+        log_event("chat_edit_message_not_found", {"chat_id": chat_id, "message_id": message_id})
+        return jsonify({"error": "Message not found"}), 404
+    return jsonify({"success": True})
 
 @chat_bp.route('/<chat_id>/messages/<int:message_id>', methods=['DELETE'])
 def delete_message_endpoint(chat_id, message_id):

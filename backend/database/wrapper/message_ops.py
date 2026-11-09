@@ -433,10 +433,14 @@ class MessageOpsMixin(BaseMixin):
         # 2. Hand off to the safe cascading delete with the known index
         return self.delete_message(chat_id, target_id, cutoff_idx=keep_up_to_index)
 
-    def edit_message(self, chat_id: str, message_id: int, new_content: str):
+    def edit_message(self, chat_id: str, message_id: int, new_content: str) -> bool:
         """
         Atomically updates a message's content and truncates all subsequent history.
         Ensures transactional integrity for message update AND cascading deletion.
+
+        Returns:
+            True if the edit was applied. False if no message with that id exists in this chat;
+            nothing is written and no cache is invalidated.
         """
         self._log_db_wrapper_op("EDIT_MESSAGE_START", chat_id, f"target_id={message_id}")
         write_start = time.time()
@@ -448,8 +452,14 @@ class MessageOpsMixin(BaseMixin):
                 c.execute("BEGIN IMMEDIATE")
                 
                 try:
-                    # 1. Update the content of the target message
-                    c.execute("UPDATE messages SET content = ? WHERE id = ?", (new_content, message_id))
+                    # 0. The message must belong to this chat; otherwise nothing is written
+                    c.execute("SELECT 1 FROM messages WHERE id = ? AND chat_id = ?", (message_id, chat_id))
+                    if c.fetchone() is None:
+                        c.execute("ROLLBACK")
+                        return False
+
+                    # 1. Update the content of the target message (chat_id filter: defence in depth)
+                    c.execute("UPDATE messages SET content = ? WHERE id = ? AND chat_id = ?", (new_content, message_id, chat_id))
                     
                     # 2. Reset immediate artifacts for the edited message (SSE/Sub-agents)
                     # We keep collections for the edited message for continuity.
@@ -520,13 +530,14 @@ class MessageOpsMixin(BaseMixin):
 
         success = _write()
         
-        # Cache Invalidation
-        cache_layer.invalidate("messages", f"chat:{chat_id}")
-        cache_layer.invalidate("chats", chat_id)
-        cache_layer.invalidate("chats_full", chat_id)
-        
+        if success:
+            # Cache Invalidation
+            cache_layer.invalidate("messages", f"chat:{chat_id}")
+            cache_layer.invalidate("chats", chat_id)
+            cache_layer.invalidate("chats_full", chat_id)
+
         duration_ms = (time.time() - write_start) * 1000
-        self._log_db_wrapper_op("EDIT_MESSAGE_END", chat_id, f"duration_ms={duration_ms:.2f}")
+        self._log_db_wrapper_op("EDIT_MESSAGE_END", chat_id, f"duration_ms={duration_ms:.2f} edited={success}")
         return success
 
     def clear_messages(self, chat_id: str):

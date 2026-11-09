@@ -132,7 +132,8 @@ def delete_preference(preference_id):
     success = db.delete_preference(preference_id)
     if success:
         return jsonify({"success": True})
-    return jsonify({"error": "Failed to delete preference"}), 500
+    log_event("tools_preference_delete_not_found", {"preference_id": preference_id})
+    return jsonify({"error": "Preference not found"}), 404
 
 @tools_bp.route('/preferences/reset', methods=['POST'])
 def reset_preferences():

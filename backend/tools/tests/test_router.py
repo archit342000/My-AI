@@ -125,6 +125,14 @@ def test_delete_preference(client, mock_db):
     assert resp.status_code == 200
     assert resp.json["success"] is True
 
+@patch('backend.tools.router.log_event')
+def test_delete_preference_not_found(mock_log_event, client, mock_db):
+    mock_db.delete_preference.return_value = False
+    resp = client.delete('/tools/preferences/missing')
+    assert resp.status_code == 404
+    assert resp.json == {"error": "Preference not found"}
+    mock_log_event.assert_called_once_with("tools_preference_delete_not_found", {"preference_id": "missing"})
+
 def test_reset_preferences(client, mock_db):
     mock_db.clear_preferences.return_value = 5
     resp = client.post('/tools/preferences/reset')

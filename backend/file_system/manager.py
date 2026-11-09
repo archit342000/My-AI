@@ -21,6 +21,7 @@ from .utils import (
     resolve_owner_and_physical_path,
     ensure_physical_dir_exists,
     generate_fs_file_id, 
+    new_fs_file_id,
     _extract_fs_file_type
 )
 from .fuzzy_matcher import _find_exact_match, MultipleMatchesError, MatchNotFoundError
@@ -764,7 +765,7 @@ def update_file_system_metadata(chat_id: Optional[str], current_path: str, **kwa
             new_title = os.path.basename(lookup_path)
             
             if owner_changed:
-                new_id = str(db.get_next_file_system_counter(chat_id=target_chat_id, workspace_id=target_workspace_id))
+                new_id = new_fs_file_id()
                 db.migrate_file_system_owner(
                     old_id=file_system_id, new_id=new_id,
                     old_chat_id=actual_chat_id, old_workspace_id=actual_workspace_id,

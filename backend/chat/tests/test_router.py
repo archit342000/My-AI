@@ -337,6 +337,23 @@ def test_edit_message_endpoint(mock_db, client):
     mock_db.edit_message.assert_called_with("chat1", 1, "new content")
 
 @patch('backend.chat.router.db')
+@pytest.mark.parametrize("content", ["", "   \n", 5, None])
+def test_edit_message_endpoint_rejects_empty_content(mock_db, client, content):
+    response = client.put('/api/chats/chat1/messages/1', json={"content": content})
+    assert response.status_code == 400
+    assert "error" in response.json
+    mock_db.edit_message.assert_not_called()
+
+@patch('backend.chat.router.db')
+@patch('backend.chat.router.log_event')
+def test_edit_message_endpoint_message_not_in_chat(mock_log_event, mock_db, client):
+    mock_db.edit_message.return_value = False
+    response = client.put('/api/chats/chat1/messages/99', json={"content": "new content"})
+    assert response.status_code == 404
+    assert response.json == {"error": "Message not found"}
+    mock_log_event.assert_called_once_with("chat_edit_message_not_found", {"chat_id": "chat1", "message_id": 99})
+
+@patch('backend.chat.router.db')
 @patch('backend.chat.router.get_file_manager')
 @patch('backend.chat.router.ChatHandler')
 @patch('backend.chat.router.log_event')
