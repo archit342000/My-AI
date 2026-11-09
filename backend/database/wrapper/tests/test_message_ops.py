@@ -162,3 +162,28 @@ def test_message_delete_history_compression_invalidation(temp_db):
     # Assert history_compression is now None (invalidated)
     chat_after = db.get_chat(chat_id)
     assert chat_after.get("history_compression") is None
+
+
+def test_edit_message_is_scoped_to_chat(temp_db):
+    db = temp_db
+    for chat in ("edit_scope_a", "edit_scope_b"):
+        db.ensure_chat_exists(chat)
+    a_first = db.add_message("edit_scope_a", role="user", content="a first")
+    a_reply = db.add_message("edit_scope_a", role="assistant", content="a reply")
+    b_first = db.add_message("edit_scope_b", role="user", content="b first")
+    b_reply = db.add_message("edit_scope_b", role="assistant", content="b reply")
+
+    # A message id from another chat is refused and nothing changes in either chat
+    assert db.edit_message("edit_scope_a", b_first, "hijacked") is False
+    assert [m["content"] for m in db.get_messages("edit_scope_b")] == ["b first", "b reply"]
+    assert [m["content"] for m in db.get_messages("edit_scope_a")] == ["a first", "a reply"]
+
+    # A missing id is refused too
+    assert db.edit_message("edit_scope_a", 999999, "x") is False
+    assert [m["content"] for m in db.get_messages("edit_scope_a")] == ["a first", "a reply"]
+
+    # An in-chat edit succeeds and truncates the later history
+    assert db.edit_message("edit_scope_a", a_first, "a edited") is True
+    assert [m["content"] for m in db.get_messages("edit_scope_a")] == ["a edited"]
+    assert a_reply not in [m["id"] for m in db.get_messages("edit_scope_a")]
+    assert [m["id"] for m in db.get_messages("edit_scope_b")] == [b_first, b_reply]
