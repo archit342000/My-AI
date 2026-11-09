@@ -114,10 +114,11 @@ def test_update_preference(client, mock_db):
     assert resp.status_code == 200
     assert resp.json["success"] is True
 
-def test_update_preference_fail(client, mock_db):
+def test_update_preference_unknown_id_is_a_404(client, mock_db):
     mock_db.update_preference.return_value = False
     resp = client.put('/tools/preferences/p1', json={"content": "updated", "tag": "tag1"})
-    assert resp.status_code == 500
+    assert resp.status_code == 404
+    assert resp.json == {"error": "Preference not found"}
 
 def test_delete_preference(client, mock_db):
     mock_db.delete_preference.return_value = True
@@ -190,3 +191,43 @@ def test_run_file_defaults_sql_target_to_sqlite(client):
         resp = client.post('/tools/code-execution/run-file', json={"path": "q.sql", "chat_id": "c1"})
         assert resp.status_code == 200
         assert run.call_args.kwargs["sql_target"] == "sqlite"
+
+
+# Routes that need a JSON body: a missing, malformed or non-object body is a 400 JSON error, not a 500 or an HTML page.
+REQUIRED_BODY_ROUTES = [
+    ("post", "/tools/clarification/response"),
+    ("post", "/tools/preferences"),
+    ("put", "/tools/preferences/p1"),
+    ("patch", "/tools/config/agents/search"),
+    ("patch", "/tools/config/browser"),
+    ("post", "/tools/config/settings"),
+]
+BAD_BODIES = [
+    {},                                                           # no body at all
+    {"data": "null", "content_type": "application/json"},
+    {"data": "[1]", "content_type": "application/json"},
+    {"data": "{bad", "content_type": "application/json"},
+    {"data": '{"a": 1}', "content_type": "text/plain"},
+]
+
+
+@pytest.mark.parametrize("method,url", REQUIRED_BODY_ROUTES)
+@pytest.mark.parametrize("body", BAD_BODIES)
+def test_required_body_routes_return_a_400_json_error(client, mock_db, method, url, body):
+    resp = getattr(client, method)(url, **body)
+    assert resp.status_code == 400
+    assert resp.json == {"error": "Request body must be a JSON object"}
+
+
+@pytest.mark.parametrize("body", [{"data": "[1]", "content_type": "application/json"},
+                                  {"data": "{bad", "content_type": "application/json"}])
+def test_optional_body_route_still_rejects_an_invalid_body(client, mock_db, body):
+    resp = client.post("/tools/code-execution/run-file", **body)
+    assert resp.status_code == 400 and resp.json == {"error": "Request body must be a JSON object"}
+
+
+@pytest.mark.parametrize("body", [{}, {"data": "null", "content_type": "application/json"}])
+def test_optional_body_route_accepts_no_body_and_reaches_its_own_validation(client, mock_db, body):
+    resp = client.post("/tools/code-execution/run-file", **body)
+    assert resp.status_code == 400
+    assert resp.get_json() == {"error": "Missing path or chat_id"}   # the route's own error, as JSON

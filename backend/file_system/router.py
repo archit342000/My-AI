@@ -4,6 +4,7 @@ import json
 import os
 import mimetypes
 from backend.database import db
+from backend.utils import read_json_object
 from backend import config
 from backend.file_system import (
     get_file_system_versions,
@@ -53,7 +54,7 @@ def normalize_workspace_id():
             request.args = args
             
             # Update request JSON dictionary
-            if data and 'workspace_id' in data:
+            if isinstance(data, dict) and 'workspace_id' in data:
                 data['workspace_id'] = resolved_ws_id
 
 @file_system_bp.route('', methods=['POST'])
@@ -61,7 +62,9 @@ def normalize_workspace_id():
 async def create_fs_file_route():
     """Create a new file_system."""
     from backend.file_system import create_fs_file
-    data = request.json or {}
+    data, err = read_json_object(required=False)
+    if err:
+        return err
     chat_id = data.get('chat_id')
     workspace_id = data.get('workspace_id')
     title = data.get('title', 'Untitled FileSystem')
@@ -107,7 +110,9 @@ async def create_fs_file_route():
 async def create_directory_route():
     """Create a new empty directory."""
     from backend.file_system.manager import create_directory_tool
-    data = request.json or {}
+    data, err = read_json_object(required=False)
+    if err:
+        return err
     chat_id = data.get('chat_id')
     workspace_id = data.get('workspace_id')
     path = data.get('path')
@@ -537,7 +542,9 @@ async def get_file_system_endpoint(file_system_id):
 @file_system_bp.route('/<path:file_system_id>', methods=['PATCH'])
 async def update_file_system_endpoint(file_system_id):
     """Update file_system content or metadata (folder, title)."""
-    data = request.json or {}
+    data, err = read_json_object(required=False)
+    if err:
+        return err
     chat_id = data.get('chat_id') or request.args.get('chat_id')
     workspace_id = request.args.get('workspace_id') or data.get('workspace_id')
     if not chat_id and not workspace_id:
@@ -776,7 +783,9 @@ async def export_fs_file_pdf_endpoint(file_system_id):
 @file_system_bp.route('/<path:file_system_id>/folder', methods=['POST'])
 def set_file_system_folder(file_system_id):
     """Set folder for a file_system."""
-    data = request.json or {}
+    data, err = read_json_object(required=False)
+    if err:
+        return err
     chat_id = data.get('chat_id')
     if not chat_id:
         return jsonify({"error": "chat_id is required"}), 400
@@ -808,7 +817,9 @@ def set_file_system_folder(file_system_id):
 @file_system_bp.route('/<path:file_system_id>/tags', methods=['POST'])
 def set_file_system_tags(file_system_id):
     """Set tags for a file_system."""
-    data = request.json or {}
+    data, err = read_json_object(required=False)
+    if err:
+        return err
     chat_id = data.get('chat_id')
     if not chat_id:
         return jsonify({"error": "chat_id is required"}), 400
@@ -947,7 +958,9 @@ async def get_fs_file_version_endpoint(file_system_id, version_number):
 @file_system_bp.route('/<path:file_system_id>/versions/<int:version_number>/restore', methods=['POST'])
 async def restore_fs_file_version_endpoint(file_system_id, version_number):
     """Restore a file_system to a previous version."""
-    data = request.json or {}
+    data, err = read_json_object(required=False)
+    if err:
+        return err
     chat_id = data.get('chat_id') or request.args.get('chat_id')
     if not chat_id:
         return jsonify({"error": "chat_id is required"}), 400
@@ -963,7 +976,9 @@ async def restore_fs_file_version_endpoint(file_system_id, version_number):
 @file_system_bp.route('/<path:file_system_id>/diff', methods=['POST'])
 async def get_fs_file_diff_endpoint(file_system_id):
     """Get diff between two versions."""
-    data = request.json or {}
+    data, err = read_json_object(required=False)
+    if err:
+        return err
     chat_id = data.get('chat_id') or request.args.get('chat_id')
     if not chat_id:
         return jsonify({"success": False, "error": "chat_id is required"}), 400
@@ -1014,7 +1029,9 @@ async def get_file_system_current_version_endpoint(file_system_id):
 @file_system_bp.route('/<path:file_system_id>/navigate-version', methods=['POST'])
 async def navigate_to_version_endpoint(file_system_id):
     """Navigate to a specific version of a file_system without creating a new version."""
-    data = request.json or {}
+    data, err = read_json_object(required=False)
+    if err:
+        return err
     chat_id = data.get('chat_id')
     version_number = data.get('version_number')
 
@@ -1029,7 +1046,9 @@ async def navigate_to_version_endpoint(file_system_id):
 @file_system_bp.route('/<path:file_system_id>/delete-future-versions', methods=['POST'])
 async def delete_future_versions_endpoint(file_system_id):
     """Delete all versions after a specific version (for branch handling)."""
-    data = request.json or {}
+    data, err = read_json_object(required=False)
+    if err:
+        return err
     chat_id = data.get('chat_id')
     up_to_version = data.get('up_to_version')
 
