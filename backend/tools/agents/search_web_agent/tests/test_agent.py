@@ -20,6 +20,13 @@ def mock_agent():
     agent.run_inference_step = MagicMock(side_effect=mock_inference)
     return agent
 
+@pytest.fixture(autouse=True)
+def search_limit():
+    """The per-user search limit check (the test chats have no owner); allowed unless a test says otherwise."""
+    with patch('backend.tools.agents.search_web_agent.agent.check_search_limit', return_value=None) as check:
+        yield check
+
+
 @pytest.fixture
 def mock_tavily():
     with patch('backend.tools.agents.search_web_agent.agent.tavily_client') as mock:
@@ -236,3 +243,28 @@ async def test_search_web_raw_results_truncation(mock_agent, mock_tavily, mock_d
     # Verify second result (short) is NOT truncated and stays intact
     assert "Short" in chunks[0]
     assert "Short\n[... Content truncated due to length ...]" not in chunks[0]
+
+
+@pytest.mark.anyio
+async def test_search_web_stops_with_the_limit_message_and_never_calls_tavily(mock_agent, mock_tavily, mock_db, mock_config, search_limit):
+    search_limit.return_value = "Error: Daily web search limit reached."
+    chunks = [c async for c in flow_fn(mock_agent, "search_web", "q")]
+    assert chunks == ["Error: Daily web search limit reached."]
+    assert mock_agent.result == "Error: Daily web search limit reached."
+    mock_tavily.execute_tool.assert_not_called()
+    mock_tavily.connect.assert_not_called()
+    search_limit.assert_called_once_with("test_chat")
+    contents = [c.kwargs.get("content") for c in mock_db.add_message.call_args_list]
+    assert "Search Web Agent Started." in contents and "Search Web Agent Failed." in contents
+
+
+@pytest.mark.anyio
+async def test_a_search_that_needs_retries_counts_as_one_hit(mock_agent, mock_tavily, mock_db, mock_config, search_limit):
+    good = MagicMock()
+    good.content = [MagicMock(text=json.dumps({"answer": "ok", "results": [{"title": "t", "url": "u", "content": "c"}]}))]
+    mock_tavily.execute_tool.side_effect = [Exception("boom"), Exception("boom"), good]
+    with patch('backend.tools.agents.search_web_agent.agent.asyncio.sleep', new_callable=AsyncMock):
+        [c async for c in flow_fn(mock_agent, "search_web", "q")]
+    assert mock_tavily.execute_tool.call_count == 3
+    assert search_limit.call_count == 1
+

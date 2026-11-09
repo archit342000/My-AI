@@ -26,6 +26,7 @@
     - `backend.logging`: Standardized event logging and tracking.
 *   **Flow:**
     1. **Request:** `router.py` receives a chat request (e.g., via `openai_bp`). Every chat route checks the owner first (`backend/auth/ownership.py`: another user's chat is a 404 and nothing is written), and `chat_completions` creates the chat for the caller. `chat_completions` and `resume_chat` then claim the chat's turn slot (`task_manager.claim_turn`) and return 400 if a turn is already in progress (`docs/standards/api.md`).
+    1b. **Turn limit:** `chat_completions` and `resume_chat` count one turn per user against `backend.auth.rate_limit.turn_limiter` after the git-mode check and before any claim or write; over the limit is `429` with `Retry-After`.
     2. **Orchestration:** `ChatHandler` initiates a background task.
     3. **Execution:** `TurnHandler` wraps the turn logic, ensuring serial execution.
     4. **Inference & Tools:** `ChatHandler` streams from `InferenceEngine`. If tool calls are detected, `ToolHandler` executes them, potentially delegating to `AgentHandler` for sub-agent flows.

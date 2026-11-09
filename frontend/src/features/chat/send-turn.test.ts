@@ -276,6 +276,34 @@ describe('sendTurn when the server refuses the send (400)', () => {
   });
 });
 
+describe('a turn refused for being over the rate limit (429)', () => {
+  const limited = () =>
+    new Response(JSON.stringify({ error: 'Too many requests; try again shortly.' }), {
+      status: 429,
+      headers: { 'Content-Type': 'application/json', 'Retry-After': '30' },
+    });
+
+  it('shows only a toast on a send: no inline error row, nothing kept as interrupted', async () => {
+    mockCompletion(limited);
+    await sendTurn(args());
+    expect(useToastStore.getState().toasts.some((t) => t.message === 'Too many requests; try again shortly.')).toBe(true);
+    expect(useStreamStore.getState().interrupted).toBeNull();
+    expect(useStreamStore.getState().chatId).toBeNull();
+  });
+
+  it('shows only a toast on Retry (resume) too', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (path: string) =>
+        path === '/api/chats/chat-1/resume' ? limited() : new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } }),
+      ),
+    );
+    await resumeTurn(new QueryClient(), 'chat-1');
+    expect(useToastStore.getState().toasts.some((t) => t.message === 'Too many requests; try again shortly.')).toBe(true);
+    expect(useStreamStore.getState().interrupted).toBeNull();
+  });
+});
+
 describe('sidebar chat list during a turn', () => {
   it('is refreshed once the send is accepted (first chunk), not only after the stream ends', async () => {
     mockCompletion(() => sseResponse(sseText([contentChunk('A'), contentChunk('B')], false)));

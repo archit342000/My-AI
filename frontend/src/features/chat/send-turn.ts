@@ -75,11 +75,13 @@ async function consume(
       store.interrupt({ chatId, live, kind: 'stopped', message: null });
     } else if (
       err instanceof ApiError &&
-      err.status === 400 &&
-      (refusalIsToastOnly || err.message === TURN_IN_PROGRESS)
+      ((err.status === 400 && (refusalIsToastOnly || err.message === TURN_IN_PROGRESS)) ||
+        // 429: over the per-user turn limit; the server refused it before storing or starting anything.
+        err.status === 429)
     ) {
       // A send refused before anything was stored or started, or any request refused because a
-      // turn is already in progress (also a Retry/resume): toast only, no partial reply to keep.
+      // turn is already in progress or the user is over their turn limit (also a Retry/resume):
+      // toast only, no partial reply to keep.
       showToast(err.message, 'error');
     } else {
       const message = err instanceof Error ? err.message : 'Stream failed';

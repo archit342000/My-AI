@@ -7,6 +7,7 @@
 | `providers.py` | Identity providers. `CloudflareAccessProvider` verifies the `Cf-Access-Jwt-Assertion` JWT (RS256, `aud`, `iss`, `exp`, `iat`, `email`); `StaticProvider` is development only. | `get_provider`, `Identity` |
 | `context.py` | The current user (`{id, email, role}`) in a ContextVar, plus the admin-only route decorator. | `current_user`, `user_context`, `admin_required`, `forbid_non_admin` |
 | `ownership.py` | Route owner checks: `require_chat_owner`, `require_workspace_owner`, `claim_chat` (create or refuse), `reject_foreign_chat` (refuse only an existing foreign chat, for routes that validate first), `owns_chat` (a boolean for non-route code such as the WebSocket), `file_for_chat` (a file only if its chat has the same owner as the caller's chat; for model tools) and `require_file_owner`. A foreign or missing id is a 404; no admin bypass; fails closed without a user. | `claim_chat`, `reject_foreign_chat` |
+| `rate_limit.py` | Per-user fixed-window limits kept in memory: `FixedWindowLimiter`, the `turn_limiter` (per minute) and `search_limiter` (per day) singletons, `is_exempt(user)` (admin, configurable), `check_search_limit(chat_id)` (keyed on the chat owner; returns the short `Error:` message or None; fails closed) and `SearchLimitReached`. Limits come from `RATE_LIMIT_TURNS_PER_MINUTE` (10), `RATE_LIMIT_SEARCHES_PER_DAY` (200) and `RATE_LIMIT_EXEMPT_ADMIN` (true) in `backend/config.py`; zero or less is unlimited. | `turn_limiter`, `check_search_limit` |
 | `cli.py` | `python -m backend.auth.cli add <email> [--role user\|admin] \| deactivate <email> \| list`. | `main` |
 
 ## ⚙️ Configuration (`backend/config.py`)
@@ -21,5 +22,5 @@
 *   Users live in the `users` table (`backend/database/wrapper/user_ops.py`).
 
 ## 🧪 Testing
-*   `tests/test_providers.py`, `tests/test_context.py`, `tests/test_cli.py`.
+*   `tests/test_rate_limit.py`, `tests/test_providers.py`, `tests/test_context.py`, `tests/test_cli.py`.
 *   **Run Tests:** `EMBEDDING_URL="http://mock" AI_URL="http://mock" AI_API_KEY="dummy" PYTHONPATH=. ./venv/bin/python -m pytest backend/auth/`

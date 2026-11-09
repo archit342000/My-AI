@@ -5,6 +5,7 @@ import time
 from typing import Dict, Any
 
 from backend.chat.handler import ChatHandler
+from backend.auth import rate_limit
 from backend.auth.context import current_user, current_user_id
 from backend.auth.ownership import claim_chat, reject_foreign_chat, require_chat_owner, require_workspace_owner
 from backend.chat.message_edit import merge_edited_user_content
@@ -314,6 +315,28 @@ def _forbid_git_mode_for_non_admin(body):
     return None
 
 
+def _turn_rate_limited():
+    """
+    Count one turn start (send or resume) against the caller's per-minute limit.
+
+    Returns None when the turn may go ahead (or the caller is an exempt admin), else the error response: 401 without a
+    user (fail closed), 429 with `Retry-After` over the limit. Checked before any chat or turn is claimed or written.
+    """
+    user = current_user()
+    if not user:
+        return jsonify({"error": "Unauthorized"}), 401
+    if rate_limit.is_exempt(user):
+        return None
+    allowed, retry_after = rate_limit.turn_limiter.try_acquire(user["id"])
+    if allowed:
+        return None
+    log_event("rate_limited", {"kind": "turns"})
+    response = jsonify({"error": "Too many requests; try again shortly."})
+    response.status_code = 429
+    response.headers["Retry-After"] = str(retry_after)
+    return response
+
+
 @openai_bp.route('/completions', methods=['POST'])
 def chat_completions():
     """
@@ -340,6 +363,11 @@ def chat_completions():
 
     # Before anything is written or claimed: git mode is admin only.
     denied = _forbid_git_mode_for_non_admin(data)
+    if denied:
+        return denied
+
+    # Per-user turn limit, before the file checks and the chat claim so a refused request writes nothing.
+    denied = _turn_rate_limited()
     if denied:
         return denied
 
@@ -576,6 +604,9 @@ def resume_chat(chat_id):
     if err:
         return err
     denied = _forbid_git_mode_for_non_admin(resume_body)
+    if denied:
+        return denied
+    denied = _turn_rate_limited()
     if denied:
         return denied
     # Keep a reference so the release in call_on_close targets the manager that took the claim,

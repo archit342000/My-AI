@@ -21,6 +21,7 @@
 *   **Resumption**: This agent is typically used as a one-shot tool within a larger flow and does not maintain internal state between turns, though it logs results to the DB.
 
 ## 🛠️ Usage & Conventions
+*   **Daily limit**: Each search counts once (not per retry) against the chat owner's `RATE_LIMIT_SEARCHES_PER_DAY` through `check_search_limit`; over it the agent returns `Error: Daily web search limit reached.` without calling Tavily.
 *   **Retries**: Implements a 3-attempt retry loop for Tavily API failures with exponential backoff.
 *   **Depth Control**: Supports `normal` (fast, snippet-based) and `advanced` (comprehensive, LLM-synthesized) search depths.
 *   **Search Filters**: Supports `topic="news"` and `time_range` (e.g., `day`, `week`, `month`, `year`) for targeted searching.

@@ -109,6 +109,24 @@ def test_auth_emails_are_normalised(clean_env):
     importlib.reload(backend.config)
 
 
+def test_rate_limit_settings_have_defaults_and_read_the_environment(clean_env, monkeypatch):
+    import backend.config as c
+    keys = ("RATE_LIMIT_TURNS_PER_MINUTE", "RATE_LIMIT_SEARCHES_PER_DAY", "RATE_LIMIT_EXEMPT_ADMIN")
+    try:
+        for key in keys:
+            monkeypatch.delenv(key, raising=False)
+        importlib.reload(c)
+        assert (c.RATE_LIMIT_TURNS_PER_MINUTE, c.RATE_LIMIT_SEARCHES_PER_DAY, c.RATE_LIMIT_EXEMPT_ADMIN) == (10, 200, True)
+        monkeypatch.setenv("RATE_LIMIT_TURNS_PER_MINUTE", "3")
+        monkeypatch.setenv("RATE_LIMIT_SEARCHES_PER_DAY", "7")
+        monkeypatch.setenv("RATE_LIMIT_EXEMPT_ADMIN", "false")
+        importlib.reload(c)
+        assert (c.RATE_LIMIT_TURNS_PER_MINUTE, c.RATE_LIMIT_SEARCHES_PER_DAY, c.RATE_LIMIT_EXEMPT_ADMIN) == (3, 7, False)
+    finally:
+        monkeypatch.undo()
+        importlib.reload(c)
+
+
 def _reload_with(monkeypatch, **env):
     import backend.config as c
     for key in ("CODE_RUNNER_MAX_QUEUED_PER_USER", "CODE_RUNNER_QUEUE_TIMEOUT"):

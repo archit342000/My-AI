@@ -14,6 +14,13 @@ from backend.tools.agents.research_agent.constants import (
     EVENT_SECTION_PREFIX, EVENT_SECTION_COMPLETE_SUFFIX
 )
 
+@pytest.fixture(autouse=True)
+def search_limit():
+    """The per-user search limit check (the test chats have no owner); allowed unless a test says otherwise."""
+    with patch.object(agent_mod, 'check_search_limit', return_value=None) as check:
+        yield check
+
+
 @pytest.fixture
 def mock_agent_context():
     agent = MagicMock()
@@ -284,3 +291,85 @@ async def test_flow_fn_exception_handling(mock_agent_context):
         
         # Verify chat state updated to failed
         mock_db.update_chat.assert_any_call("test_chat", research_state='failed')
+
+
+LIMIT = "Error: Daily web search limit reached."
+
+
+@pytest.mark.anyio
+async def test_internal_searches_check_the_limit_before_each_query_and_do_not_swallow_it(research_agent, search_limit):
+    search_limit.side_effect = [None, LIMIT]
+    ok = MagicMock()
+    ok.content = [MagicMock(text=json.dumps({"results": [{"url": "https://a.example", "raw_content": "A" * 100}]}))]
+    with patch.object(agent_mod, '_execute_mcp_tool', new_callable=AsyncMock) as mock_tool, \
+         patch.object(agent_mod, 'db') as mock_db, \
+         patch.object(agent_mod, 'config') as mock_config, \
+         patch('backend.mcp_client.tavily_client', new_callable=AsyncMock):
+        mock_config.RESEARCH_SELECT_TOP_URLS_COUNT = 5
+        mock_config.RESEARCH_EXTRACT_MIN_RAW_CONTENT = 10
+        mock_config.RESEARCH_TAVILY_MAX_RESULTS_INITIAL = 5
+        mock_config.RESEARCH_CONTENT_CHUNK_LIMIT = 5000
+        mock_config.TIMEOUT_TAVILY_SEARCH_ASYNC = 60
+        mock_db.get_collections.return_value = []
+        mock_tool.return_value = ok
+        with pytest.raises(agent_mod.SearchLimitReached, match="Daily web search limit"):
+            await research_agent._execute_internal_searches([{"query": "q1"}, {"query": "q2"}])
+    assert mock_tool.await_count == 1  # the second query never reached Tavily
+    assert [c.args for c in search_limit.call_args_list] == [("test_chat",), ("test_chat",)]
+
+
+class _StopLoop(Exception):
+    """Ends the section state machine in tests once the state under test has finished."""
+
+
+def _section_env(research_agent, events):
+    async def emit(msg, *a, **k):
+        events.append(msg)
+        yield msg
+    research_agent._emit_event = emit
+
+
+@pytest.mark.anyio
+async def test_the_initial_search_limit_halts_the_section_without_retrying(research_agent):
+    events = []
+    _section_env(research_agent, events)
+    research_agent._execute_internal_searches = AsyncMock(side_effect=agent_mod.SearchLimitReached(LIMIT))
+    with patch.object(agent_mod, 'db') as mock_db:
+        mock_db.get_messages.return_value = []
+        with pytest.raises(agent_mod.SearchLimitReached):
+            async for _ in research_agent._run_single_section(0, {"queries": [{"query": "q"}]}, {}, [{}], "", MagicMock()):
+                pass
+    assert research_agent._execute_internal_searches.await_count == 1  # RESEARCH_SEARCH_RETRIES is 1: no second attempt
+    assert not any("No usable search results" in e for e in events)
+
+
+@pytest.mark.anyio
+async def test_a_limit_during_gap_searches_keeps_the_section_going_and_enters_the_state_once(research_agent):
+    prefix = "[Section 0] "
+    events = []
+    _section_env(research_agent, events)
+    history = [
+        {"role": "event", "content": f"{prefix}{EVENT_INITIAL_SEARCHES_DONE}"},
+        {"role": "event", "content": f"{prefix}{EVENT_REFLECTION_DONE}"},
+    ]
+    research_agent._get_assistant_output_for_phase = MagicMock(return_value={"content": json.dumps({"gaps": [{"query": "g1"}]})})
+    research_agent._execute_internal_searches = AsyncMock(side_effect=agent_mod.SearchLimitReached(LIMIT))
+    calls = {"n": 0}
+
+    def get_messages(*a, **k):
+        calls["n"] += 1
+        if calls["n"] > 1:
+            raise _StopLoop()  # the loop came back round after the gap-search state: stop here
+        return history
+
+    with patch.object(agent_mod, 'db') as mock_db:
+        mock_db.get_messages.side_effect = get_messages
+        with pytest.raises(_StopLoop):
+            async for _ in research_agent._run_single_section(0, {}, {}, [{}], "", MagicMock()):
+                pass
+        added = [c.kwargs for c in mock_db.add_collection.call_args_list]
+    assert research_agent._execute_internal_searches.await_count == 1
+    assert sum(EVENT_GAP_SEARCHES_DONE in e for e in events) == 1
+    assert added and added[0]["collection_type"] == "section_0_followup_searches"
+    assert added[0]["items"].strip() == "## FOLLOW-UP SEARCH RESULTS"  # earlier results kept, no new ones
+
