@@ -18,7 +18,7 @@ Client code lives in `frontend/src/api/`.
 - JSON in, JSON out (`jsonify`). Field names are `snake_case` on the server; the typed client in `frontend/src/api/` maps them.
 - Success returns the resource or `{"success": true}`; creates return the new resource.
 - Status codes: `200` ok, `400` invalid input, `401` not authenticated (set by `authenticate_request`), `403` forbidden operation (also an unknown or inactive user),
-  `404` not found, `413` upload too large, `500` unexpected failure.
+  `404` not found (also another user's chat or workspace, so ids are not confirmed), `413` upload too large, `500` unexpected failure.
 - Error body is `{"error": "<short message>"}`. The personas and skills routes also include `"success": false`; keep that there for
   compatibility but use the plain form elsewhere. Do not return stack traces or `str(e)` of internal exceptions from new code.
 - Validate before acting, and fail with `400` (not a partial write).
@@ -32,6 +32,9 @@ Client code lives in `frontend/src/api/`.
   tool results, `event` activity labels, sub-agent deltas and `__redact__`. The reader and fixtures are described in `docs/frontend.md`.
 - Errors during a stream are sent as `data: {"error": "<message>"}` and the stream ends. Never raise after the response has started.
 - A turn runs independently of the HTTP request: the client may disconnect and re-attach. Stop it with `POST /api/chats/<id>/stop`.
+- `POST /v1/chat/completions` checks in this order: another user's chat is `404`; `uploadedFiles` that are not attached to the chat are
+  `400 {"error": "Unknown file"}`; then the chat is created for the caller (or confirmed theirs) and the turn slot is claimed. A rejected
+  request writes nothing.
 - One turn runs per chat. While a turn is running or starting, `POST /v1/chat/completions` and `POST /api/chats/<id>/resume`
   for that chat return `400 {"error": "a response is already in progress"}` and start nothing (a send also stores nothing);
   re-attach with `GET /api/chats/<id>/stream` instead. The React client shows that message as a toast (no inline error row).

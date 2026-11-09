@@ -4,6 +4,7 @@ import os
 import uuid
 import mimetypes
 from backend import config
+from backend.auth.ownership import claim_chat
 from backend.database import db
 from backend.rag import RAGProvider
 from backend.models import get_embedding_model
@@ -32,8 +33,10 @@ async def upload_file_endpoint():
     if not chat_id:
         return jsonify({"error": "chat_id is required"}), 400
 
-    # Ensure chat exists to satisfy foreign key constraint
-    db.ensure_chat_exists(chat_id)
+    # Create the chat for the caller (the file row has a foreign key to it), or refuse another user's chat.
+    denied = claim_chat(chat_id)
+    if denied:
+        return denied
 
     if 'file' not in request.files:
         logger.error("[UPLOAD_ENDPOINT] No file in request.files")

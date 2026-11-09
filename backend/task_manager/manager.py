@@ -4,7 +4,9 @@ import time
 import os
 import json
 from typing import Dict, Any, Callable, Optional, Set
+from backend.auth.context import user_context
 from backend.database import response_cache as cache_system
+from backend.logging import log_event
 from backend import config
 from .worker import TaskWorker
 
@@ -169,6 +171,14 @@ class TaskManager:
 
                         recovered_count += 1
                         logger.info(f"Task {chat_id} flagged for resume.")
+                        # Record the event as the chat's owner (None when the chat no longer exists). Logging is a side
+                        # effect: a failure here must not reach the except below, which deletes the state file.
+                        try:
+                            owner = db.get_chat_owner(chat_id)
+                            with user_context({"id": owner} if owner else None):
+                                log_event("task_recovered", {"chat_id": chat_id})
+                        except Exception as log_error:
+                            logger.error(f"Task {chat_id}: could not log task_recovered: {log_error}")
                 except Exception as e:
                     logger.error(f"Task recovery error for {filename}: {e}")
                     # Clean up corrupted state files

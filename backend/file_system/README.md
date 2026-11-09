@@ -11,9 +11,9 @@
 | `__init__.py` | Package entry point and high-level API aggregator. | `create_fs_file`, `get_fs_file_content` |
 | `channel.py` | Per-chat locking system to prevent concurrent write race conditions. | `FileSystemChannelManager` |
 | `fuzzy_matcher.py` | Utilities for exact and fuzzy text matching during file edits. | `_find_exact_match` |
-| `manager.py` | Core logic for path resolution, CRUD, versioning, and tool implementations. | `ls_files_for_tool`, `replace_fs_text` |
+| `manager.py` | Core logic for path resolution, CRUD, versioning, and tool implementations. `create_fs_file` returns an error for a missing chat instead of creating one. | `ls_files_for_tool`, `replace_fs_text` |
 | `models.py` | Enum definitions for channel state. | `ChannelState` |
-| `router.py` | Flask API endpoints for frontend artifact interaction. | `file_system_bp` |
+| `router.py` | Flask API endpoints for frontend artifact interaction. Creating a file claims the chat for the caller and refuses another user's chat or workspace (404). | `file_system_bp` |
 | `utils.py` | Path sanitization, ID generation, and ownership resolution helpers. | `resolve_owner_and_physical_path` |
 
 ## 🧩 Architectural Context

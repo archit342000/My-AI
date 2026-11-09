@@ -37,7 +37,7 @@ def test_log_db_wrapper_op():
 def test_get_order_map_unsafe(temp_db):
     db = temp_db
     chat_id = "test_order_map"
-    db.ensure_chat_exists(chat_id)
+    db.ensure_chat_exists(chat_id, "u1")
     
     # Empty order map
     order_map = db._get_order_map_unsafe(chat_id)
@@ -52,7 +52,7 @@ def test_get_order_map_unsafe(temp_db):
 def test_get_chat_fetch_internal(temp_db):
     db = temp_db
     chat_id = "test_fetch_internal"
-    db.ensure_chat_exists(chat_id)
+    db.ensure_chat_exists(chat_id, "u1")
 
     chat = db._get_chat_fetch_internal(chat_id)
     assert chat is not None

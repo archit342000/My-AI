@@ -19,7 +19,7 @@
 | `clipboard.py` | Out-of-band text sharing clipboard tool implementations. | `clipboard_write`, `clipboard_read`, `clipboard_copy_file` |
 | `preferences.py` | Management of long-term user profile facts. | `manage_user_preferences` |
 | `spec.py` | ToolSpec dataclass and scope/type enumerations. | `ToolSpec`, `ToolScope`, `ToolType` |
-| `router.py` | API endpoints for interacting with tools and config. | `tools_bp` |
+| `router.py` | API endpoints for interacting with tools and config. Callback routes (`/active/<chat_id>`, `/clarification/response`) check the chat owner; an unknown or foreign callback id is the same 404. | `tools_bp` |
 | `tasks.py` | Implementation of persistent task/checklist management. | `manage_task_list` |
 | `time_utils.py` | Local date and time utilities. | `get_current_time` |
 

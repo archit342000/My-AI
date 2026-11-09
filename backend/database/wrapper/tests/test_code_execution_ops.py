@@ -26,7 +26,7 @@ def test_code_execution_ops(temp_db):
     chat_id = "test_chat_1"
     
     # Ensure chat exists
-    db.ensure_chat_exists(chat_id)
+    db.ensure_chat_exists(chat_id, "u1")
     
     # 1. Add record
     record_id = "exec_1"

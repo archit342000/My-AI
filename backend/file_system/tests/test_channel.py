@@ -112,9 +112,9 @@ def test_manager_max_channels():
     assert "c1" not in FileSystemChannelManager._channels
     FileSystemChannelManager._max_channels = 100
 
-@patch("backend.database.db.get_all_chats")
+@patch("backend.database.db.get_all_chat_ids")
 def test_manager_cleanup_stale_channels(mock_get_all_chats):
-    mock_get_all_chats.return_value = [{"id": "active1"}]
+    mock_get_all_chats.return_value = ["active1", "of-another-user"]
     
     FileSystemChannelManager.get_channel("active1")
     FileSystemChannelManager.get_channel("stale1")
@@ -124,7 +124,7 @@ def test_manager_cleanup_stale_channels(mock_get_all_chats):
     assert "active1" in FileSystemChannelManager._channels
     assert "stale1" not in FileSystemChannelManager._channels
 
-@patch("backend.database.db.get_all_chats", side_effect=Exception("DB Error"))
+@patch("backend.database.db.get_all_chat_ids", side_effect=Exception("DB Error"))
 def test_manager_cleanup_stale_channels_error(mock_get_all_chats):
     FileSystemChannelManager.get_channel("active1")
     FileSystemChannelManager.cleanup_stale_channels()

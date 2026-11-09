@@ -7,6 +7,12 @@ from backend.task_manager.worker import TaskWorker
 def mock_manager():
     return MagicMock()
 
+@pytest.fixture(autouse=True)
+def chat_owner():
+    """The worker looks up the chat owner in the db; no test here may touch the real database."""
+    with patch("backend.database.db.get_chat_owner", return_value="owner-1") as mock:
+        yield mock
+
 def test_init(mock_manager):
     def dummy_fn(): pass
     worker = TaskWorker("chat1", dummy_fn, "chat", mock_manager, kw1="v1")
@@ -94,3 +100,48 @@ def test_cancel_all_tasks(mock_manager):
         worker._cancel_all_tasks()
         mock_task1.cancel.assert_called_once()
         mock_task2.cancel.assert_called_once()
+
+
+def test_run_logs_as_the_chat_owner_and_resets_the_user_afterwards(mock_manager):
+    from backend.auth.context import current_user_id
+    seen = []
+    worker = TaskWorker("chat1", lambda: None, "chat", mock_manager)
+
+    with patch("backend.task_manager.worker.TaskExecutor"), \
+         patch("backend.task_manager.worker.asyncio.new_event_loop") as mock_new_loop, \
+         patch("backend.task_manager.worker.asyncio.set_event_loop"):
+        mock_loop = MagicMock()
+        mock_loop.run_until_complete.side_effect = lambda _coro: seen.append(current_user_id())
+        mock_new_loop.return_value = mock_loop
+        worker.run()
+
+    assert seen == ["owner-1"]
+    assert current_user_id() is None
+
+
+def test_run_for_a_chat_without_an_owner_runs_without_a_user(mock_manager, chat_owner):
+    from backend.auth.context import current_user_id
+    chat_owner.return_value = None
+    seen = []
+    worker = TaskWorker("gone", lambda: None, "chat", mock_manager)
+    with patch("backend.task_manager.worker.TaskExecutor"), \
+         patch("backend.task_manager.worker.asyncio.new_event_loop") as mock_new_loop, \
+         patch("backend.task_manager.worker.asyncio.set_event_loop"):
+        mock_loop = MagicMock()
+        mock_loop.run_until_complete.side_effect = lambda _coro: seen.append(current_user_id())
+        mock_new_loop.return_value = mock_loop
+        worker.run()
+    assert seen == [None]
+
+
+def test_run_still_cleans_up_when_the_owner_lookup_raises(mock_manager, chat_owner):
+    chat_owner.side_effect = RuntimeError("database is locked")
+    worker = TaskWorker("chat1", lambda: None, "chat", mock_manager)
+    with patch("backend.task_manager.worker.TaskExecutor"), \
+         patch("backend.task_manager.worker.asyncio.new_event_loop") as mock_new_loop, \
+         patch("backend.task_manager.worker.asyncio.set_event_loop"):
+        mock_loop = MagicMock()
+        mock_new_loop.return_value = mock_loop
+        worker.run()
+    mock_manager.pop_task.assert_called_once_with("chat1")  # the chat is not left registered as running
+    mock_loop.close.assert_called_once()

@@ -23,7 +23,7 @@ def temp_db():
 def test_history_weaving_basic(temp_db):
     db = temp_db
     chat_id = "test_history_weaving_basic"
-    db.ensure_chat_exists(chat_id)
+    db.ensure_chat_exists(chat_id, "u1")
     
     main_msg_id = db.add_message(
         chat_id=chat_id,
@@ -47,7 +47,7 @@ def test_history_weaving_basic(temp_db):
 def test_message_order_map(temp_db):
     db = temp_db
     chat_id = "test_order_map"
-    db.ensure_chat_exists(chat_id)
+    db.ensure_chat_exists(chat_id, "u1")
 
     order_map = db.get_message_order_map(chat_id)
     assert order_map == []
@@ -61,7 +61,7 @@ def test_message_order_map(temp_db):
 def test_woven_history_detailed(temp_db):
     db = temp_db
     chat_id = "test_woven_history_detailed"
-    db.ensure_chat_exists(chat_id)
+    db.ensure_chat_exists(chat_id, "u1")
     
     # 1. Create a structured turn sequence
     # Main User Message

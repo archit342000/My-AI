@@ -21,7 +21,7 @@ def temp_db():
 
 def test_clipboard_write_and_read(temp_db):
     chat_id = "test-chat-tool-id"
-    temp_db.save_chat(chat_id, "Title", 0.0, 1)
+    temp_db.save_chat(chat_id, "Title", 0.0, 1, user_id="u1")
 
     from backend.tools.clipboard import clipboard_write, clipboard_read
 

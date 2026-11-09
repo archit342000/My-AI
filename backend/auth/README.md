@@ -6,6 +6,7 @@
 | :--- | :--- | :--- |
 | `providers.py` | Identity providers. `CloudflareAccessProvider` verifies the `Cf-Access-Jwt-Assertion` JWT (RS256, `aud`, `iss`, `exp`, `iat`, `email`); `StaticProvider` is development only. | `get_provider`, `Identity` |
 | `context.py` | The current user (`{id, email, role}`) in a ContextVar, plus the admin-only route decorator. | `current_user`, `user_context`, `admin_required` |
+| `ownership.py` | Route owner checks: `require_chat_owner`, `require_workspace_owner`, `claim_chat` (create or refuse), `reject_foreign_chat` (refuse only an existing foreign chat, for routes that validate first). A foreign or missing id is a 404; no admin bypass; fails closed without a user. | `claim_chat`, `reject_foreign_chat` |
 | `cli.py` | `python -m backend.auth.cli add <email> [--role user\|admin] \| deactivate <email> \| list`. | `main` |
 
 ## ⚙️ Configuration (`backend/config.py`)

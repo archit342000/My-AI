@@ -1,6 +1,7 @@
 import logging
 import json
 import asyncio
+import contextvars
 from typing import List, Dict, Any, Optional, AsyncGenerator
 
 from backend.tools import ToolRegistry
@@ -297,7 +298,9 @@ class ToolHandler:
                 return await impl(**full_args)
             else:
                 loop = asyncio.get_event_loop()
-                return await loop.run_in_executor(None, lambda: impl(**full_args))
+                # run_in_executor does not copy the context, so run in a copy to keep the current user (log_event user_id)
+                context = contextvars.copy_context()
+                return await loop.run_in_executor(None, lambda: context.run(impl, **full_args))
         except Exception as e:
             logger.error(f"Error executing tool {name}: {e}", exc_info=True)
             log_event("tool_handler_tool_error", {

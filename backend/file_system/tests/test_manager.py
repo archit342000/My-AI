@@ -110,6 +110,15 @@ async def test_create_fs_file(mock_db, mock_channel, mock_utils, mock_aiofiles):
     mock_utils["sanitize_path"].side_effect = lambda x: x
 
 @pytest.mark.anyio
+async def test_create_fs_file_on_a_missing_chat_is_an_error_and_writes_nothing(mock_db, mock_channel, mock_utils, mock_aiofiles):
+    mock_db.get_chat_owner.return_value = None
+    res = await manager.create_fs_file("no_such_chat", "test.txt", "content")
+    assert res == {"success": False, "error": "Chat not found"}
+    mock_db.ensure_chat_exists.assert_not_called()  # the manager never creates chats; routes do
+    mock_aiofiles.open.assert_not_called()  # and nothing is written to disk
+    mock_db.create_file_system_with_version.assert_not_called()
+
+@pytest.mark.anyio
 async def test_create_fs_file_assigns_uuid4_id(mock_db, mock_channel, mock_utils, mock_aiofiles):
     """The create path uses the real id helper (not the fixture's mock) and gets a UUID4."""
     mock_db.get_file_system_meta_by_path.return_value = None

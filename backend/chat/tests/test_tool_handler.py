@@ -215,6 +215,22 @@ async def test_execute_pure_tool_strict_params(mock_registry, tool_handler):
     assert result == "1_chat_123"
 
 @pytest.mark.anyio
+async def test_sync_tool_runs_as_the_current_user(mock_registry, tool_handler):
+    """A sync tool implementation runs in an executor thread; it must still see the chat owner (log_event user_id)."""
+    from backend.auth.context import current_user_id, user_context
+    seen = []
+
+    def mock_impl():
+        seen.append(current_user_id())
+        return "ok"
+
+    mock_registry.resolve_implementation.return_value = mock_impl
+    with user_context({"id": "owner-1"}):
+        assert await tool_handler._execute_pure_tool("tool1", {}) == "ok"
+    assert seen == ["owner-1"]
+
+
+@pytest.mark.anyio
 async def test_execute_pure_tool_sync_exception(mock_registry, tool_handler):
     def mock_impl():
         raise ValueError("sync error")

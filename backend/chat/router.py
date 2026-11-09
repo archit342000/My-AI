@@ -5,6 +5,8 @@ import time
 from typing import Dict, Any
 
 from backend.chat.handler import ChatHandler
+from backend.auth.context import current_user_id
+from backend.auth.ownership import claim_chat, reject_foreign_chat, require_chat_owner, require_workspace_owner
 from backend.chat.message_edit import merge_edited_user_content
 from backend.database import db
 from backend.logging import log_event
@@ -30,12 +32,12 @@ FILE_SYSTEMS_DIR = os.path.join(config.DATA_DIR, "file_systems")
 @chat_bp.route('/', methods=['GET'])
 def list_chats():
     logger.debug("[API] GET /api/chats - listing chats that have content")
-    chats = db.get_listed_chats()
+    chats = db.get_listed_chats(current_user_id())
     return jsonify(chats)
 
 @chat_bp.route('/workspaces', methods=['GET'])
 def list_workspaces():
-    workspaces = db.get_all_workspaces()
+    workspaces = db.get_all_workspaces(current_user_id())
     return jsonify(workspaces)
 
 @chat_bp.route('/workspaces', methods=['POST'])
@@ -46,13 +48,16 @@ def create_workspace():
     name = data.get('name')
     if not name:
         return jsonify({"error": "Missing workspace name"}), 400
-    if db.workspace_name_exists(name):
+    if db.workspace_name_exists(name, current_user_id()):
         return jsonify({"error": f"A workspace named '{name}' already exists"}), 400
-    workspace = db.create_workspace(name)
+    workspace = db.create_workspace(name, current_user_id())
     return jsonify(workspace)
 
 @chat_bp.route('/workspaces/<workspace_id>', methods=['PATCH'])
 def rename_workspace(workspace_id):
+    denied = require_workspace_owner(workspace_id)
+    if denied:
+        return denied
     data, err = read_json_object(required=False)
     if err:
         return err
@@ -61,7 +66,7 @@ def rename_workspace(workspace_id):
     if not new_name and not has_icon:
         return jsonify({"error": "Missing workspace update fields (name or icon)"}), 400
     # Check before any write so a rejected rename changes neither the name nor the icon.
-    if new_name and db.workspace_name_exists(new_name, exclude_id=workspace_id):
+    if new_name and db.workspace_name_exists(new_name, current_user_id(), exclude_id=workspace_id):
         return jsonify({"error": f"A workspace named '{new_name}' already exists"}), 400
     if has_icon:
         db.update_workspace_icon(workspace_id, data.get('icon'))
@@ -71,14 +76,16 @@ def rename_workspace(workspace_id):
 
 @chat_bp.route('/workspaces/<workspace_id>', methods=['DELETE'])
 def delete_workspace(workspace_id):
+    denied = require_workspace_owner(workspace_id)
+    if denied:
+        return denied
     db.delete_workspace(workspace_id)
     return jsonify({"success": True})
 
 @chat_bp.route('', methods=['DELETE'])
 @chat_bp.route('/', methods=['DELETE'])
 def clear_all_chats():
-    all_chats = db.get_all_chats()
-    db.delete_all_chats()
+    db.delete_all_chats(current_user_id())
     return jsonify({"success": True})
 
 @chat_bp.route('/save', methods=['POST'])
@@ -100,13 +107,28 @@ def save_chat_endpoint():
     if not chat_id or '..' in chat_id or '/' in chat_id or '\\' in chat_id:
         return jsonify({"error": "Invalid or missing chat_id"}), 400
 
+    existing_chat = db.get_chat(chat_id)
+    if existing_chat:
+        denied = require_chat_owner(chat_id)  # another user's chat is a 404, never a 403
+        if denied:
+            return denied
+        return jsonify({"error": "Cannot overwrite existing chat history via save endpoint. Use Action-Based APIs."}), 403
+
+    save_workspace_id = data.get('workspace_id') or data.get('folder')
+    if save_workspace_id:
+        denied = require_workspace_owner(save_workspace_id)
+        if denied:
+            return denied
+
+    # Claim the new chat for the caller first (404 if another user created it meanwhile); the writes below then only
+    # touch the caller's own row.
+    denied = claim_chat(chat_id)
+    if denied:
+        return denied
+
     file_systems = db.get_chat_file_systems(chat_id)
     if len(file_systems) > 0:
         file_system_mode = True
-
-    existing_chat = db.get_chat(chat_id)
-    if existing_chat:
-        return jsonify({"error": "Cannot overwrite existing chat history via save endpoint. Use Action-Based APIs."}), 403
 
     db.save_chat(
         chat_id=chat_id,
@@ -130,7 +152,8 @@ def save_chat_endpoint():
         top_k=data.get('top_k', 40),
         min_p=data.get('min_p', 0.05),
         presence_penalty=data.get('presence_penalty', 0.0),
-        frequency_penalty=data.get('frequency_penalty', 0.0)
+        frequency_penalty=data.get('frequency_penalty', 0.0),
+        user_id=current_user_id()
     )
     db.update_chat(chat_id=chat_id, thinking_profile=data.get('thinking_profile', 'general'))
 
@@ -150,10 +173,15 @@ def patch_chat_endpoint(chat_id):
     enable_thinking = data.get('enable_thinking')
     thinking_profile = data.get('thinking_profile')
 
+    # A target workspace must belong to the caller; checked before anything is created or written.
+    if workspace_id:
+        denied = require_workspace_owner(workspace_id)
+        if denied:
+            return denied
+    denied = claim_chat(chat_id)
+    if denied:
+        return denied
     existing_chat = db.get_chat(chat_id)
-    if not existing_chat:
-        db.ensure_chat_exists(chat_id)
-        existing_chat = db.get_chat(chat_id)
 
     if existing_chat.get('research_mode'):
         if last_model and last_model != existing_chat.get('last_model'):
@@ -215,6 +243,9 @@ def patch_chat_endpoint(chat_id):
 
 @chat_bp.route('/<chat_id>', methods=['DELETE'])
 def remove_chat(chat_id):
+    denied = require_chat_owner(chat_id)
+    if denied:
+        return denied
     from backend.rag import RAGProvider
     from backend.models import get_embedding_model
     from backend.files.manager import FileManager
@@ -251,6 +282,9 @@ def get_chat_history_full(chat_id):
     Retrieves full woven history for a specific chat.
     Endpoint: GET /api/chats/<chat_id>
     """
+    denied = require_chat_owner(chat_id)
+    if denied:
+        return denied
     try:
         handler = ChatHandler(chat_id)
         result = handler.get_history()
@@ -278,7 +312,26 @@ def chat_completions():
     if not chat_id:
         return jsonify({"error": "chatId is required"}), 400
 
-    # One turn per chat: refuse before anything is stored if a turn is running or being started.
+    # Another user's chat is a 404 before anything else, so the file check below cannot reveal what that chat holds.
+    denied = reject_foreign_chat(chat_id)
+    if denied:
+        return denied
+
+    if files is not None and not isinstance(files, list):
+        return jsonify({"error": "uploadedFiles must be a list"}), 400
+
+    # Every attached file must belong to this chat. Checked before the chat is claimed so a rejected request writes nothing.
+    for attached in files or []:
+        file_meta = db.get_file(attached.get('file_id')) if isinstance(attached, dict) else None
+        if not file_meta or file_meta.get('chat_id') != chat_id:
+            return jsonify({"error": "Unknown file"}), 400
+
+    # Create the chat for the caller, or refuse (404) another user's chat, before any claim or write.
+    denied = claim_chat(chat_id)
+    if denied:
+        return denied
+
+    # One turn per chat: refuse before a message is stored if a turn is running or being started.
     turns = task_manager  # the same manager claims and releases, whatever happens to the module global
     if not turns.claim_turn(chat_id):
         log_event("chat_send_rejected_turn_in_progress", {"chat_id": chat_id})
@@ -287,10 +340,7 @@ def chat_completions():
     log_event("api_chat_completions", {"chat_id": chat_id, "model": model})
 
     try:
-        # 1. Ensure chat exists and metadata is settled
-        db.ensure_chat_exists(chat_id)
-        
-        # 2. Persist User Message if it's a new turn
+        # 1. Persist User Message if it's a new turn (the chat exists and is the caller's: claim_chat above)
         persisted_user_msg = None
         if user_message_raw and user_message_raw.get('role') == 'user':
             content = user_message_raw.get('content', '')
@@ -455,6 +505,9 @@ def reattach_stream(chat_id):
     Reattach to an in-progress generation stream.
     Returns 204 if no task is currently running (task already finished).
     """
+    denied = require_chat_owner(chat_id)
+    if denied:
+        return denied
     if not task_manager.is_task_running(chat_id):
         return '', 204
 
@@ -490,6 +543,9 @@ def resume_chat(chat_id):
     Returns 400 {"error": "a response is already in progress"} if a turn for the chat is running or
     starting (sends and resumes share one claim per chat, docs/standards/api.md).
     """
+    denied = require_chat_owner(chat_id)
+    if denied:
+        return denied
     resume_body, err = read_json_object(required=False)
     if err:
         return err
@@ -562,6 +618,9 @@ def stop_chat(chat_id):
     """
     Interrupts a running turn and rolls back.
     """
+    denied = require_chat_owner(chat_id)
+    if denied:
+        return denied
     try:
         task_manager.stop_task(chat_id)
         db.rollback_to_last_user_message(chat_id)
@@ -589,6 +648,9 @@ def stop_chat(chat_id):
 
 @chat_bp.route('/<chat_id>/messages/<int:message_id>', methods=['PUT', 'PATCH'])
 def edit_message_endpoint(chat_id, message_id):
+    denied = require_chat_owner(chat_id)
+    if denied:
+        return denied
     data, err = read_json_object()
     if err:
         return err
@@ -615,6 +677,9 @@ def edit_message_endpoint(chat_id, message_id):
 @chat_bp.route('/<chat_id>/messages/<int:message_id>', methods=['DELETE'])
 def delete_message_endpoint(chat_id, message_id):
     """Delete a message and subsequent history (cascading)."""
+    denied = require_chat_owner(chat_id)
+    if denied:
+        return denied
     db.delete_message(chat_id, message_id)
     return jsonify({"success": True})
 
@@ -624,6 +689,9 @@ def discard_research_endpoint(chat_id):
     Killed a research task, wipe state files, clean RAG,
     and reset chat to just the first user message.
     """
+    denied = require_chat_owner(chat_id)
+    if denied:
+        return denied
     from backend import config
     import os
     import re

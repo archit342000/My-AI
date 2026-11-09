@@ -5,10 +5,16 @@ from unittest.mock import MagicMock, patch
 from backend.tools.router import tools_bp
 
 @pytest.fixture
-def app():
+def app(login_as, user_a):
     app = Flask(__name__)
     app.register_blueprint(tools_bp, url_prefix='/tools')
+    login_as(app, user_a)
     return app
+
+@pytest.fixture(autouse=True)
+def owned_by_user_a(owner_db):
+    """Ownership checks read owners from the db: by default every chat belongs to user_a (the logged-in user)."""
+    return owner_db
 
 @pytest.fixture
 def client(app):
@@ -52,6 +58,7 @@ def test_clarification_response_success(client, mock_registry):
 
 def test_clarification_response_db_fallback(client, mock_registry, mock_db):
     mock_registry.get.return_value = None # Not in memory
+    mock_db.get_callback_chat_id.return_value = "chat1"
     
     resp = client.post('/tools/clarification/response', json={
         "callback_id": "cb_db",
@@ -211,8 +218,51 @@ def test_clarification_response_missing_id(client):
 def test_clarification_response_not_found(client, mock_registry, mock_db):
     mock_registry.get.return_value = None
     mock_db.resolve_callback.side_effect = Exception("Not found")
+    mock_db.get_callback_chat_id.return_value = "chat1"
     resp = client.post('/tools/clarification/response', json={"callback_id": "unknown"})
     assert resp.status_code == 404
+
+
+def test_clarification_response_for_an_unknown_callback_is_404_and_resolves_nothing(client, mock_registry, mock_db):
+    mock_registry.get.return_value = None
+    mock_db.get_callback_chat_id.return_value = None
+    resp = client.post('/tools/clarification/response', json={"callback_id": "ghost"})
+    assert resp.status_code == 404
+    mock_db.resolve_callback.assert_not_called()
+
+
+def test_clarification_response_when_the_callback_lookup_fails_is_404(client, mock_registry, mock_db):
+    mock_registry.get.return_value = None
+    mock_db.get_callback_chat_id.side_effect = RuntimeError("database is locked")
+    resp = client.post('/tools/clarification/response', json={"callback_id": "cb1"})
+    assert resp.status_code == 404
+    assert resp.get_json() == {"error": "Unknown or expired callback_id"}
+    mock_db.resolve_callback.assert_not_called()
+
+
+def test_user_b_cannot_see_or_resolve_user_as_callbacks(app, login_as, user_b, mock_registry, mock_db, owned_by_user_a, user_a):
+    owned_by_user_a.get_chat_owner.return_value = user_a["id"]
+    login_as(app, user_b)
+    client = app.test_client()
+    mock_registry._callbacks = {"cb1": {"chat_id": "chat1", "response": None}}
+    mock_db.get_pending_callbacks.return_value = [{"callback_id": "cb2"}]
+
+    assert client.get('/tools/active/chat1').status_code == 404
+    mock_db.get_pending_callbacks.assert_not_called()
+
+    mock_registry.get.return_value = {"chat_id": "chat1"}  # in-memory path
+    foreign = client.post('/tools/clarification/response', json={"callback_id": "cb1", "content": "x"})
+    assert foreign.status_code == 404
+    mock_registry.get.return_value = None
+    mock_db.get_callback_chat_id.return_value = None
+    unknown = client.post('/tools/clarification/response', json={"callback_id": "ghost", "content": "x"})
+    assert foreign.get_json() == unknown.get_json()  # a foreign callback id is indistinguishable from an unknown one
+    mock_registry.resolve.assert_not_called()
+
+    mock_registry.get.return_value = None  # DB path
+    mock_db.get_callback_chat_id.return_value = "chat1"
+    assert client.post('/tools/clarification/response', json={"callback_id": "cb2", "content": "x"}).status_code == 404
+    mock_db.resolve_callback.assert_not_called()
 
 
 def test_run_file_defaults_sql_target_to_sqlite(client):

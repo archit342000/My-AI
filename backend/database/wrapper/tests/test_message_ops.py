@@ -23,7 +23,7 @@ def test_message_ops(temp_db):
     db = temp_db
     chat_id = "test_msg_ops"
     
-    db.ensure_chat_exists(chat_id)
+    db.ensure_chat_exists(chat_id, "u1")
     
     msg_id = db.add_message(
         chat_id=chat_id,
@@ -116,7 +116,7 @@ def test_message_ops(temp_db):
 def test_message_delete_pointers_cascade(temp_db):
     db = temp_db
     chat_id = "test_msg_pointers"
-    db.ensure_chat_exists(chat_id)
+    db.ensure_chat_exists(chat_id, "u1")
     
     msg1_u = db.add_message(chat_id, "user", "User 1")
     msg2_a = db.add_message(chat_id, "assistant", "Asst 1")
@@ -143,7 +143,7 @@ def test_message_delete_pointers_cascade(temp_db):
 def test_message_delete_history_compression_invalidation(temp_db):
     db = temp_db
     chat_id = "test_msg_compression"
-    db.ensure_chat_exists(chat_id)
+    db.ensure_chat_exists(chat_id, "u1")
     
     msg1 = db.add_message(chat_id, "user", "msg 1")
     msg2 = db.add_message(chat_id, "assistant", "msg 2")
@@ -166,7 +166,7 @@ def test_message_delete_history_compression_invalidation(temp_db):
 
 def test_message_attachments_round_trip(temp_db):
     db = temp_db
-    db.ensure_chat_exists("attach_chat")
+    db.ensure_chat_exists("attach_chat", "u1")
     refs = [{"file_id": "f1", "name": "a.txt", "size": 3, "mime_type": "text/plain"}]
     with_files = db.add_message("attach_chat", role="user", content="see file", attachments=refs)
     without = db.add_message("attach_chat", role="user", content="no file")
@@ -185,7 +185,7 @@ def test_message_attachments_round_trip(temp_db):
 def test_edit_message_is_scoped_to_chat(temp_db):
     db = temp_db
     for chat in ("edit_scope_a", "edit_scope_b"):
-        db.ensure_chat_exists(chat)
+        db.ensure_chat_exists(chat, "u1")
     a_first = db.add_message("edit_scope_a", role="user", content="a first")
     a_reply = db.add_message("edit_scope_a", role="assistant", content="a reply")
     b_first = db.add_message("edit_scope_b", role="user", content="b first")
@@ -210,7 +210,7 @@ def test_edit_message_is_scoped_to_chat(temp_db):
 def test_get_message_is_scoped_to_the_chat(temp_db):
     db = temp_db
     for chat in ("get_msg_a", "get_msg_b"):
-        db.ensure_chat_exists(chat)
+        db.ensure_chat_exists(chat, "u1")
     user_id = db.add_message("get_msg_a", role="user", content="hello")
     reply_id = db.add_message("get_msg_a", role="assistant", content="hi")
 

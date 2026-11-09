@@ -27,7 +27,7 @@ def test_callback_ops(temp_db):
     callback_id = "cb_123"
     
     # Ensure chat exists to satisfy foreign key constraint
-    db.ensure_chat_exists(chat_id)
+    db.ensure_chat_exists(chat_id, "u1")
     
     # 1. Save Callback
     db.save_callback(
@@ -72,3 +72,10 @@ def test_callback_ops(temp_db):
     assert len(db.get_pending_callbacks(chat_id)) == 1
     db.cleanup_chat_callbacks(chat_id)
     assert len(db.get_pending_callbacks(chat_id)) == 0
+
+
+def test_get_callback_chat_id(temp_db):
+    temp_db.ensure_chat_exists("chat_for_cb_lookup", "u1")
+    temp_db.save_callback(callback_id="cb_lookup", chat_id="chat_for_cb_lookup", parent_message_id=1, question="?", options=[])
+    assert temp_db.get_callback_chat_id("cb_lookup") == "chat_for_cb_lookup"
+    assert temp_db.get_callback_chat_id("cb_unknown") is None

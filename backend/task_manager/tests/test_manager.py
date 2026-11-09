@@ -121,6 +121,13 @@ def test_run_cache_cleanup_fs_channel_exception(manager):
         manager._run_cache_cleanup()
         mock_logger.assert_called_with("FileSystem channel cleanup error: fs error")
 
+@pytest.fixture(autouse=True)
+def chat_owner():
+    """recover_tasks looks the owner up in the db; keep every test in this file off the real database."""
+    with patch("backend.database.db.get_chat_owner", return_value="owner-1") as mock, \
+         patch("backend.task_manager.manager.log_event"):  # never write to the real log directory
+        yield mock
+
 def test_recover_tasks():
     with patch("threading.Thread"), \
          patch("os.path.exists", return_value=True), \
@@ -217,3 +224,45 @@ def test_claim_turn_only_one_concurrent_claimant_wins(manager):
         th.join()
     assert results.count(True) == 1
     assert results.count(False) == workers - 1
+
+
+def _recover_one_task(chat_id, owners):
+    """Run recover_tasks over one running task and return the user id each log_event call saw."""
+    from backend.auth.context import current_user_id
+    seen = []
+    with patch("threading.Thread"), \
+         patch("os.path.exists", return_value=True), \
+         patch("os.listdir", return_value=[f"{chat_id}.json"]), \
+         patch("builtins.open"), \
+         patch("json.load", return_value={"status": "running", "chat_id": chat_id}), \
+         patch("json.dump"), \
+         patch("backend.task_manager.manager.log_event",
+               side_effect=lambda name, data: seen.append((name, data, current_user_id()))):
+        TaskManager().recover_tasks()
+    return seen
+
+
+def test_recover_tasks_logs_task_recovered_as_the_chat_owner():
+    from backend.auth.context import current_user_id
+    assert _recover_one_task("chat1", None) == [("task_recovered", {"chat_id": "chat1"}, "owner-1")]
+    assert current_user_id() is None  # reset afterwards
+
+
+def test_recover_tasks_for_a_deleted_chat_logs_without_a_user(chat_owner):
+    chat_owner.return_value = None
+    assert _recover_one_task("gone", None) == [("task_recovered", {"chat_id": "gone"}, None)]
+
+
+def test_recover_tasks_keeps_the_resume_state_when_the_owner_lookup_fails(chat_owner):
+    chat_owner.side_effect = RuntimeError("database is locked")
+    with patch("threading.Thread"), \
+         patch("os.path.exists", return_value=True), \
+         patch("os.listdir", return_value=["task1.json"]), \
+         patch("builtins.open"), \
+         patch("json.load", return_value={"status": "running", "chat_id": "task1"}), \
+         patch("json.dump") as mock_dump, \
+         patch("os.remove") as mock_remove, \
+         patch("backend.task_manager.manager.log_event"):
+        TaskManager().recover_tasks()
+    assert mock_dump.call_args.args[0]["status"] == "needs_resume"
+    mock_remove.assert_not_called()  # a failed owner lookup must not delete the state file just written

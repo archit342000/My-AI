@@ -11,8 +11,8 @@
 | :--- | :--- | :--- |
 | `artifact_ops.py` | Operations for artifacts (canvas-like objects). | `ArtifactOpsMixin` |
 | `base.py` | Base functionality, logging, and connection helpers. | `BaseMixin` |
-| `callback_ops.py` | Persistence for pending clarification callbacks. | `CallbackOpsMixin` |
-| `chat_ops.py` | CRUD for chats, workspaces, and chat metadata; FK-safe delete ordering. `get_listed_chats` returns the chats with content (message, file or chat artifact) for the sidebar; `get_all_chats` returns every chat for internal callers. | `ChatOpsMixin` |
+| `callback_ops.py` | Persistence for pending clarification callbacks; `get_callback_chat_id` finds the chat a callback belongs to. | `CallbackOpsMixin` |
+| `chat_ops.py` | CRUD for chats, workspaces, and chat metadata; FK-safe delete ordering. Owner-scoped: list, create, name-check and `delete_all_chats` take a `user_id` (empty raises `ValueError`); `ensure_chat_exists(chat_id, user_id)` returns the stored owner; `get_chat_owner`, `get_workspace_owner` read the DB directly; `get_all_chat_ids` is for system cleanup only. `get_listed_chats` returns the user's chats with content (message, file or chat artifact) for the sidebar. | `ChatOpsMixin` |
 | `clipboard_ops.py` | Operations for chat clipboards. | `ClipboardOpsMixin` |
 | `file_system_ops.py` | Operations for file system artifacts and versions. | `FileSystemOpsMixin` |
 | `history_ops.py` | Logic for weaving message history and turn anchoring. | `HistoryOpsMixin` |
