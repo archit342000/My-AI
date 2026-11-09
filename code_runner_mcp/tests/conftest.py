@@ -68,4 +68,5 @@ def isolated_scratch():
         raise RuntimeError("a test left the scratch roots pointing somewhere else")
     if executor.SANDBOX_BASE != str(_ROOTS[0] / "sandbox") or runner_helper.MQUEUE_DIR != str(_MQUEUE):
         raise RuntimeError("a test left the sandbox base or mqueue directory pointing somewhere else")
+    executor.TAINTED = False  # a test that fails a clean-up must not taint the next one
     yield _ROOTS

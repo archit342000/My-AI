@@ -10,6 +10,7 @@ import executor as executor_module
 from executor import BUSY, CLEANUP_FAILED, RUN_LOCK, CodeExecutor, ExecutionResult, clear_scratch, kill_group, remove_sandbox
 import sandbox_user
 from fastapi import FastAPI, Header, HTTPException, Depends, status, WebSocket, WebSocketDisconnect
+from fastapi.responses import JSONResponse
 import asyncio
 from package_names import validate_packages
 
@@ -496,6 +497,8 @@ async def execute_ws(websocket: WebSocket) -> None:
 
 @app.get("/health")
 def health_check():
+    if executor_module.TAINTED:  # the last clean-up failed: leftovers of a run may still be there
+        return JSONResponse(status_code=503, content={"status": "tainted"})
     return {
         "status": "ok",
         "languages": ["python", "c", "cpp", "java", "javascript", "typescript", "go", "rust", "bash", "php", "sql"]

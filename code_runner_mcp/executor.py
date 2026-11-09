@@ -26,6 +26,9 @@ LOCK_WAIT = 600  # seconds a run waits for the runner lock before answering busy
 # client timeout) while the runner is still busy; without this lock the next run would start, and clear_scratch() would
 # delete the directories, under the one still running. Held from the pre-run clear to the post-run clear.
 RUN_LOCK = threading.Lock()
+# Set by a failed clean-up, cleared by the next successful one. While set, /health answers 503 (the container shows
+# unhealthy) and runs are refused by the pre-run clean-up, which keeps failing until the leftover is gone.
+TAINTED = False
 
 
 def scratch_roots() -> tuple:
@@ -161,6 +164,8 @@ def clear_scratch() -> List[str]:
         except Exception as exc:  # a broken helper is a cleanup failure, never silently ignored
             failed.append(f"helper:{kind}:{exc}")
     failed.extend(verify_clean())
+    global TAINTED
+    TAINTED = bool(failed)
     for path in dict.fromkeys(failed):
         logger.error("runner_cleanup_error path=%s", path)
     return list(dict.fromkeys(failed))

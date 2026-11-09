@@ -629,3 +629,13 @@ def test_packages_takes_the_runner_lock_and_answers_busy_when_it_cannot(monkeypa
     monkeypatch.setattr(executor, "LOCK_WAIT", 0.1)
     with executor.RUN_LOCK:
         assert client.get("/packages?manager=pip", headers=AUTH).status_code == 503
+
+
+def test_health_is_ok_until_a_cleanup_fails_and_503_while_the_runner_is_tainted(monkeypatch):
+    import executor
+    monkeypatch.setattr(executor, "TAINTED", False)
+    ok = client.get("/health")
+    assert ok.status_code == 200 and ok.json()["status"] == "ok" and "python" in ok.json()["languages"]
+    monkeypatch.setattr(executor, "TAINTED", True)
+    bad = client.get("/health")
+    assert bad.status_code == 503 and bad.json() == {"status": "tainted"}
