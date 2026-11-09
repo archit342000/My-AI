@@ -44,6 +44,10 @@ workflow issue. Keep each entry to the core lesson.
 - **RAG grid search:** synthetic test data must be highly discriminative. Generic or repetitive data causes
   zero-recall metrics.
 
+## Docker and sandboxing
+
+- **Docker cannot allowlist egress by host.** `internal: true` removes the route out and separate bridges isolate networks, but there is no per-destination policy. Give the sandbox egress only through a proxy with fixed upstreams (`pkg-proxy`), never by attaching the runtime to a non-internal network. In nginx, `proxy_set_header` is inherited only by locations that set none of their own: repeat the shared headers.
+
 ## Known defects (not yet fixed)
 
 - `backend/tools/agents/research_agent/agent.py` uses undefined names (`MANAGE_TASK_LIST_TOOL`, `READ_FS_FILE_TOOL`,

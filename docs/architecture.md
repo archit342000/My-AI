@@ -25,7 +25,7 @@ Inference is external. The llama.cpp server lives in a separate repository.
 
 External tools run in separate containers and are reached through the Model Context
 Protocol: `tavily_mcp` (search), `playwright_mcp` (browsing/scraping) and
-`code_runner_mcp` (the relay to the sandboxed code runner, `code_runner_runtime`). The Flask app is the orchestrator.
+`code_runner_mcp` (the relay to the sandboxed code runner, `code_runner_runtime`, whose package installs go through the allowlisted proxy `pkg-proxy`). The Flask app is the orchestrator.
 
 ## Component map
 

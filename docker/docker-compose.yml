@@ -123,6 +123,12 @@ services:
       - CODE_RUNNER_API_KEY
     environment:
       - API_KEY_FILE=/run/secrets/CODE_RUNNER_API_KEY
+      # Installs go through the allowlisted package proxy (pkg-proxy); the runtime itself has no route out.
+      - PIP_INDEX_URL=http://pkg-proxy:8080/pypi/simple/
+      - PIP_TRUSTED_HOST=pkg-proxy
+      - npm_config_registry=http://pkg-proxy:8080/npm/
+      - npm_config_audit=false
+      - npm_config_fund=false
     healthcheck:
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8100/health', timeout=3)"]
       interval: 30s
@@ -133,6 +139,36 @@ services:
         limits:
           memory: ${CODE_RUNNER_MEMORY_LIMIT:-512M}
           cpus: "${CODE_RUNNER_CPU_LIMIT:-1.0}"
+    restart: unless-stopped
+
+  # Package proxy for /install: nginx with fixed upstreams only (PyPI, files.pythonhosted.org, registry.npmjs.org).
+  # It joins runner-net (so the runtime can reach it) and pkg-egress (its only route out), and nothing else: no
+  # secure-internal, no secrets, no volumes. See docs/standards/security.md for what this does and does not enforce.
+  pkg-proxy:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.pkg-proxy
+    image: my-ai-pkg-proxy
+    networks:
+      - runner-net
+      - pkg-egress
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.5"
     restart: unless-stopped
 
   # Relay: the app's only route to the runner. Forwards TCP 8100 to code_runner_runtime and nothing else.
@@ -181,10 +217,18 @@ services:
 networks:
   secure-internal:
     driver: bridge
-  # Internal only: no route to the internet or to mysql_db. Only the relay code_runner_mcp joins it as well; the app does not.
+  # Internal only: no route to the internet or to mysql_db. The relay code_runner_mcp and the package proxy pkg-proxy
+  # join it as well; the app does not.
   runner-net:
     driver: bridge
     internal: true
+  # The package proxy's only route out. Only pkg-proxy joins it. The bridge name is fixed so an optional host
+  # DOCKER-USER rule can match it (docs/standards/security.md); a second copy of the stack on the same host
+  # (for example a throwaway verification stack) must override the name.
+  pkg-egress:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.name: myai-pkg-egress
 
 volumes:
   mysql_data:

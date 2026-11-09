@@ -69,7 +69,7 @@ RUN_FILE = ToolSpec(
 
 INSTALL_PACKAGES = ToolSpec(
     name="install_packages",
-    description="Install packages in the code execution sandbox. Requires user approval before proceeding. Installed packages persist until the code runner container is restarted. Currently not available: the sandbox has no outbound network, so installs fail.",
+    description="Install packages in the code execution sandbox. Requires user approval before proceeding. Installed packages persist until the code runner container is restarted. Installs go through an allowlisted package proxy (PyPI and the npm registry only). Common Python packages are already installed (numpy, pandas, scipy, matplotlib, requests, sympy, beautifulsoup4, pyyaml, pillow, tabulate), so check `list_packages` before installing.",
     parameters={
         "type": "object",
         "properties": {

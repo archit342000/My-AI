@@ -19,7 +19,7 @@
 *   **Dependencies:**
     - `fastapi`, `uvicorn`: Web frameworks.
     - Various OS language runtimes (gcc, g++, default-jdk, nodejs, npm, tsx, golang, rustc, php-cli, sqlite3).
-*   **Network:** the runtime service `code_runner_runtime` is on `runner-net`, which is internal-only. User code has no internet, `mysql_db` or app access. The app reaches the runtime through the relay service `code_runner_mcp` (`relay.py`), which forwards port 8100 only. Residual reach: the runtime's `CODE_RUNNER_API_KEY` is readable by user code, and user code can call the runner (and the relay) on port 8100. `/install` (pip/npm) needs outbound access, so it fails in this setup.
+*   **Network:** the runtime service `code_runner_runtime` is on `runner-net`, which is internal-only. User code has no internet, `mysql_db` or app access. The app reaches the runtime through the relay service `code_runner_mcp` (`relay.py`), which forwards port 8100 only. Residual reach: the runtime's `CODE_RUNNER_API_KEY` is readable by user code, and user code can call the runner (and the relay) on port 8100. `/install` (pip/npm) goes through `pkg-proxy`, an allowlisted nginx proxy (PyPI and the npm registry only) that the runtime reaches via `PIP_INDEX_URL` / `npm_config_registry`; user code can reach it too and so can download from those registries. Common Python packages (`requirements-sandbox.txt`) are baked into the image.
 *   **Flow:**
     1. The main app container makes an HTTP request to `/execute`, `/install`, or `/packages`.
     2. `server.py` verifies the `X-API-KEY` header (HTTP routes and `/ws/execute` alike; a `?api_key=` query parameter is not accepted); the service refuses to start without a configured key.
