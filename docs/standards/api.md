@@ -31,9 +31,9 @@ Client code lives in `frontend/src/api/`.
   tool results, `event` activity labels, sub-agent deltas and `__redact__`. The reader and fixtures are described in `docs/frontend.md`.
 - Errors during a stream are sent as `data: {"error": "<message>"}` and the stream ends. Never raise after the response has started.
 - A turn runs independently of the HTTP request: the client may disconnect and re-attach. Stop it with `POST /api/chats/<id>/stop`.
-- One turn runs per chat. While a turn is running or starting, `POST /v1/chat/completions` for that chat returns
-  `400 {"error": "a response is already in progress"}` and stores nothing; re-attach with `GET /api/chats/<id>/stream` instead.
-  The React client shows that message as a toast (no inline error row).
+- One turn runs per chat. While a turn is running or starting, `POST /v1/chat/completions` and `POST /api/chats/<id>/resume`
+  for that chat return `400 {"error": "a response is already in progress"}` and start nothing (a send also stores nothing);
+  re-attach with `GET /api/chats/<id>/stream` instead. The React client shows that message as a toast (no inline error row).
 - Yield incrementally and flush each event; do not buffer the whole response.
 
 ## WebSockets

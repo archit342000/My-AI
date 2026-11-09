@@ -148,11 +148,21 @@ window.showClarificationPopOver = function (question, options, callbackId, confi
             ) : true; // default to true if showConfirm isn't provided
 
         if (confirmed) {
-            fetch(`${API_MODULES.CHATS}/${config.chatId}/resume`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ action: "cancel" }),
-            });
+            // Stop the waiting turn and clean up its callback instead of resuming it. Like the Stop
+            // button, /stop also rolls back the turn's partial output to the last user message and
+            // hides the resume banner. config.showNotification is window.showAlert(title, message).
+            const chatId = encodeURIComponent(config.chatId);
+            try {
+                const res = await fetch(`${API_MODULES.CHATS}/${chatId}/stop`, { method: "POST" });
+                if (!res.ok && config.showNotification) {
+                    config.showNotification("Stop failed", "Failed to stop the process.");
+                }
+            } catch (e) {
+                console.error("Error stopping the process:", e);
+                if (config.showNotification) {
+                    config.showNotification("Stop failed", "Failed to stop the process.");
+                }
+            }
             popover.style.display = "none";
         }
     };

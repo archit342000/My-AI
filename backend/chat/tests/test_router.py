@@ -414,6 +414,118 @@ def test_resume_chat(mock_chat_handler_class, mock_db, client):
     response = client.post('/api/chats/chat1/resume', json={})
     assert response.status_code == 500
 
+@patch('backend.chat.router.db')
+@patch('backend.chat.router.ChatHandler')
+@patch('backend.chat.router.log_event')
+@patch('backend.chat.router.task_manager')
+def test_resume_chat_rejected_when_turn_in_progress(mock_task_manager, mock_log_event, mock_handler_class, mock_db, client):
+    mock_task_manager.claim_turn.return_value = False
+    response = client.post('/api/chats/chat1/resume', json={"model": "m"})
+    assert response.status_code == 400
+    assert response.json == {"error": "a response is already in progress"}
+    mock_task_manager.claim_turn.assert_called_once_with("chat1")
+    mock_handler_class.assert_not_called()
+    mock_db.get_messages.assert_not_called()
+    mock_task_manager.release_turn_claim.assert_not_called()
+    mock_log_event.assert_called_once_with("chat_resume_rejected_turn_in_progress", {"chat_id": "chat1"})
+
+@patch('backend.chat.router.db')
+@patch('backend.chat.router.ChatHandler')
+@patch('backend.chat.router.task_manager')
+def test_resume_chat_releases_claim_when_there_is_nothing_to_resume(mock_task_manager, mock_handler_class, mock_db, client):
+    mock_task_manager.claim_turn.return_value = True
+    mock_db.get_messages.return_value = []
+    response = client.post('/api/chats/chat1/resume', json={})
+    assert response.status_code == 400
+    mock_task_manager.release_turn_claim.assert_called_once_with("chat1")
+
+@patch('backend.chat.router.db')
+@patch('backend.chat.router.ChatHandler')
+@patch('backend.chat.router.task_manager')
+def test_resume_chat_releases_claim_on_route_error(mock_task_manager, mock_handler_class, mock_db, client):
+    mock_task_manager.claim_turn.return_value = True
+    mock_db.get_messages.side_effect = Exception("db down")
+    response = client.post('/api/chats/chat1/resume', json={})
+    assert response.status_code == 500
+    mock_task_manager.release_turn_claim.assert_called_once_with("chat1")
+
+@patch('backend.chat.router.db')
+@patch('backend.chat.router.ChatHandler')
+@patch('backend.chat.router.task_manager')
+def test_resume_chat_releases_claim_when_stream_closes(mock_task_manager, mock_handler_class, mock_db, client):
+    mock_task_manager.claim_turn.return_value = True
+    mock_db.get_messages.return_value = [{"role": "user", "content": "resume this"}]
+
+    async def initiate_chat(**kwargs):
+        yield "data: chunk\n\n"
+
+    mock_handler_class.return_value.initiate_chat.return_value = initiate_chat()
+    response = client.post('/api/chats/chat1/resume', json={"model": "m"})
+    assert response.status_code == 200
+    mock_task_manager.release_turn_claim.assert_not_called()  # held while the stream is open
+    response.close()
+    mock_task_manager.release_turn_claim.assert_called_once_with("chat1")
+
+@patch('backend.chat.router.db')
+@patch('backend.chat.router.ChatHandler')
+def test_resume_is_refused_while_a_task_is_alive_even_without_an_open_response(mock_handler_class, mock_db, client):
+    """A running turn (a live worker) refuses a resume on its own, without any held claim."""
+    with patch("backend.task_manager.manager.TaskWorker") as worker_class, patch("threading.Thread"):
+        real_manager = TaskManager()
+        worker_class.return_value.is_alive.return_value = True
+        assert real_manager.start_task("chat1", lambda: None)
+    mock_db.get_messages.return_value = [{"role": "user", "content": "resume this"}]
+
+    async def initiate_chat(**kwargs):
+        yield "data: chunk\n\n"
+
+    mock_handler_class.return_value.initiate_chat.side_effect = lambda **kw: initiate_chat()
+    with patch('backend.chat.router.task_manager', real_manager):
+        refused = client.post('/api/chats/chat1/resume', json={"model": "m"})
+        assert refused.status_code == 400
+        assert refused.json == {"error": "a response is already in progress"}
+        mock_handler_class.assert_not_called()
+
+        worker_class.return_value.is_alive.return_value = False  # the turn ended
+        accepted = client.post('/api/chats/chat1/resume', json={"model": "m"})
+        assert accepted.status_code == 200
+        accepted.close()
+
+@patch('backend.chat.router.db')
+@patch('backend.chat.router.ChatHandler')
+def test_send_and_resume_exclude_each_other_on_one_chat(mock_handler_class, mock_db, client):
+    """Regression: a resume and a send on one chat could both start a turn; they now share one claim."""
+    with patch("backend.task_manager.manager.TaskWorker"), patch("threading.Thread"):
+        real_manager = TaskManager()
+    mock_db.add_message.return_value = 1
+    mock_db.get_messages.return_value = [{"role": "user", "content": "resume this"}]
+
+    async def initiate_chat(**kwargs):
+        yield "data: chunk\n\n"
+
+    mock_handler_class.return_value.initiate_chat.side_effect = lambda **kw: initiate_chat()
+    send_body = {"chatId": "chat1", "model": "m", "messages": [{"role": "user", "content": "hi"}]}
+    with patch('backend.chat.router.task_manager', real_manager):
+        # a send is held open: resume is refused
+        send = client.post('/v1/chat/completions', json=send_body)
+        assert send.status_code == 200
+        refused = client.post('/api/chats/chat1/resume', json={"model": "m"})
+        assert refused.status_code == 400
+        assert refused.json == {"error": "a response is already in progress"}
+        send.close()
+
+        # a resume is held open: a send is refused and stores nothing
+        adds_before = mock_db.add_message.call_count
+        resume = client.post('/api/chats/chat1/resume', json={"model": "m"})
+        assert resume.status_code == 200
+        refused_send = client.post('/v1/chat/completions', json=send_body)
+        assert refused_send.status_code == 400
+        assert mock_db.add_message.call_count == adds_before
+        resume.close()
+
+        # once the resume ended, a send is accepted again
+        assert client.post('/v1/chat/completions', json=send_body).status_code == 200
+
 @patch('backend.chat.router.task_manager')
 @patch('backend.chat.router.db')
 @patch('backend.database.response_cache')
