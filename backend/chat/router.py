@@ -5,6 +5,7 @@ import time
 from typing import Dict, Any
 
 from backend.chat.handler import ChatHandler
+from backend.chat.message_edit import merge_edited_user_content
 from backend.database import db
 from backend.logging import log_event
 from backend.task_manager import task_manager
@@ -557,7 +558,17 @@ def edit_message_endpoint(chat_id, message_id):
     if not isinstance(content, str) or not content.strip():
         return jsonify({"error": "Content required"}), 400
 
-    success = db.edit_message(chat_id, message_id, content)
+    existing = db.get_message(chat_id, message_id)
+    if existing is None:
+        log_event("chat_edit_message_not_found", {"chat_id": chat_id, "message_id": message_id})
+        return jsonify({"error": "Message not found"}), 404
+    if existing.get("role") != "user":
+        log_event("chat_edit_rejected_role", {"chat_id": chat_id, "message_id": message_id})
+        return jsonify({"error": "Only user messages can be edited"}), 403
+
+    # The editor only holds the text: keep the message's images and attachment note.
+    merged = merge_edited_user_content(existing.get("content") or "", content)
+    success = db.edit_message(chat_id, message_id, merged)
     if not success:
         log_event("chat_edit_message_not_found", {"chat_id": chat_id, "message_id": message_id})
         return jsonify({"error": "Message not found"}), 404

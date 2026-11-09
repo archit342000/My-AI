@@ -8,14 +8,13 @@ import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Textarea } from '../../components/ui/Field';
 import { EmptyState } from '../../components/ui/EmptyState';
-import type { HistoryMessage } from '../../api/completions';
 import type { Turn } from '../../lib/chat-model';
 import { emptyLiveTurn, type LiveTurn } from './stream-reducer';
 import { useStreamStore, type InterruptedTurn, type PendingUser } from '../../state/stream-store';
 import { ThoughtHeader, ThoughtTimeline } from './ThoughtBlock';
 import { ToolActivityFeed, ToolSummary } from './ToolActivity';
 import { MessageActions } from './MessageActions';
-import { resumeTurn, sendTurn } from './send-turn';
+import { resumeTurn } from './send-turn';
 
 const USER_AVATAR = (
   <div className="avatar-wrapper">
@@ -54,7 +53,6 @@ function UserTurn({
   turn,
   chatId,
   onChanged,
-  onRegenerate,
   canEdit,
   showRetry,
   onRetry,
@@ -62,7 +60,6 @@ function UserTurn({
   turn: Extract<Turn, { kind: 'user' }>;
   chatId: string;
   onChanged: () => void;
-  onRegenerate: (userTurnId: string, text: string) => Promise<void>;
   canEdit: boolean;
   /** Last user turn with no reply after it: offers Retry under the bubble. */
   showRetry: boolean;
@@ -72,7 +69,10 @@ function UserTurn({
   const [draft, setDraft] = useState(turn.text);
   const queryClient = useQueryClient();
 
-  /** Saves the edit. The server drops the old reply, so "regenerate" asks for a new one. */
+  /**
+   * Saves the edit. The server drops the old reply, so "regenerate" asks for a new one by resuming from
+   * the edited stored message (no second user row; its images and attachment note are kept server-side).
+   */
   async function save(regenerate: boolean) {
     try {
       await chatsApi.editMessage(chatId, turn.id, draft);
@@ -82,7 +82,7 @@ function UserTurn({
     }
     setEditing(false);
     onChanged();
-    if (regenerate) await onRegenerate(turn.id, draft);
+    if (regenerate) await resumeTurn(queryClient, chatId);
   }
 
   function cancel() {
@@ -343,17 +343,6 @@ function LiveUser({ pending }: { pending: PendingUser }) {
   );
 }
 
-/** Chat history as the model sees it: user text and non-empty assistant text, in order. */
-function historyBefore(turns: Turn[], index: number): HistoryMessage[] {
-  return turns.slice(0, Math.max(0, index)).flatMap<HistoryMessage>((t) =>
-    t.kind === 'user'
-      ? [{ role: 'user', content: t.text }]
-      : t.text
-        ? [{ role: 'assistant', content: t.text }]
-        : [],
-  );
-}
-
 /** Scrollable transcript: persisted turns, the optimistic user row and the live assistant turn. */
 export function MessageList({
   turns,
@@ -390,20 +379,6 @@ export function MessageList({
   const lastHasReply = lastUserIdx >= 0 && turns.slice(lastUserIdx + 1).some((t) => t.kind === 'assistant');
   const showUserRetry = !streaming && !showInterrupted && lastUserIdx >= 0 && !lastHasReply;
 
-  /** Sends `text` again as the user turn `userTurnId`, with the history before that turn. */
-  async function regenerateFrom(userTurnId: string, text: string) {
-    const index = turns.findIndex((t) => t.id === userTurnId);
-    await sendTurn({
-      queryClient,
-      chatId,
-      text,
-      files: [],
-      isNewChat: false,
-      history: historyBefore(turns, index),
-      userTurnExists: true,
-    });
-  }
-
   /** Retry regenerates from the stored user message, so attachments are reused as sent. */
   function retryLast() {
     void resumeTurn(queryClient, chatId);
@@ -430,7 +405,6 @@ export function MessageList({
             turn={turn}
             chatId={chatId}
             onChanged={onChanged}
-            onRegenerate={regenerateFrom}
             canEdit={!streaming}
             showRetry={showUserRetry && i === lastUserIdx}
             onRetry={retryLast}

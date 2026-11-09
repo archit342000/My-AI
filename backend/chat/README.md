@@ -11,6 +11,7 @@
 | `__init__.py` | Package entry point and export aggregator. | `ChatHandler`, `TurnHandler`, `AgentHandler`, `ToolHandler`, `chat_bp`, `personas_bp` |
 | `agent_handler.py` | Orchestrates sub-agents with isolated contexts. | `AgentHandler` |
 | `handler.py` | Core chat flow logic and background task management. | `ChatHandler`, `THINKING_PROFILES` |
+| `message_edit.py` | Merges an edited user message back into its stored content, keeping images and the attachment note. | `merge_edited_user_content` |
 | `router.py` | Flask API endpoints for chat management, completions, and persona CRUD. | `chat_bp`, `openai_bp`, `personas_bp` |
 | `tool_handler.py` | Dispatches and executes tool calls (pure or agent-based). | `ToolHandler` |
 | `turn_handler.py` | Serializes turns and ensures state persistence. | `TurnHandler` |
@@ -29,6 +30,7 @@
     3. **Execution:** `TurnHandler` wraps the turn logic, ensuring serial execution.
     4. **Inference & Tools:** `ChatHandler` streams from `InferenceEngine`. If tool calls are detected, `ToolHandler` executes them, potentially delegating to `AgentHandler` for sub-agent flows.
     5. **Streaming:** Chunks are delivered to the client via a response cache and SSE.
+    6. **Edits:** `PUT /api/chats/<id>/messages/<id>` edits user messages only (403 otherwise) and merges the new text into the stored content with `merge_edited_user_content`, so images and the attachment note survive; the client then regenerates with `POST /api/chats/<id>/resume`.
 
 ## 🛠️ Usage & Conventions
 *   **Patterns:** 
