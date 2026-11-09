@@ -1,4 +1,6 @@
 import asyncio
+import hashlib
+import hmac
 import os
 import time
 import json
@@ -228,25 +230,34 @@ class AuthMiddleware:
         self.app = app
 
     async def __call__(self, scope, receive, send):
+        """Requires the `X-MCP-API-KEY` header on the MCP routes (`/sse` and `/messages/...`).
+
+        Fails closed: when `MCP_API_KEY` is not configured the protected routes are rejected with 401, as
+        are missing, repeated or wrong keys. Other paths and non-HTTP scopes pass through. The key is
+        compared as fixed-length digests with `hmac.compare_digest`, so neither its content nor its length
+        shows in the timing, and it is never logged.
+        """
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
 
         path = scope["path"]
         if path in ["/sse", "/messages/"] or path.startswith("/messages/"):
-            if MCP_API_KEY:
-                headers = dict(scope.get("headers", []))
-                api_key_bytes = headers.get(b"x-mcp-api-key")
-                if api_key_bytes is None:
-                    api_key_bytes = headers.get(b"X-MCP-API-KEY", b"")
-
-                api_key = api_key_bytes.decode("utf-8")
-
-                if api_key != MCP_API_KEY:
-                    logger.warning(f"Unauthorized access attempt to {path}")
-                    response = JSONResponse({"error": "Unauthorized"}, status_code=401)
-                    await response(scope, receive, send)
-                    return
+            sent = [value for name, value in scope.get("headers", []) if name == b"x-mcp-api-key"]
+            if not MCP_API_KEY:
+                reason = "MCP_API_KEY is not configured"
+            elif len(sent) != 1:
+                reason = "missing or repeated key header"
+            elif not hmac.compare_digest(hashlib.sha256(sent[0]).digest(),
+                                         hashlib.sha256(MCP_API_KEY.encode("utf-8")).digest()):
+                reason = "wrong key"
+            else:
+                reason = None
+            if reason:
+                logger.warning(f"Unauthorized access attempt to {path!r}: {reason}")
+                response = JSONResponse({"error": "Unauthorized"}, status_code=401)
+                await response(scope, receive, send)
+                return
 
         await self.app(scope, receive, send)
 

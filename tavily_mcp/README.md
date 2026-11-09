@@ -15,7 +15,7 @@
 ## 🧩 Architectural Context
 *   **Dependencies:** `httpx`, `FastMCP`.
 *   **Flow:** The server acts as a proxy for the Tavily API. It implements a local cache (`_tavily_search_cache`) to store raw search results, allowing agents to "audit" their previous search for more detail without re-triggering API calls.
-*   **Security:** Enforces `X-MCP-API-KEY` via `AuthMiddleware`. Sanitizes search outputs to prevent prompt injection or script execution in the host environment.
+*   **Security:** Enforces `X-MCP-API-KEY` via `AuthMiddleware` on `/sse` and `/messages/`; the routes are rejected with 401 when the key is wrong or missing, and also when `MCP_API_KEY` itself is not configured (fail closed). Sanitizes search outputs to prevent prompt injection or script execution in the host environment.
 *   **Parameter Support:** Supports granular search parameters including `topic` (general, news, finance) and `time_range` (day, week, month, year) for freshness.
 
 ## 🛠️ Usage & Conventions
