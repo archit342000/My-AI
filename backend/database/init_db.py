@@ -2,9 +2,121 @@ import json
 import sqlite3
 import os
 import logging
+import re
 from backend.database.db_layer import make_connection, DB_PATH
+from backend.logging import log_event
 
 logger = logging.getLogger(__name__)
+
+def _abort_savepoint(conn: sqlite3.Connection, savepoint: str) -> None:
+    """Roll back and release a savepoint; does nothing when SQLite already ended the transaction (busy, I/O errors)."""
+    if conn.in_transaction:
+        try:
+            conn.execute(f"ROLLBACK TO {savepoint}")
+            conn.execute(f"RELEASE {savepoint}")
+        except sqlite3.Error:
+            conn.rollback()
+
+
+def _rebuild_table_with_cascade(conn: sqlite3.Connection, table: str, create_sql: str) -> bool:
+    """
+    Rebuild one table from its new definition, atomically, keeping its rows and indexes.
+
+    Follows SQLite's table-rebuild order inside a savepoint: create `<table>_new`, copy the rows by
+    column name, drop the old table, rename the new one, re-create the old table's indexes. Any failure
+    rolls the savepoint back, so the original table and its data stay untouched and the next start retries.
+    The caller turns foreign keys off around the call.
+
+    Args:
+        conn: Connection being migrated, with no open transaction.
+        table: Name of the existing table.
+        create_sql: Full `CREATE TABLE <table> (...)` definition of the new table.
+
+    Returns:
+        True when the table was rebuilt, False when the rebuild failed and was rolled back.
+    """
+    c = conn.cursor()
+    savepoint = f"rebuild_{table}"
+    try:
+        c.execute(f"SAVEPOINT {savepoint}")
+        new_sql = re.sub(r"^\s*CREATE TABLE\s+\w+", f"CREATE TABLE {table}_new", create_sql, count=1)
+        c.execute(f"DROP TABLE IF EXISTS {table}_new")
+        c.execute(new_sql)
+        c.execute(f"PRAGMA table_info({table})")
+        old_cols = [r[1] for r in c.fetchall()]
+        c.execute(f"PRAGMA table_info({table}_new)")
+        new_cols = {r[1] for r in c.fetchall()}
+        dropped = [col for col in old_cols if col not in new_cols]
+        if dropped:
+            raise sqlite3.DatabaseError(f"columns {dropped} are not in the new definition")
+        cols = ", ".join(f'"{col}"' for col in old_cols)
+        c.execute(f"INSERT INTO {table}_new ({cols}) SELECT {cols} FROM {table}")
+        c.execute("SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name=? AND sql IS NOT NULL", (table,))
+        index_sql = [r[0] for r in c.fetchall()]
+        c.execute(f"DROP TABLE {table}")
+        c.execute(f"ALTER TABLE {table}_new RENAME TO {table}")
+        for statement in index_sql:
+            c.execute(statement)
+        c.execute(f"RELEASE {savepoint}")
+        return True
+    except sqlite3.Error as e:
+        _abort_savepoint(conn, savepoint)
+        logger.error(f"MIGRATION: Rebuilding '{table}' failed, original table kept: {e}")
+        log_event("db_migration_rebuild_error", {"table": table, "error": type(e).__name__})
+        return False
+
+
+def _repair_leftover_old_tables(conn: sqlite3.Connection, tables) -> None:
+    """
+    Repair `<table>_old` tables left behind by an earlier failed rebuild (the old rename-first order).
+
+    A missing table gets its `_old` copy renamed back; an empty table is replaced by a non-empty `_old`
+    copy; an empty `_old` is dropped. When both hold rows nothing is touched and the situation is logged
+    for a manual decision (no user data is dropped).
+
+    Args:
+        conn: Connection being migrated, with no open transaction.
+        tables: Names of the tables whose `_old` leftovers should be checked.
+    """
+    c = conn.cursor()
+
+    def exists(name: str) -> bool:
+        c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,))
+        return c.fetchone() is not None
+
+    def rows(name: str) -> int:
+        c.execute(f'SELECT COUNT(*) FROM "{name}"')
+        return c.fetchone()[0]
+
+    for table in tables:
+        old = f"{table}_old"
+        try:
+            if not exists(old):
+                continue
+        except sqlite3.Error as e:
+            logger.error(f"MIGRATION: Could not check for leftover '{old}': {e}")
+            continue
+        savepoint = f"repair_{table}"
+        try:
+            c.execute(f"SAVEPOINT {savepoint}")
+            if not exists(table):
+                c.execute(f"ALTER TABLE {old} RENAME TO {table}")
+                logger.warning(f"MIGRATION: Restored '{table}' from leftover '{old}'.")
+            elif rows(old) == 0:
+                c.execute(f"DROP TABLE {old}")
+            elif rows(table) == 0:
+                c.execute(f"DROP TABLE {table}")
+                c.execute(f"ALTER TABLE {old} RENAME TO {table}")
+                logger.warning(f"MIGRATION: Restored '{table}' from leftover '{old}' (the new table was empty).")
+            else:
+                logger.error(f"MIGRATION: Both '{table}' and '{old}' hold rows; left as they are for a manual decision.")
+                log_event("db_migration_leftover_old_table_error", {"table": table, "rows_old": rows(old)})
+            c.execute(f"RELEASE {savepoint}")
+        except sqlite3.Error as e:
+            _abort_savepoint(conn, savepoint)
+            logger.error(f"MIGRATION: Could not repair leftover '{old}': {e}")
+            log_event("db_migration_leftover_old_table_error", {"table": table, "error": type(e).__name__})
+
 
 def init_db():
     """
@@ -1001,31 +1113,30 @@ def init_db():
                 '''
             }
 
-            for table_name, create_sql in dependent_tables.items():
-                c.execute(f"SELECT sql FROM sqlite_master WHERE type='table' AND name='{table_name}'")
-                row = c.fetchone()
-                if row:
-                    current_sql = row[0]
-                    if "ON DELETE CASCADE" not in current_sql:
+            # Each rebuild is atomic (savepoint) and needs foreign keys off, which only works outside a
+            # transaction: commit what the earlier steps did (they are idempotent and mostly DDL, which
+            # does not roll back anyway), then switch foreign keys off for this step only.
+            conn.commit()
+            c.execute("PRAGMA foreign_keys=OFF")
+            try:
+                _repair_leftover_old_tables(conn, dependent_tables)
+                for table_name, create_sql in dependent_tables.items():
+                    c.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (table_name,))
+                    row = c.fetchone()
+                    if row and "ON DELETE CASCADE" not in row[0]:
                         logger.info(f"MIGRATION: Recreating '{table_name}' table to add ON DELETE CASCADE...")
-                        c.execute(f"ALTER TABLE {table_name} RENAME TO {table_name}_old")
-                        c.execute(create_sql)
-                        
-                        # Get columns for INSERT (ensure matching order)
-                        c.execute(f"PRAGMA table_info({table_name}_old)")
-                        cols = [f'"{r[1]}"' for r in c.fetchall()]
-                        cols_str = ", ".join(cols)
-                        
-                        c.execute(f"INSERT INTO {table_name} ({cols_str}) SELECT {cols_str} FROM {table_name}_old")
-                        c.execute(f"DROP TABLE {table_name}_old")
-                        
-                        # Re-create indices
-                        if table_name == 'messages':
-                            c.execute("CREATE INDEX IF NOT EXISTS idx_messages_chat_id ON messages(chat_id)")
-                        elif table_name == 'pending_callbacks':
-                            c.execute('CREATE INDEX IF NOT EXISTS idx_pending_cb_chat ON pending_callbacks(chat_id, status)')
+                        _rebuild_table_with_cascade(conn, table_name, create_sql)
+                c.execute("PRAGMA foreign_key_check")
+                violations = c.fetchall()
+                if violations:
+                    logger.error(f"MIGRATION: {len(violations)} foreign key violations found after migration 11")
+                    log_event("db_migration_fk_check_error", {"violations": len(violations)})
+            finally:
+                if conn.in_transaction:  # PRAGMA foreign_keys is ignored inside a transaction
+                    conn.rollback()
+                c.execute("PRAGMA foreign_keys=ON")
 
-            logger.info("MIGRATION: All dependent tables updated with ON DELETE CASCADE.")
+            logger.info("MIGRATION: Dependent tables checked for ON DELETE CASCADE.")
         except Exception as e:
             logger.error(f"Error updating tables with ON DELETE CASCADE: {e}")
 

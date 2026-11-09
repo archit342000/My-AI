@@ -3,7 +3,7 @@ import os
 import sqlite3
 import pytest
 from unittest.mock import patch, MagicMock
-from backend.database.init_db import init_db
+from backend.database.init_db import init_db, _rebuild_table_with_cascade, _repair_leftover_old_tables
 from backend.database.db_layer import make_connection
 
 @pytest.fixture
@@ -517,4 +517,189 @@ def test_init_db_drops_file_system_counters_and_keeps_numeric_id_artifacts():
     assert conn.execute("SELECT name FROM sqlite_master WHERE name = 'file_system_counters'").fetchall() == []
     assert conn.execute("SELECT title FROM file_systems WHERE id = '7' AND chat_id = 'chat_old'").fetchone()[0] == "Old"
     assert conn.execute("SELECT content FROM file_system_versions WHERE file_system_id = '7' AND chat_id = 'chat_old'").fetchone()[0] == "old body"
+    conn.close()
+
+
+# ---- migration 11: atomic table rebuilds and repair of leftover `_old` tables --------------------------------
+
+PRE_CASCADE = {
+    "messages": "CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id TEXT, role TEXT, content TEXT, "
+                "timestamp REAL, parent_type TEXT DEFAULT 'main')",
+    "sub_agent_messages": "CREATE TABLE {name} (id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id TEXT NOT NULL, "
+                          "parent_message_id TEXT NOT NULL, parent_type TEXT DEFAULT 'main', agent_name TEXT NOT NULL, "
+                          "sequence_order INTEGER NOT NULL, role TEXT NOT NULL, content TEXT, tool_calls TEXT, "
+                          "tool_call_id TEXT, name TEXT, model TEXT, reasoning_content TEXT, timestamp REAL)",
+    "collections": "CREATE TABLE {name} (id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id TEXT NOT NULL, "
+                   "parent_message_id TEXT NOT NULL, parent_type TEXT NOT NULL DEFAULT 'main', "
+                   "collection_type TEXT NOT NULL, items TEXT NOT NULL, timestamp REAL)",
+    "pending_callbacks": "CREATE TABLE {name} (callback_id TEXT PRIMARY KEY, chat_id TEXT NOT NULL, "
+                         "parent_message_id INTEGER, parent_type TEXT DEFAULT 'main', tool_name TEXT NOT NULL, "
+                         "question TEXT, options TEXT, status TEXT DEFAULT 'pending', response TEXT, "
+                         "created_at REAL, resolved_at REAL)",
+}
+INSERT_ROW = {
+    "sub_agent_messages": "INSERT INTO {name} (chat_id, parent_message_id, agent_name, sequence_order, role) "
+                          "VALUES ('c1', '1', 'search_agent', {n}, 'assistant')",
+    "collections": "INSERT INTO {name} (chat_id, parent_message_id, collection_type, items) VALUES ('c1', '1', 'code', '[]')",
+    "pending_callbacks": "INSERT INTO {name} (callback_id, chat_id, tool_name) VALUES ('cb{n}', 'c1', 'ask')",
+}
+
+
+def _table_names(conn):
+    return {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+
+
+def _count(conn, table):
+    return conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+
+
+def _ddl(conn, table):
+    return conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone()[0]
+
+
+def _seed(setup):
+    """Create a DB with a chat 'c1', let `setup(conn)` add old-schema tables, then close it."""
+    conn = make_connection()
+    conn.execute("CREATE TABLE chats (id TEXT PRIMARY KEY, title TEXT, timestamp REAL)")
+    conn.execute("INSERT INTO chats (id, title, timestamp) VALUES ('c1', 't', 1.0)")
+    setup(conn)
+    conn.commit()
+    conn.close()
+
+
+def _pre_cascade(conn, table, name=None, rows=1):
+    name = name or table
+    conn.execute(PRE_CASCADE[table].format(name=name))
+    for n in range(rows):
+        if table == "messages":
+            conn.execute(f"INSERT INTO {name} (chat_id, role, content, timestamp) VALUES ('c1', 'user', 'm{n}', 1.0)")
+        else:
+            conn.execute(INSERT_ROW[table].format(name=name, n=n + 1))
+
+
+def test_failed_rebuild_leaves_the_original_table_unchanged_and_the_others_migrate():
+    def setup(conn):
+        _pre_cascade(conn, "messages")
+        # old definition is looser than the new one: the NULL collection_type cannot be copied
+        conn.execute("CREATE TABLE collections (id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id TEXT, "
+                     "parent_message_id TEXT, parent_type TEXT, collection_type TEXT, items TEXT, timestamp REAL)")
+        conn.execute("INSERT INTO collections (chat_id, parent_message_id, collection_type, items) VALUES ('c1', '1', 'code', '[]')")
+        conn.execute("INSERT INTO collections (chat_id, parent_message_id, collection_type, items) VALUES ('c1', '2', NULL, '[]')")
+        _pre_cascade(conn, "pending_callbacks")
+    _seed(setup)
+
+    with patch("backend.database.init_db.log_event") as log:
+        for _ in range(2):  # the second run retries and ends in the same state without raising
+            init_db()
+            conn = make_connection()
+            assert "ON DELETE CASCADE" not in _ddl(conn, "collections")
+            assert _count(conn, "collections") == 2
+            assert not {"collections_new", "collections_old"} & _table_names(conn)
+            assert "ON DELETE CASCADE" in _ddl(conn, "messages") and _count(conn, "messages") == 1
+            assert "ON DELETE CASCADE" in _ddl(conn, "pending_callbacks") and _count(conn, "pending_callbacks") == 1
+            conn.close()
+    errors = [c.args for c in log.call_args_list if c.args[0] == "db_migration_rebuild_error"]
+    assert errors and all(a[1]["table"] == "collections" for a in errors)
+
+
+def test_rebuilt_tables_cascade_when_a_chat_is_deleted():
+    _seed(lambda conn: [_pre_cascade(conn, t) for t in ("messages", "sub_agent_messages")])
+    init_db()
+    conn = make_connection()  # foreign keys are on for every new connection
+    assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
+    conn.execute("DELETE FROM chats WHERE id='c1'")
+    conn.commit()
+    assert _count(conn, "messages") == 0 and _count(conn, "sub_agent_messages") == 0
+    conn.close()
+
+
+def test_successful_rebuilds_keep_every_index_in_the_same_run():
+    _seed(lambda conn: [_pre_cascade(conn, t) for t in ("sub_agent_messages", "collections")])
+    init_db()
+    conn = make_connection()
+    names = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='index'")}
+    for table in ("sub_agent_messages", "collections"):
+        assert "ON DELETE CASCADE" in _ddl(conn, table)
+    assert {"idx_sub_agent_chat_parent", "idx_sub_agent_sequence",
+            "idx_collections_chat_parent", "idx_collections_parent_type"} <= names
+    conn.close()
+
+
+def test_leftover_old_tables_are_repaired_or_reported():
+    def setup(conn):
+        _pre_cascade(conn, "sub_agent_messages", rows=0)               # empty new table ...
+        _pre_cascade(conn, "sub_agent_messages", "sub_agent_messages_old", rows=2)   # ... and the data in _old
+        _pre_cascade(conn, "pending_callbacks", "pending_callbacks_old", rows=1)      # table missing, only _old
+        _pre_cascade(conn, "collections", rows=1)                                      # both have rows
+        _pre_cascade(conn, "collections", "collections_old", rows=2)
+    _seed(setup)
+
+    with patch("backend.database.init_db.log_event") as log:
+        for _ in range(2):
+            init_db()
+            conn = make_connection()
+            tables = _table_names(conn)
+            assert "sub_agent_messages_old" not in tables and "pending_callbacks_old" not in tables
+            assert _count(conn, "sub_agent_messages") == 2 and "ON DELETE CASCADE" in _ddl(conn, "sub_agent_messages")
+            assert _count(conn, "pending_callbacks") == 1 and "ON DELETE CASCADE" in _ddl(conn, "pending_callbacks")
+            # both held rows: nothing dropped, the old copy is kept for a manual decision
+            assert _count(conn, "collections") == 1 and _count(conn, "collections_old") == 2
+            conn.close()
+    assert any(c.args[0] == "db_migration_leftover_old_table_error" and c.args[1]["table"] == "collections"
+               for c in log.call_args_list)
+
+
+def test_rebuild_helper_keeps_rows_and_indexes_and_rolls_back_failures():
+    conn = make_connection()
+    new_sql = "CREATE TABLE t (id INTEGER PRIMARY KEY, a TEXT NOT NULL, b TEXT DEFAULT 'x')"
+    conn.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, a TEXT)")
+    conn.execute("CREATE INDEX idx_t_a ON t(a)")
+    conn.execute("INSERT INTO t (id, a) VALUES (1, 'one')")
+    conn.commit()
+    assert _rebuild_table_with_cascade(conn, "t", new_sql) is True
+    assert conn.execute("SELECT id, a, b FROM t").fetchall() == [(1, "one", "x")]
+    assert _index_names_of(conn, "t") == {"idx_t_a"}
+    assert "t_new" not in _table_names(conn)
+
+    # a NOT NULL violation in the copy: rolled back, the table and its index are as before
+    conn.execute("CREATE TABLE u (id INTEGER PRIMARY KEY, a TEXT)")
+    conn.execute("CREATE INDEX idx_u_a ON u(a)")
+    conn.execute("INSERT INTO u (id, a) VALUES (1, NULL)")
+    conn.commit()
+    with patch("backend.database.init_db.log_event"):
+        assert _rebuild_table_with_cascade(conn, "u", new_sql.replace("CREATE TABLE t", "CREATE TABLE u")) is False
+    assert conn.execute("SELECT id, a FROM u").fetchall() == [(1, None)]
+    assert _index_names_of(conn, "u") == {"idx_u_a"} and "u_new" not in _table_names(conn)
+
+    # an old column that the new definition lacks would lose data: refused
+    conn.execute("CREATE TABLE v (id INTEGER PRIMARY KEY, a TEXT, extra TEXT)")
+    conn.execute("INSERT INTO v (id, a, extra) VALUES (1, 'x', 'keep me')")
+    conn.commit()
+    with patch("backend.database.init_db.log_event"):
+        assert _rebuild_table_with_cascade(conn, "v", "CREATE TABLE v (id INTEGER PRIMARY KEY, a TEXT)") is False
+    assert conn.execute("SELECT extra FROM v").fetchall() == [("keep me",)]
+    conn.close()
+
+
+def _index_names_of(conn, table):
+    return {r[0] for r in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name=? AND sql IS NOT NULL", (table,))}
+
+
+def test_repair_helper_handles_each_leftover_state():
+    conn = make_connection()
+    for name, rows in (("a", 0), ("a_old", 0), ("b_old", 2), ("c", 0), ("c_old", 2), ("d", 1), ("d_old", 1)):
+        conn.execute(f"CREATE TABLE {name} (id INTEGER)")
+        for n in range(rows):
+            conn.execute(f"INSERT INTO {name} VALUES ({n})")
+    conn.commit()
+    with patch("backend.database.init_db.log_event") as log:
+        _repair_leftover_old_tables(conn, ["a", "b", "c", "d", "e"])
+    tables = _table_names(conn)
+    assert "a_old" not in tables and _count(conn, "a") == 0          # empty _old dropped
+    assert "b_old" not in tables and _count(conn, "b") == 2          # table missing: renamed back
+    assert "c_old" not in tables and _count(conn, "c") == 2          # empty table replaced by the data
+    assert _count(conn, "d") == 1 and _count(conn, "d_old") == 1     # both have rows: untouched, reported
+    log.assert_called_once()
+    assert log.call_args.args[0] == "db_migration_leftover_old_table_error" and log.call_args.args[1]["table"] == "d"
     conn.close()
