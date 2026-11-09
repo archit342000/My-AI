@@ -30,6 +30,8 @@ export function historyFromCache(queryClient: QueryClient, chatId: string): Hist
     queryKeys.chat(chatId),
   );
   if (!detail) return [];
+  // The server builds the model's context from its own stored messages and reads only the last
+  // posted message, so this history (with the attachment note stripped for display) is not sent on.
   return toTurns(detail.messages).flatMap<HistoryMessage>((t) =>
     t.kind === 'user'
       ? [{ role: 'user', content: t.text }]

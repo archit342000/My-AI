@@ -42,6 +42,8 @@ A React build missing from `dist/` returns 503 with the build command.
 
 - Keep legacy class names so the shared stylesheet still applies.
 - Every model's HTML goes through `renderMarkdown` (DOMPurify). Do not inject unsanitised HTML.
+- The attachment `[System Note: ...]` the router appends to a user message is for the model: `src/lib/chat-model.ts` strips it from
+  user bubbles and the edit box and shows its files as chips. The stored message keeps it.
 - Dialogs use `Modal`, which handles Escape (top of stack only), focus trap, focus restore and scroll lock.
 - Generated files (`*.generated.ts`) come from `scripts/`. Do not edit them by hand.
 

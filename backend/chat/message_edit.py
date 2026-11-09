@@ -1,8 +1,10 @@
 """Helpers for editing a stored user message without losing its images or attachment note."""
 import json
 
-# The router appends this block to a user message that has file attachments (router.py chat_completions).
-NOTE_MARKER = "\n\n[System Note:"
+# The router appends this block to a user message that has file attachments (router.py chat_completions;
+# the React transcript strips it for display with splitAttachmentNote in frontend/src/lib/chat-model.ts).
+# The full prefix is used, not just "[System Note:", so text a user types is never taken for the router note.
+NOTE_MARKER = "\n\n[System Note: The user has attached the following files"
 
 
 def _split_note(text: str) -> tuple[str, str]:

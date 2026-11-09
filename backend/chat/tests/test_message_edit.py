@@ -75,3 +75,13 @@ def test_only_the_last_note_block_is_treated_as_the_attachment_note():
     typed = "see this\n\n[System Note: typed by the user]"
     old = typed + NOTE
     assert merge_edited_user_content(old, "new") == "new" + NOTE
+
+
+def test_a_typed_system_note_in_the_draft_does_not_stop_the_router_note_being_kept():
+    draft = "see\n\n[System Note: typed by the user]"
+    assert merge_edited_user_content("old" + NOTE, draft) == draft + NOTE
+
+
+def test_a_typed_system_note_in_the_stored_text_is_not_mistaken_for_the_router_note():
+    stored = "typed only\n\n[System Note: typed by the user]"
+    assert merge_edited_user_content(stored, "new") == "new"
