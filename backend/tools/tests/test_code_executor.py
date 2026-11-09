@@ -1,3 +1,4 @@
+import asyncio
 import pytest
 from unittest.mock import MagicMock, patch
 from backend.tools.implementations.code_executor import run_code, run_file, install_packages, list_packages
@@ -306,3 +307,13 @@ def test_run_code_sends_the_clamped_timeout_and_waits_five_seconds_longer():
         asyncio.run(run_code(code="print(1)", language="python", chat_id="c1", tool_call_id="tc"))
     assert req.post.call_args.kwargs["json"]["timeout"] == 120
     assert req.post.call_args.kwargs["timeout"] == 125
+
+
+def test_run_code_runner_unavailable_message_has_no_exception_text_and_is_logged(mock_db, mock_requests):
+    # asyncio.run keeps this test runnable without the pytest-asyncio plugin that the older tests need
+    mock_requests.post.side_effect = ConnectionError("boom http://code_runner_mcp:8100/execute")
+    with patch('backend.tools.implementations.code_executor.log_event') as log:
+        res = asyncio.run(run_code(code="print(1)", language="python", chat_id="c1", tool_call_id="tc"))
+    assert res == "Error: Failed to execute code. Code runner service is unavailable."
+    assert "boom" not in res and "code_runner_mcp" not in res
+    log.assert_called_once_with("code_executor_run_code_error", {"chat_id": "c1", "error": "ConnectionError"})
