@@ -15,7 +15,8 @@ from playwright_mcp.server import (
     get_secret,
     check_internet_connectivity,
     visit_page,
-    fetch_and_encode_image
+    fetch_and_encode_image,
+    AuthMiddleware
 )
 
 @pytest.mark.parametrize("url,expected", [
@@ -227,3 +228,90 @@ async def test_shutdown_event_cleanup():
     mock_manager.stop.assert_called_once()
     assert server._playwright_instance is None
     assert server._playwright_manager is None
+
+
+# ---- AuthMiddleware ------------------------------------------------------------------------------------------
+# These tests use anyio so they run without the pytest-asyncio plugin, which the older tests in this module need.
+
+def _scope(path, *keys):
+    return {"type": "http", "path": path, "headers": [(b"x-mcp-api-key", k) for k in keys]}
+
+
+async def _through_middleware(scope, configured_key):
+    """Returns (inner_app_called, status of the first response message or None)."""
+    inner = AsyncMock()
+    send = AsyncMock()
+    with patch("playwright_mcp.server.MCP_API_KEY", configured_key):
+        await AuthMiddleware(inner)(scope, None, send)
+    status = send.call_args_list[0].args[0]["status"] if send.call_args_list else None
+    return inner.called, status
+
+
+@pytest.mark.anyio
+async def test_portal_routes_need_the_key():
+    assert await _through_middleware(_scope("/portal/init"), "secret") == (False, 401)
+    assert await _through_middleware(_scope("/portal/init", b"wrong"), "secret") == (False, 401)
+    assert await _through_middleware(_scope("/portal/vnc", b"secret"), "secret") == (True, None)
+    assert await _through_middleware(_scope("/portal/init", b"secret"), "secret") == (True, None)
+
+
+@pytest.mark.anyio
+async def test_mcp_routes_still_need_the_key():
+    assert await _through_middleware(_scope("/sse"), "secret") == (False, 401)
+    assert await _through_middleware(_scope("/messages/abc", b"wrong"), "secret") == (False, 401)
+    assert await _through_middleware(_scope("/messages/abc", b"secret"), "secret") == (True, None)
+
+
+@pytest.mark.anyio
+async def test_protected_routes_fail_closed_without_a_configured_key():
+    for key in ("", None):
+        for path in ("/portal/init", "/sse", "/messages/x"):
+            assert await _through_middleware(_scope(path), key) == (False, 401), (key, path)
+            assert await _through_middleware(_scope(path, b""), key) == (False, 401), (key, path)
+            assert await _through_middleware(_scope(path, b"anything"), key) == (False, 401), (key, path)
+
+
+@pytest.mark.anyio
+async def test_bad_keys_are_rejected_without_raising():
+    for sent in ("sécret".encode("utf-8"), b"\xff\xfe", b"secre", b"secret-and-more"):
+        assert await _through_middleware(_scope("/portal/init", sent), "secret") == (False, 401), sent
+    assert await _through_middleware(_scope("/portal/init", b"secret", b"secret"), "secret") == (False, 401)   # repeated header
+
+
+@pytest.mark.anyio
+async def test_other_paths_and_scopes_pass_through_without_a_key():
+    assert await _through_middleware(_scope("/other"), "") == (True, None)
+    assert await _through_middleware({"type": "lifespan"}, "") == (True, None)
+
+
+@pytest.mark.anyio
+async def test_the_key_is_never_logged(caplog):
+    import logging
+    with caplog.at_level(logging.WARNING):
+        await _through_middleware(_scope("/portal/init", b"super-secret-guess"), "super-secret-value")
+    assert "super-secret" not in caplog.text and "Unauthorized access attempt" in caplog.text
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("path", ["/portal/init/", "/portal//init", "/portal/", "/messages/", "/sse"])
+async def test_path_variants_under_a_protected_prefix_need_the_key(path):
+    assert await _through_middleware(_scope(path), "secret") == (False, 401), path
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("path", ["/portal", "/PORTAL/init", "/portal%2Finit", "/sse/", "/messages"])
+async def test_paths_outside_the_prefixes_are_not_routes_of_the_app_so_they_are_not_guarded_here(path):
+    # They match no route (404, or Starlette's slash redirect which re-enters the middleware), so there is
+    # nothing behind them to protect; this pins that the guard is the prefix rule and nothing broader.
+    assert await _through_middleware(_scope(path), "secret") == (True, None), path
+
+
+def test_the_real_app_rejects_portal_init_without_a_key():
+    from starlette.testclient import TestClient
+    from playwright_mcp.server import app
+    with patch("playwright_mcp.server.MCP_API_KEY", "secret"):
+        client = TestClient(app)
+        assert client.post("/portal/init").status_code == 401
+        assert client.post("/portal/init", headers={"X-MCP-API-KEY": "wrong"}).status_code == 401
+        assert client.get("/sse").status_code == 401
+

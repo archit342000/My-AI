@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import logging
 from contextlib import AsyncExitStack
 
@@ -174,3 +175,18 @@ playwright_server_url = os.environ.get("PLAYWRIGHT_MCP_SERVER_URL", "http://play
 tavily_client = MCPClient(server_url=tavily_server_url, api_key_secret_name="MCP_API_KEY")
 playwright_client = MCPClient(server_url=playwright_server_url, api_key_secret_name="PLAYWRIGHT_MCP_API_KEY")
 
+
+def portal_vnc_auth_header() -> dict:
+    """
+    HTTP Basic credential for the portal VNC (websockify in the playwright_mcp container).
+
+    The password is the playwright_mcp API key; the app's proxies add this header server-side so the key
+    never reaches the browser.
+
+    Returns:
+        `{"Authorization": "Basic ..."}`, or `{}` when the key is not configured.
+    """
+    key = get_secret("PLAYWRIGHT_MCP_API_KEY", "")
+    if not key:
+        return {}
+    return {"Authorization": "Basic " + base64.b64encode(f"portal:{key}".encode("utf-8")).decode("ascii")}

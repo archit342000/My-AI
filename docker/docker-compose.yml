@@ -77,6 +77,12 @@ services:
     secrets:
       - PLAYWRIGHT_MCP_API_KEY
     command: ["/app/playwright_mcp/entrypoint.sh"]
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import socket; socket.create_connection(('localhost', 8001), timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     restart: unless-stopped
 
   inference-proxy:
