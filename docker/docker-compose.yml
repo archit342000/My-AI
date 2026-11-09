@@ -7,6 +7,8 @@ services:
       dockerfile: docker/Dockerfile
     networks:
       - secure-internal
+      # The gateway's tunnel connector reaches the app at http://app:5000 over this network. Only the app joins it.
+      - edge
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -222,6 +224,12 @@ services:
 networks:
   secure-internal:
     driver: bridge
+  # Created by the gateway (the repo that runs cloudflared), which attaches its connector to it. Only `app` joins it:
+  # never bastion_ssh (2222) or inference-proxy (5001). Create it once with `docker network create ${EDGE_NETWORK:-my-ai-edge}` when
+  # there is no gateway (a local or throwaway stack).
+  edge:
+    external: true
+    name: ${EDGE_NETWORK:-my-ai-edge}
   # Internal only: no route to the internet or to mysql_db. The relay code_runner_mcp and the package proxy pkg-proxy
   # join it as well; the app does not.
   runner-net:

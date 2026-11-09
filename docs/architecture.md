@@ -21,6 +21,13 @@ Inference is external. The llama.cpp server lives in a separate repository.
 2. The app only consumes the inference API, via URLs and keys in `secrets/`.
 3. Adding inference orchestration (Docker services, model loaders, and so on) here violates the architecture.
 
+## Request flow
+
+A browser request goes through Cloudflare Access (login, then a signed token), the tunnel and the shared `edge` network to
+`app`. `authenticate_request` verifies the token and loads the user, a route's owner check (`backend/auth/ownership.py`) then
+decides whether that user may touch the chat, file or workspace, and only then does the route or a background turn run (as that
+user). `app` is the only service on `edge`; see "Deployment" in `docs/standards/security.md`.
+
 ## Tool isolation (MCP)
 
 External tools run in separate containers and are reached through the Model Context

@@ -47,6 +47,16 @@
   - The browser portal (`/api/tools/portal/*`) is admin only (a `before_request` in `app.py`, 403 for everyone else). It shows the
     one shared portal browser, so only the admin may see or drive it, and only the admin's browsing runs attach to it.
 
+## Deployment
+
+- Only `app` is routed through the Cloudflare tunnel: it is the only service on the external `edge` network
+  (`docker/docker-compose.yml`, `${EDGE_NETWORK:-my-ai-edge}`, created by the gateway). Never route or attach `bastion_ssh`
+  (port 2222) or `inference-proxy` (port 5001), and publish no new ports. The app itself publishes none.
+- Set `ADMIN_EMAIL` (seeded as the admin on every start), `CF_ACCESS_TEAM_DOMAIN` and `CF_ACCESS_AUD`; add other users inside
+  the app container with `docker compose -f docker/docker-compose.yml exec app python -m backend.auth.cli add <email>` (see
+  `backend/auth/README.md`). With no gateway, create the network once: `docker network create ${EDGE_NETWORK:-my-ai-edge}`. `AUTH_PROVIDER=static` trusts every request and is for
+  local development only.
+
 ## Input and output
 
 - Validate every request body, query string and tool argument before using it. Return `400` for bad input.

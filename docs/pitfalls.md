@@ -44,6 +44,15 @@ workflow issue. Keep each entry to the core lesson.
 - **RAG grid search:** synthetic test data must be highly discriminative. Generic or repetitive data causes
   zero-recall metrics.
 
+## Multi-user
+
+- **No full current user outside the request:** `current_user()` is a context variable set by `authenticate_request`. The task
+  worker runs the turn inside `user_context({"id": owner})` (task recovery logs under it too), so there is an id but no email or role; tools and
+  streaming generators take the owner from the chat (`db.get_chat_owner`) and look the role up (`db.get_user`) rather than
+  assuming the request's user.
+- **A JWKS outage fails closed:** if Access's signing keys cannot be fetched and none are cached (they are cached for 300 s),
+  every request is `401` and `auth_jwks_error` is logged until the next successful fetch.
+
 ## Docker and sandboxing
 
 - **Docker cannot allowlist egress by host.** `internal: true` removes the route out and separate bridges isolate networks, but there is no per-destination policy. Give the sandbox egress only through a proxy with fixed upstreams (`pkg-proxy`), never by attaching the runtime to a non-internal network. In nginx, `proxy_set_header` is inherited only by locations that set none of their own: repeat the shared headers.
