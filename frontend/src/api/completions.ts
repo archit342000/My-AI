@@ -80,6 +80,20 @@ export async function* streamCompletion(body: unknown, signal: AbortSignal): Asy
   yield* readSse(response.body);
 }
 
+/**
+ * Regenerates the reply to the last stored user message (Retry). The server reads that message
+ * itself, so no history or files are sent. Throws on HTTP errors (with the server message).
+ */
+export async function* resumeStream(chatId: string, body: unknown, signal: AbortSignal): AsyncGenerator<unknown> {
+  const response = await apiRequest(`/api/chats/${encodeURIComponent(chatId)}/resume`, {
+    method: 'POST',
+    json: body,
+    signal,
+  });
+  if (!response.body) throw new Error('Empty response from server');
+  yield* readSse(response.body);
+}
+
 /** Reattaches to an in-flight turn. Resolves to `null` when the server reports it already finished (204). */
 export async function reattachStream(chatId: string, signal: AbortSignal): Promise<AsyncGenerator<unknown> | null> {
   const response = await apiRequest(`/api/chats/${encodeURIComponent(chatId)}/stream`, { method: 'GET', signal });

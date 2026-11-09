@@ -11,7 +11,7 @@ import {
   toolCallChunk,
   toolResultChunk,
 } from '../../test/fixtures/sse';
-import { sendTurn, stopTurn } from './send-turn';
+import { resumeTurn, sendTurn, stopTurn } from './send-turn';
 import { useToastStore } from '../../components/ui/toast-store';
 
 /** Routes only the completion endpoint; every other request gets an empty JSON response. */
@@ -173,5 +173,61 @@ describe('send to an existing chat that is not cached (review fix)', () => {
     expect(fetchMock).not.toHaveBeenCalled();
     expect(useToastStore.getState().toasts.some((t) => t.type === 'error')).toBe(true);
     vi.unstubAllGlobals();
+  });
+});
+
+describe('resumeTurn (Retry)', () => {
+  it('posts to the resume URL without a pending user row and without messages', async () => {
+    const seen: { pending?: unknown; body?: Record<string, unknown> } = {};
+    const fetchMock = vi.fn(async (path: string, init?: RequestInit) => {
+      if (path === '/api/chats/chat-1/resume') {
+        seen.pending = useStreamStore.getState().pending;
+        seen.body = JSON.parse(String(init?.body));
+        return sseResponse(sseText([contentChunk('Again')], false));
+      }
+      return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    await resumeTurn(new QueryClient(), 'chat-1');
+    expect(fetchMock.mock.calls.some(([p]) => p === '/api/chats/chat-1/resume')).toBe(true);
+    expect(fetchMock.mock.calls.some(([p]) => p === '/v1/chat/completions')).toBe(false);
+    expect(seen.pending).toBeNull();
+    expect(seen.body).toMatchObject({ model: 'test-model', chatId: 'chat-1', messages: [] });
+    expect(useStreamStore.getState().chatId).toBeNull();
+  });
+
+  it('shows an HTTP error as an interrupted turn plus a toast', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (path: string) =>
+        path === '/api/chats/chat-1/resume'
+          ? new Response(JSON.stringify({ error: 'No user message found to resume from.' }), {
+              status: 400,
+              headers: { 'Content-Type': 'application/json' },
+            })
+          : new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } }),
+      ),
+    );
+    await resumeTurn(new QueryClient(), 'chat-1');
+    expect(useStreamStore.getState().interrupted).toMatchObject({
+      chatId: 'chat-1',
+      kind: 'error',
+      message: 'No user message found to resume from.',
+    });
+    expect(useToastStore.getState().toasts.some((t) => t.message === 'No user message found to resume from.')).toBe(true);
+  });
+
+  it('sends nothing while a stream is running or when no model is selected', async () => {
+    const fetchMock = vi.fn(async () => new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    useStreamStore.setState({ chatId: 'other' });
+    await resumeTurn(new QueryClient(), 'chat-1');
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    useStreamStore.setState({ chatId: null });
+    useSettingsStore.setState({ model: '' as never, modelName: '' as never });
+    await resumeTurn(new QueryClient(), 'chat-1');
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(useToastStore.getState().toasts.some((t) => t.message === 'Select a model first')).toBe(true);
   });
 });

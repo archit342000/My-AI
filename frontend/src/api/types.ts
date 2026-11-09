@@ -29,6 +29,8 @@ export interface StoredMessage {
   parent_id: Nullable<string>;
   parent_type: Nullable<string>;
   reasoning_content: Nullable<string>;
+  /** File references sent with a user message (decoded list); absent or null on older rows. */
+  attachments?: Nullable<unknown>;
 }
 
 export interface ChatDetail extends ChatSummary {

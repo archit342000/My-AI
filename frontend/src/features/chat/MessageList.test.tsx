@@ -98,16 +98,52 @@ describe('MessageList', () => {
     expect(within(a2).getByRole('button', { name: 'Retry response' })).toBeTruthy();
   });
 
-  it('retry sends the conversation history up to the replaced question (context must include earlier replies)', async () => {
-    vi.spyOn(chatsApi, 'deleteMessage').mockResolvedValue(new Response(null, { status: 200 }));
+  it('retry on the last reply deletes it, then resumes from the stored user message (no new user row)', async () => {
+    const del = vi.spyOn(chatsApi, 'deleteMessage').mockResolvedValue(new Response(null, { status: 200 }));
+    const resume = vi.spyOn(sendTurnModule, 'resumeTurn').mockResolvedValue(undefined);
     const send = vi.spyOn(sendTurnModule, 'sendTurn').mockResolvedValue(undefined);
-    const { client } = renderWithProviders(<MessageList turns={toTurns([...msgs] as never)} chatId="c1" onChanged={() => undefined} />);
-    client.setQueryData(['chat', 'c1'], { id: 'c1', messages: [...msgs] });
+    renderWithProviders(<MessageList turns={toTurns([...msgs] as never)} chatId="c1" onChanged={() => undefined} />);
     const a2 = document.querySelector('[data-message-id="4"]') as HTMLElement;
     fireEvent.click(within(a2).getByRole('button', { name: 'Retry response' }));
-    await waitFor(() => expect(send).toHaveBeenCalled());
-    const history = send.mock.calls[0]![0].history!;
-    expect(history.map((h) => h.content)).toEqual(['U1', 'A1']);
+    await waitFor(() => expect(resume).toHaveBeenCalledTimes(1));
+    expect(del).toHaveBeenCalledWith('c1', '4');
+    expect(resume.mock.calls[0]![1]).toBe('c1');
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('the user bubble Retry (no reply yet) resumes without sending a new turn', async () => {
+    const resume = vi.spyOn(sendTurnModule, 'resumeTurn').mockResolvedValue(undefined);
+    const send = vi.spyOn(sendTurnModule, 'sendTurn').mockResolvedValue(undefined);
+    renderWithProviders(<MessageList turns={toTurns(msgs.slice(0, 3) as never)} chatId="c1" onChanged={() => undefined} />);
+    const u2 = document.querySelector('[data-message-id="3"]') as HTMLElement;
+    fireEvent.click(within(u2).getByRole('button', { name: 'Retry response' }));
+    expect(resume).toHaveBeenCalledTimes(1);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('a failed delete shows a toast and does not resume', async () => {
+    vi.spyOn(chatsApi, 'deleteMessage').mockRejectedValue(new Error('gone'));
+    const resume = vi.spyOn(sendTurnModule, 'resumeTurn').mockResolvedValue(undefined);
+    renderWithProviders(<MessageList turns={toTurns([...msgs] as never)} chatId="c1" onChanged={() => undefined} />);
+    const a2 = document.querySelector('[data-message-id="4"]') as HTMLElement;
+    fireEvent.click(within(a2).getByRole('button', { name: 'Retry response' }));
+    await waitFor(() => expect(useToastStore.getState().toasts.some((t) => t.message === 'gone')).toBe(true));
+    expect(resume).not.toHaveBeenCalled();
+  });
+
+  it('shows attachments stored on a user message as chips, and none when there are none', () => {
+    const withFiles = [
+      { id: 1, chat_id: 'c1', role: 'user', content: 'see files', parent_type: 'main',
+        attachments: [{ file_id: 'f1', name: 'notes.txt', size: 3, mime_type: 'text/plain' }] },
+      { id: 2, chat_id: 'c1', role: 'user', content: 'plain', parent_type: 'main' },
+    ];
+    const { container } = renderWithProviders(<MessageList turns={toTurns(withFiles as never)} chatId="c1" onChanged={() => undefined} />);
+    const first = document.querySelector('[data-message-id="1"]') as HTMLElement;
+    const second = document.querySelector('[data-message-id="2"]') as HTMLElement;
+    expect(within(first).getByText('notes.txt')).toBeTruthy();
+    expect(first.querySelector('.message-attachments')).not.toBeNull();
+    expect(second.querySelector('.message-attachments')).toBeNull();
+    expect(container.querySelectorAll('.message-file-chip')).toHaveLength(1);
   });
 
 });

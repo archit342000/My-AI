@@ -15,7 +15,7 @@ import { useStreamStore, type InterruptedTurn, type PendingUser } from '../../st
 import { ThoughtHeader, ThoughtTimeline } from './ThoughtBlock';
 import { ToolActivityFeed, ToolSummary } from './ToolActivity';
 import { MessageActions } from './MessageActions';
-import { sendTurn } from './send-turn';
+import { resumeTurn, sendTurn } from './send-turn';
 
 const USER_AVATAR = (
   <div className="avatar-wrapper">
@@ -135,6 +135,15 @@ function UserTurn({
             </div>
           ) : null}
           {turn.text ? <Markdown text={turn.text} className="message-text-wrapper" /> : null}
+          {turn.files.length > 0 ? (
+            <div className="message-attachments">
+              {turn.files.map((f) => (
+                <span key={f.file_id} className="message-file-chip">
+                  {f.name}
+                </span>
+              ))}
+            </div>
+          ) : null}
           {showRetry ? (
             <Button variant="secondary" size="sm" className="turn-retry" onClick={onRetry}>
               Retry response
@@ -395,17 +404,13 @@ export function MessageList({
     });
   }
 
+  /** Retry regenerates from the stored user message, so attachments are reused as sent. */
   function retryLast() {
-    const userTurn = turns[lastUserIdx];
-    if (userTurn?.kind === 'user') void regenerateFrom(userTurn.id, userTurn.text);
+    void resumeTurn(queryClient, chatId);
   }
 
   async function retry(assistantIdx: number) {
-    const userTurn = turns
-      .slice(0, assistantIdx)
-      .reverse()
-      .find((t) => t.kind === 'user');
-    if (!userTurn || userTurn.kind !== 'user') return;
+    if (!turns.slice(0, assistantIdx).some((t) => t.kind === 'user')) return;
     try {
       await chatsApi.deleteMessage(chatId, turns[assistantIdx]!.id);
     } catch (err) {
@@ -413,7 +418,7 @@ export function MessageList({
       return;
     }
     await queryClient.invalidateQueries({ queryKey: queryKeys.chat(chatId) });
-    await regenerateFrom(userTurn.id, userTurn.text);
+    await resumeTurn(queryClient, chatId);
   }
 
   return (

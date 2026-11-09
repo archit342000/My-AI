@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { StoredMessage } from '../api/types';
-import { isAbsent, parseToolCalls, parseUserContent, toTurns } from './chat-model';
+import { isAbsent, parseAttachments, parseToolCalls, parseUserContent, toTurns } from './chat-model';
 
 function msg(over: Partial<StoredMessage>): StoredMessage {
   return {
@@ -86,5 +86,35 @@ describe('toTurns', () => {
   it('skips sub-agent messages from the main transcript', () => {
     const turns = toTurns([msg({ id: '6', role: 'assistant', content: 'inner', parent_type: 'sub_agent' })]);
     expect(turns).toHaveLength(0);
+  });
+});
+
+describe('parseAttachments', () => {
+  it('maps stored file references', () => {
+    expect(parseAttachments([{ file_id: 'f1', name: 'a.txt', size: 3, mime_type: 'text/plain' }])).toEqual([
+      { file_id: 'f1', name: 'a.txt', size: 3, mime_type: 'text/plain' },
+    ]);
+  });
+  it('defaults missing size and type', () => {
+    expect(parseAttachments([{ file_id: 'f1', name: 'a.txt' }])).toEqual([
+      { file_id: 'f1', name: 'a.txt', size: 0, mime_type: '' },
+    ]);
+  });
+  it('returns none for absent, non-array or malformed input', () => {
+    expect(parseAttachments(null)).toEqual([]);
+    expect(parseAttachments(undefined)).toEqual([]);
+    expect(parseAttachments('nope')).toEqual([]);
+    expect(parseAttachments([null, 3, { name: 'no id' }, { file_id: 'f1' }])).toEqual([]);
+  });
+});
+
+describe('toTurns attachments', () => {
+  it('puts stored attachments on user turns', () => {
+    const turns = toTurns([
+      msg({ id: '1', content: 'see file', attachments: [{ file_id: 'f1', name: 'a.txt', size: 3, mime_type: 'text/plain' }] }),
+      msg({ id: '2', content: 'plain' }),
+    ]);
+    expect(turns[0]).toMatchObject({ kind: 'user', files: [{ file_id: 'f1', name: 'a.txt' }] });
+    expect(turns[1]).toMatchObject({ kind: 'user', files: [] });
   });
 });
