@@ -59,6 +59,9 @@ describe('settings-manager.js', () => {
                     <button id="sys-reset-preferences"></button>
                     <button id="sys-reset-app"></button>
 
+                    <input type="range" id="code-runner-timeout" min="5" max="120" value="30" step="5">
+                    <span id="code-runner-timeout-val"></span>
+
                     <div id="default-thinking-profile-selector">
                         <button class="profile-btn" data-profile="none"></button>
                         <button class="profile-btn" data-profile="general"></button>
@@ -362,5 +365,33 @@ describe('settings-manager.js', () => {
         assert.strictEqual(maxTokensSlider.value, '8000');
         assert.strictEqual(maxTokensVal.textContent, '8000');
         assert.strictEqual(window.SettingsManager.getSamplingParams().max_tokens, 8000);
+    });
+
+    test('the code runner timeout slider follows the maximum the API reports, and the label shows its real value', async () => {
+        window.fetch = async (url) => {
+            fetchCalls.push({ url });
+            return { ok: true, json: async () => ({ code_runner_timeout: 9999, code_runner_max_timeout: 60 }) };
+        };
+        window.SettingsManager.init({
+            getCurrentChatId: () => 'chat-123', getIsTemporaryChat: () => false, getChatHistoryLength: () => 0,
+            setScrollLock: () => {}, showConfirm: async () => true, showAlert: async () => true
+        });
+        await window.SettingsManager.loadCodeRunnerSettings();
+        const slider = document.getElementById('code-runner-timeout');
+        assert.strictEqual(slider.max, '60');
+        assert.strictEqual(slider.value, '60');   // clamped by the new max, which was set first
+        assert.strictEqual(document.getElementById('code-runner-timeout-val').textContent, '60s');
+    });
+
+    test('the code runner timeout slider keeps its markup max when the API reports none', async () => {
+        window.fetch = async () => ({ ok: true, json: async () => ({ code_runner_timeout: 45 }) });
+        window.SettingsManager.init({
+            getCurrentChatId: () => 'chat-123', getIsTemporaryChat: () => false, getChatHistoryLength: () => 0,
+            setScrollLock: () => {}, showConfirm: async () => true, showAlert: async () => true
+        });
+        await window.SettingsManager.loadCodeRunnerSettings();
+        const slider = document.getElementById('code-runner-timeout');
+        assert.strictEqual(slider.max, '120');
+        assert.strictEqual(slider.value, '45');
     });
 });

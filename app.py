@@ -55,6 +55,7 @@ app.register_blueprint(models_bp, url_prefix='/api/models')
 from flask_sock import Sock
 import websocket as ws_client
 import threading
+from backend.mcp_client import portal_vnc_auth_header
 sock = Sock(app)
 app.config['SOCK_SERVER_OPTIONS'] = {'subprotocols': ['binary']}
 
@@ -70,8 +71,13 @@ def portal_ws_proxy(ws):
     closed = threading.Event()
     upstream = None
 
+    auth = portal_vnc_auth_header()
+    if not auth:
+        logger.warning("Portal WS proxy: PLAYWRIGHT_MCP_API_KEY is not configured")
+        return
+
     try:
-        upstream = ws_client.create_connection(upstream_url)
+        upstream = ws_client.create_connection(upstream_url, header=[f"{name}: {value}" for name, value in auth.items()])
 
         # Thread: upstream (VNC) → browser
         def upstream_to_browser():
@@ -143,7 +149,9 @@ def code_execution_ws_proxy(ws):
             return
             
         # Walk and collect files like run_file does!
-        from backend.tools.implementations.code_executor import collect_project_files
+        from backend.tools.implementations.code_executor import (
+            collect_project_files, effective_code_runner_timeout, SETTINGS_TIMEOUT_ERROR,
+        )
         
         try:
             lang, files_list, entry_file = collect_project_files(chat_id, file_path)
@@ -158,17 +166,23 @@ def code_execution_ws_proxy(ws):
             ws.send(json.dumps({"type": "exit", "code": 1}))
             return
             
-        # Get configured code execution timeout
-        timeout = db.get_setting("code_runner_timeout", config.CODE_RUNNER_DEFAULT_TIMEOUT)
+        # Get configured code execution timeout (clamped to the maximum)
+        try:
+            timeout = effective_code_runner_timeout()
+        except ValueError:
+            ws.send(json.dumps({"type": "stderr", "data": SETTINGS_TIMEOUT_ERROR + "\n"}))
+            ws.send(json.dumps({"type": "exit", "code": 1}))
+            return
 
         # 2. Connect to code_runner_mcp
         api_key = config.CODE_RUNNER_API_KEY
-        upstream_url = f"{config.CODE_RUNNER_URL.replace('http://', 'ws://').rstrip('/')}/ws/execute?api_key={api_key}"
-        
+        upstream_url = f"{config.CODE_RUNNER_URL.replace('http://', 'ws://').rstrip('/')}/ws/execute"
+
         try:
-            upstream = ws_client.create_connection(upstream_url)
+            # The key goes in a header, never in the URL (URLs end up in logs and exception text).
+            upstream = ws_client.create_connection(upstream_url, header=[f"X-API-KEY: {api_key or ''}"])
         except Exception as e:
-            # Only the type name is logged: the message can carry the upstream URL (with the key, in the old form).
+            # Only the type name is logged: the message can carry the upstream URL.
             logger.error(f"Code execution WS proxy could not reach the runner: {type(e).__name__}")
             log_event("code_execution_ws_proxy_error", {"chat_id": chat_id, "stage": "connect", "error": type(e).__name__})
             ws.send(json.dumps({"type": "stderr", "data": "Error: Code runner is unavailable.\n"}))

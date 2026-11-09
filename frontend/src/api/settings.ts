@@ -51,7 +51,9 @@ export interface LoadedModel {
 
 export const settingsApi = {
   getSystem: () =>
-    apiJson<CodeRunnerSettings & Record<string, unknown>>('/api/tools/config/settings'),
+    apiJson<CodeRunnerSettings & { code_runner_max_timeout?: number } & Record<string, unknown>>(
+      '/api/tools/config/settings',
+    ),
   saveCodeRunner: (body: CodeRunnerSettings) =>
     apiRequest('/api/tools/config/settings', { method: 'POST', json: body }),
   getAgents: () => apiJson<Record<string, AgentConfig>>('/api/tools/config/agents'),
