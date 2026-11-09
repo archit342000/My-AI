@@ -102,6 +102,58 @@ describe('MessageList', () => {
     expect(resume).not.toHaveBeenCalled();
   });
 
+  describe('attachment note', () => {
+    const note =
+      '\n\n[System Note: The user has attached the following files. Use the `document_agent` tool with the provided file_id to read their contents if needed:\n- notes.txt (ID: f1)]';
+    const withNote = [
+      { id: 1, chat_id: 'c1', role: 'user', content: 'read this' + note, parent_type: 'main' },
+      { id: 2, chat_id: 'c1', role: 'assistant', content: 'ok', parent_type: 'main', model: 'M' },
+    ];
+
+    it('hides the System Note in the bubble and shows the file as a chip', () => {
+      renderWithProviders(
+        <MessageList turns={toTurns(withNote as never)} chatId="c1" onChanged={() => undefined} />,
+      );
+      const row = document.querySelector('[data-message-id="1"]') as HTMLElement;
+      expect(row.textContent).not.toContain('System Note');
+      expect(within(row).getByText('read this')).toBeTruthy();
+      expect(within(row).getByText('notes.txt')).toBeTruthy();
+    });
+
+    it('cannot save an empty draft (an attachment-only message opens with an empty editor)', () => {
+      const edit = vi.spyOn(chatsApi, 'editMessage').mockResolvedValue({} as never);
+      const onlyFiles = [{ ...withNote[0]!, content: note }, withNote[1]!];
+      renderWithProviders(
+        <MessageList turns={toTurns(onlyFiles as never)} chatId="c1" onChanged={() => undefined} />,
+      );
+      const row = document.querySelector('[data-message-id="1"]') as HTMLElement;
+      fireEvent.click(within(row).getByRole('button', { name: 'Edit message' }));
+      const box = within(row).getByLabelText('Edit message', { selector: 'textarea' });
+      expect((box as HTMLTextAreaElement).value).toBe('');
+      const save = within(row).getByRole('button', { name: 'Save' }) as HTMLButtonElement;
+      const regenerate = within(row).getByRole('button', {
+        name: /Save & regenerate/,
+      }) as HTMLButtonElement;
+      expect(save.disabled).toBe(true);
+      expect(regenerate.disabled).toBe(true);
+      fireEvent.keyDown(box, { key: 'Enter' });
+      expect(edit).not.toHaveBeenCalled();
+    });
+
+    it('opens the editor with the text only and saves it (the server keeps the note)', async () => {
+      const edit = vi.spyOn(chatsApi, 'editMessage').mockResolvedValue({} as never);
+      renderWithProviders(
+        <MessageList turns={toTurns(withNote as never)} chatId="c1" onChanged={() => undefined} />,
+      );
+      const row = document.querySelector('[data-message-id="1"]') as HTMLElement;
+      fireEvent.click(within(row).getByRole('button', { name: 'Edit message' }));
+      const box = within(row).getByLabelText('Edit message', { selector: 'textarea' });
+      expect((box as HTMLTextAreaElement).value).toBe('read this');
+      fireEvent.click(within(row).getByRole('button', { name: 'Save' }));
+      await waitFor(() => expect(edit).toHaveBeenCalledWith('c1', '1', 'read this'));
+    });
+  });
+
   it('a failed edit keeps the editor open and shows an error toast', async () => {
     vi.spyOn(chatsApi, 'editMessage').mockRejectedValue(new Error('locked'));
     renderWithProviders(<MessageList turns={toTurns([...msgs] as never)} chatId="c1" onChanged={() => undefined} />);

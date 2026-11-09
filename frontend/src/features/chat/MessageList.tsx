@@ -74,6 +74,8 @@ function UserTurn({
    * the edited stored message (no second user row; its images and attachment note are kept server-side).
    */
   async function save(regenerate: boolean) {
+    // The server refuses empty content; an attachment-only message opens with an empty draft.
+    if (!draft.trim()) return;
     try {
       await chatsApi.editMessage(chatId, turn.id, draft);
     } catch (err) {
@@ -117,10 +119,10 @@ function UserTurn({
             <Button variant="ghost" onClick={cancel}>
               Cancel
             </Button>
-            <Button variant="secondary" onClick={() => void save(false)}>
+            <Button variant="secondary" disabled={!draft.trim()} onClick={() => void save(false)}>
               Save
             </Button>
-            <Button variant="primary" onClick={() => void save(true)}>
+            <Button variant="primary" disabled={!draft.trim()} onClick={() => void save(true)}>
               Save &amp; regenerate
             </Button>
           </div>
@@ -137,8 +139,8 @@ function UserTurn({
           {turn.text ? <Markdown text={turn.text} className="message-text-wrapper" /> : null}
           {turn.files.length > 0 ? (
             <div className="message-attachments">
-              {turn.files.map((f) => (
-                <span key={f.file_id} className="message-file-chip">
+              {turn.files.map((f, i) => (
+                <span key={`${i}:${f.file_id}`} className="message-file-chip">
                   {f.name}
                 </span>
               ))}

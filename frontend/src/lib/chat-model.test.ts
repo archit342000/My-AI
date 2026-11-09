@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { StoredMessage } from '../api/types';
-import { isAbsent, parseAttachments, parseToolCalls, parseUserContent, toTurns } from './chat-model';
+import {
+  isAbsent,
+  parseAttachments,
+  parseToolCalls,
+  parseUserContent,
+  splitAttachmentNote,
+  toTurns,
+} from './chat-model';
 
 function msg(over: Partial<StoredMessage>): StoredMessage {
   return {
@@ -116,5 +123,81 @@ describe('toTurns attachments', () => {
     ]);
     expect(turns[0]).toMatchObject({ kind: 'user', files: [{ file_id: 'f1', name: 'a.txt' }] });
     expect(turns[1]).toMatchObject({ kind: 'user', files: [] });
+  });
+});
+
+const NOTE =
+  '\n\n[System Note: The user has attached the following files. Use the `document_agent` tool with the provided file_id to read their contents if needed:\n- a.pdf (ID: f1)\n- my notes.txt (ID: f2)]';
+
+describe('splitAttachmentNote', () => {
+  it('strips the note and returns every file it lists, including the last (it ends with ])', () => {
+    expect(splitAttachmentNote('read these' + NOTE)).toEqual({
+      text: 'read these',
+      noteFiles: [
+        { file_id: 'f1', name: 'a.pdf', size: 0, mime_type: '' },
+        { file_id: 'f2', name: 'my notes.txt', size: 0, mime_type: '' },
+      ],
+    });
+  });
+  it('strips a router-shaped note (it ends with ]) even when no entry parses', () => {
+    const malformed =
+      'hello\n\n[System Note: The user has attached the following files. Use it:\nnot an entry]';
+    expect(splitAttachmentNote(malformed)).toEqual({ text: 'hello', noteFiles: [] });
+  });
+  it('leaves text that has the prefix but is not a router note (no closing ]) unchanged', () => {
+    const typed = 'see\n\n[System Note: The user has attached the following files, I typed this';
+    expect(splitAttachmentNote(typed)).toEqual({ text: typed, noteFiles: [] });
+  });
+  it('keeps the chip of a file whose name contains a newline', () => {
+    const note =
+      '\n\n[System Note: The user has attached the following files. Use it:\n- odd\nname.txt (ID: f9)\n- b.txt (ID: f10)]';
+    const names = splitAttachmentNote('x' + note).noteFiles.map((f) => f.name);
+    expect(names).toEqual(['odd\nname.txt', 'b.txt']);
+  });
+  it('returns text without a note unchanged', () => {
+    expect(splitAttachmentNote('plain text')).toEqual({ text: 'plain text', noteFiles: [] });
+  });
+  it('leaves a user-typed System Note mention alone', () => {
+    const typed = 'what is a [System Note: x] block?';
+    expect(splitAttachmentNote(typed)).toEqual({ text: typed, noteFiles: [] });
+  });
+  it('only treats the last note block as the router note', () => {
+    const typed = 'see\n\n[System Note: The user has attached the following files typed by me]';
+    expect(splitAttachmentNote(typed + NOTE).text).toBe(typed);
+  });
+});
+
+describe('toTurns with an attachment note', () => {
+  it('uses the stored attachments for the chips and hides the note', () => {
+    const turns = toTurns([
+      msg({
+        id: '1',
+        content: 'read these' + NOTE,
+        attachments: [{ file_id: 'f1', name: 'a.pdf', size: 9, mime_type: 'application/pdf' }],
+      }),
+    ]);
+    expect(turns[0]).toMatchObject({
+      kind: 'user',
+      text: 'read these',
+      files: [{ file_id: 'f1', name: 'a.pdf', size: 9 }],
+    });
+  });
+  it('falls back to the files listed in the note for messages without stored attachments', () => {
+    const turns = toTurns([msg({ id: '1', content: 'read these' + NOTE })]);
+    expect(turns[0]).toMatchObject({ kind: 'user', text: 'read these' });
+    const files = (turns[0] as { files: { name: string }[] }).files;
+    expect(files.map((f) => f.name)).toEqual(['a.pdf', 'my notes.txt']);
+  });
+  it('strips the note from multimodal content with one text part (the router shape)', () => {
+    const content = JSON.stringify([
+      { type: 'text', text: 'look' + NOTE },
+      { type: 'image_url', image_url: { url: 'data:image/png;base64,AAA' } },
+    ]);
+    const turns = toTurns([msg({ id: '1', content })]);
+    expect(turns[0]).toMatchObject({
+      kind: 'user',
+      text: 'look',
+      images: ['data:image/png;base64,AAA'],
+    });
   });
 });

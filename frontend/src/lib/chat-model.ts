@@ -83,6 +83,33 @@ export function isMainTranscript(message: StoredMessage): boolean {
   return isAbsent(message.parent_type) || message.parent_type === 'main';
 }
 
+/**
+ * The block `chat_completions` appends to a user message that has file attachments, so the model
+ * sees them (backend/chat/router.py builds it, backend/chat/message_edit.py re-appends it on edit;
+ * keep the three in step). It starts with this prefix and ends the text with `]`; the files are
+ * listed between as `- <name> (ID: <file_id>)` lines.
+ */
+const ATTACHMENT_NOTE_PREFIX = '\n\n[System Note: The user has attached the following files';
+// Lazy name, so a file name may contain newlines; an entry ends before the next `\n- ` or the `]`.
+const ATTACHMENT_NOTE_ENTRY = /\n- ([\s\S]+?) \(ID: ([^)]+)\)(?=\n- |\]$)/g;
+
+/**
+ * Splits the router's attachment note off a user message for display. Returns the text before the
+ * note and the files the note lists (size and type are not in the note, so they default like
+ * `parseAttachments`). The stored message is untouched, so the model still gets the note. Text that
+ * does not end in the router's note, including text that merely mentions "System Note", is returned
+ * as is.
+ */
+export function splitAttachmentNote(text: string): { text: string; noteFiles: UploadedFile[] } {
+  const start = text.lastIndexOf(ATTACHMENT_NOTE_PREFIX);
+  if (start < 0 || !text.endsWith(']')) return { text, noteFiles: [] };
+  const noteFiles: UploadedFile[] = [];
+  for (const [, name = '', fileId = ''] of text.slice(start).matchAll(ATTACHMENT_NOTE_ENTRY)) {
+    noteFiles.push({ file_id: fileId, name, size: 0, mime_type: '' });
+  }
+  return { text: text.slice(0, start), noteFiles };
+}
+
 /** Reads the stored attachment list of a user message; malformed entries are skipped. */
 export function parseAttachments(raw: unknown): UploadedFile[] {
   if (!Array.isArray(raw)) return [];
@@ -114,8 +141,11 @@ export function toTurns(messages: StoredMessage[]): Turn[] {
     if (!isMainTranscript(m)) continue;
     const id = String(m.id);
     if (m.role === 'user') {
-      const { text, images } = parseUserContent(clean(m.content));
-      turns.push({ kind: 'user', id, text, images, files: parseAttachments(m.attachments) });
+      const { text: rawText, images } = parseUserContent(clean(m.content));
+      // The note is for the model: show its files as chips, keep it out of the text and edit box.
+      const { text, noteFiles } = splitAttachmentNote(rawText);
+      const stored = parseAttachments(m.attachments);
+      turns.push({ kind: 'user', id, text, images, files: stored.length > 0 ? stored : noteFiles });
     } else if (m.role === 'assistant') {
       const rawContent = clean(m.content);
       const { thoughts, cleaned } = parseContent(rawContent);
