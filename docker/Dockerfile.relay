@@ -1,0 +1,9 @@
+FROM python:3.12-slim
+
+# TCP relay only (stdlib): no toolchains, no pip install, runs as a non-root user.
+RUN useradd --create-home --shell /usr/sbin/nologin relay
+WORKDIR /app
+COPY code_runner_mcp/relay.py /app/relay.py
+USER relay
+EXPOSE 8100
+CMD ["python3", "/app/relay.py"]

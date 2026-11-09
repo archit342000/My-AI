@@ -9,7 +9,8 @@ Applies to `docker/` and the services it defines. Rule 9 in `docs/standards/codi
 - Use multi-stage builds when a build toolchain is not needed at runtime (frontend stage in `docker/Dockerfile`).
 - Install system packages with `--no-install-recommends` and delete apt lists in the same `RUN`. Use `pip install --no-cache-dir` and `npm ci`.
 - Copy dependency manifests first, install, then copy source, so layers cache.
-- Run as a non-root user (`appuser`, `runner`, `pwuser`). Switch to root only to install packages, then drop back.
+- A service that needs no toolchain gets its own slim image: the code-runner relay uses `Dockerfile.relay`, not the runner image, so `my-ai-code-runner` is built once.
+- Run as a non-root user (`appuser`, `runner`, `relay`, `pwuser`). Switch to root only to install packages, then drop back.
   No `--privileged` or extra capabilities.
 
 ## Compose (`docker/docker-compose.yml`)
@@ -20,7 +21,7 @@ Applies to `docker/` and the services it defines. Rule 9 in `docs/standards/codi
 - Mount only what a service needs; use `:ro` for credentials and keys. Persistent data lives in the data volume or a named volume.
 - Set `restart: unless-stopped` on long-running services.
 - Anything that runs untrusted or heavy work sets `deploy.resources.limits` (see `code_runner_runtime` and `mysql_db`).
-- Health checks: `code_runner_runtime` and the relay `code_runner_mcp` define one (`GET /health`), `pkg-proxy` one on `/healthz`, `playwright_mcp` a TCP check on 8001; other services define none yet. Add a `healthcheck:` to any service you add or substantially change.
+- Health checks: `code_runner_runtime` defines one (`GET /health`), the relay `code_runner_mcp` checks its own loopback health port 8101 (so it stays healthy while the runtime is down), `pkg-proxy` one on `/healthz`, `playwright_mcp` a TCP check on 8001; other services define none yet. Add a `healthcheck:` to any service you add or substantially change.
 
 ## Tool containers (MCP)
 

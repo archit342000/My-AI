@@ -172,23 +172,24 @@ services:
     restart: unless-stopped
 
   # Relay: the app's only route to the runner. Forwards TCP 8100 to code_runner_runtime and nothing else.
-  # The relay runs /app/relay.py from the image (no host mount), so the sandbox cannot change what it executes.
+  # It runs /app/relay.py from its own slim image (no toolchains, no host mount), so the sandbox cannot change it.
   code_runner_mcp:
     build:
       context: ..
-      dockerfile: docker/Dockerfile.code-runner
-    image: my-ai-code-runner
-    command: ["python3", "/app/relay.py"]
+      dockerfile: docker/Dockerfile.relay
+    image: my-ai-code-runner-relay
     networks:
       - secure-internal
       - runner-net
     environment:
       - RELAY_TARGET=code_runner_runtime:8100
     healthcheck:
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8100/health', timeout=3)"]
+      # The relay's own loopback health port, so it stays healthy while the runtime is down.
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8101/', timeout=3)"]
       interval: 30s
       timeout: 5s
       retries: 3
+      start_period: 10s
     depends_on:
       - code_runner_runtime
     restart: unless-stopped
