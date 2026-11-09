@@ -148,6 +148,63 @@ async def test_initiate_chat(mock_db):
         mock_db.ensure_chat_exists.assert_not_called()
         mock_db.add_collection.assert_called_once()
 
+async def _run_initiate_chat(mock_db, **kwargs):
+    handler = ChatHandler("test")
+    async for _ in handler.initiate_chat(user_message=None, model="m", **kwargs):
+        pass
+
+
+@pytest.mark.anyio
+async def test_initiate_chat_ignores_a_foreign_persona_and_workspace_and_logs(mock_db):
+    mock_db.get_chat_owner.return_value = "owner-1"
+    mock_db.get_persona.return_value = None  # not the owner's persona
+    mock_db.get_workspace_owner.return_value = "someone-else"
+    with patch('backend.chat.handler.log_event') as events:
+        await _run_initiate_chat(mock_db, persona_id="persona-of-b", folder="ws-of-b")
+    mock_db.get_persona.assert_called_once_with("persona-of-b", "owner-1")
+    updates = mock_db.update_chat.call_args_list[-1].kwargs if mock_db.update_chat.call_args_list else {}
+    assert "persona_id" not in updates and "persona_snapshot" not in updates and "workspace_id" not in updates
+    names = [c.args[0] for c in events.call_args_list]
+    assert "chat_foreign_persona_ignored" in names and "chat_foreign_workspace_ignored" in names
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("bad", [["a"], {"id": "x"}, 5])
+async def test_initiate_chat_ignores_a_non_string_persona_or_workspace(mock_db, bad):
+    mock_db.get_chat_owner.return_value = "owner-1"
+    with patch('backend.chat.handler.log_event') as events:
+        await _run_initiate_chat(mock_db, persona_id=bad, folder=bad)
+    mock_db.get_persona.assert_not_called()  # never reaches sqlite with a non-string
+    mock_db.get_workspace_owner.assert_not_called()
+    names = [c.args[0] for c in events.call_args_list]
+    assert "chat_foreign_persona_ignored" in names and "chat_foreign_workspace_ignored" in names
+
+
+@pytest.mark.anyio
+async def test_initiate_chat_applies_the_owners_own_persona_and_workspace(mock_db):
+    mock_db.get_chat_owner.return_value = "owner-1"
+    mock_db.get_persona.return_value = {"content": "Be brief."}
+    mock_db.get_workspace_owner.return_value = "owner-1"
+    mock_db.get_chat.return_value = {}
+    await _run_initiate_chat(mock_db, persona_id="p1", folder="ws1")
+    updates = {}
+    for call in mock_db.update_chat.call_args_list:
+        updates.update(call.kwargs)
+    assert updates["persona_id"] == "p1" and updates["persona_snapshot"] == "Be brief." and updates["workspace_id"] == "ws1"
+
+
+@pytest.mark.anyio
+async def test_initiate_chat_still_lets_a_chat_clear_its_persona_and_workspace(mock_db):
+    mock_db.get_chat_owner.return_value = "owner-1"
+    await _run_initiate_chat(mock_db, persona_id=None, folder="")
+    updates = {}
+    for call in mock_db.update_chat.call_args_list:
+        updates.update(call.kwargs)
+    assert updates["persona_id"] is None and updates["workspace_id"] == ""
+    mock_db.get_persona.assert_not_called()
+    mock_db.get_workspace_owner.assert_not_called()
+
+
 @pytest.mark.anyio
 async def test_run_background_turn(mock_db, mock_task_manager):
     handler = ChatHandler("test")

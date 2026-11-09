@@ -100,7 +100,8 @@ class ChatHandler:
         Point 3: If a message is provided, triggers the inference engine.
         """
         # Routes create (or refuse) the chat before a handler runs, so the handler only checks that it exists.
-        if db.get_chat_owner(self.chat_id) is None:
+        owner = db.get_chat_owner(self.chat_id)
+        if owner is None:
             raise ValueError(f"Chat {self.chat_id} does not exist")
 
         # Clear resume_suppressed flag on new normal turn
@@ -130,19 +131,27 @@ class ChatHandler:
         if 'userPreferences' in kwargs:
             db_updates['user_preferences'] = 1 if kwargs['userPreferences'] else 0
 
+        # The stream has started, so a foreign workspace or persona cannot be answered with a 404 here: it is ignored and
+        # logged (direct writes through save and patch are refused by the routes). A falsy value still clears the field.
         if 'folder' in kwargs and kwargs['folder'] is not None:
-            db_updates['workspace_id'] = kwargs['folder']
+            folder = kwargs['folder']
+            if not folder or (isinstance(folder, str) and db.get_workspace_owner(folder) == owner):
+                db_updates['workspace_id'] = folder
+            else:
+                log_event("chat_foreign_workspace_ignored", {"chat_id": self.chat_id, "workspace_id": folder})
 
         if 'persona_id' in kwargs:
             new_persona_id = kwargs['persona_id']
-            db_updates['persona_id'] = new_persona_id
-            # Snapshot the persona content at assignment time so future edits
-            # to the persona record don't silently change this chat's behaviour.
-            existing_chat = db.get_chat(self.chat_id)
-            has_snapshot = existing_chat and existing_chat.get('persona_snapshot')
-            if new_persona_id and not has_snapshot:
-                persona = db.get_persona(new_persona_id)
-                if persona and persona.get('content'):
+            persona = db.get_persona(new_persona_id, owner) if new_persona_id and isinstance(new_persona_id, str) else None
+            if new_persona_id and not persona:
+                log_event("chat_foreign_persona_ignored", {"chat_id": self.chat_id, "persona_id": new_persona_id})
+            else:
+                db_updates['persona_id'] = new_persona_id
+                # Snapshot the persona content at assignment time so future edits
+                # to the persona record don't silently change this chat's behaviour.
+                existing_chat = db.get_chat(self.chat_id)
+                has_snapshot = existing_chat and existing_chat.get('persona_snapshot')
+                if new_persona_id and not has_snapshot and persona.get('content'):
                     db_updates['persona_snapshot'] = persona['content']
 
         if db_updates:
@@ -302,10 +311,11 @@ class ChatHandler:
                 if parent_type == "main":
                     from backend.chat.prompt_builder import PromptBuilder, PromptContext
                     
+                    owner = chat_metadata.get('user_id')
                     ctx = PromptContext(
                         chat_metadata=chat_metadata,
-                        preferences=db.get_all_preferences() if is_user_preferences else [],
-                        skills=db.get_all_skills(),
+                        preferences=db.get_all_preferences(owner) if is_user_preferences else [],
+                        skills=db.get_all_skills(owner),
                     )
                     system_prompt = PromptBuilder(ctx).build()
                     skills_by_name = {s['name']: s for s in ctx.skills}

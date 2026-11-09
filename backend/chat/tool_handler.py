@@ -4,11 +4,14 @@ import asyncio
 import contextvars
 from typing import List, Dict, Any, Optional, AsyncGenerator
 
+from backend.database import db
 from backend.tools import ToolRegistry
 from backend.logging import log_event
 from backend.chat.models import ParsedToolCall
 
 logger = logging.getLogger(__name__)
+
+_UNSET = object()
 
 class ToolHandler:
     """
@@ -22,9 +25,21 @@ class ToolHandler:
         self.parent_message_id = parent_message_id
         self.turn_anchor_id = None
         self.parent_type = parent_type
+        self._user_id = _UNSET
         # Initialize AgentHandler with the same anchoring ID
         from .agent_handler import AgentHandler
         self.agent_handler = AgentHandler(chat_id, chat_handler, parent_message_id=parent_message_id)
+
+    @property
+    def user_id(self) -> Optional[str]:
+        """
+        The chat owner, from the server: tools that touch user data get it through system_ctx, never from the model.
+
+        Read from the db on first use and then kept, so building a handler needs no db access.
+        """
+        if self._user_id is _UNSET:
+            self._user_id = db.get_chat_owner(self.chat_id)
+        return self._user_id
 
     async def handle_tool_calls(
         self, 
@@ -272,12 +287,18 @@ class ToolHandler:
 
         # Only inject system kwargs the function explicitly declares.
         # This prevents "unexpected keyword argument" errors for zero-arg tools like get_current_time.
+        try:
+            owner = self.user_id
+        except Exception as e:  # a db failure must not raise mid-stream; tools that need the owner then report its absence
+            logger.error(f"Could not read the owner of chat {self.chat_id}: {e}")
+            owner = None
         system_ctx = {
             "chat_id": self.chat_id,
             "parent_message_id": self.parent_message_id,
             "turn_anchor_id": getattr(self, 'turn_anchor_id', self.parent_message_id),
             "tool_call_id": tc_id,
-            "parent_type": self.parent_type
+            "parent_type": self.parent_type,
+            "user_id": owner
         }
         try:
             sig = inspect.signature(impl)

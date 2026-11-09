@@ -23,7 +23,7 @@ Mount it as a volume; losing it loses chats, files and vectors.
   `system_settings`, `clipboard`, `code_execution_history`. `backend/database/init_db.py` is the authority for columns.
 - Ownership: `workspaces`, `chats`, `personas`, `skills` and `memories` carry `user_id` (nullable column, no foreign key); every other table
   inherits its owner through `chat_id` or `workspace_id` (artifact tables through `file_system_id`; `users` and `system_settings` are global). On every start `init_db()` assigns ownerless root rows to the admin and stops with an
-  error when they exist and no admin is configured, or when ownerless skills share a name with another skill (rename or delete the duplicates). Skill names are unique per user (`UNIQUE(user_id, name)`); until the wrapper sets owners, triggers (`trg_skills_unowned_name`, `..._update`) reject any skill write that would share a name with another skill when either is ownerless (NULL owners are distinct under `UNIQUE`).
+  error when they exist and no admin is configured, or when ownerless skills share a name with another skill (rename or delete the duplicates). Skill names are unique per user (`UNIQUE(user_id, name)`); triggers (`trg_skills_unowned_name`, `..._update`) also reject any skill write that would share a name with another skill when either is ownerless (NULL owners are distinct under `UNIQUE`; the wrapper now always sets an owner, so they only guard legacy or direct writes).
 - Artifact (`file_systems`) ids are UUID4 strings. Older artifacts may still have per-owner numeric ids, which keep working.
   `init_db()` drops the legacy `file_system_counters` table (migration 14). It held only per-owner sequence numbers, no user
   data; see Migrations rule 4 below.

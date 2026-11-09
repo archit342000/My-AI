@@ -17,10 +17,10 @@
 | `file_system_ops.py` | Operations for file system artifacts and versions. | `FileSystemOpsMixin` |
 | `history_ops.py` | Logic for weaving message history and turn anchoring. | `HistoryOpsMixin` |
 | `message_ops.py` | CRUD for messages and sub-agent messages. | `MessageOpsMixin` |
-| `persona_ops.py` | CRUD operations for AI system Personas. | `PersonaOperations` |
-| `preference_ops.py` | Operations for user preferences and profile memories. | `PreferenceOpsMixin` |
+| `persona_ops.py` | CRUD operations for AI system Personas. Per user: every method takes a `user_id` (empty raises `ValueError`), a foreign id is "not found", and the default persona is per user. | `PersonaOperations` |
+| `preference_ops.py` | Operations for user preferences and profile memories. Per user (`user_id` required; foreign ids are "not found"; `clear_preferences` clears only the caller's). | `PreferenceOpsMixin` |
 | `settings_ops.py` | Dynamic system preferences and allowlist configurations. | `SettingsOpsMixin` |
-| `skill_ops.py` | Retrieval and execution details for custom assistant skills. | `SkillOpsMixin` |
+| `skill_ops.py` | Retrieval and execution details for custom assistant skills. Per user: `add_skill` is an upsert that cannot take over another user's id (returns False), names are unique per user. | `SkillOpsMixin` |
 | `task_ops.py` | Persistence related to background tasks. | `TaskOpsMixin` |
 | `user_ops.py` | Users table: lookup by email or id, create, activate/deactivate, list. | `UserOpsMixin` |
 

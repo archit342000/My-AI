@@ -24,8 +24,9 @@
   another user's chat. A foreign or missing id is `404` and writes nothing, and the check fails closed without a current user.
   Admins get no bypass: `admin` governs configuration, not other users' data. Tests assert the status and that no write mock
   was called (fixtures: `backend/conftest.py`).
-- Covered so far: the chat and workspace routes, the tools-router callbacks, file-system creation and file upload. Not yet owner-checked
-  (a later change scopes them): the other file, file-system, RAG and code-execution routes, and personas, skills and preferences.
+- Covered so far: the chat and workspace routes, the tools-router callbacks, file-system creation and file upload, and personas, skills
+  and preferences (every wrapper method takes `user_id`; model tools get it from the chat owner via `system_ctx`, never from model
+  arguments). Not yet owner-checked (a later change scopes them): the other file, file-system, RAG and code-execution routes.
 
 ## Input and output
 

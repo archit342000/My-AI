@@ -677,7 +677,7 @@ class TestPersonaSnapshot:
         the snapshot already stored on the chat row.
         """
         # Create a persona
-        persona = temp_db.create_persona("Assistant", "You are a helpful assistant.")
+        persona = temp_db.create_persona("Assistant", "You are a helpful assistant.", "u1")
 
         # Simulate assigning the persona and snapshotting its content
         temp_db.ensure_chat_exists("chat_snap_iso", "u1")
@@ -688,10 +688,10 @@ class TestPersonaSnapshot:
         )
 
         # Now edit the persona (e.g. the user updates it in the UI)
-        temp_db.update_persona(persona["id"], "Assistant v2", "You are a snarky assistant.")
+        temp_db.update_persona(persona["id"], "Assistant v2", "You are a snarky assistant.", "u1")
 
         # The live record must reflect the new content
-        updated = temp_db.get_persona(persona["id"])
+        updated = temp_db.get_persona(persona["id"], "u1")
         assert updated["content"] == "You are a snarky assistant."
 
         # But the chat's snapshot must still hold the original content
@@ -710,8 +710,8 @@ class TestPersonaSnapshot:
         persona_id must not silently erase the existing snapshot.
         This mirrors the handler logic: snapshot only on first write.
         """
-        p1 = temp_db.create_persona("P1", "Persona One content")
-        p2 = temp_db.create_persona("P2", "Persona Two content")
+        p1 = temp_db.create_persona("P1", "Persona One content", "u1")
+        p2 = temp_db.create_persona("P2", "Persona Two content", "u1")
 
         temp_db.ensure_chat_exists("chat_snap_noover", "u1")
         # First assignment — snapshot written

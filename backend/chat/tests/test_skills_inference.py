@@ -40,7 +40,7 @@ async def test_skills_system_prompt_injection(
             "instructions": "Use git commands.",
         }
     ]
-    mock_db.get_chat.return_value = {}
+    mock_db.get_chat.return_value = {"user_id": "user-a"}
     mock_db.get_messages.return_value = [{"role": "user", "content": "hello"}]
     mock_task_manager.is_interrupted.return_value = False
 
@@ -66,6 +66,7 @@ async def test_skills_system_prompt_injection(
     assert messages[0]["role"] == "system"
     assert "Available Skills" in messages[0]["content"]
     assert "/git-helper: Git commands assist" in messages[0]["content"]
+    mock_db.get_all_skills.assert_called_with("user-a")  # the chat owner's skills
 
     # Second message is the unchanged user message
     assert messages[1]["role"] == "user"
@@ -362,3 +363,31 @@ async def test_multimodal_user_invocation_replacement(
     assert content[0]["text"] == "[SKILL: git-helper]\nUse git status.\n[/SKILL]\n\ncheck status\n\n[System Note: some notes]"
     assert content[1]["type"] == "image_url"
     assert content[1]["image_url"]["url"] == "data:image/png;base64,image_data"
+
+
+@pytest.mark.anyio
+async def test_prompt_for_user_b_contains_none_of_user_as_skills_or_preferences(
+    mock_db, mock_task_manager, mock_response_cache
+):
+    skills = {"user-a": [{"id": "sa", "name": "a-secret-skill", "description": "A only", "instructions": "x"}],
+              "user-b": [{"id": "sb", "name": "b-skill", "description": "B only", "instructions": "y"}]}
+    prefs = {"user-a": [{"id": "pa", "tag": "t", "content": "A's private preference"}],
+             "user-b": [{"id": "pb", "tag": "t", "content": "B's preference"}]}
+    mock_db.get_all_skills.side_effect = lambda owner: skills[owner]
+    mock_db.get_all_preferences.side_effect = lambda owner: prefs[owner]
+    mock_db.get_chat.return_value = {"user_id": "user-b", "user_preferences": 1}
+    mock_db.get_messages.return_value = [{"role": "user", "content": "hello"}]
+    mock_task_manager.is_interrupted.return_value = False
+
+    handler = ChatHandler("chat_of_b")
+
+    async def mock_stream_gen(*args, **kwargs):
+        yield "data: chunk1"
+
+    handler.engine.stream = MagicMock(side_effect=mock_stream_gen)
+    async for _ in handler._run_orchestrated_stream(user_message=None, model_name="test-model"):
+        pass
+    system_prompt = handler.engine.stream.call_args[1]["messages"][0]["content"]
+    assert "b-skill" in system_prompt and "B's preference" in system_prompt
+    assert "a-secret-skill" not in system_prompt and "A's private preference" not in system_prompt
+
