@@ -14,7 +14,7 @@
 | `cache_system.py` | Response cache for active chat streaming with WAL support. | `ResponseCache`, `response_cache` |
 | `db_layer.py` | Low-level SQLite connection management. | `make_connection`, `DB_PATH` |
 | `db_wrapper.py` | Unified modular database wrapper using mixin composition. | `DatabaseWrapper` |
-| `init_db.py` | Schema initialization, table creation, and data migrations. | `init_db`, `_create_indexes` (the only place indexes are defined; re-run after table rebuilds) |
+| `init_db.py` | Schema initialization, table creation, and data migrations. | `init_db`, `_assign_owners`, `_create_indexes` (the only place indexes are defined; re-run after table rebuilds) |
 
 ## 🧩 Architectural Context
 *   **Dependencies:**

@@ -121,6 +121,102 @@ def _repair_leftover_old_tables(conn: sqlite3.Connection, tables) -> None:
             log_event("db_migration_leftover_old_table_error", {"table": table, "error": type(e).__name__})
 
 
+# Root tables that carry an owner (`user_id`); every other table inherits ownership through chat_id or workspace_id.
+OWNED_TABLES = ("workspaces", "chats", "personas", "skills", "memories")
+
+# Definition of `skills`: names are unique per user, not globally. Also used to rebuild an older table.
+SKILLS_TABLE_SQL = """CREATE TABLE skills (
+    id TEXT PRIMARY KEY,
+    name TEXT,
+    description TEXT,
+    instructions TEXT,
+    timestamp REAL,
+    user_id TEXT DEFAULT NULL,
+    UNIQUE(user_id, name)
+)"""
+
+# UNIQUE(user_id, name) treats NULL owners as distinct, so with the wrapper not setting owners yet an ownerless skill
+# could share a name with any other skill, and the next start's owner backfill would then fail. These triggers reject,
+# at write time, any insert or name/owner change that leaves a name shared with another row when either side is
+# ownerless (as the old global UNIQUE(name) did). Owned rows of different users may share names. An upsert onto an existing id
+# is left to the UPDATE trigger (it fires for a changed name or owner).
+_SKILLS_NAME_CLASH = "EXISTS (SELECT 1 FROM skills WHERE name = NEW.name AND id <> NEW.id AND (user_id IS NULL OR NEW.user_id IS NULL))"
+SKILLS_NAME_GUARD_SQL = (
+    f"""CREATE TRIGGER IF NOT EXISTS trg_skills_unowned_name BEFORE INSERT ON skills
+WHEN NOT EXISTS (SELECT 1 FROM skills WHERE id = NEW.id) AND {_SKILLS_NAME_CLASH}
+BEGIN SELECT RAISE(ABORT, 'UNIQUE constraint failed: skills.name'); END""",
+    f"""CREATE TRIGGER IF NOT EXISTS trg_skills_unowned_name_update BEFORE UPDATE OF name, user_id ON skills
+WHEN {_SKILLS_NAME_CLASH}
+BEGIN SELECT RAISE(ABORT, 'UNIQUE constraint failed: skills.name'); END""",
+)
+
+
+def _skills_name_is_globally_unique(c: sqlite3.Cursor) -> bool:
+    """Return True when `skills` still has a unique index on `name` alone (the pre-ownership schema)."""
+    c.execute("PRAGMA index_list(skills)")
+    for index in c.fetchall():
+        if index[2] and not index[4]:  # unique and not partial
+            c.execute(f"PRAGMA index_info('{index[1]}')")
+            if [col[2] for col in c.fetchall()] == ["name"]:
+                return True
+    return False
+
+
+def _assign_owners(conn: sqlite3.Connection, c: sqlite3.Cursor) -> None:
+    """
+    Give every ownerless root row to the admin and make skill names unique per user.
+
+    Runs on every start. Rows with a NULL `user_id` are assigned to the admin user (`config.ADMIN_EMAIL`).
+    If such rows exist and there is no admin, startup stops with a RuntimeError instead of leaving ownerless
+    data. Ownerless skills that share a name with another skill also stop startup. `skills` is rebuilt once from SKILLS_TABLE_SQL when it still has the global `UNIQUE(name)`; a failed
+    rebuild also stops startup, since per-user skill names would fail confusingly on the old constraint.
+
+    Args:
+        conn: Connection being migrated, with no open transaction after this function's own commit.
+        c: Cursor on that connection.
+
+    Raises:
+        RuntimeError: ownerless rows exist and there is no admin; ownerless skills share a name with another skill;
+            or the `skills` rebuild failed.
+    """
+    counts = {}
+    for table in OWNED_TABLES:
+        c.execute(f"SELECT COUNT(*) FROM {table} WHERE user_id IS NULL")
+        counts[table] = c.fetchone()[0]
+    if any(counts.values()):
+        c.execute("SELECT id FROM users WHERE email = ? COLLATE NOCASE AND role = 'admin'", (config.ADMIN_EMAIL,))
+        admin = c.fetchone()
+        if not admin:
+            raise RuntimeError("Ownerless rows exist and no admin user is configured; set ADMIN_EMAIL")
+        c.execute(
+            "SELECT DISTINCT a.name FROM skills a JOIN skills b ON a.name = b.name AND a.id <> b.id WHERE a.user_id IS NULL"
+        )
+        clashes = [row[0] for row in c.fetchall()]
+        if clashes:
+            raise RuntimeError(
+                f"Ownerless skills share a name with another skill: {sorted(clashes)}. "
+                "Rename or delete the duplicates before starting."
+            )
+        for table, rows in counts.items():
+            if rows:
+                c.execute(f"UPDATE {table} SET user_id = ? WHERE user_id IS NULL", (admin[0],))
+                log_event("db_migration_owner_backfill", {"table": table, "rows": rows})
+    if _skills_name_is_globally_unique(c):
+        # The rebuild needs foreign keys off, which only works outside a transaction.
+        conn.commit()
+        c.execute("PRAGMA foreign_keys=OFF")
+        try:
+            rebuilt = _rebuild_table_with_cascade(conn, "skills", SKILLS_TABLE_SQL)
+        finally:
+            if conn.in_transaction:
+                conn.rollback()
+            c.execute("PRAGMA foreign_keys=ON")
+        if not rebuilt:
+            raise RuntimeError("Could not rebuild 'skills' with per-user unique names; see the migration log")
+    for guard in SKILLS_NAME_GUARD_SQL:  # a rebuild drops triggers with the old table, so (re)create them last
+        c.execute(guard)
+
+
 def _create_indexes(c: sqlite3.Cursor) -> None:
     """
     Create every index of the schema. This is the only place indexes are defined.
@@ -139,6 +235,8 @@ def _create_indexes(c: sqlite3.Cursor) -> None:
     c.execute('CREATE INDEX IF NOT EXISTS idx_file_system_versions_file_system_id ON file_system_versions(file_system_id)')
     c.execute('CREATE INDEX IF NOT EXISTS idx_file_system_permissions_file_system_id ON file_system_permissions(file_system_id)')
     c.execute('CREATE INDEX IF NOT EXISTS idx_memories_tag ON memories(tag)')
+    for table in OWNED_TABLES:
+        c.execute(f'CREATE INDEX IF NOT EXISTS idx_{table}_user_id ON {table}(user_id)')
     c.execute('CREATE INDEX IF NOT EXISTS idx_sub_agent_chat_parent ON sub_agent_messages(chat_id, parent_message_id)')
     c.execute('CREATE INDEX IF NOT EXISTS idx_sub_agent_sequence ON sub_agent_messages(chat_id, parent_message_id, sequence_order)')
     c.execute('CREATE INDEX IF NOT EXISTS idx_collections_chat_parent ON collections(chat_id, parent_message_id)')
@@ -219,7 +317,8 @@ def init_db():
                 id TEXT PRIMARY KEY,
                 name TEXT,
                 timestamp REAL,
-                icon TEXT DEFAULT NULL
+                icon TEXT DEFAULT NULL,
+                user_id TEXT DEFAULT NULL
             )
         ''')
 
@@ -234,7 +333,8 @@ def init_db():
                 file_system_mode INTEGER DEFAULT 0,
                 browsing_mode INTEGER DEFAULT 0,
                 git_mode INTEGER DEFAULT 0,
-                code_execution_mode INTEGER DEFAULT 1
+                code_execution_mode INTEGER DEFAULT 1,
+                user_id TEXT DEFAULT NULL
             )
         ''')
 
@@ -309,6 +409,7 @@ def init_db():
                 code_execution_mode INTEGER DEFAULT 1,
                 persona_snapshot TEXT,
                 history_compression TEXT,
+                user_id TEXT DEFAULT NULL,
                 FOREIGN KEY(workspace_id) REFERENCES workspaces(id) ON DELETE SET NULL
             )
         ''')
@@ -423,7 +524,8 @@ def init_db():
                 id TEXT PRIMARY KEY,
                 content TEXT NOT NULL,
                 tag TEXT NOT NULL,
-                timestamp REAL DEFAULT (strftime('%s', 'now'))
+                timestamp REAL DEFAULT (strftime('%s', 'now')),
+                user_id TEXT DEFAULT NULL
             )
         ''')
 
@@ -478,15 +580,7 @@ def init_db():
         ''')
 
         # Skills table for the Skill Store
-        c.execute('''
-            CREATE TABLE IF NOT EXISTS skills (
-                id TEXT PRIMARY KEY,
-                name TEXT UNIQUE,
-                description TEXT,
-                instructions TEXT,
-                timestamp REAL
-            )
-        ''')
+        c.execute(SKILLS_TABLE_SQL.replace("CREATE TABLE skills (", "CREATE TABLE IF NOT EXISTS skills (", 1))
 
         # System Settings table for persistent global configuration
         c.execute('''
@@ -660,6 +754,12 @@ def init_db():
                 c.execute(f"ALTER TABLE sub_agent_messages ADD COLUMN {col_name} {col_def}")
             except sqlite3.OperationalError:
                 pass
+
+        # Ownership column on every root table (backfilled by _assign_owners)
+        for owned_table in OWNED_TABLES:
+            c.execute(f"PRAGMA table_info({owned_table})")
+            if "user_id" not in [col[1] for col in c.fetchall()]:
+                c.execute(f"ALTER TABLE {owned_table} ADD COLUMN user_id TEXT DEFAULT NULL")
 
         # 3. Create Indexes
         _create_indexes(c)
@@ -1718,6 +1818,9 @@ def init_db():
 
         # 15. Seed the admin user from ADMIN_EMAIL (idempotent; see _seed_admin).
         _seed_admin(c)
+
+        # 16. Assign owners to root rows and make skill names unique per user (see _assign_owners).
+        _assign_owners(conn, c)
 
         conn.commit()
     except Exception as e:

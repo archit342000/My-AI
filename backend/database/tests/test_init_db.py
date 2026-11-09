@@ -3,12 +3,19 @@ import os
 import sqlite3
 import pytest
 from unittest.mock import patch, MagicMock
-from backend.database.init_db import init_db, _create_indexes, _rebuild_table_with_cascade, _repair_leftover_old_tables
+from backend.database.init_db import init_db, _create_indexes, _rebuild_table_with_cascade, _repair_leftover_old_tables, _assign_owners, _skills_name_is_globally_unique
 from backend.database.db_layer import make_connection
 
 @pytest.fixture
 def temp_db_path(tmp_path):
     return str(tmp_path / "test_init.db")
+
+@pytest.fixture(autouse=True)
+def admin_email():
+    """Rows without an owner are assigned to the admin, so a configured ADMIN_EMAIL is the normal case."""
+    with patch("backend.config.ADMIN_EMAIL", "admin@test"):
+        yield
+
 
 @pytest.fixture(autouse=True)
 def patch_db_path(temp_db_path):
@@ -23,11 +30,15 @@ EXPECTED_INDEXES = {
     "file_systems": {"idx_file_systems_chat_id", "idx_file_systems_title"},
     "file_system_versions": {"idx_file_system_versions_file_system_id"},
     "file_system_permissions": {"idx_file_system_permissions_file_system_id"},
-    "memories": {"idx_memories_tag"},
+    "memories": {"idx_memories_tag", "idx_memories_user_id"},
     "sub_agent_messages": {"idx_sub_agent_chat_parent", "idx_sub_agent_sequence"},
     "collections": {"idx_collections_chat_parent", "idx_collections_parent_type"},
     "pending_callbacks": {"idx_pending_cb_chat"},
     "code_execution_history": {"idx_exec_history_chat", "idx_exec_history_created"},
+    "workspaces": {"idx_workspaces_user_id"},
+    "chats": {"idx_chats_user_id"},
+    "personas": {"idx_personas_user_id"},
+    "skills": {"idx_skills_user_id"},
 }
 
 
@@ -910,4 +921,296 @@ def test_users_table_is_added_to_the_previous_schema(temp_db_path):
         init_db()
     conn = make_connection()
     assert _users(conn) == [("admin@x.io", "admin", 1)]
+    conn.close()
+
+
+# --- ownership (user_id on the root tables) ---
+
+OWNED = ("workspaces", "chats", "personas", "skills", "memories")
+
+
+def _previous_schema_with_data(conn):
+    """The five root tables as they were before ownership (no user_id; skills.name globally unique) with two rows each."""
+    conn.executescript("""
+        CREATE TABLE workspaces (id TEXT PRIMARY KEY, name TEXT, timestamp REAL, icon TEXT DEFAULT NULL);
+        CREATE TABLE personas (id TEXT PRIMARY KEY, name TEXT, content TEXT, is_default INTEGER DEFAULT 0, timestamp REAL);
+        CREATE TABLE chats (id TEXT PRIMARY KEY, title TEXT, timestamp REAL, workspace_id TEXT);
+        CREATE TABLE memories (id TEXT PRIMARY KEY, content TEXT NOT NULL, tag TEXT NOT NULL, timestamp REAL);
+        CREATE TABLE skills (id TEXT PRIMARY KEY, name TEXT UNIQUE, description TEXT, instructions TEXT, timestamp REAL);
+        INSERT INTO workspaces VALUES ('w1', 'W1', 1.0, NULL), ('w2', 'W2', 2.0, NULL);
+        INSERT INTO personas VALUES ('p1', 'P1', 'c1', 0, 1.0), ('p2', 'P2', 'c2', 1, 2.0);
+        INSERT INTO chats VALUES ('c1', 'T1', 1.0, 'w1'), ('c2', 'T2', 2.0, NULL);
+        INSERT INTO memories VALUES ('m1', 'x', 'tag', 1.0), ('m2', 'y', 'tag', 2.0);
+        INSERT INTO skills VALUES ('s1', 'alpha', 'd', 'i', 1.0), ('s2', 'beta', 'd2', 'i2', 2.0);
+    """)
+    conn.commit()
+
+
+def _admin_id(conn):
+    return conn.execute("SELECT id FROM users WHERE role = 'admin'").fetchone()[0]
+
+
+def _skills_unique_columns(conn):
+    cols = []
+    for index in conn.execute("PRAGMA index_list(skills)").fetchall():
+        if index[2] and not index[4]:  # unique, not partial
+            cols.append([r[2] for r in conn.execute(f"PRAGMA index_info('{index[1]}')").fetchall()])
+    return cols
+
+
+def test_ownership_migrates_the_previous_schema_without_losing_rows():
+    conn = make_connection()
+    _previous_schema_with_data(conn)
+    conn.close()
+    init_db()
+    conn = make_connection()
+    admin = _admin_id(conn)
+    for table in OWNED:
+        assert conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] == 2
+        assert conn.execute(f"SELECT COUNT(*) FROM {table} WHERE user_id IS NULL").fetchone()[0] == 0
+        assert {r[0] for r in conn.execute(f"SELECT user_id FROM {table}")} == {admin}
+        assert f"idx_{table}_user_id" in _index_names(conn, table)
+    assert conn.execute("SELECT name, description, instructions FROM skills ORDER BY id").fetchall() == [
+        ("alpha", "d", "i"), ("beta", "d2", "i2")]
+    assert conn.execute("SELECT title, workspace_id FROM chats ORDER BY id").fetchall() == [("T1", "w1"), ("T2", None)]
+    conn.close()
+
+
+def test_skills_names_are_unique_per_user_after_migration():
+    conn = make_connection()
+    _previous_schema_with_data(conn)
+    conn.close()
+    init_db()
+    conn = make_connection()
+    assert ["user_id", "name"] in _skills_unique_columns(conn)
+    assert ["name"] not in _skills_unique_columns(conn)
+    conn.execute("INSERT INTO skills (id, name, user_id) VALUES ('s3', 'alpha', 'other-user')")
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute("INSERT INTO skills (id, name, user_id) VALUES ('s4', 'alpha', 'other-user')")
+    conn.close()
+
+
+def test_ownerless_skill_names_stay_unique_until_the_wrapper_sets_owners():
+    init_db()
+    conn = make_connection()
+    conn.execute("INSERT INTO skills (id, name) VALUES ('s1', 'dup')")
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute("INSERT INTO skills (id, name) VALUES ('s2', 'dup')")
+    conn.close()
+
+
+def test_ownerless_skill_cannot_take_the_name_of_an_owned_skill():
+    """The unchanged wrapper inserts without an owner; the guard keeps that from creating a clash that would stop the next start."""
+    init_db()
+    conn = make_connection()
+    conn.execute("INSERT INTO skills (id, name, user_id) VALUES ('a', 'foo', ?)", (_admin_id(conn),))
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute("INSERT INTO skills (id, name) VALUES ('b', 'foo')")
+    conn.execute("INSERT INTO skills (id, name, user_id) VALUES ('c', 'foo', 'another-user')")  # owned names are per user
+    conn.close()
+
+
+def test_skill_name_guard_also_covers_updates_and_owned_inserts():
+    init_db()
+    conn = make_connection()
+    admin = _admin_id(conn)
+    conn.execute("INSERT INTO skills (id, name) VALUES ('x', 'foo')")
+    conn.execute("INSERT INTO skills (id, name) VALUES ('y', 'bar')")
+    with pytest.raises(sqlite3.IntegrityError):  # rename onto another ownerless skill
+        conn.execute("UPDATE skills SET name = 'foo' WHERE id = 'y'")
+    with pytest.raises(sqlite3.IntegrityError):  # owned insert of a name an ownerless skill holds
+        conn.execute("INSERT INTO skills (id, name, user_id) VALUES ('z', 'foo', ?)", (admin,))
+    conn.execute("INSERT INTO skills (id, name, user_id) VALUES ('o', 'baz', ?)", (admin,))
+    with pytest.raises(sqlite3.IntegrityError):  # an owned skill cannot take an ownerless skill's name by rename either
+        conn.execute("UPDATE skills SET name = 'foo' WHERE id = 'o'")
+    conn.close()
+
+
+def test_skill_name_guard_blocks_clearing_the_owner_when_the_name_is_taken():
+    init_db()
+    conn = make_connection()
+    admin = _admin_id(conn)
+    conn.execute("INSERT INTO skills (id, name, user_id) VALUES ('a', 'baz', ?)", (admin,))
+    conn.execute("INSERT INTO skills (id, name, user_id) VALUES ('b', 'baz', 'user-b')")
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute("UPDATE skills SET user_id = NULL WHERE id = 'b'")
+    assert conn.execute("SELECT user_id FROM skills WHERE id = 'b'").fetchone()[0] == "user-b"
+    conn.close()
+
+
+def test_skill_name_guard_allows_the_wrapper_upsert_of_an_owned_skill_when_another_user_shares_the_name():
+    init_db()
+    conn = make_connection()
+    admin = _admin_id(conn)
+    conn.execute("INSERT INTO skills (id, name, user_id) VALUES ('s1', 'x', ?)", (admin,))
+    conn.execute("INSERT INTO skills (id, name, user_id) VALUES ('s2', 'x', 'user-b')")
+    upsert = ("INSERT INTO skills (id, name, description) VALUES (?, 'x', 'new') "
+              "ON CONFLICT(id) DO UPDATE SET name = excluded.name, description = excluded.description")
+    conn.execute(upsert, ("s1",))
+    conn.execute(upsert, ("s2",))
+    assert conn.execute("SELECT id, description, user_id FROM skills ORDER BY id").fetchall() == [
+        ("s1", "new", admin), ("s2", "new", "user-b")]
+    conn.execute("INSERT INTO skills (id, name) VALUES ('s3', 'taken')")
+    with pytest.raises(sqlite3.IntegrityError):  # a rename through the upsert onto an ownerless name is still caught
+        conn.execute("INSERT INTO skills (id, name, description) VALUES ('s1', 'taken', 'r') "
+                     "ON CONFLICT(id) DO UPDATE SET name = excluded.name")
+    conn.close()
+
+
+def test_ownerless_duplicates_stop_startup_with_a_clear_error():
+    init_db()
+    conn = make_connection()
+    conn.execute("DROP TRIGGER trg_skills_unowned_name")
+    conn.execute("DROP TRIGGER trg_skills_unowned_name_update")
+    conn.execute("INSERT INTO skills (id, name) VALUES ('a', 'dup'), ('b', 'dup')")
+    conn.commit()
+    conn.close()
+    with pytest.raises(RuntimeError, match="dup"):
+        init_db()
+
+
+def test_skill_name_guard_allows_an_upsert_of_the_same_skill():
+    init_db()
+    conn = make_connection()
+    conn.execute("INSERT INTO skills (id, name, description) VALUES ('s1', 'x', 'old')")
+    conn.execute("INSERT INTO skills (id, name, description) VALUES ('s1', 'x', 'new') "
+                 "ON CONFLICT(id) DO UPDATE SET description = excluded.description")
+    assert conn.execute("SELECT description FROM skills WHERE id = 's1'").fetchone()[0] == "new"
+    conn.close()
+
+
+def test_skill_name_guard_survives_the_skills_rebuild():
+    conn = make_connection()
+    _previous_schema_with_data(conn)
+    conn.close()
+    init_db()
+    conn = make_connection()
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute("INSERT INTO skills (id, name) VALUES ('x', 'alpha')")
+    conn.close()
+
+
+def test_ownership_migration_is_idempotent():
+    conn = make_connection()
+    _previous_schema_with_data(conn)
+    conn.close()
+    init_db()
+    conn = make_connection()
+    before = {t: conn.execute(f"SELECT * FROM {t} ORDER BY id").fetchall() for t in OWNED}
+    conn.close()
+    with patch("backend.database.init_db._rebuild_table_with_cascade") as rebuild, \
+         patch("backend.database.init_db.log_event") as events:
+        init_db()
+    rebuild.assert_not_called()
+    assert not [c for c in events.call_args_list if c.args[0] == "db_migration_owner_backfill"]
+    conn = make_connection()
+    assert {t: conn.execute(f"SELECT * FROM {t} ORDER BY id").fetchall() for t in OWNED} == before
+    conn.close()
+
+
+def test_fresh_database_has_owner_columns_and_no_ownerless_rows():
+    init_db()
+    init_db()
+    conn = make_connection()
+    for table in OWNED:
+        assert "user_id" in [r[1] for r in conn.execute(f"PRAGMA table_info({table})")]
+        assert conn.execute(f"SELECT COUNT(*) FROM {table} WHERE user_id IS NULL").fetchone()[0] == 0
+    assert ["user_id", "name"] in _skills_unique_columns(conn)
+    conn.close()
+
+
+def test_ownerless_chat_is_assigned_to_the_admin_on_the_next_start():
+    init_db()
+    conn = make_connection()
+    conn.execute("INSERT INTO chats (id, title) VALUES ('late', 'created before owners were set')")
+    conn.commit()
+    admin = _admin_id(conn)
+    conn.close()
+    with patch("backend.database.init_db.log_event") as events:
+        init_db()
+    conn = make_connection()
+    assert conn.execute("SELECT user_id FROM chats WHERE id = 'late'").fetchone()[0] == admin
+    conn.close()
+    events.assert_any_call("db_migration_owner_backfill", {"table": "chats", "rows": 1})
+
+
+def test_ownerless_rows_without_an_admin_stop_startup():
+    with patch("backend.config.ADMIN_EMAIL", ""):
+        init_db()
+        conn = make_connection()
+        conn.execute("INSERT INTO chats (id, title) VALUES ('c1', 't')")
+        conn.commit()
+        conn.close()
+        with pytest.raises(RuntimeError, match="ADMIN_EMAIL"):
+            init_db()
+
+
+def test_no_admin_and_no_ownerless_rows_starts_normally():
+    with patch("backend.config.ADMIN_EMAIL", ""):
+        init_db()
+        init_db()
+
+
+def test_failed_skills_rebuild_stops_startup_and_keeps_the_skills():
+    conn = make_connection()
+    _previous_schema_with_data(conn)
+    conn.close()
+    with patch("backend.database.init_db._rebuild_table_with_cascade", return_value=False):
+        with pytest.raises(RuntimeError, match="skills"):
+            init_db()
+    conn = make_connection()
+    assert conn.execute("SELECT name FROM skills ORDER BY id").fetchall() == [("alpha",), ("beta",)]
+    assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
+    assert ["name"] in _skills_unique_columns(conn)  # still the old constraint
+    conn.close()
+
+
+def test_ownerless_skill_with_the_name_of_an_owned_skill_stops_startup_with_a_clear_error():
+    init_db()
+    conn = make_connection()
+    admin = _admin_id(conn)
+    conn.execute("DROP TRIGGER trg_skills_unowned_name")  # simulate rows written before the guard existed
+    conn.execute("DROP TRIGGER trg_skills_unowned_name_update")
+    conn.execute("INSERT INTO skills (id, name, user_id) VALUES ('a', 'foo', ?)", (admin,))
+    conn.execute("INSERT INTO skills (id, name) VALUES ('b', 'foo')")
+    conn.commit()
+    conn.close()
+    with pytest.raises(RuntimeError, match="foo"):
+        init_db()
+    conn = make_connection()
+    assert conn.execute("SELECT COUNT(*) FROM skills WHERE user_id IS NULL").fetchone()[0] == 1  # nothing half-assigned
+    conn.close()
+
+
+def test_skills_name_is_globally_unique_detects_only_the_old_constraint():
+    conn = make_connection()
+    _previous_schema_with_data(conn)
+    assert _skills_name_is_globally_unique(conn.cursor()) is True
+    conn.close()
+    init_db()
+    conn = make_connection()
+    assert _skills_name_is_globally_unique(conn.cursor()) is False  # per-user UNIQUE and the partial index do not count
+    conn.close()
+
+
+def test_assign_owners_leaves_foreign_keys_on():
+    conn = make_connection()
+    _previous_schema_with_data(conn)
+    conn.close()
+    init_db()
+    conn = make_connection()
+    assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
+    conn.close()
+
+
+def test_assign_owners_updates_only_null_rows():
+    init_db()
+    conn = make_connection()
+    admin = _admin_id(conn)
+    conn.execute("INSERT INTO workspaces (id, name, user_id) VALUES ('mine', 'M', 'someone-else')")
+    conn.execute("INSERT INTO workspaces (id, name) VALUES ('orphan', 'O')")
+    conn.commit()
+    _assign_owners(conn, conn.cursor())
+    conn.commit()
+    assert dict(conn.execute("SELECT id, user_id FROM workspaces")) == {"mine": "someone-else", "orphan": admin}
     conn.close()
