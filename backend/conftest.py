@@ -7,6 +7,14 @@ from flask import g
 from backend.auth.context import reset_current_user, set_current_user
 
 
+@pytest.fixture(autouse=True)
+def _reset_rate_limiters():
+    """Rate-limit counters are process-wide state; every test starts with empty windows."""
+    from backend.auth import rate_limit
+    rate_limit.reset_limiters()
+    yield
+
+
 @pytest.fixture
 def user_a():
     """A regular user."""

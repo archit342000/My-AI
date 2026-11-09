@@ -59,6 +59,11 @@ AI_PROXY_URL = get_secret("AI_PROXY_URL", "http://localhost:5001")
 
 
 PLAYWRIGHT_HEADLESS = os.getenv("PLAYWRIGHT_HEADLESS", "True").lower() == "true"
+# Per-user rate limits (backend/auth/rate_limit.py): turn starts (send and resume) per minute, web searches per day.
+# Zero or less means unlimited. The admin is exempt unless RATE_LIMIT_EXEMPT_ADMIN is false.
+RATE_LIMIT_TURNS_PER_MINUTE = int(os.getenv("RATE_LIMIT_TURNS_PER_MINUTE", "10"))
+RATE_LIMIT_SEARCHES_PER_DAY = int(os.getenv("RATE_LIMIT_SEARCHES_PER_DAY", "200"))
+RATE_LIMIT_EXEMPT_ADMIN = os.getenv("RATE_LIMIT_EXEMPT_ADMIN", "True").lower() == "true"
 CHROMA_PATH = get_secret("CHROMA_PATH", os.path.abspath(os.path.join(DATA_DIR, "chroma_db")))
 
 # Ensure persistence directories exist

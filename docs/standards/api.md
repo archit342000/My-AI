@@ -18,7 +18,7 @@ Client code lives in `frontend/src/api/`.
 - JSON in, JSON out (`jsonify`). Field names are `snake_case` on the server; the typed client in `frontend/src/api/` maps them.
 - Success returns the resource or `{"success": true}`; creates return the new resource.
 - Status codes: `200` ok, `400` invalid input, `401` not authenticated (set by `authenticate_request`), `403` forbidden operation (also an unknown or inactive user),
-  `404` not found (also another user's chat or workspace, so ids are not confirmed), `413` upload too large, `500` unexpected failure.
+  `404` not found (also another user's chat or workspace, so ids are not confirmed), `413` upload too large, `429` over the caller's turn limit (with a `Retry-After` header in seconds), `500` unexpected failure.
 - Error body is `{"error": "<short message>"}`. The personas and skills routes also include `"success": false`; keep that there for
   compatibility but use the plain form elsewhere. Do not return stack traces or `str(e)` of internal exceptions from new code.
 - Validate before acting, and fail with `400` (not a partial write).
@@ -35,6 +35,7 @@ Client code lives in `frontend/src/api/`.
 - `POST /v1/chat/completions` checks in this order: another user's chat is `404`; `uploadedFiles` that are not attached to the chat are
   `400 {"error": "Unknown file"}`; then the chat is created for the caller (or confirmed theirs) and the turn slot is claimed. A rejected
   request writes nothing.
+- `POST /v1/chat/completions` and `POST /api/chats/<id>/resume` also count against a per-user turn limit (`RATE_LIMIT_TURNS_PER_MINUTE`, default 10; zero or less is unlimited; the admin is exempt unless `RATE_LIMIT_EXEMPT_ADMIN` is false): over it the answer is `429 {"error": "Too many requests; try again shortly."}` with `Retry-After`, checked after the git-mode check and before any file check, chat claim or write, so a refused request writes nothing. Sends and resumes share one count per user. A request refused after the limit check (an `Unknown file` or turn-in-progress `400`) has already used a turn. The React client shows a 429 as a toast (no inline error row).
 - One turn runs per chat. While a turn is running or starting, `POST /v1/chat/completions` and `POST /api/chats/<id>/resume`
   for that chat return `400 {"error": "a response is already in progress"}` and start nothing (a send also stores nothing);
   re-attach with `GET /api/chats/<id>/stream` instead. The React client shows that message as a toast (no inline error row).

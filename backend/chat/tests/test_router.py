@@ -1383,3 +1383,129 @@ def test_the_admin_can_enable_git_mode(mock_db, mock_tm, mock_handler, app, logi
     response = app.test_client().post('/api/chats/chat1/resume', json={"gitMode": True})
     assert response.status_code != 403
 
+
+
+# =============================================================================
+# Per-user turn rate limit
+# =============================================================================
+
+from backend.auth import rate_limit
+from backend.auth.rate_limit import FixedWindowLimiter
+
+LIMITED_REQUESTS = [
+    ('/v1/chat/completions', {"chatId": "chat1", "model": "m", "messages": [{"role": "user", "content": "hi"}]}),
+    ('/api/chats/chat1/resume', {}),
+]
+
+
+class _Clock:
+    now = 5000.0
+
+    def __call__(self):
+        return self.now
+
+
+@pytest.fixture
+def one_turn_per_window():
+    clock = _Clock()
+    with patch.object(rate_limit, "turn_limiter", FixedWindowLimiter(1, 60, clock=clock)), \
+         patch('backend.chat.router.log_event') as events:
+        yield clock, events
+
+
+@pytest.mark.parametrize("url,body", LIMITED_REQUESTS)
+@patch('backend.chat.router.ChatHandler')
+@patch('backend.chat.router.task_manager')
+@patch('backend.chat.router.db')
+def test_the_second_turn_in_the_window_is_429_with_retry_after_and_writes_nothing(
+        mock_db, mock_tm, mock_handler, url, body, client, owned_by_user_a, one_turn_per_window):
+    clock, events = one_turn_per_window
+    mock_tm.claim_turn.return_value = True
+    mock_db.get_messages.return_value = [{"role": "user", "content": "x"}]
+    mock_db.get_chat.return_value = {"last_model": "m"}
+    mock_db.add_message.return_value = 1
+    assert client.post(url, json=body).status_code != 429  # the first turn is within the limit
+    mock_tm.reset_mock(); mock_db.reset_mock(); owned_by_user_a.reset_mock()
+    clock.now += 20
+    response = client.post(url, json=body)
+    assert response.status_code == 429 and response.get_json() == {"error": "Too many requests; try again shortly."}
+    assert response.headers["Retry-After"] == "40"
+    mock_tm.claim_turn.assert_not_called()  # no turn claimed
+    owned_by_user_a.ensure_chat_exists.assert_not_called()  # no chat claimed or created
+    assert [c for c in mock_db.mock_calls if not c[0].startswith("get_")] == []  # no message, no write
+    events.assert_any_call("rate_limited", {"kind": "turns"})
+
+
+@pytest.mark.parametrize("url,body", LIMITED_REQUESTS)
+@patch('backend.chat.router.ChatHandler')
+@patch('backend.chat.router.task_manager')
+@patch('backend.chat.router.db')
+def test_the_window_rolling_over_allows_the_next_turn(mock_db, mock_tm, mock_handler, url, body, client, owned_by_user_a, one_turn_per_window):
+    clock, _ = one_turn_per_window
+    mock_tm.claim_turn.return_value = True
+    mock_db.get_messages.return_value = [{"role": "user", "content": "x"}]
+    mock_db.get_chat.return_value = {"last_model": "m"}
+    mock_db.add_message.return_value = 1
+    client.post(url, json=body)
+    assert client.post(url, json=body).status_code == 429
+    clock.now += 60
+    assert client.post(url, json=body).status_code != 429
+
+
+@patch('backend.chat.router.ChatHandler')
+@patch('backend.chat.router.task_manager')
+@patch('backend.chat.router.db')
+def test_the_limit_is_per_user_and_send_and_resume_share_it(mock_db, mock_tm, mock_handler, app, login_as, user_a, user_b, owner_db, one_turn_per_window):
+    mock_tm.claim_turn.return_value = True
+    mock_db.get_messages.return_value = [{"role": "user", "content": "x"}]
+    mock_db.get_chat.return_value = {"last_model": "m"}
+    mock_db.add_message.return_value = 1
+    owner_db.get_chat_owner.side_effect = lambda chat_id: user_a["id"] if chat_id == "chat1" else user_b["id"]
+    login_as(app, user_a)
+    first = app.test_client()
+    assert first.post('/v1/chat/completions', json=LIMITED_REQUESTS[0][1]).status_code != 429
+    assert first.post('/api/chats/chat1/resume', json={}).status_code == 429  # a resume counts against the same limit
+    login_as(app, user_b)
+    other = app.test_client()
+    assert other.post('/api/chats/chat2/resume', json={}).status_code != 429  # another user is not affected
+
+
+@patch('backend.chat.router.ChatHandler')
+@patch('backend.chat.router.task_manager')
+@patch('backend.chat.router.db')
+def test_the_exempt_admin_is_not_limited_and_a_non_exempt_admin_is(mock_db, mock_tm, mock_handler, app, login_as, admin_a, owner_db, one_turn_per_window):
+    from backend import config
+    mock_tm.claim_turn.return_value = True
+    mock_db.get_messages.return_value = [{"role": "user", "content": "x"}]
+    mock_db.get_chat.return_value = {"last_model": "m"}
+    owner_db.get_chat_owner.return_value = admin_a["id"]
+    login_as(app, admin_a)
+    admin = app.test_client()
+    with patch.object(config, "RATE_LIMIT_EXEMPT_ADMIN", True):
+        assert all(admin.post('/api/chats/chat1/resume', json={}).status_code != 429 for _ in range(3))
+    with patch.object(config, "RATE_LIMIT_EXEMPT_ADMIN", False):
+        admin.post('/api/chats/chat1/resume', json={})
+        assert admin.post('/api/chats/chat1/resume', json={}).status_code == 429
+
+
+@pytest.mark.parametrize("url,body", LIMITED_REQUESTS)
+@patch('backend.chat.router.task_manager')
+@patch('backend.chat.router.db')
+def test_a_request_without_a_user_is_401_and_touches_nothing(mock_db, mock_tm, url, body, owned_by_user_a, one_turn_per_window):
+    app = Flask(__name__)
+    app.register_blueprint(chat_bp, url_prefix='/api/chats')
+    app.register_blueprint(openai_bp, url_prefix='/v1/chat')
+    with patch('backend.chat.router.require_chat_owner', return_value=None), patch('backend.chat.router.reject_foreign_chat', return_value=None):
+        response = app.test_client().post(url, json=body)
+    assert response.status_code == 401 and response.get_json() == {"error": "Unauthorized"}
+    mock_tm.claim_turn.assert_not_called()
+
+
+@pytest.mark.parametrize("url,body", LIMITED_REQUESTS)
+@patch('backend.chat.router.task_manager')
+@patch('backend.chat.router.db')
+def test_a_foreign_chat_is_still_404_and_does_not_spend_a_turn(mock_db, mock_tm, url, body, as_user_b, owned_by_user_a, one_turn_per_window):
+    for _ in range(3):
+        assert as_user_b.post(url, json=body).status_code == 404  # refused by ownership before the limiter
+    mock_tm.claim_turn.assert_not_called()
+    assert rate_limit.turn_limiter._windows == {}  # the limiter was never consulted for the refused requests

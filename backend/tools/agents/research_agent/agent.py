@@ -8,6 +8,7 @@ from backend.tools.time_utils import get_current_date
 from backend.inference import ManualChunkEmitter
 from backend.database import db
 from backend import config
+from backend.auth.rate_limit import SearchLimitReached, check_search_limit
 from backend.error_handling import CircuitOpenError
 from .prompts import (
     PLANNER_SYSTEM_PROMPT, 
@@ -810,6 +811,8 @@ class ResearchAgent:
                     search_payload = "## INITIAL SEARCH RESULTS\n"
                     try:
                         search_payload += await self._execute_internal_searches(current_section.get("queries", []), is_followup=False)
+                    except SearchLimitReached:
+                        raise  # not retried: the section fails with the limit message
                     except Exception as search_err:
                         logger.warning(f"Initial searches attempt {search_attempt + 1} failed: {search_err}")
                         search_payload = ""
@@ -874,7 +877,11 @@ class ResearchAgent:
                 followup_payload = "\n## FOLLOW-UP SEARCH RESULTS\n"
                 if reflection_analysis and reflection_analysis.get("gaps"):
                     async for chunk in self._emit_event(f"{prefix}{EVENT_GAP_SEARCHES_IN_PROGRESS}", parent_type=self.AGENT_NAME): yield chunk
-                    followup_payload += await self._execute_internal_searches(reflection_analysis.get("gaps", []), is_followup=True)
+                    try:
+                        followup_payload += await self._execute_internal_searches(reflection_analysis.get("gaps", []), is_followup=True)
+                    except SearchLimitReached as limit:
+                        # Keep the section's earlier results and move on; the DONE event below ends this state.
+                        logger.warning(f"Follow-up searches skipped: {limit}")
                     
                     if not followup_payload.strip() or followup_payload.strip() == "## FOLLOW-UP SEARCH RESULTS":
                          async for chunk in self._emit_event(f"{prefix}⚠️ No usable follow-up search results found. Proceeding with available context.", parent_type=self.AGENT_NAME): yield chunk
@@ -1200,7 +1207,13 @@ class ResearchAgent:
         for q in queries:
             query_text = q.get("query") or q.get("search", "")
             if not query_text: continue
-            
+
+            # One query is one hit against the chat owner's daily limit. Outside the try below, so the generic
+            # handler (which records a failed query and moves on) cannot swallow it.
+            limit_message = check_search_limit(self.chat_id)
+            if limit_message:
+                raise SearchLimitReached(limit_message)
+
             try:
                 mcp_res = await _execute_mcp_tool(
                     tavily_client, 

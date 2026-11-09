@@ -66,6 +66,7 @@
   (cookies, logins, storage), chosen server-side from the chat owner and validated against `[a-z0-9_-]{1,64}`. Users never share a
   profile. Only the admin's runs may attach to the portal browser. The old shared `default_profile` is retired (saved logins in it
   are not carried over).
+- Per-user rate limits (`backend/auth/rate_limit.py`, in memory, one window per user, reset by a restart): turn starts per minute (`RATE_LIMIT_TURNS_PER_MINUTE`) and web searches per day (`RATE_LIMIT_SEARCHES_PER_DAY`), so one user cannot use up shared inference or Tavily capacity. Sends and resumes answer `429` before anything is written; a search over the limit returns `Error: Daily web search limit reached.`, also for a chat with no owner (fail closed). The admin is exempt unless `RATE_LIMIT_EXEMPT_ADMIN` is false.
 - Code runs are serialised in the app and again by a lock inside the runner, and bounded per user (`CODE_RUNNER_MAX_QUEUED_PER_USER`, default 2; waits longer
   than `CODE_RUNNER_QUEUE_TIMEOUT`, default 120 s, are refused with a "busy" message), so one user cannot queue the runner full.
   Between runs the runner removes everything in `/tmp`, `/var/tmp`, `/dev/shm` and its sandbox base, gives each run its own `HOME`

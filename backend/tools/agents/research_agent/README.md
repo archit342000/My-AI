@@ -26,6 +26,7 @@
 *   **Resumption:** The agent is designed to be fully resumable. It reconstructs its current position in the pipeline by scanning DB history for specific `role='event'` markers.
 
 ## 🛠️ Usage & Conventions
+*   **Daily search limit:** Every search query counts against the chat owner's `RATE_LIMIT_SEARCHES_PER_DAY` (`check_search_limit`, before the query's own error handling). Each query is one hit (a section's initial-search retry runs its queries, and so counts, again). An initial search over the limit raises `SearchLimitReached`: the section is not retried and the research run halts (`Section N failed: Error: Daily web search limit reached. Research halted.`). A follow-up gap search over the limit is skipped (the results of that gap batch are dropped, even queries that ran before the limit) and the section carries on with the results it has.
 *   **Persistence:** All intermediate search results and drafts are stored as `collections` linked to the chat.
 *   **Verification:** Mechanically verifies LLM output against JSON schemas at every phase.
 *   **Sequentiality:** Currently executes sections one by one to ensure context continuity (later sections see summaries of previous ones).

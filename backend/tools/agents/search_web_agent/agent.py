@@ -6,6 +6,7 @@ from backend.database import db
 from backend.mcp_client import tavily_client
 from backend.tools.agents.search_web_agent.prompts import SEARCH_AGENT_SYSTEM_PROMPT
 from backend import config
+from backend.auth.rate_limit import check_search_limit
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +46,20 @@ async def flow_fn(
             )
         else:
             logger.info(f"SearchWebAgent resuming: chat_id={chat_id} existing_msgs={len(existing_history)}")
+
+        # One search is one hit against the chat owner's daily limit, however many retries it needs.
+        limit_message = check_search_limit(chat_id)
+        if limit_message:
+            agent.result = limit_message
+            db.add_message(
+                chat_id=chat_id,
+                role='event',
+                content='Search Web Agent Failed.',
+                parent_id=parent_message_id,
+                parent_type='search_web'
+            )
+            yield limit_message
+            return
 
         max_retries = 2
         last_error = None
