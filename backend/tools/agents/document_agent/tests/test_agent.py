@@ -36,7 +36,9 @@ def mock_agent():
 @pytest.fixture
 def mock_db():
     with patch('backend.tools.agents.base.db') as db_mock:
-        with patch('backend.tools.agents.document_agent.agent.db', new=db_mock):
+        with patch('backend.tools.agents.document_agent.agent.db', new=db_mock), \
+             patch('backend.tools.agents.document_agent.agent.file_for_chat',
+                   side_effect=lambda file_id, chat_id: db_mock.get_file(file_id)):  # by default the file is the caller's
             yield db_mock
 
 @pytest.fixture
@@ -342,3 +344,18 @@ async def test_flow_fn_no_history_break(mock_agent, mock_db, mock_log_tool_call)
         res = [chunk async for chunk in gen]
         
         assert mock_agent.result == "Error: Document agent completed but returned no content."
+
+
+@pytest.mark.anyio
+async def test_flow_fn_does_not_open_a_file_outside_the_callers_chats(mock_agent, mock_db, mock_log_tool_call):
+    """An image of another user's must never reach the vision model: the file is "not found" before anything is read."""
+    mock_db.get_messages.return_value = []
+    mock_db.get_file.return_value = {"mime_type": "image/png", "original_filename": "secret.png", "stored_filename": "s.png", "chat_id": "chat-of-b"}
+    with patch('backend.tools.agents.document_agent.agent.file_for_chat', return_value=None) as owned, \
+         patch('backend.tools.agents.document_agent.agent.FileManager') as file_manager, \
+         patch('backend.tools.agents.document_agent.agent.is_vision_model', return_value=True):
+        res = [chunk async for chunk in flow_fn(mock_agent, "document_agent", "file_of_b", "query")]
+    owned.assert_called_once_with("file_of_b", "test_chat")
+    assert "not found" in mock_agent.result and "secret.png" not in str(res) + mock_agent.result
+    file_manager.assert_not_called()  # the image is never encoded
+

@@ -405,6 +405,9 @@ def update_system_settings():
 
 @tools_bp.route('/code-execution/history/<chat_id>', methods=['GET'])
 def get_execution_history(chat_id):
+    denied = require_chat_owner(chat_id)
+    if denied:
+        return denied
     from backend.database import db
     limit = request.args.get('limit', 50, type=int)
     offset = request.args.get('offset', 0, type=int)
@@ -428,6 +431,11 @@ async def api_run_file():
     
     if not path or not chat_id:
         return jsonify({"error": "Missing path or chat_id"}), 400
+    if not isinstance(chat_id, str):
+        return jsonify({"error": "Invalid chat_id"}), 400
+    denied = require_chat_owner(chat_id)
+    if denied:
+        return denied
 
     try:
         resolve_run_target(chat_id, path)

@@ -24,6 +24,13 @@ with patch('backend.database.init_db.init_db'), \
     import app as flask_app
     from backend import config
 
+@pytest.fixture(autouse=True)
+def _caller_owns_the_chat():
+    """The code-execution WebSocket checks the chat owner; by default the caller owns every chat."""
+    with patch('app.owns_chat', return_value=True) as owns:
+        yield owns
+
+
 ADMIN_ROW = {"id": "admin-1", "email": "admin@test", "role": "admin", "is_active": True, "created_at": 0.0}
 
 
@@ -560,3 +567,19 @@ def test_frontend_setting_rejects_unknown_value():
         with pytest.raises(ValueError, match="FRONTEND must be"):
             importlib.reload(cfg)
     importlib.reload(cfg)
+
+
+@patch('app.ws_client.create_connection')
+@patch('backend.tools.implementations.code_executor.collect_project_files')
+def test_code_execution_ws_proxy_refuses_a_chat_the_caller_does_not_own(mock_collect_project_files, mock_create_connection, _caller_owns_the_chat):
+    import json
+    _caller_owns_the_chat.return_value = False  # another user's chat
+    mock_ws = MagicMock()
+    mock_ws.receive.side_effect = [json.dumps({"type": "init", "filePath": "main.py", "chat_id": "chat-of-a"}), None]
+    flask_app.code_execution_ws_proxy(mock_ws)
+    sent = [json.loads(c.args[0]) for c in mock_ws.send.call_args_list]
+    assert sent == [{"type": "stderr", "data": "Error: Chat not found.\n"}, {"type": "exit", "code": 1}]
+    _caller_owns_the_chat.assert_called_once_with("chat-of-a")
+    mock_collect_project_files.assert_not_called()  # the foreign chat's files are never read
+    mock_create_connection.assert_not_called()
+

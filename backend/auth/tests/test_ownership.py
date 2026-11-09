@@ -94,3 +94,45 @@ def test_reject_foreign_chat_only_refuses_an_existing_foreign_chat_and_never_wri
         assert ownership.reject_foreign_chat("c1")[1] == 404  # no current user: fail closed
     db.ensure_chat_exists.assert_not_called()
     db.events.assert_called_once_with("access_denied", {"kind": "chat", "id": "c1"})
+
+
+def test_owns_chat_fails_closed(db, user_a, user_b):
+    db.get_chat_owner.return_value = user_a["id"]
+    assert ownership.owns_chat("c1") is False  # no current user
+    with user_context(user_a):
+        assert ownership.owns_chat("c1") is True
+    with user_context(user_b):
+        assert ownership.owns_chat("c1") is False
+    db.get_chat_owner.return_value = None
+    with user_context(user_a):
+        assert ownership.owns_chat("missing") is False
+
+
+def test_file_for_chat_allows_the_same_owner_across_chats_and_refuses_others(db):
+    row = {"id": "f1", "chat_id": "other-chat-of-a"}
+    db.get_file.return_value = row
+    owners = {"my-chat": "ua", "other-chat-of-a": "ua", "chat-of-b": "ub"}
+    db.get_chat_owner.side_effect = owners.get
+    assert ownership.file_for_chat("f1", "my-chat") == row  # same user's file from another chat
+    db.get_file.return_value = {"id": "f2", "chat_id": "chat-of-b"}
+    assert ownership.file_for_chat("f2", "my-chat") is None  # another user's file
+    db.get_file.return_value = None
+    assert ownership.file_for_chat("nope", "my-chat") is None
+    db.get_file.return_value = row
+    assert ownership.file_for_chat("f1", "unknown-chat") is None  # the caller's chat does not exist
+
+
+def test_require_file_owner(db, user_a, user_b):
+    db.get_file.return_value = {"id": "f1", "chat_id": "c1"}
+    db.get_chat_owner.return_value = user_a["id"]
+    with Flask(__name__).app_context():
+        with user_context(user_a):
+            assert ownership.require_file_owner("f1") is None
+        with user_context(user_b):
+            response, status = ownership.require_file_owner("f1")
+            assert status == 404 and response.get_json() == {"error": "File not found"}
+        db.events.assert_called_once_with("access_denied", {"kind": "file", "id": "f1"})
+        db.get_file.return_value = None
+        with user_context(user_a):
+            assert ownership.require_file_owner("missing")[1] == 404
+        assert ownership.require_file_owner("f1")[1] == 404  # no current user

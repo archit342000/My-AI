@@ -4,6 +4,7 @@ import json
 import os
 import time
 from typing import AsyncGenerator, Any, List, Dict
+from backend.auth.ownership import file_for_chat
 from backend.database import db
 from backend import config
 from backend.rag import RAGProvider, FileRAG
@@ -75,7 +76,8 @@ async def flow_fn(
     parent_message_id = agent.parent_message_id
 
     try:
-        file_meta = db.get_file(file_id)
+        # Only a file of the caller's chats: another user's file (and its name and image) is "not found".
+        file_meta = file_for_chat(file_id, chat_id)
         if not file_meta:
             error_msg = f"Error: File with ID {file_id} not found."
             agent.result = error_msg

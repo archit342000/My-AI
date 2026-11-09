@@ -90,3 +90,44 @@ def reject_foreign_chat(chat_id: str) -> Optional[tuple]:
     if owner is not None and owner != user_id:
         return _deny("chat", chat_id, "Chat not found")
     return None
+
+
+def owns_chat(chat_id: str) -> bool:
+    """True when the current user owns `chat_id` (a missing chat is not owned). For non-route code; fails closed."""
+    user_id = current_user_id()
+    return bool(user_id) and db.get_chat_owner(chat_id) == user_id
+
+
+def file_for_chat(file_id: str, chat_id: str) -> Optional[dict]:
+    """
+    The `files` row for `file_id`, only when its chat has the same owner as `chat_id`.
+
+    For model tools: the server-set `chat_id` is the caller's chat, and a file of another chat of the same user is
+    still theirs (so cross-chat reads keep working), while another user's file is not found.
+
+    Returns:
+        The file row, or None when the file is missing or belongs to someone else.
+    """
+    file_row = db.get_file(file_id)
+    if not file_row:
+        return None
+    caller_owner = db.get_chat_owner(chat_id)
+    if caller_owner is None or db.get_chat_owner(file_row.get("chat_id")) != caller_owner:
+        return None
+    return file_row
+
+
+def require_file_owner(file_id: str) -> Optional[tuple]:
+    """
+    Check that the file `file_id` belongs to a chat of the current user.
+
+    Returns:
+        None when it does, else a `(response, 404)` tuple (foreign or missing file, or no user).
+    """
+    user_id = current_user_id()
+    file_row = db.get_file(file_id) if user_id else None
+    if not file_row or db.get_chat_owner(file_row.get("chat_id")) != user_id:
+        if file_row:
+            log_event("access_denied", {"kind": "file", "id": file_id})
+        return _not_found("File not found")
+    return None

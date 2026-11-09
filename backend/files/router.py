@@ -4,7 +4,7 @@ import os
 import uuid
 import mimetypes
 from backend import config
-from backend.auth.ownership import claim_chat
+from backend.auth.ownership import claim_chat, require_chat_owner, require_file_owner
 from backend.database import db
 from backend.rag import RAGProvider
 from backend.models import get_embedding_model
@@ -135,6 +135,9 @@ def list_files_endpoint():
     chat_id = request.args.get('chat_id')
     if not chat_id:
         return jsonify({"error": "chat_id is required"}), 400
+    denied = require_chat_owner(chat_id)
+    if denied:
+        return denied
 
     file_manager = get_file_manager()
     files = file_manager.get_chat_files(chat_id)
@@ -154,6 +157,9 @@ def list_files_endpoint():
 @files_bp.route('/<file_id>', methods=['GET'])
 def get_file_endpoint(file_id):
     """Get file metadata."""
+    denied = require_file_owner(file_id)
+    if denied:
+        return denied
     file_manager = get_file_manager()
     metadata = file_manager.get_file(file_id)
     if not metadata:
@@ -174,6 +180,9 @@ def get_file_endpoint(file_id):
 @files_bp.route('/<file_id>/status', methods=['GET'])
 def get_file_status_endpoint(file_id):
     """Get file processing status."""
+    denied = require_file_owner(file_id)
+    if denied:
+        return denied
     result = db.get_file(file_id)
     if not result:
         return jsonify({"error": "File not found"}), 404
@@ -187,6 +196,9 @@ def get_file_status_endpoint(file_id):
 @files_bp.route('/<file_id>', methods=['DELETE'])
 def delete_file_endpoint(file_id):
     """Delete a file."""
+    denied = require_file_owner(file_id)
+    if denied:
+        return denied
     file_manager = get_file_manager()
     success = file_manager.delete_file(file_id)
     if success:

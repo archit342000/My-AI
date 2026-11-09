@@ -109,8 +109,17 @@ class FileRAG(RAGStore):
 
         return await self.store(documents, metadatas, ids, chat_id=chat_id)
 
-    async def retrieve_for_file(self, file_id, query, n_results=5, hybrid=True, chat_id=None):
-        return await self.retrieve_by_query(query, n_results=n_results, where={"file_id": file_id}, hybrid=hybrid, chat_id=chat_id)
+    async def retrieve_for_file(self, file_id, query, n_results=5, hybrid=True, chat_id=None, file_chat_id=None):
+        """
+        Retrieve chunks of one file.
+
+        `chat_id` is only for logging the embedding call. `file_chat_id`, when given, also filters on the chunk's
+        `chat_id` metadata (defence in depth: chunks of another chat never match, whatever the file id).
+        """
+        where = {"file_id": file_id}
+        if file_chat_id:
+            where = {"$and": [{"file_id": file_id}, {"chat_id": file_chat_id}]}
+        return await self.retrieve_by_query(query, n_results=n_results, where=where, hybrid=hybrid, chat_id=chat_id)
 
     def get_file_chunks(self, file_id):
         return self.list_all(where={"file_id": file_id})

@@ -283,3 +283,41 @@ def test_upload_claims_the_chat_for_the_caller_and_refuses_a_foreign_chat(app, c
     assert resp.status_code == 404
     get_fm.assert_not_called()  # nothing was written or processed
     owned_by_user_a.ensure_chat_exists.assert_called_with("chat1", user_b["id"])
+
+
+@pytest.fixture
+def b_on_a(app, login_as, user_a, user_b, owned_by_user_a, mock_db):
+    """user_b is logged in; the chat and the file in the db belong to user_a."""
+    owned_by_user_a.get_chat_owner.return_value = user_a["id"]
+    owned_by_user_a.get_file.return_value = {"id": "f1", "chat_id": "chat-of-a"}
+    login_as(app, user_b)
+    return app.test_client()
+
+
+@patch('backend.files.router.get_file_manager')
+def test_user_b_gets_404_on_user_as_files_and_nothing_is_touched(mock_get_file_manager, b_on_a, mock_db):
+    responses = [b_on_a.get('/files?chat_id=chat-of-a'), b_on_a.get('/files/f1'), b_on_a.get('/files/f1/status'), b_on_a.delete('/files/f1')]
+    assert [r.status_code for r in responses] == [404, 404, 404, 404]
+    mock_get_file_manager.assert_not_called()  # no listing, metadata read or delete
+    assert mock_db.mock_calls == []
+
+
+@patch('backend.files.router.get_file_manager')
+def test_unknown_file_ids_are_404_for_the_owner_too(mock_get_file_manager, client, owned_by_user_a):
+    owned_by_user_a.get_file.return_value = None
+    assert [client.get('/files/nope').status_code, client.get('/files/nope/status').status_code,
+            client.delete('/files/nope').status_code] == [404, 404, 404]
+    mock_get_file_manager.assert_not_called()
+
+
+@patch('backend.files.router.get_file_manager')
+def test_the_owner_still_lists_reads_and_deletes_their_files(mock_get_file_manager, client, owned_by_user_a, mock_db):
+    owned_by_user_a.get_file.return_value = {"id": "f1", "chat_id": "chat1"}
+    mock_get_file_manager.return_value.get_chat_files.return_value = []
+    mock_get_file_manager.return_value.delete_file.return_value = True
+    mock_db.get_file.return_value = {"processing_status": "done"}
+    assert client.get('/files?chat_id=chat1').status_code == 200
+    assert client.get('/files/f1/status').status_code == 200
+    assert client.delete('/files/f1').status_code == 200
+    mock_get_file_manager.return_value.delete_file.assert_called_once_with("f1")
+

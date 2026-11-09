@@ -24,9 +24,15 @@
   another user's chat. A foreign or missing id is `404` and writes nothing, and the check fails closed without a current user.
   Admins get no bypass: `admin` governs configuration, not other users' data. Tests assert the status and that no write mock
   was called (fixtures: `backend/conftest.py`).
-- Covered so far: the chat and workspace routes, the tools-router callbacks, file-system creation and file upload, and personas, skills
-  and preferences (every wrapper method takes `user_id`; model tools get it from the chat owner via `system_ctx`, never from model
-  arguments). Not yet owner-checked (a later change scopes them): the other file, file-system, RAG and code-execution routes.
+- File-system routes are checked by one blueprint hook (`require_fs_owner` in `backend/file_system/router.py`) that collects every
+  `chat_id` and `workspace_id` from the query, JSON body and URL, so a new route there is covered without extra wiring; a route that
+  takes the owner from anywhere else must call the checks itself. Uploaded-file routes use `require_file_owner`; model tools that take
+  a `file_id` call `file_for_chat(file_id, chat_id)` (same-owner check, so a user's other chats still work) and answer "File not found";
+  RAG retrieval for a file also filters on the file's `chat_id`. Code execution (run-file, history, the live-run WebSocket) checks the
+  chat owner before reading or running anything.
+- Every chat, workspace, file, file-system, RAG, code-execution, persona, skill and preference path is now owner-checked. Not yet
+  covered (a later change makes them admin-only): the logs viewer routes (`/api/logs/db/...` read every user's rows), the admin tools
+  and run serialisation.
 
 ## Input and output
 
