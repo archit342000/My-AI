@@ -1039,7 +1039,9 @@ async def navigate_to_version_endpoint(file_system_id):
         return jsonify({"success": False, "error": "chat_id and version_number are required"}), 400
 
     from backend.file_system.manager import navigate_file_system_version
-    result = await navigate_file_system_version(file_system_id, chat_id, version_number)
+    result = await navigate_file_system_version(
+        chat_id=chat_id, file_system_id=file_system_id, version_number=version_number
+    )
     return jsonify(result)
 
 
