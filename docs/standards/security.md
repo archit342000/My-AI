@@ -11,7 +11,7 @@
 - `require_auth` in `app.py` is a `before_request` hook. When `APP_PASSWORD` is set, every route (API, static, legacy UI and
   WebSocket upgrade requests) needs HTTP Basic auth. Do not add routes outside Flask (which would bypass the hook) or
   exempt paths from it.
-- Internal MCP services are reached only over Docker networks, with their own API keys. Sandboxed code runs on `code_runner_runtime`, which sits only on `runner-net`, an internal-only network with no internet, database or app route. The app reaches it through `code_runner_mcp`, a TCP relay that joins `secure-internal` and `runner-net` and forwards only port 8100.
+- Internal MCP services are reached only over Docker networks, with their own API keys. The portal VNC in `playwright_mcp` is gated by websockify HTTP auth with `PLAYWRIGHT_MCP_API_KEY` (`playwright_mcp/vnc_auth.py`); the app's portal proxies add the credential server-side and it is never sent to the browser. x11vnc stays passwordless on the container's localhost, so processes inside `playwright_mcp` can still reach it (accepted risk). Sandboxed code runs on `code_runner_runtime`, which sits only on `runner-net`, an internal-only network with no internet, database or app route. The app reaches it through `code_runner_mcp`, a TCP relay that joins `secure-internal` and `runner-net` and forwards only port 8100.
 
 ## Input and output
 

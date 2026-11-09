@@ -261,12 +261,21 @@ def update_browser_config():
 def proxy_portal_vnc(path):
     """Reverse-proxy noVNC static files from the playwright_mcp container."""
     import httpx
+    from backend.mcp_client import portal_vnc_auth_header
+
+    auth = portal_vnc_auth_header()
+    if not auth:
+        log_event("portal_vnc_unconfigured", {})
+        return jsonify({"error": "Browser portal is not configured"}), 503
 
     upstream_url = f"http://playwright_mcp:6080/{path}"
     try:
         with httpx.Client(timeout=10.0) as client:
-            resp = client.get(upstream_url)
-            
+            resp = client.get(upstream_url, headers=auth)
+            if resp.status_code == 401:
+                log_event("portal_vnc_auth_failed", {"status": 401})
+                return jsonify({"error": "Could not reach browser portal service"}), 502
+
             # Determine content type from upstream response
             content_type = resp.headers.get('content-type', 'application/octet-stream')
             

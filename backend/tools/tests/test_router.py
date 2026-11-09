@@ -141,7 +141,7 @@ def test_reset_preferences(client, mock_db):
     assert resp.json["deleted"] == 5
 
 def test_proxy_portal_vnc(client):
-    with patch('httpx.Client.get') as mock_get:
+    with patch('backend.mcp_client.portal_vnc_auth_header', return_value={"Authorization": "Basic cG9ydGFsOms="}), patch('httpx.Client.get') as mock_get:
         mock_get.return_value = MagicMock(
             status_code=200, 
             content=b"vnc data", 
@@ -151,11 +151,27 @@ def test_proxy_portal_vnc(client):
         assert resp.status_code == 200
         assert resp.data == b"vnc data"
         assert resp.headers["content-type"] == "text/html"
+        assert mock_get.call_args.kwargs["headers"] == {"Authorization": "Basic cG9ydGFsOms="}
 
 def test_proxy_portal_vnc_error(client):
-    with patch('httpx.Client.get', side_effect=Exception("error")):
+    with patch('backend.mcp_client.portal_vnc_auth_header', return_value={"Authorization": "Basic cG9ydGFsOms="}), \
+         patch('httpx.Client.get', side_effect=Exception("error")):
         resp = client.get('/tools/portal/vnc/test.html')
         assert resp.status_code == 502
+
+def test_proxy_portal_vnc_without_a_key_is_a_503_and_calls_nothing(client):
+    with patch('backend.mcp_client.portal_vnc_auth_header', return_value={}), patch('httpx.Client.get') as mock_get:
+        resp = client.get('/tools/portal/vnc/test.html')
+    assert resp.status_code == 503
+    assert resp.json == {"error": "Browser portal is not configured"}
+    mock_get.assert_not_called()
+
+def test_proxy_portal_vnc_upstream_401_is_a_502(client):
+    with patch('backend.mcp_client.portal_vnc_auth_header', return_value={"Authorization": "Basic cG9ydGFsOms="}), patch('httpx.Client.get') as mock_get:
+        mock_get.return_value = MagicMock(status_code=401, content=b"", headers={})
+        resp = client.get('/tools/portal/vnc/test.html')
+    assert resp.status_code == 502
+    assert resp.json == {"error": "Could not reach browser portal service"}
 
 def test_proxy_portal_init(client):
     with patch('httpx.Client.post') as mock_post:
