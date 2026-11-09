@@ -8,6 +8,7 @@ from typing import Optional, List, Dict, Any
 from backend import config
 from backend.database import db
 from backend.file_system.utils import resolve_owner_and_physical_path
+from backend.logging import log_event
 from backend.tools.clarify import request_clarification
 from code_runner_mcp.safety import classify_code
 
@@ -195,8 +196,12 @@ async def run_file(
     try:
         _, _, physical_target_path = resolve_owner_and_physical_path(chat_id, path)
         _, _, chat_root_dir = resolve_owner_and_physical_path(chat_id, "")
-    except Exception as e:
+    except ValueError as e:
+        # The resolver's own messages (a reserved path, a missing chat): ours and user-facing
         return f"Error: Failed to resolve file path: {e}"
+    except Exception as e:
+        log_event("code_executor_resolve_error", {"chat_id": chat_id, "path": str(path)[:200], "error": type(e).__name__})
+        return "Error: Failed to resolve file path."
 
     if not os.path.exists(physical_target_path):
         return f"Error: File '{path}' does not exist."
@@ -296,7 +301,8 @@ async def run_file(
         data = res.json()
     except Exception as e:
         logger.error(f"Failed to communicate with code runner service: {e}")
-        return f"Error: Failed to execute file. Code runner service is unavailable: {e}"
+        log_event("code_executor_run_file_error", {"chat_id": chat_id, "error": type(e).__name__})
+        return "Error: Failed to execute file. Code runner service is unavailable."
 
     stdout = data.get("stdout", "")
     stderr = data.get("stderr", "")
@@ -383,7 +389,8 @@ async def install_packages(
         data = res.json()
     except Exception as e:
         logger.error(f"Failed to run package installation: {e}")
-        return f"Error: Failed to install packages. Code runner service is unavailable: {e}"
+        log_event("code_executor_install_packages_error", {"chat_id": chat_id, "error": type(e).__name__})
+        return "Error: Failed to install packages. Code runner service is unavailable."
 
     success = data.get("success", False)
     stdout = data.get("stdout", "")
@@ -414,7 +421,8 @@ async def list_packages(
         data = res.json()
     except Exception as e:
         logger.error(f"Failed to fetch packages list: {e}")
-        return f"Error: Failed to fetch packages. Code runner service is unavailable: {e}"
+        log_event("code_executor_list_packages_error", {"chat_id": chat_id, "error": type(e).__name__})
+        return "Error: Failed to fetch packages. Code runner service is unavailable."
 
     packages = data.get("packages", [])
     if not packages:

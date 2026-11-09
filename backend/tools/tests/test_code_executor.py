@@ -1,3 +1,4 @@
+import asyncio
 import pytest
 from unittest.mock import MagicMock, patch
 from backend.tools.implementations.code_executor import run_code, run_file, install_packages, list_packages
@@ -169,3 +170,71 @@ async def test_run_file(mock_db, mock_requests):
     finally:
         shutil.rmtree(temp_chat_root)
 
+
+# ---- no exception text in tool results; details go to log_event -------------------------------------------------
+# These tests use asyncio.run so they run without the pytest-asyncio plugin that the older tests above need.
+
+def _resolver_for(tmp_path):
+    return lambda chat_id, path, **kw: (chat_id, None, str(tmp_path / path) if path else str(tmp_path))
+
+
+def test_run_file_keeps_the_resolvers_own_message_for_an_invalid_path():
+    with patch('backend.tools.implementations.code_executor.resolve_owner_and_physical_path', side_effect=ValueError("Path is reserved")):
+        res = asyncio.run(run_file(path="workspace/a.py", chat_id="c1", tool_call_id="tc"))
+    assert res == "Error: Failed to resolve file path: Path is reserved"
+
+
+def test_run_file_hides_an_internal_resolver_failure_and_logs_it():
+    with patch('backend.tools.implementations.code_executor.resolve_owner_and_physical_path', side_effect=RuntimeError("db locked at /secret")), \
+         patch('backend.tools.implementations.code_executor.log_event') as log:
+        res = asyncio.run(run_file(path="a.py", chat_id="c1", tool_call_id="tc"))
+    assert res == "Error: Failed to resolve file path."
+    assert "/secret" not in res
+    log.assert_called_once_with("code_executor_resolve_error", {"chat_id": "c1", "path": "a.py", "error": "RuntimeError"})
+
+
+def test_run_file_known_user_facing_messages_are_unchanged(tmp_path):
+    (tmp_path / "notes.xyz").write_text("hello")
+    with patch('backend.tools.implementations.code_executor.resolve_owner_and_physical_path', side_effect=_resolver_for(tmp_path)):
+        assert asyncio.run(run_file(path="nope.py", chat_id="c1", tool_call_id="tc")) == "Error: File 'nope.py' does not exist."
+        assert asyncio.run(run_file(path="notes.xyz", chat_id="c1", tool_call_id="tc")) == "Error: File extension '.xyz' is not supported for execution."
+
+
+def test_run_file_runner_unavailable_has_no_exception_text_and_is_logged(tmp_path, mock_db, mock_requests):
+    (tmp_path / "main.py").write_text("print(1)")
+    mock_requests.post.side_effect = ConnectionError("boom http://code_runner_mcp:8100")
+    with patch('backend.tools.implementations.code_executor.resolve_owner_and_physical_path', side_effect=_resolver_for(tmp_path)), \
+         patch('backend.tools.implementations.code_executor.log_event') as log:
+        res = asyncio.run(run_file(path="main.py", chat_id="c1", tool_call_id="tc"))
+    assert res == "Error: Failed to execute file. Code runner service is unavailable."
+    assert "boom" not in res and "code_runner_mcp" not in res
+    log.assert_called_once_with("code_executor_run_file_error", {"chat_id": "c1", "error": "ConnectionError"})
+
+
+def test_install_packages_runner_unavailable_has_no_exception_text_and_is_logged(mock_db, mock_requests):
+    mock_requests.post.side_effect = ConnectionError("boom http://code_runner_mcp:8100")
+    with patch('backend.tools.implementations.code_executor.request_clarification', return_value="Yes, install"), \
+         patch('backend.tools.implementations.code_executor.log_event') as log:
+        res = asyncio.run(install_packages(packages=["numpy"], package_manager="pip", chat_id="c1", tool_call_id="tc"))
+    assert res == "Error: Failed to install packages. Code runner service is unavailable."
+    assert "boom" not in res and "code_runner_mcp" not in res
+    log.assert_called_once_with("code_executor_install_packages_error", {"chat_id": "c1", "error": "ConnectionError"})
+
+
+def test_list_packages_runner_unavailable_has_no_exception_text_and_is_logged(mock_db, mock_requests):
+    mock_requests.get.side_effect = ConnectionError("boom http://code_runner_mcp:8100")
+    with patch('backend.tools.implementations.code_executor.log_event') as log:
+        res = asyncio.run(list_packages(package_manager="pip", chat_id="c1", tool_call_id="tc"))
+    assert res == "Error: Failed to fetch packages. Code runner service is unavailable."
+    assert "boom" not in res and "code_runner_mcp" not in res
+    log.assert_called_once_with("code_executor_list_packages_error", {"chat_id": "c1", "error": "ConnectionError"})
+
+
+
+@pytest.mark.parametrize("path,logged", [(123, "123"), ({"p": 1}, "{'p': 1}"), ("x" * 500, "x" * 200)])
+def test_run_file_internal_resolver_failure_logs_a_capped_string_path_even_for_odd_input(path, logged):
+    with patch('backend.tools.implementations.code_executor.resolve_owner_and_physical_path', side_effect=AttributeError("boom")), \
+         patch('backend.tools.implementations.code_executor.log_event') as log:
+        res = asyncio.run(run_file(path=path, chat_id="c1", tool_call_id="tc"))
+    assert res == "Error: Failed to resolve file path."
+    log.assert_called_once_with("code_executor_resolve_error", {"chat_id": "c1", "path": logged, "error": "AttributeError"})
