@@ -218,7 +218,8 @@ def test_clarification_response_not_found(client, mock_registry, mock_db):
 def test_run_file_defaults_sql_target_to_sqlite(client):
     """Direct run-file without sql_target runs SQL on sqlite, never mysql."""
     from unittest.mock import AsyncMock
-    with patch('backend.tools.implementations.code_executor.run_file', new_callable=AsyncMock) as run:
+    with patch('backend.tools.implementations.code_executor.resolve_run_target', return_value=("/p/q.sql", "/p")), \
+         patch('backend.tools.implementations.code_executor.run_file', new_callable=AsyncMock) as run:
         run.return_value = {"stdout": "", "stderr": "", "exit_code": 0}
         resp = client.post('/tools/code-execution/run-file', json={"path": "q.sql", "chat_id": "c1"})
         assert resp.status_code == 200
@@ -263,3 +264,131 @@ def test_optional_body_route_accepts_no_body_and_reaches_its_own_validation(clie
     resp = client.post("/tools/code-execution/run-file", **body)
     assert resp.status_code == 400
     assert resp.get_json() == {"error": "Missing path or chat_id"}   # the route's own error, as JSON
+
+
+# ---- error bodies never carry exception or upstream text; the detail goes to the log -------------------------
+
+def test_get_preferences_failure_is_generic_and_logged(client, mock_db):
+    mock_db.get_all_preferences.side_effect = RuntimeError("db path /secret/chats.db locked")
+    with patch('backend.tools.router.log_event') as log:
+        resp = client.get('/tools/preferences')
+    assert resp.status_code == 500
+    assert resp.json == {"error": "Failed to load preferences"}
+    assert "/secret" not in resp.get_data(as_text=True)
+    log.assert_any_call("tools_preferences_get_error", {"error": "db path /secret/chats.db locked"})
+
+
+def test_reset_preferences_failure_is_generic_and_logged(client, mock_db):
+    mock_db.clear_preferences.side_effect = RuntimeError("disk I/O error on /secret")
+    with patch('backend.tools.router.log_event') as log:
+        resp = client.post('/tools/preferences/reset')
+    assert resp.status_code == 500
+    assert resp.json == {"error": "Failed to reset preferences"}
+    assert "/secret" not in resp.get_data(as_text=True)
+    log.assert_any_call("tools_preferences_reset_error", {"error": "disk I/O error on /secret"})
+
+
+def test_portal_init_upstream_failure_is_a_generic_502_and_logged(client):
+    with patch('backend.config.get_secret', return_value="k"), patch('httpx.Client.post') as post, \
+         patch('backend.tools.router.log_event') as log:
+        post.return_value = MagicMock(status_code=500, text="Traceback ... /app/playwright_mcp/server.py")
+        resp = client.post('/tools/portal/init')
+    assert resp.status_code == 502
+    assert resp.json == {"error": "Browser portal failed to start"}
+    assert "Traceback" not in resp.get_data(as_text=True)
+    log.assert_any_call("tools_portal_init_error", {"status_code": 500, "error": "Traceback ... /app/playwright_mcp/server.py"})
+
+
+def test_portal_init_unreachable_service_is_a_502(client):
+    import httpx
+    with patch('backend.config.get_secret', return_value="k"), \
+         patch('httpx.Client.post', side_effect=httpx.ConnectError("[Errno 111] playwright_mcp:8001")), \
+         patch('backend.tools.router.log_event') as log:
+        resp = client.post('/tools/portal/init')
+    assert resp.status_code == 502
+    assert resp.json == {"error": "Could not reach browser portal service"}
+    assert "playwright_mcp" not in resp.get_data(as_text=True)
+    log.assert_any_call("tools_portal_init_error", {"error": "[Errno 111] playwright_mcp:8001"})
+
+
+def test_portal_init_upstream_body_is_capped_in_the_log_event(client):
+    with patch('backend.config.get_secret', return_value="k"), patch('httpx.Client.post') as post, \
+         patch('backend.tools.router.log_event') as log:
+        post.return_value = MagicMock(status_code=500, text="x" * 2000)
+        resp = client.post('/tools/portal/init')
+    assert resp.status_code == 502
+    log.assert_any_call("tools_portal_init_error", {"status_code": 500, "error": "x" * 500})
+
+
+def test_portal_init_unexpected_error_is_a_generic_500(client):
+    with patch('backend.config.get_secret', return_value="k"), patch('httpx.Client.post', side_effect=ValueError("secret detail")), \
+         patch('backend.tools.router.log_event') as log:
+        resp = client.post('/tools/portal/init')
+    assert resp.status_code == 500
+    assert resp.json == {"error": "Failed to start browser portal"}
+    log.assert_any_call("tools_portal_init_error", {"error": "secret detail"})
+
+
+# ---- run-file: a missing file is a 404 ----------------------------------------------------------------------
+
+def _run_file_request(client):
+    return client.post('/tools/code-execution/run-file', json={"path": "nope.py", "chat_id": "c1"})
+
+
+def test_run_file_missing_file_is_a_404_and_does_not_run(client):
+    from unittest.mock import AsyncMock
+    with patch('backend.tools.implementations.code_executor.resolve_run_target', side_effect=FileNotFoundError("File 'nope.py' does not exist.")), \
+         patch('backend.tools.implementations.code_executor.run_file', new_callable=AsyncMock) as run:
+        resp = _run_file_request(client)
+    assert resp.status_code == 404
+    assert resp.json == {"error": "File not found"}
+    run.assert_not_called()
+
+
+def test_run_file_invalid_path_is_a_400(client):
+    from unittest.mock import AsyncMock
+    with patch('backend.tools.implementations.code_executor.resolve_run_target', side_effect=ValueError("reserved path")), \
+         patch('backend.tools.implementations.code_executor.run_file', new_callable=AsyncMock) as run:
+        resp = _run_file_request(client)
+    assert resp.status_code == 400
+    assert resp.json == {"error": "Invalid file path"}
+    run.assert_not_called()
+
+
+def test_run_file_resolver_failure_is_a_generic_500_and_logged(client):
+    from unittest.mock import AsyncMock
+    with patch('backend.tools.implementations.code_executor.resolve_run_target', side_effect=RuntimeError("db down at /secret")), \
+         patch('backend.tools.implementations.code_executor.run_file', new_callable=AsyncMock) as run, \
+         patch('backend.tools.router.log_event') as log:
+        resp = _run_file_request(client)
+    assert resp.status_code == 500
+    assert resp.json == {"error": "Failed to run file"}
+    assert "/secret" not in resp.get_data(as_text=True)
+    log.assert_any_call("tools_run_file_error", {"chat_id": "c1", "path": "nope.py", "error": "db down at /secret"})
+    run.assert_not_called()
+
+
+def test_run_file_execution_failure_is_a_generic_500_and_logged(client):
+    from unittest.mock import AsyncMock
+    with patch('backend.tools.implementations.code_executor.resolve_run_target', return_value=("/p/a.py", "/p")), \
+         patch('backend.tools.implementations.code_executor.run_file', new_callable=AsyncMock, side_effect=RuntimeError("runner at 10.0.0.5 failed")), \
+         patch('backend.tools.router.log_event') as log:
+        resp = _run_file_request(client)
+    assert resp.status_code == 500
+    assert resp.json == {"error": "Failed to run file"}
+    assert "10.0.0.5" not in resp.get_data(as_text=True)
+    log.assert_any_call("tools_run_file_error", {"chat_id": "c1", "path": "nope.py", "error": "runner at 10.0.0.5 failed"})
+
+
+def test_run_file_missing_file_is_a_404_through_the_real_resolver(client, tmp_path):
+    from unittest.mock import AsyncMock
+    (tmp_path / "exists.py").write_text("print(1)")
+    with patch('backend.tools.implementations.code_executor.resolve_owner_and_physical_path') as resolve, \
+         patch('backend.tools.implementations.code_executor.run_file', new_callable=AsyncMock) as run:
+        resolve.side_effect = lambda chat_id, path, **kw: (chat_id, None, str(tmp_path / path) if path else str(tmp_path))
+        run.return_value = "ok"
+        missing = client.post('/tools/code-execution/run-file', json={"path": "nope.py", "chat_id": "c1"})
+        present = client.post('/tools/code-execution/run-file', json={"path": "exists.py", "chat_id": "c1"})
+    assert missing.status_code == 404 and missing.json == {"error": "File not found"}
+    assert present.status_code == 200 and present.json == {"result": "ok"}
+    assert run.call_count == 1
