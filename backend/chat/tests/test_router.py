@@ -195,6 +195,8 @@ def test_chat_completions(mock_chat_handler_class, mock_log_event, mock_db, clie
     data = response.get_data(as_text=True)
     assert "data: chunk1\n\n" in data
     assert "data: chunk2\n\n" in data
+    # A send without files stores no attachments
+    assert mock_db.add_message.call_args.kwargs.get('attachments') is None
 
 @patch('backend.chat.router.db')
 @patch('backend.chat.router.log_event')
@@ -281,6 +283,19 @@ def test_resume_chat(mock_chat_handler_class, mock_db, client):
         user_message={"role": "user", "content": "resume this"},
         model="last-asst-model"
     )
+
+    # Resume regenerates from the stored last user message (its attachments included)
+    # and never adds a user row, which is what Retry relies on.
+    stored = {"id": 7, "role": "user", "content": "see file",
+              "attachments": [{"file_id": "f1", "name": "a.txt", "size": 3, "mime_type": "text/plain"}]}
+    mock_db.get_messages.return_value = [stored, {"id": 8, "role": "assistant", "content": "old reply"}]
+    mock_db.add_message.reset_mock()
+    mock_handler.initiate_chat.reset_mock()
+    mock_handler.initiate_chat.return_value = mock_initiate_chat()
+    response = client.post('/api/chats/chat1/resume', json={"model": "gpt-4"})
+    assert response.status_code == 200
+    assert mock_handler.initiate_chat.call_args.kwargs["user_message"] == stored
+    mock_db.add_message.assert_not_called()
 
     # Test error fallback
     mock_db.get_messages.side_effect = Exception("error")
@@ -384,6 +399,12 @@ def test_chat_completions_with_images(mock_log_event, mock_chat_handler_class, m
     assert parsed_content[1]['type'] == 'image_url'
     assert parsed_content[1]['image_url']['url'] == "data:image/png;base64,base64data"
 
+    # File references are stored on the user message (only the stable fields)
+    assert called_kwargs.get('attachments') == [
+        {"file_id": "img1", "name": "test.png", "mime_type": "image/png"},
+        {"file_id": "doc1", "name": "test.pdf", "mime_type": "application/pdf"},
+    ]
+
 @patch('backend.chat.router.db')
 @patch('backend.chat.router.get_file_manager')
 @patch('backend.chat.router.ChatHandler')
@@ -415,6 +436,7 @@ def test_chat_completions_without_images(mock_log_event, mock_chat_handler_class
     assert "Just text" in content
     assert "[System Note:" in content
     assert "test.pdf" in content
+    assert called_kwargs.get('attachments') == [{"file_id": "doc1", "name": "test.pdf", "mime_type": "application/pdf"}]
 
 
 @patch('backend.chat.router.db')

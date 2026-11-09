@@ -4,6 +4,7 @@
  */
 import { parseContent } from './markdown/content';
 import type { StoredMessage } from '../api/types';
+import type { UploadedFile } from '../api/completions';
 
 export interface ToolActivity {
   id: string;
@@ -13,7 +14,7 @@ export interface ToolActivity {
 }
 
 export type Turn =
-  | { kind: 'user'; id: string; text: string; images: string[] }
+  | { kind: 'user'; id: string; text: string; images: string[]; files: UploadedFile[] }
   | { kind: 'assistant'; id: string; text: string; thinking: string; model: string | null; tools: ToolActivity[] };
 
 const ABSENT = new Set(['', 'None', 'null', 'undefined']);
@@ -82,6 +83,24 @@ export function isMainTranscript(message: StoredMessage): boolean {
   return isAbsent(message.parent_type) || message.parent_type === 'main';
 }
 
+/** Reads the stored attachment list of a user message; malformed entries are skipped. */
+export function parseAttachments(raw: unknown): UploadedFile[] {
+  if (!Array.isArray(raw)) return [];
+  const files: UploadedFile[] = [];
+  for (const item of raw) {
+    if (typeof item !== 'object' || item === null) continue;
+    const f = item as Record<string, unknown>;
+    if (typeof f.file_id !== 'string' || typeof f.name !== 'string') continue;
+    files.push({
+      file_id: f.file_id,
+      name: f.name,
+      size: typeof f.size === 'number' ? f.size : 0,
+      mime_type: typeof f.mime_type === 'string' ? f.mime_type : '',
+    });
+  }
+  return files;
+}
+
 export function toTurns(messages: StoredMessage[]): Turn[] {
   const results = new Map<string, string>();
   for (const m of messages) {
@@ -96,7 +115,7 @@ export function toTurns(messages: StoredMessage[]): Turn[] {
     const id = String(m.id);
     if (m.role === 'user') {
       const { text, images } = parseUserContent(clean(m.content));
-      turns.push({ kind: 'user', id, text, images });
+      turns.push({ kind: 'user', id, text, images, files: parseAttachments(m.attachments) });
     } else if (m.role === 'assistant') {
       const rawContent = clean(m.content);
       const { thoughts, cleaned } = parseContent(rawContent);

@@ -164,6 +164,24 @@ def test_message_delete_history_compression_invalidation(temp_db):
     assert chat_after.get("history_compression") is None
 
 
+def test_message_attachments_round_trip(temp_db):
+    db = temp_db
+    db.ensure_chat_exists("attach_chat")
+    refs = [{"file_id": "f1", "name": "a.txt", "size": 3, "mime_type": "text/plain"}]
+    with_files = db.add_message("attach_chat", role="user", content="see file", attachments=refs)
+    without = db.add_message("attach_chat", role="user", content="no file")
+    sub_id = db.add_message("attach_chat", role="assistant", content="sub", parent_id=with_files,
+                            parent_type="search", attachments=refs)
+
+    by_id = {m["id"]: m for m in db.get_messages("attach_chat")}
+    assert by_id[with_files]["attachments"] == refs
+    assert by_id[without]["attachments"] is None
+    # Sub-agent rows are unaffected: stored in sub_agent_messages, which has no attachments column
+    assert sub_id is not None
+    assert [m["content"] for m in db.get_all_sub_agent_messages("attach_chat")] == ["sub"]
+    assert all("attachments" not in m for m in db.get_all_sub_agent_messages("attach_chat"))
+
+
 def test_edit_message_is_scoped_to_chat(temp_db):
     db = temp_db
     for chat in ("edit_scope_a", "edit_scope_b"):

@@ -7,6 +7,7 @@ import { chatsApi, queryKeys } from '../../api/chats';
 import {
   buildCompletionBody,
   reattachStream,
+  resumeStream,
   streamCompletion,
   type HistoryMessage,
   type UploadedFile,
@@ -65,6 +66,37 @@ async function consume(
     await queryClient.invalidateQueries({ queryKey: queryKeys.chats });
     useStreamStore.getState().finish();
   }
+}
+
+type Settings = ReturnType<typeof useSettingsStore.getState>;
+
+/** The request body shared by a new turn (`/v1/chat/completions`) and Retry (`/resume`). */
+function completionBody(
+  settings: Settings,
+  model: string,
+  chatId: string,
+  messages: HistoryMessage[],
+  opts: { userPreferences: boolean; files?: UploadedFile[] },
+): Record<string, unknown> {
+  return buildCompletionBody({
+    model,
+    modelName: settings.modelName ?? model,
+    messages,
+    chatId,
+    sampling: settings.sampling,
+    modes: {
+      researchMode: settings.modes.researchMode,
+      userPreferences: opts.userPreferences,
+      visionEnabled: settings.visionEnabled,
+      fileSystemMode: settings.modes.fileSystemMode,
+      browsingMode: settings.modes.browsingMode,
+      gitMode: settings.modes.gitMode,
+      codeExecutionMode: settings.modes.codeExecutionMode,
+    },
+    personaId: settings.personaId,
+    folder: null,
+    uploadedFiles: opts.files,
+  });
 }
 
 export interface SendArgs {
@@ -146,27 +178,27 @@ export async function sendTurn({
     useUiStore.getState().setNewChatWorkspaceId(null);
   }
 
-  const body = buildCompletionBody({
-    model: settings.model,
-    modelName: settings.modelName ?? settings.model,
-    messages,
-    chatId,
-    sampling: settings.sampling,
-    modes: {
-      researchMode: settings.modes.researchMode,
-      userPreferences: temporary ? false : settings.userPreferences,
-      visionEnabled: settings.visionEnabled,
-      fileSystemMode: settings.modes.fileSystemMode,
-      browsingMode: settings.modes.browsingMode,
-      gitMode: settings.modes.gitMode,
-      codeExecutionMode: settings.modes.codeExecutionMode,
-    },
-    personaId: settings.personaId,
-    folder: null,
-    uploadedFiles: files,
-  });
+  const body = completionBody(settings, settings.model, chatId, messages, { userPreferences: temporary ? false : settings.userPreferences, files });
 
   await consume(queryClient, chatId, streamCompletion(body, controller.signal));
+}
+
+/**
+ * Retry: regenerates the reply to the last stored user message through `/resume`. The server
+ * reuses that message as stored (images and file note included), so no user row is added.
+ */
+export async function resumeTurn(queryClient: QueryClient, chatId: string): Promise<void> {
+  const settings = useSettingsStore.getState();
+  if (!settings.model) {
+    showToast('Select a model first', 'error');
+    return;
+  }
+  if (useStreamStore.getState().chatId) return; // already streaming
+
+  const controller = new AbortController();
+  useStreamStore.getState().start(chatId, null, controller);
+  const body = completionBody(settings, settings.model, chatId, [], { userPreferences: settings.userPreferences });
+  await consume(queryClient, chatId, resumeStream(chatId, body, controller.signal));
 }
 
 /** Stops the in-flight turn on the client and asks the server to stop generating. */

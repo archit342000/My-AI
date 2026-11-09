@@ -1,3 +1,4 @@
+import json
 import os
 import sqlite3
 import pytest
@@ -102,6 +103,12 @@ def test_init_db_with_legacy_data(temp_db_path):
     c.execute("SELECT reasoning_content FROM messages WHERE id=2")
     reasoning = c.fetchone()[0]
     assert reasoning == "hmm"
+
+    # The ON DELETE CASCADE recreate keeps rows and adds the attachments column
+    c.execute("PRAGMA table_info(messages)")
+    assert "attachments" in [r[1] for r in c.fetchall()]
+    c.execute("SELECT COUNT(*) FROM messages")
+    assert c.fetchone()[0] == 2
     conn.close()
 
 def test_init_db_error():
@@ -370,3 +377,114 @@ def test_init_db_replace_migration(temp_db_path):
     conn.close()
 
 
+def _message_columns(conn):
+    return {r[1]: r for r in conn.execute("PRAGMA table_info(messages)").fetchall()}
+
+
+def test_messages_attachments_column_on_fresh_db():
+    init_db()
+    init_db()
+    conn = make_connection()
+    cols = _message_columns(conn)
+    conn.close()
+    assert "attachments" in cols
+    assert cols["attachments"][3] == 0  # nullable
+
+
+def test_messages_attachments_added_and_backfilled_from_file_collections():
+    # Previous schema: messages with ON DELETE CASCADE but without attachments, so only the
+    # PRAGMA/ALTER path of the new migration runs (not the CASCADE recreate).
+    conn = make_connection()
+    conn.execute("CREATE TABLE chats (id TEXT PRIMARY KEY, title TEXT, timestamp REAL)")
+    conn.execute("""
+        CREATE TABLE messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id TEXT, role TEXT, content TEXT, timestamp REAL,
+            model TEXT, tool_calls TEXT, tool_call_id TEXT, name TEXT, parent_id INTEGER,
+            parent_type TEXT DEFAULT 'main', reasoning_content TEXT,
+            FOREIGN KEY(chat_id) REFERENCES chats(id) ON DELETE CASCADE
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE collections (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id TEXT NOT NULL, parent_message_id TEXT NOT NULL,
+            parent_type TEXT NOT NULL DEFAULT 'main', collection_type TEXT NOT NULL, items TEXT NOT NULL, timestamp REAL
+        )
+    """)
+    conn.execute("INSERT INTO chats (id, title, timestamp) VALUES ('c1', 't', 1.0)")
+    for mid, role, content in [(1, "user", "with files"), (2, "assistant", "reply"), (3, "user", "no files"),
+                               (4, "user", "bad items"), (5, "user", "wrong type")]:
+        conn.execute("INSERT INTO messages (id, chat_id, role, content, timestamp) VALUES (?, 'c1', ?, ?, 1.0)",
+                     (mid, role, content))
+    items = [{"file_id": "f1", "name": "a.txt", "size": 3, "mime_type": "text/plain", "extra": "dropped"}, "junk"]
+    conn.execute("INSERT INTO collections (chat_id, parent_message_id, parent_type, collection_type, items) "
+                 "VALUES ('c1', '1', 'main', 'files', ?)", (json.dumps(items),))
+    conn.execute("INSERT INTO collections (chat_id, parent_message_id, parent_type, collection_type, items) "
+                 "VALUES ('c1', '4', 'main', 'files', 'not json')")
+    conn.execute("INSERT INTO collections (chat_id, parent_message_id, parent_type, collection_type, items) "
+                 "VALUES ('c1', '5', 'main', 'code', '[{\"file_id\": \"x\"}]')")
+    conn.commit()
+    conn.close()
+
+    init_db()
+    init_db()  # idempotent: no error and no duplicate column
+
+    conn = make_connection()
+    assert "attachments" in _message_columns(conn)
+    rows = {r[0]: r[1] for r in conn.execute("SELECT id, attachments FROM messages").fetchall()}
+    contents = {r[0]: r[1] for r in conn.execute("SELECT id, content FROM messages").fetchall()}
+    conn.close()
+    assert json.loads(rows[1]) == [{"file_id": "f1", "name": "a.txt", "size": 3, "mime_type": "text/plain"}]
+    assert rows[2] is None   # assistant rows are never backfilled
+    assert rows[3] is None   # no files collection
+    assert rows[4] is None   # unparsable items
+    assert rows[5] is None   # collection of another type
+    assert contents[1] == "with files"  # other columns intact
+
+
+def test_messages_attachments_backfill_runs_once():
+    init_db()
+    conn = make_connection()
+    conn.execute("INSERT INTO chats (id, title, timestamp) VALUES ('c1', 't', 1.0)")
+    cur = conn.execute("INSERT INTO messages (chat_id, role, content, timestamp) VALUES ('c1', 'user', 'late', 1.0)")
+    msg_id = cur.lastrowid
+    conn.execute("INSERT INTO collections (chat_id, parent_message_id, parent_type, collection_type, items) "
+                 "VALUES ('c1', ?, 'main', 'files', ?)", (str(msg_id), json.dumps([{"file_id": "f1", "name": "a.txt"}])))
+    conn.commit()
+    conn.close()
+
+    init_db()  # the column already exists, so the backfill must not run again
+
+    conn = make_connection()
+    row = conn.execute("SELECT attachments FROM messages WHERE id = ?", (msg_id,)).fetchone()
+    conn.close()
+    assert row[0] is None
+
+
+def test_messages_attachments_backfilled_on_cascade_recreate_path():
+    # messages without ON DELETE CASCADE: migration 11 recreates the table (the new definition already
+    # has the column), and the backfill must still run once.
+    conn = make_connection()
+    conn.execute("CREATE TABLE chats (id TEXT PRIMARY KEY, title TEXT, timestamp REAL)")
+    conn.execute("CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id TEXT, role TEXT, content TEXT, "
+                 "timestamp REAL, parent_type TEXT DEFAULT 'main')")
+    conn.execute("CREATE TABLE collections (id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id TEXT NOT NULL, "
+                 "parent_message_id TEXT NOT NULL, parent_type TEXT NOT NULL DEFAULT 'main', "
+                 "collection_type TEXT NOT NULL, items TEXT NOT NULL, timestamp REAL)")
+    conn.execute("INSERT INTO chats (id, title, timestamp) VALUES ('c1', 't', 1.0)")
+    conn.execute("INSERT INTO messages (id, chat_id, role, content, timestamp) VALUES (1, 'c1', 'user', 'with files', 1.0)")
+    conn.execute("INSERT INTO messages (id, chat_id, role, content, timestamp) VALUES (2, 'c1', 'user', 'plain', 1.0)")
+    conn.execute("INSERT INTO collections (chat_id, parent_message_id, parent_type, collection_type, items) "
+                 "VALUES ('c1', '1', 'main', 'files', ?)",
+                 (json.dumps([{"file_id": "f1", "name": "a.txt", "size": 3, "mime_type": "text/plain", "extra": 1}]),))
+    conn.commit()
+    conn.close()
+
+    init_db()
+    init_db()
+
+    conn = make_connection()
+    assert "ON DELETE CASCADE" in conn.execute("SELECT sql FROM sqlite_master WHERE name = 'messages'").fetchone()[0]
+    rows = {r[0]: r[1] for r in conn.execute("SELECT id, attachments FROM messages").fetchall()}
+    conn.close()
+    assert json.loads(rows[1]) == [{"file_id": "f1", "name": "a.txt", "size": 3, "mime_type": "text/plain"}]
+    assert rows[2] is None
