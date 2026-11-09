@@ -93,3 +93,13 @@ def test_persona_agent_constraints(temp_db):
     assert fetched["file_system_mode"] == 0
     assert fetched["browsing_mode"] == 0
     assert fetched["git_mode"] == 0
+
+
+def test_persona_name_exists(temp_db):
+    p1 = temp_db.create_persona("Dup Persona", "c1")
+    p2 = temp_db.create_persona("Other Persona", "c2")
+    assert temp_db.persona_name_exists("Dup Persona") is True
+    assert temp_db.persona_name_exists("  dup PERSONA ") is True  # case and surrounding spaces
+    assert temp_db.persona_name_exists("Unrelated") is False
+    assert temp_db.persona_name_exists("Dup Persona", exclude_id=p1["id"]) is False  # its own name
+    assert temp_db.persona_name_exists("Dup Persona", exclude_id=p2["id"]) is True

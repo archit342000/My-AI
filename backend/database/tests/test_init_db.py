@@ -3,7 +3,7 @@ import os
 import sqlite3
 import pytest
 from unittest.mock import patch, MagicMock
-from backend.database.init_db import init_db, _rebuild_table_with_cascade, _repair_leftover_old_tables
+from backend.database.init_db import init_db, _create_indexes, _rebuild_table_with_cascade, _repair_leftover_old_tables
 from backend.database.db_layer import make_connection
 
 @pytest.fixture
@@ -15,6 +15,31 @@ def patch_db_path(temp_db_path):
     with patch("backend.database.init_db.DB_PATH", temp_db_path), \
          patch("backend.database.db_layer.DB_PATH", temp_db_path):
         yield temp_db_path
+
+# Every index the schema defines (all of them live in init_db._create_indexes).
+EXPECTED_INDEXES = {
+    "messages": {"idx_messages_chat_id"},
+    "file_systems": {"idx_file_systems_chat_id", "idx_file_systems_title"},
+    "file_system_versions": {"idx_file_system_versions_file_system_id"},
+    "file_system_permissions": {"idx_file_system_permissions_file_system_id"},
+    "memories": {"idx_memories_tag"},
+    "sub_agent_messages": {"idx_sub_agent_chat_parent", "idx_sub_agent_sequence"},
+    "collections": {"idx_collections_chat_parent", "idx_collections_parent_type"},
+    "pending_callbacks": {"idx_pending_cb_chat"},
+    "code_execution_history": {"idx_exec_history_chat", "idx_exec_history_created"},
+}
+
+
+def _index_names(conn, table):
+    rows = conn.execute("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name=?", (table,)).fetchall()
+    return {r[0] for r in rows}
+
+
+def _assert_all_indexes(conn):
+    for table, expected in EXPECTED_INDEXES.items():
+        missing = expected - _index_names(conn, table)
+        assert not missing, f"{table} is missing {sorted(missing)}"
+
 
 def test_init_db(temp_db_path):
     # Should create DB and apply schema/migrations without errors
@@ -31,6 +56,7 @@ def test_init_db(temp_db_path):
     assert "messages" in tables
     assert "file_systems" in tables
     assert "file_system_counters" not in tables
+    _assert_all_indexes(conn)
     conn.close()
 
 def test_init_db_with_legacy_data(temp_db_path):
@@ -114,6 +140,8 @@ def test_init_db_with_legacy_data(temp_db_path):
     assert "attachments" in [r[1] for r in c.fetchall()]
     c.execute("SELECT COUNT(*) FROM messages")
     assert c.fetchone()[0] == 2
+    # The workspace migration (step 8) and the cascade rebuild (step 11) drop tables: all indexes are back after one run
+    _assert_all_indexes(conn)
     conn.close()
 
 def test_init_db_error():
@@ -702,4 +730,84 @@ def test_repair_helper_handles_each_leftover_state():
     assert _count(conn, "d") == 1 and _count(conn, "d_old") == 1     # both have rows: untouched, reported
     log.assert_called_once()
     assert log.call_args.args[0] == "db_migration_leftover_old_table_error" and log.call_args.args[1]["table"] == "d"
+    conn.close()
+
+
+def test_init_db_restores_indexes_after_cascade_rebuild():
+    # Pre-cascade tables (no ON DELETE CASCADE): migration 11 renames, recreates and drops each one, which
+    # drops its indexes. They must exist again right after the same run, not only after the next start.
+    conn = make_connection()
+    conn.execute("CREATE TABLE chats (id TEXT PRIMARY KEY, title TEXT, timestamp REAL)")
+    conn.execute("CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id TEXT, role TEXT, content TEXT, "
+                 "timestamp REAL, parent_type TEXT DEFAULT 'main')")
+    conn.execute("CREATE TABLE sub_agent_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id TEXT NOT NULL, "
+                 "parent_message_id TEXT NOT NULL, parent_type TEXT DEFAULT 'main', agent_name TEXT NOT NULL, "
+                 "sequence_order INTEGER NOT NULL, role TEXT NOT NULL, content TEXT, tool_calls TEXT, "
+                 "tool_call_id TEXT, name TEXT, model TEXT, reasoning_content TEXT, timestamp REAL)")
+    conn.execute("CREATE TABLE collections (id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id TEXT NOT NULL, "
+                 "parent_message_id TEXT NOT NULL, parent_type TEXT NOT NULL DEFAULT 'main', "
+                 "collection_type TEXT NOT NULL, items TEXT NOT NULL, timestamp REAL)")
+    conn.execute("CREATE TABLE pending_callbacks (callback_id TEXT PRIMARY KEY, chat_id TEXT NOT NULL, "
+                 "parent_message_id INTEGER, parent_type TEXT DEFAULT 'main', tool_name TEXT NOT NULL, "
+                 "question TEXT, options TEXT, status TEXT DEFAULT 'pending', response TEXT, "
+                 "created_at REAL, resolved_at REAL)")
+    conn.execute("INSERT INTO chats (id, title, timestamp) VALUES ('c1', 't', 1.0)")
+    conn.execute("INSERT INTO messages (chat_id, role, content, timestamp) VALUES ('c1', 'user', 'hi', 1.0)")
+    conn.execute("INSERT INTO sub_agent_messages (chat_id, parent_message_id, agent_name, sequence_order, role) "
+                 "VALUES ('c1', '1', 'search_agent', 1, 'assistant')")
+    conn.execute("INSERT INTO collections (chat_id, parent_message_id, collection_type, items) "
+                 "VALUES ('c1', '1', 'code', '[]')")
+    conn.execute("INSERT INTO pending_callbacks (callback_id, chat_id, tool_name) VALUES ('cb1', 'c1', 'ask')")
+    conn.commit()
+    conn.close()
+
+    for run in range(2):  # the second run is the idempotency check
+        init_db()
+        conn = make_connection()
+        for table in ("messages", "sub_agent_messages", "collections", "pending_callbacks"):
+            assert "ON DELETE CASCADE" in conn.execute(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone()[0], (run, table)
+            assert conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] == 1, (run, table)
+        assert conn.execute("SELECT name FROM sqlite_master WHERE name LIKE '%\\_old' ESCAPE '\\'").fetchall() == []
+        _assert_all_indexes(conn)
+        conn.close()
+
+
+def test_create_indexes_restores_dropped_indexes_and_is_idempotent():
+    init_db()
+    conn = make_connection()
+    conn.execute("DROP INDEX idx_sub_agent_sequence")
+    conn.execute("DROP INDEX idx_exec_history_created")
+    assert "idx_sub_agent_sequence" not in _index_names(conn, "sub_agent_messages")
+    c = conn.cursor()
+    _create_indexes(c)
+    _create_indexes(c)
+    _assert_all_indexes(conn)
+    conn.close()
+
+
+def test_init_db_finishes_and_restores_indexes_when_a_rebuild_fails():
+    # messages (pre-cascade) rebuilds fine; the pre-cascade files table holds a row the new NOT NULL
+    # columns reject, so its copy fails, step 11 only logs, and init_db() still completes with its indexes.
+    conn = make_connection()
+    conn.execute("CREATE TABLE chats (id TEXT PRIMARY KEY, title TEXT, timestamp REAL)")
+    conn.execute("CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id TEXT, role TEXT, content TEXT, "
+                 "timestamp REAL, parent_type TEXT DEFAULT 'main')")
+    conn.execute("CREATE TABLE files (id TEXT PRIMARY KEY, chat_id TEXT, original_filename TEXT, stored_filename TEXT, "
+                 "mime_type TEXT, file_size INTEGER, content_text TEXT, processing_status TEXT, created_at REAL)")
+    conn.execute("INSERT INTO chats (id, title, timestamp) VALUES ('c1', 't', 1.0)")
+    conn.execute("INSERT INTO messages (chat_id, role, content, timestamp) VALUES ('c1', 'user', 'hi', 1.0)")
+    conn.execute("INSERT INTO files (id, chat_id) VALUES ('f1', 'c1')")  # NULL names: the rebuild copy fails
+    conn.commit()
+    conn.close()
+
+    init_db()
+
+    conn = make_connection()
+    assert "ON DELETE CASCADE" in conn.execute("SELECT sql FROM sqlite_master WHERE name='messages'").fetchone()[0]
+    assert conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0] == 1
+    # The tables that were not rebuilt keep every index and the rebuilt messages table has its index again.
+    for table, expected in EXPECTED_INDEXES.items():
+        if table != "files":
+            assert expected <= _index_names(conn, table), table
     conn.close()

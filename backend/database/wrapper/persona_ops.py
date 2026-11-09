@@ -40,6 +40,30 @@ class PersonaOperations:
             c.execute('SELECT id, name, content, is_default, timestamp, research_mode, file_system_mode, browsing_mode, git_mode, code_execution_mode FROM personas WHERE is_default = 1 LIMIT 1')
             return self._row_to_dict(c.fetchone())
 
+    def persona_name_exists(self, name: str, exclude_id: str | None = None) -> bool:
+        """
+        Whether another persona already uses this name (case-insensitive, ignoring surrounding spaces).
+
+        Args:
+            name: The candidate persona name.
+            exclude_id: A persona id to leave out, so updating a persona under its own name is allowed.
+
+        Returns:
+            True if a different persona has the same name.
+        """
+        sql = 'SELECT 1 FROM personas WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))'
+        params = [name]
+        if exclude_id is not None:
+            sql += ' AND id != ?'
+            params.append(exclude_id)
+        conn = make_connection()
+        try:
+            c = conn.cursor()
+            c.execute(sql + ' LIMIT 1', params)
+            return c.fetchone() is not None
+        finally:
+            conn.close()
+
     def create_persona(self, name: str, content: str, is_default: int = 0, research_mode: int = 0, file_system_mode: int = 0, browsing_mode: int = 0, git_mode: int = 0, code_execution_mode: int = 1) -> Dict:
         """Create a new persona."""
         persona_id = "persona_" + uuid.uuid4().hex[:16]

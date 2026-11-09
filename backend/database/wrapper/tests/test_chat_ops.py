@@ -9,6 +9,7 @@ Coverage:
 - delete_chat  ← FK-safety regression: file_systems + all child tables
 - delete_all_chats ← FK-safety regression: same ordering requirement
 - get_chat_full
+- get_listed_chats (sidebar list: chats with a message, file or chat artifact) vs get_all_chats (every chat)
 - workspace CRUD (create / rename / delete)
 - update_chat_workspace
 """
@@ -159,6 +160,62 @@ class TestEnsureAndGetChat:
 
     def test_get_chat_returns_none_for_missing(self, temp_db):
         assert temp_db.get_chat("nonexistent_xyz") is None
+
+
+class TestGetListedChats:
+    """The sidebar list hides chats that hold no content; get_all_chats keeps returning every chat."""
+
+    def _ids(self, rows):
+        return [r["id"] for r in rows]
+
+    def test_empty_chat_is_not_listed_but_still_exists(self, temp_db):
+        temp_db.ensure_chat_exists("listed_empty")
+        assert "listed_empty" not in self._ids(temp_db.get_listed_chats())
+        assert "listed_empty" in self._ids(temp_db.get_all_chats())  # internal callers still see it
+        assert temp_db.get_chat("listed_empty") is not None
+
+    def test_chat_with_a_message_a_file_or_an_artifact_is_listed(self, temp_db):
+        db_path = temp_db._test_db_path
+        for chat in ("listed_msg", "listed_file", "listed_art"):
+            temp_db.ensure_chat_exists(chat)
+        temp_db.add_message("listed_msg", role="user", content="hi")
+        _seed_file_attachment(db_path, "listed_file")
+        _seed_file_system_with_children(db_path, "listed_art")
+        ids = self._ids(temp_db.get_listed_chats())
+        assert {"listed_msg", "listed_file", "listed_art"} <= set(ids)
+
+    def test_workspace_name_is_populated(self, temp_db):
+        ws = temp_db.create_workspace("Listed WS")
+        ws_id = ws["id"]
+        temp_db.ensure_chat_exists("listed_ws_chat")
+        temp_db.update_chat_workspace("listed_ws_chat", ws_id)
+        temp_db.add_message("listed_ws_chat", role="user", content="hi")
+        row = next(r for r in temp_db.get_listed_chats() if r["id"] == "listed_ws_chat")
+        assert row["workspace_name"] == "Listed WS"
+
+    def test_chat_leaves_the_list_when_its_last_content_is_removed_and_returns_with_new_content(self, temp_db):
+        db_path = temp_db._test_db_path
+        temp_db.ensure_chat_exists("listed_toggle")
+        msg_id = temp_db.add_message("listed_toggle", role="user", content="hi")
+        assert "listed_toggle" in self._ids(temp_db.get_listed_chats())
+        temp_db.delete_message("listed_toggle", msg_id)
+        assert "listed_toggle" not in self._ids(temp_db.get_listed_chats())
+        temp_db.add_message("listed_toggle", role="user", content="again")
+        assert "listed_toggle" in self._ids(temp_db.get_listed_chats())
+
+        temp_db.ensure_chat_exists("listed_file_toggle")
+        _seed_file_attachment(db_path, "listed_file_toggle", file_id="f_toggle")
+        assert "listed_file_toggle" in self._ids(temp_db.get_listed_chats())
+        temp_db.delete_file("f_toggle")
+        assert "listed_file_toggle" not in self._ids(temp_db.get_listed_chats())
+
+    def test_ordering_is_newest_first(self, temp_db):
+        db_path = temp_db._test_db_path
+        for chat, ts in (("listed_old", 100.0), ("listed_new", 300.0), ("listed_mid", 200.0)):
+            temp_db.save_chat(chat, chat, ts, enable_thinking=1)
+            _seed_file_attachment(db_path, chat, file_id=f"f_{chat}")  # a file does not bump the timestamp
+        ids = [i for i in self._ids(temp_db.get_listed_chats()) if i.startswith("listed_")]
+        assert ids == ["listed_new", "listed_mid", "listed_old"]
 
 
 class TestSaveChat:
@@ -509,6 +566,15 @@ class TestWorkspaceOps:
         temp_db.rename_workspace(ws["id"], "Beta Renamed")
         workspaces = temp_db.get_all_workspaces()
         assert any(w["name"] == "Beta Renamed" for w in workspaces)
+
+    def test_workspace_name_exists(self, temp_db):
+        ws = temp_db.create_workspace("Dup Name")
+        other = temp_db.create_workspace("Other Name")
+        assert temp_db.workspace_name_exists("Dup Name") is True
+        assert temp_db.workspace_name_exists("  dup NAME ") is True  # case and surrounding spaces
+        assert temp_db.workspace_name_exists("Unrelated Name") is False
+        assert temp_db.workspace_name_exists("Dup Name", exclude_id=ws["id"]) is False  # its own name
+        assert temp_db.workspace_name_exists("Dup Name", exclude_id=other["id"]) is True
 
     def test_update_chat_workspace(self, temp_db):
         ws = temp_db.create_workspace("Gamma")

@@ -175,6 +175,8 @@ async function remove(
   try {
     await chatsApi.deleteMessage(chatId, messageId);
     await queryClient.invalidateQueries({ queryKey: queryKeys.chat(chatId) });
+    // A chat with no messages or files leaves the sidebar list.
+    await queryClient.invalidateQueries({ queryKey: queryKeys.chats });
     onChanged();
   } catch (err) {
     showToast(err instanceof Error ? err.message : 'Delete failed', 'error');

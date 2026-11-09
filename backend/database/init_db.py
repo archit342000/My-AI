@@ -118,6 +118,32 @@ def _repair_leftover_old_tables(conn: sqlite3.Connection, tables) -> None:
             log_event("db_migration_leftover_old_table_error", {"table": table, "error": type(e).__name__})
 
 
+def _create_indexes(c: sqlite3.Cursor) -> None:
+    """
+    Create every index of the schema. This is the only place indexes are defined.
+
+    All statements are `IF NOT EXISTS`, so it is safe to call repeatedly. `init_db()` calls it once
+    after the tables exist and again after the migrations that rebuild tables (steps 8 and 11):
+    dropping a rebuilt table drops its indexes, which would otherwise be missing until the next start.
+
+    Args:
+        c: Cursor on the connection `init_db()` is migrating.
+    """
+    c.execute('CREATE INDEX IF NOT EXISTS idx_messages_chat_id ON messages(chat_id)')
+    c.execute('CREATE INDEX IF NOT EXISTS idx_file_systems_chat_id ON file_systems(chat_id)')
+    c.execute('CREATE INDEX IF NOT EXISTS idx_file_systems_title ON file_systems(title)')
+    c.execute('CREATE INDEX IF NOT EXISTS idx_file_system_versions_file_system_id ON file_system_versions(file_system_id)')
+    c.execute('CREATE INDEX IF NOT EXISTS idx_file_system_permissions_file_system_id ON file_system_permissions(file_system_id)')
+    c.execute('CREATE INDEX IF NOT EXISTS idx_memories_tag ON memories(tag)')
+    c.execute('CREATE INDEX IF NOT EXISTS idx_sub_agent_chat_parent ON sub_agent_messages(chat_id, parent_message_id)')
+    c.execute('CREATE INDEX IF NOT EXISTS idx_sub_agent_sequence ON sub_agent_messages(chat_id, parent_message_id, sequence_order)')
+    c.execute('CREATE INDEX IF NOT EXISTS idx_collections_chat_parent ON collections(chat_id, parent_message_id)')
+    c.execute('CREATE INDEX IF NOT EXISTS idx_collections_parent_type ON collections(chat_id, parent_message_id, parent_type)')
+    c.execute('CREATE INDEX IF NOT EXISTS idx_pending_cb_chat ON pending_callbacks(chat_id, status)')
+    c.execute('CREATE INDEX IF NOT EXISTS idx_exec_history_chat ON code_execution_history(chat_id)')
+    c.execute('CREATE INDEX IF NOT EXISTS idx_exec_history_created ON code_execution_history(created_at)')
+
+
 def init_db():
     """
     Initialize the database schema and perform necessary migrations.
@@ -416,7 +442,6 @@ def init_db():
                 FOREIGN KEY(chat_id) REFERENCES chats(id) ON DELETE CASCADE
             )
         ''')
-        c.execute('CREATE INDEX IF NOT EXISTS idx_pending_cb_chat ON pending_callbacks(chat_id, status)')
 
         # Skills table for the Skill Store
         c.execute('''
@@ -471,8 +496,6 @@ def init_db():
                 FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE CASCADE
             )
         ''')
-        c.execute('CREATE INDEX IF NOT EXISTS idx_exec_history_chat ON code_execution_history(chat_id)')
-        c.execute('CREATE INDEX IF NOT EXISTS idx_exec_history_created ON code_execution_history(created_at)')
 
         # FTS5 search table
         try:
@@ -605,16 +628,7 @@ def init_db():
                 pass
 
         # 3. Create Indexes
-        c.execute('CREATE INDEX IF NOT EXISTS idx_messages_chat_id ON messages(chat_id)')
-        c.execute('CREATE INDEX IF NOT EXISTS idx_file_systems_chat_id ON file_systems(chat_id)')
-        c.execute('CREATE INDEX IF NOT EXISTS idx_file_systems_title ON file_systems(title)')
-        c.execute('CREATE INDEX IF NOT EXISTS idx_file_system_versions_file_system_id ON file_system_versions(file_system_id)')
-        c.execute('CREATE INDEX IF NOT EXISTS idx_file_system_permissions_file_system_id ON file_system_permissions(file_system_id)')
-        c.execute('CREATE INDEX IF NOT EXISTS idx_memories_tag ON memories(tag)')
-        c.execute('CREATE INDEX IF NOT EXISTS idx_sub_agent_chat_parent ON sub_agent_messages(chat_id, parent_message_id)')
-        c.execute('CREATE INDEX IF NOT EXISTS idx_sub_agent_sequence ON sub_agent_messages(chat_id, parent_message_id, sequence_order)')
-        c.execute('CREATE INDEX IF NOT EXISTS idx_collections_chat_parent ON collections(chat_id, parent_message_id)')
-        c.execute('CREATE INDEX IF NOT EXISTS idx_collections_parent_type ON collections(chat_id, parent_message_id, parent_type)')
+        _create_indexes(c)
 
         # 4. Data Modernization (Migrate legacy chats to turn-anchored structure)
         try:
@@ -1139,6 +1153,10 @@ def init_db():
             logger.info("MIGRATION: Dependent tables checked for ON DELETE CASCADE.")
         except Exception as e:
             logger.error(f"Error updating tables with ON DELETE CASCADE: {e}")
+
+        # Rebuilt tables (steps 8 and 11) lost their indexes with the dropped copies: restore them now.
+        # Runs even when a rebuild above failed. A table restored from a leftover `_old` also gets its indexes here.
+        _create_indexes(c)
 
         # 11b. Store file references on the user message (messages.attachments) and backfill
         # them from the existing 'files' collections so old chats show their attachments too.

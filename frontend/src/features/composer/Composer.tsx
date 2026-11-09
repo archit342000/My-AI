@@ -1,4 +1,12 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type KeyboardEvent,
+} from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { modelsApi, settingsKeys, skillsApi } from '../../api/settings';
@@ -6,7 +14,7 @@ import { Icon } from '../../components/icons/Icon';
 import { IconButton } from '../../components/ui/Button';
 import { Popover } from '../../components/ui/Popover';
 import { showToast } from '../../components/ui/toast-store';
-import { uploadFile } from '../../api/files';
+import { deleteFile, uploadFile } from '../../api/files';
 import type { UploadedFile } from '../../api/completions';
 import { useSettingsStore } from '../../state/settings-store';
 import { queryKeys } from '../../api/chats';
@@ -124,6 +132,12 @@ export function Composer() {
   // Upload queue: start queued chips up to the concurrency limit. `started` guards against a
   // second start when the effect runs twice (StrictMode) before the status update lands.
   const started = useRef(new Set<string>());
+  // Chips removed while their upload was still running: the file is deleted once the upload lands.
+  const removedWhileUploading = useRef(new Set<string>());
+  const refreshChatList = useCallback(
+    () => queryClient.invalidateQueries({ queryKey: queryKeys.chats }),
+    [queryClient],
+  );
   useEffect(() => {
     for (const item of nextToUpload(attachments)) {
       if (started.current.has(item.key)) continue;
@@ -141,13 +155,24 @@ export function Composer() {
         ),
       )
         .then((uploaded) => {
+          if (removedWhileUploading.current.delete(item.key)) {
+            // The chip is gone: drop the file too, then refresh the list (its chat is rejudged).
+            void deleteFile(uploaded.file_id)
+              .catch((err: unknown) =>
+                showToast(err instanceof Error ? err.message : 'Could not remove file', 'error'),
+              )
+              .then(refreshChatList);
+            return;
+          }
           setAttachments((list) =>
             list.map((a) =>
               a.key === item.key ? { ...a, status: 'ready', progress: 1, uploaded } : a,
             ),
           );
+          void refreshChatList(); // the chat now has a file, so it belongs in the sidebar list
         })
         .catch((err: unknown) => {
+          if (removedWhileUploading.current.delete(item.key)) return; // nobody is waiting for it
           const message = err instanceof Error ? err.message : 'Upload failed';
           setAttachments((list) =>
             list.map((a) => (a.key === item.key ? { ...a, status: 'error', error: message } : a)),
@@ -158,7 +183,7 @@ export function Composer() {
           started.current.delete(item.key);
         });
     }
-  }, [attachments]);
+  }, [attachments, refreshChatList]);
 
   const commands = useMemo(() => slashCommandsFor(skills.data), [skills.data]);
   const slashMatches = matchSlashCommands(commands, text);
@@ -204,7 +229,18 @@ export function Composer() {
   }
 
   function remove(key: string) {
+    const chip = attachments.find((a) => a.key === key);
     setAttachments((list) => list.filter((a) => a.key !== key));
+    if (!chip) return;
+    if (started.current.has(key)) {
+      removedWhileUploading.current.add(key); // the upload is still running: clean up when it lands
+    } else if (chip.uploaded) {
+      void deleteFile(chip.uploaded.file_id)
+        .catch((err: unknown) =>
+          showToast(err instanceof Error ? err.message : 'Could not remove file', 'error'),
+        )
+        .then(refreshChatList);
+    }
   }
 
   function pickCommand(command: SlashCommand) {

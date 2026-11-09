@@ -13,6 +13,7 @@ import {
 } from '../../test/fixtures/sse';
 import { resumeTurn, sendTurn, stopTurn } from './send-turn';
 import { useToastStore } from '../../components/ui/toast-store';
+import { queryKeys } from '../../api/chats';
 
 /** Routes only the completion endpoint; every other request gets an empty JSON response. */
 function mockCompletion(respond: (signal: AbortSignal) => Response, seen: { pending?: unknown } = {}) {
@@ -272,5 +273,25 @@ describe('sendTurn when the server refuses the send (400)', () => {
     );
     await sendTurn(args());
     expect(useStreamStore.getState().interrupted).toMatchObject({ kind: 'error', message: 'boom' });
+  });
+});
+
+describe('sidebar chat list during a turn', () => {
+  it('is refreshed once the send is accepted (first chunk), not only after the stream ends', async () => {
+    mockCompletion(() => sseResponse(sseText([contentChunk('A'), contentChunk('B')], false)));
+    const a = args();
+    const seen: Array<string | undefined> = [];
+    const original = a.queryClient.invalidateQueries.bind(a.queryClient);
+    vi.spyOn(a.queryClient, 'invalidateQueries').mockImplementation((filters) => {
+      if (JSON.stringify(filters?.queryKey) === JSON.stringify(queryKeys.chats)) {
+        seen.push(useStreamStore.getState().live?.content);
+      }
+      return original(filters);
+    });
+    await sendTurn(a);
+    // The first refresh happens before the reply has been applied, the last one after it all arrived.
+    expect(seen.length).toBeGreaterThanOrEqual(2);
+    expect(seen[0]).not.toBe('AB');
+    expect(seen[seen.length - 1]).toBe('AB');
   });
 });

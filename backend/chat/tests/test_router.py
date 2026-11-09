@@ -34,10 +34,13 @@ def free_turn_slot():
 
 @patch('backend.chat.router.db')
 def test_list_chats(mock_db, client):
-    mock_db.get_all_chats.return_value = [{"id": "chat1", "title": "Test Chat"}]
+    mock_db.get_listed_chats.return_value = [{"id": "chat1", "title": "Test Chat"}]
     response = client.get('/api/chats/')
     assert response.status_code == 200
     assert response.json == [{"id": "chat1", "title": "Test Chat"}]
+    # The sidebar list hides empty chats; get_all_chats (every chat) stays for internal callers
+    mock_db.get_listed_chats.assert_called_once_with()
+    mock_db.get_all_chats.assert_not_called()
 
 @patch('backend.chat.router.db')
 def test_list_workspaces(mock_db, client):
@@ -48,6 +51,7 @@ def test_list_workspaces(mock_db, client):
 
 @patch('backend.chat.router.db')
 def test_create_workspace(mock_db, client):
+    mock_db.workspace_name_exists.return_value = False
     # Test missing name
     response = client.post('/api/chats/workspaces', json={})
     assert response.status_code == 400
@@ -60,6 +64,7 @@ def test_create_workspace(mock_db, client):
 
 @patch('backend.chat.router.db')
 def test_rename_workspace(mock_db, client):
+    mock_db.workspace_name_exists.return_value = False
     # Test missing update fields (neither name nor icon)
     response = client.patch('/api/chats/workspaces/ws1', json={})
     assert response.status_code == 400
@@ -82,6 +87,49 @@ def test_rename_workspace(mock_db, client):
     assert response.json == {"success": True}
     mock_db.rename_workspace.assert_called_with('ws1', 'Renamed Again')
     mock_db.update_workspace_icon.assert_called_with('ws1', '💼')
+
+@patch('backend.chat.router.db')
+def test_create_workspace_rejects_duplicate_name(mock_db, client):
+    mock_db.workspace_name_exists.return_value = True
+    response = client.post('/api/chats/workspaces', json={"name": "Work"})
+    assert response.status_code == 400
+    assert response.json == {"error": "A workspace named 'Work' already exists"}
+    mock_db.workspace_name_exists.assert_called_with("Work")
+    mock_db.create_workspace.assert_not_called()
+
+@patch('backend.chat.router.db')
+def test_rename_workspace_rejects_duplicate_name_and_writes_nothing(mock_db, client):
+    mock_db.workspace_name_exists.return_value = True
+    response = client.patch('/api/chats/workspaces/ws1', json={"name": "Work", "icon": "💼"})
+    assert response.status_code == 400
+    assert response.json == {"error": "A workspace named 'Work' already exists"}
+    mock_db.workspace_name_exists.assert_called_with("Work", exclude_id="ws1")
+    mock_db.rename_workspace.assert_not_called()
+    mock_db.update_workspace_icon.assert_not_called()
+
+@patch('backend.chat.router.db')
+def test_rename_workspace_icon_only_skips_the_name_check(mock_db, client):
+    response = client.patch('/api/chats/workspaces/ws1', json={"icon": "🚀"})
+    assert response.status_code == 200
+    mock_db.workspace_name_exists.assert_not_called()
+
+@patch('backend.chat.router.db')
+def test_create_persona_rejects_duplicate_name(mock_db, client):
+    mock_db.persona_name_exists.return_value = True
+    response = client.post('/api/personas', json={"name": "Pirate", "content": "Arr!"})
+    assert response.status_code == 400
+    assert response.json == {"success": False, "error": "A persona named 'Pirate' already exists"}
+    mock_db.persona_name_exists.assert_called_with("Pirate")
+    mock_db.create_persona.assert_not_called()
+
+@patch('backend.chat.router.db')
+def test_update_persona_rejects_duplicate_name(mock_db, client):
+    mock_db.persona_name_exists.return_value = True
+    response = client.put('/api/personas/p1', json={"name": "Pirate", "content": "Arr!"})
+    assert response.status_code == 400
+    assert response.json == {"success": False, "error": "A persona named 'Pirate' already exists"}
+    mock_db.persona_name_exists.assert_called_with("Pirate", exclude_id="p1")
+    mock_db.update_persona.assert_not_called()
 
 @patch('backend.chat.router.db')
 def test_delete_workspace(mock_db, client):
@@ -765,6 +813,7 @@ def test_get_personas(mock_db, client):
 
 @patch('backend.chat.router.db')
 def test_create_persona(mock_db, client):
+    mock_db.persona_name_exists.return_value = False
     # Missing fields
     response = client.post('/api/personas', json={"name": "Only Name"})
     assert response.status_code == 400
@@ -800,6 +849,7 @@ def test_create_persona(mock_db, client):
 
 @patch('backend.chat.router.db')
 def test_update_persona(mock_db, client):
+    mock_db.persona_name_exists.return_value = False
     # Missing fields
     response = client.put('/api/personas/p1', json={"name": "Only Name"})
     assert response.status_code == 400

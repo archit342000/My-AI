@@ -7,6 +7,7 @@ import { useStreamStore } from '../../state/stream-store';
 import { useModalStore } from '../../state/modal-store';
 import { useToastStore } from '../../components/ui/toast-store';
 import * as files from '../../api/files';
+import { chatListInvalidated } from '../../test/invalidation';
 import * as sendTurnModule from '../chat/send-turn';
 
 const textarea = () => screen.getByPlaceholderText('Type a message…') as HTMLTextAreaElement;
@@ -126,6 +127,104 @@ describe('Composer', () => {
     fireEvent.click(sendBtn());
     await waitFor(() => expect(send).toHaveBeenCalled());
     expect(send.mock.calls[0]![0].files).toEqual([{ file_id: 'f1', name: 'a.txt', size: 3, mime_type: 'text/plain' }]);
+  });
+
+  describe('sidebar chat list and chip removal', () => {
+    const attach = (container: HTMLElement, name = 'a.txt') =>
+      fireEvent.change(container.querySelector('input[type=file]') as HTMLInputElement, {
+        target: { files: [new File(['abc'], name, { type: 'text/plain' })] },
+      });
+    const uploaded = { file_id: 'f1', name: 'a.txt', size: 3, mime_type: 'text/plain' };
+    const renderInChat = () =>
+      renderWithProviders(<Composer />, { route: '/chat/c1', path: '/chat/:chatId' });
+
+    it('a finished upload refreshes the chat list (the chat now has a file)', async () => {
+      vi.spyOn(files, 'uploadFile').mockResolvedValue(uploaded);
+      const { container, client } = renderInChat();
+      const invalidate = vi.spyOn(client, 'invalidateQueries');
+      attach(container);
+      await waitFor(() => expect(chatListInvalidated(invalidate)).toBe(true));
+    });
+
+    it('sending an uploaded file keeps it on the server (no delete)', async () => {
+      vi.spyOn(files, 'uploadFile').mockResolvedValue(uploaded);
+      const del = vi.spyOn(files, 'deleteFile').mockResolvedValue(undefined);
+      const send = vi.spyOn(sendTurnModule, 'sendTurn').mockResolvedValue(undefined);
+      const { container } = renderInChat();
+      attach(container);
+      await screen.findByRole('button', { name: /Remove a\.txt/ });
+      fireEvent.change(textarea(), { target: { value: 'see file' } });
+      await waitFor(() => expect(sendBtn().disabled).toBe(false));
+      fireEvent.click(sendBtn());
+      await waitFor(() => expect(send).toHaveBeenCalled());
+      expect(del).not.toHaveBeenCalled();
+    });
+
+    it('removing an uploaded chip deletes the server file and refreshes the list', async () => {
+      vi.spyOn(files, 'uploadFile').mockResolvedValue(uploaded);
+      const del = vi.spyOn(files, 'deleteFile').mockResolvedValue(undefined);
+      const { container, client } = renderInChat();
+      attach(container);
+      const removeBtn = await screen.findByRole('button', { name: /Remove a\.txt/ });
+      const invalidate = vi.spyOn(client, 'invalidateQueries');
+      fireEvent.click(removeBtn);
+      await waitFor(() => expect(del).toHaveBeenCalledWith('f1'));
+      await waitFor(() => expect(chatListInvalidated(invalidate)).toBe(true));
+    });
+
+    it('a failed delete shows a toast and still refreshes the list', async () => {
+      vi.spyOn(files, 'uploadFile').mockResolvedValue(uploaded);
+      vi.spyOn(files, 'deleteFile').mockRejectedValue(new Error('locked'));
+      const { container, client } = renderInChat();
+      attach(container);
+      const removeBtn = await screen.findByRole('button', { name: /Remove a\.txt/ });
+      const invalidate = vi.spyOn(client, 'invalidateQueries');
+      fireEvent.click(removeBtn);
+      await waitFor(() => {
+        expect(useToastStore.getState().toasts.map((t) => t.message)).toContain('locked');
+      });
+      await waitFor(() => expect(chatListInvalidated(invalidate)).toBe(true));
+    });
+
+    it('removing a chip that never reached the server makes no delete call', async () => {
+      vi.spyOn(files, 'uploadFile').mockRejectedValue(new Error('too big'));
+      const del = vi.spyOn(files, 'deleteFile').mockResolvedValue(undefined);
+      const { container } = renderInChat();
+      attach(container, 'big.bin');
+      fireEvent.click(await screen.findByRole('button', { name: /Remove big\.bin/ }));
+      expect(del).not.toHaveBeenCalled();
+    });
+
+    it('removing a chip mid-upload deletes the file once the upload lands', async () => {
+      let resolveUpload: (u: typeof uploaded) => void = () => undefined;
+      vi.spyOn(files, 'uploadFile').mockImplementation(
+        () => new Promise((res) => { resolveUpload = res; }),
+      );
+      const del = vi.spyOn(files, 'deleteFile').mockResolvedValue(undefined);
+      const { container, client } = renderInChat();
+      attach(container);
+      fireEvent.click(await screen.findByRole('button', { name: /Remove a\.txt/ }));
+      expect(del).not.toHaveBeenCalled(); // the upload is still running
+      const invalidate = vi.spyOn(client, 'invalidateQueries');
+      resolveUpload(uploaded);
+      await waitFor(() => expect(del).toHaveBeenCalledWith('f1'));
+      await waitFor(() => expect(chatListInvalidated(invalidate)).toBe(true));
+    });
+
+    it('a chip removed mid-upload whose upload then fails shows no toast', async () => {
+      let rejectUpload: (e: Error) => void = () => undefined;
+      vi.spyOn(files, 'uploadFile').mockImplementation(
+        () => new Promise((_res, rej) => { rejectUpload = rej; }),
+      );
+      const del = vi.spyOn(files, 'deleteFile').mockResolvedValue(undefined);
+      const { container } = renderInChat();
+      attach(container);
+      fireEvent.click(await screen.findByRole('button', { name: /Remove a\.txt/ }));
+      rejectUpload(new Error('network down'));
+      await new Promise((r) => setTimeout(r, 20));
+      expect(useToastStore.getState().toasts).toHaveLength(0);
+      expect(del).not.toHaveBeenCalled();
+    });
   });
 
   it('a failed upload shows "failed" and a toast, and blocks sending until removed', async () => {
