@@ -169,3 +169,60 @@ async def test_run_file(mock_db, mock_requests):
     finally:
         shutil.rmtree(temp_chat_root)
 
+
+
+# ---- resolve_run_target and the run_file error strings ---------------------------------------------------------
+
+def test_resolve_run_target_returns_the_paths_for_an_existing_file(tmp_path):
+    from backend.tools.implementations.code_executor import resolve_run_target
+    (tmp_path / "main.py").write_text("print(1)")
+    with patch('backend.tools.implementations.code_executor.resolve_owner_and_physical_path') as resolve:
+        resolve.side_effect = lambda chat_id, path, **kw: (chat_id, None, str(tmp_path / path) if path else str(tmp_path))
+        assert resolve_run_target("c1", "main.py") == (str(tmp_path / "main.py"), str(tmp_path))
+
+
+def test_resolve_run_target_raises_for_a_missing_file_and_lets_resolver_errors_through(tmp_path):
+    from backend.tools.implementations.code_executor import resolve_run_target
+    with patch('backend.tools.implementations.code_executor.resolve_owner_and_physical_path') as resolve:
+        resolve.side_effect = lambda chat_id, path, **kw: (chat_id, None, str(tmp_path / path) if path else str(tmp_path))
+        with pytest.raises(FileNotFoundError):
+            resolve_run_target("c1", "nope.py")
+        resolve.side_effect = ValueError("reserved path")
+        with pytest.raises(ValueError):
+            resolve_run_target("c1", "workspace/x.py")
+        resolve.side_effect = RuntimeError("db down")
+        with pytest.raises(RuntimeError):
+            resolve_run_target("c1", "x.py")
+
+
+def test_run_file_for_a_missing_file_still_returns_the_agent_error_string(tmp_path):
+    import asyncio
+    with patch('backend.tools.implementations.code_executor.resolve_owner_and_physical_path') as resolve:
+        resolve.side_effect = lambda chat_id, path, **kw: (chat_id, None, str(tmp_path / path) if path else str(tmp_path))
+        res = asyncio.run(run_file(path="nope.py", chat_id="c1", tool_call_id="tc"))
+    assert res == "Error: File 'nope.py' does not exist."
+
+
+def test_run_file_runner_unavailable_message_has_no_exception_text(tmp_path, mock_db, mock_requests):
+    import asyncio
+    (tmp_path / "main.py").write_text("print(1)")
+    mock_requests.post.side_effect = RuntimeError("connect to 10.1.2.3:8100 refused")
+    with patch('backend.tools.implementations.code_executor.resolve_owner_and_physical_path') as resolve:
+        resolve.side_effect = lambda chat_id, path, **kw: (chat_id, None, str(tmp_path / path) if path else str(tmp_path))
+        res = asyncio.run(run_file(path="main.py", chat_id="c1", tool_call_id="tc"))
+    assert res == "Error: Failed to execute file. Code runner service is unavailable."
+    assert "10.1.2.3" not in res
+
+
+def test_run_file_non_input_resolver_failure_keeps_its_detail_out_of_the_result():
+    import asyncio
+    with patch('backend.tools.implementations.code_executor.resolve_owner_and_physical_path', side_effect=RuntimeError("db at /secret/chats.db locked")):
+        res = asyncio.run(run_file(path="a.py", chat_id="c1", tool_call_id="tc"))
+    assert res == "Error: Failed to resolve file path."
+
+
+def test_run_file_invalid_path_keeps_the_resolvers_message_for_the_agent():
+    import asyncio
+    with patch('backend.tools.implementations.code_executor.resolve_owner_and_physical_path', side_effect=ValueError("reserved path 'workspace/'")):
+        res = asyncio.run(run_file(path="workspace/a.py", chat_id="c1", tool_call_id="tc"))
+    assert res == "Error: Failed to resolve file path: reserved path 'workspace/'"
