@@ -34,10 +34,23 @@
         interleaved = [],
       } = config;
 
-      // Strip System Note about files from user messages to prevent UI clutter
-      if (role === "user" && text) {
-        text = text.replace(/\n\n\[System Note: The user has attached the following files\. Use the `document_agent` tool with the provided file_id to read their contents if needed:[\s\S]*?\]/g, "");
-        text = text.replace(/\n\n\[System Note: The user has attached the following files\. Use the `read_file` tool with the provided file_id to read their contents if needed:[\s\S]*?\]/g, "");
+      // Strip the router's System Note about attached files from user messages (display only; the stored
+      // text is untouched) and keep the files it lists, so they can still be shown as pills. The note is
+      // always the last part of the text, so cut from its last occurrence to the end: a "]" inside a file
+      // name cannot end it early. Contract with backend/chat/router.py (the note); the React UI
+      // (frontend/src/lib/chat-model.ts) applies the same prefix-and-closing-bracket rule, but only
+      // that parser supports file names that contain a newline.
+      let noteFiles = [];
+      if (role === "user" && typeof text === "string") {
+        const prefix = "\n\n[System Note: The user has attached the following files";
+        const at = text.lastIndexOf(prefix);
+        if (at !== -1 && text.trimEnd().endsWith("]")) {
+          const note = text.slice(at);
+          text = text.slice(0, at);
+          for (const m of note.matchAll(/^- (.+) \(ID: ([^)]+)\)\]?$/gm)) {
+            noteFiles.push({ name: m[1], file_id: m[2] });
+          }
+        }
       }
 
       const row = document.createElement("div");
@@ -100,6 +113,21 @@
           }
         });
       }
+
+      // Drop repeats in user messages (the same file can arrive as an attachment and in a files collection).
+      if (role === "user") {
+        const seenFileIds = new Set();
+        combinedFiles = combinedFiles.filter((f) => {
+          const id = f && f.file_id;
+          if (!id) return true;
+          if (seenFileIds.has(id)) return false;
+          seenFileIds.add(id);
+          return true;
+        });
+      }
+      // A message whose files are not loaded (no collection, no attachments) still shows the files its
+      // note listed.
+      if (combinedFiles.length === 0 && noteFiles.length > 0) combinedFiles = noteFiles;
 
       let imageMarkup =
         images && images.length > 0
