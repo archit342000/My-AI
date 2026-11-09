@@ -200,8 +200,14 @@ def test_code_execution_ws_proxy(mock_get_setting, mock_collect_project_files, m
     ]
     
     # Run the proxy function
-    flask_app.code_execution_ws_proxy(mock_ws)
-    
+    with patch.object(config, "CODE_RUNNER_API_KEY", "testkey"):
+        flask_app.code_execution_ws_proxy(mock_ws)
+
+    # The key travels in a header, never in the URL
+    url = mock_create_connection.call_args.args[0]
+    assert url.endswith("/ws/execute") and "api_key" not in url and "testkey" not in url
+    assert mock_create_connection.call_args.kwargs["header"] == ["X-API-KEY: testkey"]
+
     # Check if correct helper functions are called and upstream receives setup configuration
     mock_collect_project_files.assert_called_once_with("chat123", "main.py")
     mock_create_connection.assert_called_once()
@@ -210,6 +216,21 @@ def test_code_execution_ws_proxy(mock_get_setting, mock_collect_project_files, m
     sent_payload = json.loads(mock_upstream.send.call_args[0][0])
     assert sent_payload["language"] == "python"
     assert sent_payload["entry_file"] == "main.py"
+
+
+@patch('app.ws_client.create_connection')
+@patch('backend.tools.implementations.code_executor.collect_project_files')
+@patch('backend.database.db.get_setting')
+def test_code_execution_ws_proxy_sends_an_empty_header_not_the_word_none_without_a_key(mock_get_setting, mock_collect_project_files, mock_create_connection):
+    import json
+    mock_get_setting.return_value = 30
+    mock_collect_project_files.return_value = ("python", [{"path": "main.py", "content": "print(1)"}], "main.py")
+    mock_create_connection.return_value = MagicMock()
+    mock_ws = MagicMock()
+    mock_ws.receive.side_effect = [json.dumps({"type": "init", "filePath": "main.py", "chat_id": "chat123"}), None]
+    with patch.object(config, "CODE_RUNNER_API_KEY", None):
+        flask_app.code_execution_ws_proxy(mock_ws)
+    assert mock_create_connection.call_args.kwargs["header"] == ["X-API-KEY: "]
 
 
 @patch('app.ws_client.create_connection')

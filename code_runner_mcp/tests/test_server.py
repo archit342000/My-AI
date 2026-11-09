@@ -38,15 +38,24 @@ def test_list_packages():
     assert "packages" in res.json()
     assert res.json()["package_manager"] == "pip"
 
-def test_websocket_auth_failure():
-    import pytest
-    from starlette.testclient import WebSocketDenialResponse
-    with pytest.raises(Exception):
-        with client.websocket_connect("/ws/execute?api_key=wrongkey") as ws:
+WS_AUTH = {"X-API-KEY": "testkey"}
+
+
+@pytest.mark.parametrize("url,headers", [
+    ("/ws/execute", {}),                                          # no key
+    ("/ws/execute", {"X-API-KEY": "wrongkey"}),                   # wrong key
+    ("/ws/execute?api_key=testkey", {}),                          # the old query-string form is no longer accepted
+    ("/ws/execute?api_key=testkey", {"X-API-KEY": "wrongkey"}),   # a right query key cannot rescue a wrong header
+])
+def test_websocket_refuses_a_missing_or_wrong_key_with_1008(url, headers):
+    from starlette.websockets import WebSocketDisconnect
+    with pytest.raises(WebSocketDisconnect) as exc:
+        with client.websocket_connect(url, headers=headers):
             pass
+    assert exc.value.code == 1008
 
 def test_websocket_sql_mysql_is_rejected():
-    with client.websocket_connect("/ws/execute?api_key=testkey") as ws:
+    with client.websocket_connect("/ws/execute", headers=WS_AUTH) as ws:
         ws.send_json({
             "language": "sql",
             "code": "SELECT 1;",
@@ -59,7 +68,7 @@ def test_websocket_sql_mysql_is_rejected():
         assert ws.receive_json() == {"type": "exit", "code": 1}
 
 def test_websocket_execute():
-    with client.websocket_connect("/ws/execute?api_key=testkey") as ws:
+    with client.websocket_connect("/ws/execute", headers=WS_AUTH) as ws:
         ws.send_json({
             "language": "python",
             "code": "print('hello websocket')",
@@ -240,7 +249,7 @@ def test_execute_rejects_a_non_integer_timeout_before_running_anything(sent, sta
 
 def _ws_run(config_extra):
     config = {"language": "python", "code": "print(1)", **config_extra}
-    with client.websocket_connect("/ws/execute?api_key=testkey") as ws:
+    with client.websocket_connect("/ws/execute", headers=WS_AUTH) as ws:
         ws.send_json(config)
         frames = []
         while True:

@@ -22,7 +22,7 @@
 *   **Network:** the runtime service `code_runner_runtime` is on `runner-net`, which is internal-only. User code has no internet, `mysql_db` or app access. The app reaches the runtime through the relay service `code_runner_mcp` (`relay.py`), which forwards port 8100 only. Residual reach: the runtime's `CODE_RUNNER_API_KEY` is readable by user code, and user code can call the runner (and the relay) on port 8100. `/install` (pip/npm) needs outbound access, so it fails in this setup.
 *   **Flow:**
     1. The main app container makes an HTTP request to `/execute`, `/install`, or `/packages`.
-    2. `server.py` verifies the `X-API-KEY` header (HTTP routes and the `/ws/execute` query key); the service refuses to start without a configured key.
+    2. `server.py` verifies the `X-API-KEY` header (HTTP routes and `/ws/execute` alike; a `?api_key=` query parameter is not accepted); the service refuses to start without a configured key.
     3. Client timeouts are clamped to `1..MAX_TIMEOUT` (580 s, below the relay idle timeout planned for the relay hardening change; a missing timeout means 30 s). `/execute` answers 400 for a non-integer string and 422 for a bool or float; the live-run WebSocket sends an `Error: timeout must be an integer.` frame and exit code 1.
 4. For `/execute`, `executor.py` writes the requested files into a temporary sandbox directory, sets the cwd to the parent of the entry file, executes the code via a subprocess as the non-privileged `runner` user, and cleans up the sandbox directory.
 
