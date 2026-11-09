@@ -19,10 +19,11 @@ Mount it as a volume; losing it loses chats, files and vectors.
 - Access only through `db` from `backend.database` (mixins in `backend/database/wrapper/`). Connections come from `make_connection`
   with a 30 s timeout and foreign keys on.
 - Main tables: `workspaces`, `chats`, `messages`, `sub_agent_messages`, `personas`, `skills`, `memories`, `files`, `collections`,
-  `file_systems` (+ `file_system_versions`, `file_system_permissions`, `file_system_counters`), `pending_callbacks`,
+  `file_systems` (+ `file_system_versions`, `file_system_permissions`), `pending_callbacks`,
   `system_settings`, `clipboard`, `code_execution_history`. `backend/database/init_db.py` is the authority for columns.
 - Artifact (`file_systems`) ids are UUID4 strings. Older artifacts may still have per-owner numeric ids, which keep working.
-  `file_system_counters` is legacy and no longer used to create ids.
+  `init_db()` drops the legacy `file_system_counters` table (migration 14). It held only per-owner sequence numbers, no user
+  data; see Migrations rule 4 below.
 - `messages.attachments` is a nullable JSON list of file references (`file_id`, `name`, `size`, `mime_type`) kept on user messages
   so attachments survive a reload and Retry. It is an additive column; `init_db()` backfills it once from existing `files` collections.
 - One writer at a time. Keep transactions short and never hold one across `await` or network calls (`docs/pitfalls.md`).

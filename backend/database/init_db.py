@@ -232,13 +232,6 @@ def init_db():
         ''')
 
         c.execute('''
-            CREATE TABLE IF NOT EXISTS file_system_counters (
-                owner_id TEXT PRIMARY KEY,
-                counter INTEGER DEFAULT 0
-            )
-        ''')
-
-        c.execute('''
             CREATE TABLE IF NOT EXISTS files (
                 id TEXT PRIMARY KEY,
                 chat_id TEXT NOT NULL,
@@ -1554,6 +1547,11 @@ def init_db():
             logger.info("MIGRATION: Successfully migrated replace_fs_text and replace_fs_lines tool calls in database.")
         except Exception as e:
             logger.error(f"Error migrating replace_fs_text and replace_fs_lines tool calls: {e}")
+
+        # 14. Drop the unused file_system_counters table. Artifact ids are UUIDs, so nothing reads or writes
+        # it any more. Explicit decision (docs/data.md, Migrations rule 4): it held only per-owner sequence
+        # numbers, no user data, and artifacts with older numeric ids keep their ids in file_systems.
+        c.execute("DROP TABLE IF EXISTS file_system_counters")
 
         conn.commit()
     except Exception as e:
