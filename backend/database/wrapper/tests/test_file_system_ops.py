@@ -29,7 +29,7 @@ def test_file_system_ops(temp_db):
     filename = "test_file.txt"
     
     # Ensure chat exists to satisfy foreign key constraint
-    db.ensure_chat_exists(chat_id)
+    db.ensure_chat_exists(chat_id, "u1")
     
     # 1. Save FS Meta & _get_file_system_meta_fetch_internal
     db.save_file_system_meta(
@@ -125,7 +125,7 @@ def test_file_system_ops(temp_db):
 
     # 17. migrate_file_system_owner
     chat_id_new = "chat_migrated"
-    db.ensure_chat_exists(chat_id_new)
+    db.ensure_chat_exists(chat_id_new, "u1")
     db.migrate_file_system_owner(
         old_id=fs_id, new_id="fs_123_migrated", 
         old_chat_id=chat_id, old_workspace_id=None, 
@@ -149,7 +149,7 @@ def test_file_system_ops(temp_db):
 def test_legacy_numeric_id_still_readable_and_migratable(temp_db):
     db = temp_db
     for chat in ("legacy_a", "legacy_b", "legacy_c"):
-        db.ensure_chat_exists(chat)
+        db.ensure_chat_exists(chat, "u1")
     for chat in ("legacy_a", "legacy_b"):
         db.create_file_system_with_version(
             file_system_id="1", chat_id=chat, title="Legacy", filename="legacy.txt", content="v1"
@@ -174,9 +174,9 @@ def test_file_system_workspace_isolation(temp_db):
     chat_id = "chat_iso_1"
     workspace_id = "ws_iso_1"
     
-    db.ensure_chat_exists(chat_id)
+    db.ensure_chat_exists(chat_id, "u1")
     # create_workspace is part of ChatOpsMixin, so db has it
-    ws = db.create_workspace("Workspace Isolation Test")
+    ws = db.create_workspace("Workspace Isolation Test", "u1")
     workspace_id = ws["id"]
     
     # 1. Create a workspace file system record
@@ -226,7 +226,7 @@ def test_file_system_workspace_isolation(temp_db):
 def test_file_system_fts_index(temp_db):
     db = temp_db
     chat_id = "chat_fts_1"
-    db.ensure_chat_exists(chat_id)
+    db.ensure_chat_exists(chat_id, "u1")
     
     fs_id = "fs_fts"
     db.create_file_system_with_version(
@@ -274,7 +274,7 @@ def test_file_system_fts_index(temp_db):
 def test_file_system_versions_rollback(temp_db):
     db = temp_db
     chat_id = "chat_rollback_1"
-    db.ensure_chat_exists(chat_id)
+    db.ensure_chat_exists(chat_id, "u1")
     
     fs_id = "fs_rollback"
     db.create_file_system_with_version(

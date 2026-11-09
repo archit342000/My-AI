@@ -30,7 +30,7 @@ async def test_integration_no_compression(mock_task_manager, temp_db):
         response_cache.initialize_chat("chat_1", overwrite=True)
 
         # Ensure chat exists
-        db.ensure_chat_exists("chat_1")
+        db.ensure_chat_exists("chat_1", "u1")
         # Save a system prompt and some message history
         db.update_chat(
             "chat_1",
@@ -93,7 +93,7 @@ async def test_integration_trigger_compression(
                 "tokenizer": "Qwen/Qwen3.6-35B-A3B",
             }
 
-            db.ensure_chat_exists("chat_2")
+            db.ensure_chat_exists("chat_2", "u1")
             db.update_chat(
                 "chat_2",
                 last_model="Qwen/Qwen3.6-35B-A3B",
@@ -160,7 +160,7 @@ async def test_integration_deletion_safeguard_invalidation(
         "backend.database.db_layer.DB_PATH", temp_db
     ), patch("backend.database.db_wrapper.DB_PATH", temp_db):
 
-        db.ensure_chat_exists("chat_3")
+        db.ensure_chat_exists("chat_3", "u1")
         
         id1 = db.add_message(chat_id="chat_3", role="user", content="msg 1")
         id2 = db.add_message(

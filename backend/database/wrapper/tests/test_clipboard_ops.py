@@ -23,7 +23,7 @@ def test_clipboard_ops(temp_db):
     chat_id = "test-chat-uuid"
     
     # Save parent chat first due to Foreign Key constraint
-    db.save_chat(chat_id, "Test Title", 12345.6, 1)
+    db.save_chat(chat_id, "Test Title", 12345.6, 1, user_id="u1")
 
     # Set clipboard
     db.clipboard_set(chat_id, "cb-123", "Hello Clipboard")

@@ -135,7 +135,7 @@ class FileSystemChannelManager:
         Called from TaskManager's cleanup daemon thread — must be synchronous."""
         try:
             from backend.database import db
-            active_chats = {chat['id'] for chat in db.get_all_chats()}
+            active_chats = set(db.get_all_chat_ids())
             with cls._lock:
                 stale = [cid for cid in cls._channels if cid not in active_chats]
                 for cid in stale:

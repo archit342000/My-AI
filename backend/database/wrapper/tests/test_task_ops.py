@@ -27,7 +27,7 @@ def test_task_ops(temp_db):
     parent_id = 1
     
     # Ensure chat exists to satisfy foreign key constraint
-    db.ensure_chat_exists(chat_id)
+    db.ensure_chat_exists(chat_id, "u1")
     
     tasks = [{"id": 1, "task": "Do thing A"}, {"id": 2, "task": "Do thing B"}]
     

@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify, Response
 import json
 import logging
+from backend.auth.ownership import require_chat_owner
 from backend.tools.callbacks import callback_registry
 from backend.logging import log_event
 from backend.utils import read_json_object
@@ -16,6 +17,9 @@ def get_active_callbacks(chat_id):
     
     Checks both in-memory callbacks AND DB-persisted callbacks (for crash recovery).
     """
+    denied = require_chat_owner(chat_id)
+    if denied:
+        return denied
     callback_registry.clear_expired()
     
     # In-memory callbacks
@@ -75,8 +79,21 @@ def clarification_response():
     if not cb_id:
         return jsonify({"error": "callback_id required"}), 400
     
-    # Check in-memory first
+    # Find the chat the callback belongs to and check the caller owns it before resolving anything.
+    from backend.database import db
     entry = callback_registry.get(cb_id)
+    try:
+        callback_chat_id = entry.get('chat_id') if entry else db.get_callback_chat_id(cb_id)
+    except Exception as e:
+        logger.error(f"Failed to look up callback {cb_id}: {e}")
+        callback_chat_id = None
+    if callback_chat_id is None:
+        return jsonify({"error": "Unknown or expired callback_id"}), 404
+    if require_chat_owner(callback_chat_id):
+        # Same answer as an unknown callback, so ids of other users' callbacks cannot be probed.
+        return jsonify({"error": "Unknown or expired callback_id"}), 404
+
+    # Check in-memory first
     if entry:
         # In-memory callback exists (normal case) — resolve it
         callback_registry.resolve(cb_id, data)
@@ -86,7 +103,6 @@ def clarification_response():
     # No in-memory callback — try DB (crash recovery case: server restarted,
     # user is responding to a persisted callback)
     try:
-        from backend.database import db
         db.resolve_callback(cb_id, json.dumps(data))
         log_event("clarification_resolved_db", {"callback_id": cb_id})
         return jsonify({"success": True})

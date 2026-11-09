@@ -11,13 +11,20 @@ from backend.task_manager.manager import TaskManager
 USER_ROW = {"id": 1, "role": "user", "content": "old"}
 
 @pytest.fixture
-def app():
+def app(login_as, user_a):
+    """The chat app with every request made by `user_a` (tests switch user with `login_as(app, user_b)`)."""
     app = Flask(__name__)
     app.register_blueprint(chat_bp, url_prefix='/api/chats')
     app.register_blueprint(openai_bp, url_prefix='/v1/chat')
     app.register_blueprint(personas_bp, url_prefix='/api')
     app.register_blueprint(skills_bp, url_prefix='/api')
+    login_as(app, user_a)
     return app
+
+@pytest.fixture(autouse=True)
+def owned_by_user_a(owner_db):
+    """The ownership checks read the owner from the db: by default every chat and workspace belongs to user_a."""
+    return owner_db
 
 @pytest.fixture
 def client(app):
@@ -39,7 +46,7 @@ def test_list_chats(mock_db, client):
     assert response.status_code == 200
     assert response.json == [{"id": "chat1", "title": "Test Chat"}]
     # The sidebar list hides empty chats; get_all_chats (every chat) stays for internal callers
-    mock_db.get_listed_chats.assert_called_once_with()
+    mock_db.get_listed_chats.assert_called_once_with("user-a")
     mock_db.get_all_chats.assert_not_called()
 
 @patch('backend.chat.router.db')
@@ -94,7 +101,7 @@ def test_create_workspace_rejects_duplicate_name(mock_db, client):
     response = client.post('/api/chats/workspaces', json={"name": "Work"})
     assert response.status_code == 400
     assert response.json == {"error": "A workspace named 'Work' already exists"}
-    mock_db.workspace_name_exists.assert_called_with("Work")
+    mock_db.workspace_name_exists.assert_called_with("Work", "user-a")
     mock_db.create_workspace.assert_not_called()
 
 @patch('backend.chat.router.db')
@@ -103,7 +110,7 @@ def test_rename_workspace_rejects_duplicate_name_and_writes_nothing(mock_db, cli
     response = client.patch('/api/chats/workspaces/ws1', json={"name": "Work", "icon": "💼"})
     assert response.status_code == 400
     assert response.json == {"error": "A workspace named 'Work' already exists"}
-    mock_db.workspace_name_exists.assert_called_with("Work", exclude_id="ws1")
+    mock_db.workspace_name_exists.assert_called_with("Work", "user-a", exclude_id="ws1")
     mock_db.rename_workspace.assert_not_called()
     mock_db.update_workspace_icon.assert_not_called()
 
@@ -171,13 +178,13 @@ def test_save_chat_endpoint(mock_db, client):
     mock_db.save_chat.assert_called_once()
 
 @patch('backend.chat.router.db')
-def test_patch_chat_endpoint(mock_db, client):
-    # Test new chat logic
-    mock_db.get_chat.side_effect = [None, {"id": "chat1"}]
+def test_patch_chat_endpoint(mock_db, client, owned_by_user_a):
+    # A chat that does not exist yet is created for the caller (claim_chat) and then updated
+    mock_db.get_chat.return_value = {"id": "chat1"}
     response = client.patch('/api/chats/chat1', json={"title": "Updated Title"})
     assert response.status_code == 200
     assert response.json == {"success": True}
-    mock_db.ensure_chat_exists.assert_called_with("chat1")
+    owned_by_user_a.ensure_chat_exists.assert_called_with("chat1", "user-a")
     mock_db.rename_chat.assert_called_with(chat_id="chat1", new_title="Updated Title")
     
     # Test research mode validations
@@ -322,7 +329,7 @@ def test_chat_completions_releases_claim_when_stream_closes(mock_task_manager, m
 @patch('backend.chat.router.task_manager')
 def test_chat_completions_releases_claim_on_route_error(mock_task_manager, mock_db, client):
     mock_task_manager.claim_turn.return_value = True
-    mock_db.ensure_chat_exists.side_effect = Exception("db down")
+    mock_db.add_message.side_effect = Exception("db down")
     response = client.post('/v1/chat/completions', json={
         "chatId": "chat1", "model": "m", "messages": [{"role": "user", "content": "hi"}],
     })
@@ -680,7 +687,7 @@ def test_chat_completions_with_images(mock_log_event, mock_chat_handler_class, m
     mock_fm = mock_get_file_manager.return_value
     mock_fm.encode_file_for_vision.return_value = ("base64data", "image/png")
 
-    mock_db.get_file.return_value = {'id': 'img1', 'stored_filename': 'img1.png'}
+    mock_db.get_file.return_value = {'id': 'img1', 'stored_filename': 'img1.png', 'chat_id': 'chat1'}
     mock_db.add_message.return_value = 1
     mock_db.get_chat.return_value = {'title': 'Existing Chat'}
 
@@ -729,6 +736,7 @@ def test_chat_completions_with_images(mock_log_event, mock_chat_handler_class, m
 @patch('backend.chat.router.ChatHandler')
 @patch('backend.chat.router.log_event')
 def test_chat_completions_without_images(mock_log_event, mock_chat_handler_class, mock_get_file_manager, mock_db, client):
+    mock_db.get_file.return_value = {'id': 'doc1', 'chat_id': 'chat1'}
     mock_db.add_message.return_value = 1
     mock_db.get_chat.return_value = {'title': 'Existing Chat'}
 
@@ -1050,3 +1058,204 @@ def test_resume_chat_with_a_bad_body_does_not_take_the_turn_claim(client):
         resp = client.post('/api/chats/chat1/resume', data="[1]", content_type="application/json")
     assert resp.status_code == 400
     turns.claim_turn.assert_not_called()
+
+
+# =============================================================================
+# Ownership: user B can never see or change user A's chats and workspaces
+# =============================================================================
+
+WRITE_METHODS = ("add_message", "delete_message", "delete_chat", "update_chat", "rename_chat", "save_chat",
+                 "update_chat_workspace", "rollback_to_last_user_message", "edit_message", "update_last_user_id",
+                 "delete_workspace", "rename_workspace", "update_workspace_icon", "create_workspace")
+
+
+@pytest.fixture
+def b_on_a_chat(app, login_as, user_a, user_b, owned_by_user_a):
+    """The app with user B logged in while every chat and workspace in the db belongs to user A."""
+    owned_by_user_a.get_chat_owner.return_value = user_a["id"]
+    owned_by_user_a.get_workspace_owner.return_value = user_a["id"]
+    owned_by_user_a.ensure_chat_exists.return_value = user_a["id"]
+    login_as(app, user_b)
+    return app.test_client()
+
+
+CHAT_ROUTES = [
+    ("get", "/api/chats/chat1", None),
+    ("delete", "/api/chats/chat1", None),
+    ("patch", "/api/chats/chat1", {"title": "stolen"}),
+    ("get", "/api/chats/chat1/stream", None),
+    ("post", "/api/chats/chat1/resume", {}),
+    ("post", "/api/chats/chat1/stop", None),
+    ("put", "/api/chats/chat1/messages/1", {"content": "edited"}),
+    ("patch", "/api/chats/chat1/messages/1", {"content": "edited"}),
+    ("delete", "/api/chats/chat1/messages/1", None),
+    ("post", "/api/chats/chat1/discard", None),
+    ("post", "/v1/chat/completions", {"chatId": "chat1", "model": "m", "messages": [{"role": "user", "content": "hi"}]}),
+    ("post", "/api/chats/save", {"chat_id": "chat1", "title": "overwrite"}),
+]
+
+
+@pytest.mark.parametrize("method,url,body", CHAT_ROUTES)
+@patch('backend.chat.router.os.remove')
+@patch('backend.chat.router.task_manager')
+@patch('backend.chat.router.db')
+def test_user_b_gets_404_and_nothing_is_written_on_user_as_chat(mock_db, mock_tm, mock_remove, method, url, body, b_on_a_chat):
+    mock_db.get_chat.return_value = {"id": "chat1"}  # the chat exists (for the save route's existing-chat check)
+    kwargs = {"json": body} if body is not None else {}
+    response = getattr(b_on_a_chat, method)(url, **kwargs)
+    assert response.status_code == 404
+    assert response.get_json()["error"] == "Chat not found"
+    # Nothing but reads reached the db, whatever the route's write methods are called.
+    assert [c for c in mock_db.mock_calls if not c[0].startswith("get_")] == []
+    for name in WRITE_METHODS:
+        getattr(mock_db, name).assert_not_called()
+    mock_tm.claim_turn.assert_not_called()
+    mock_tm.stop_task.assert_not_called()
+    mock_remove.assert_not_called()  # the discard route removes task and state files
+
+
+@patch('backend.chat.router.db')
+def test_user_b_cannot_resolve_or_touch_workspaces_of_user_a(mock_db, b_on_a_chat):
+    assert b_on_a_chat.patch('/api/chats/workspaces/ws1', json={"name": "x"}).status_code == 404
+    assert b_on_a_chat.delete('/api/chats/workspaces/ws1').status_code == 404
+    for name in ("rename_workspace", "update_workspace_icon", "delete_workspace"):
+        getattr(mock_db, name).assert_not_called()
+
+
+@patch('backend.chat.router.db')
+def test_patch_and_save_refuse_a_workspace_of_another_user(mock_db, app, login_as, user_a, user_b, owned_by_user_a):
+    owned_by_user_a.get_workspace_owner.return_value = user_a["id"]
+    owned_by_user_a.get_chat_owner.return_value = user_b["id"]
+    owned_by_user_a.ensure_chat_exists.return_value = user_b["id"]
+    login_as(app, user_b)
+    client = app.test_client()
+    mock_db.get_chat.return_value = None
+    assert client.patch('/api/chats/mine', json={"workspace_id": "ws-of-a"}).status_code == 404
+    assert client.post('/api/chats/save', json={"chat_id": "new1", "workspace_id": "ws-of-a"}).status_code == 404
+    mock_db.update_chat_workspace.assert_not_called()
+    mock_db.save_chat.assert_not_called()
+    owned_by_user_a.ensure_chat_exists.assert_not_called()  # a refused workspace creates nothing, not even the chat
+
+
+@patch('backend.chat.router.db')
+def test_lists_and_delete_all_are_scoped_to_the_caller(mock_db, app, login_as, user_b):
+    login_as(app, user_b)
+    client = app.test_client()
+    mock_db.get_listed_chats.return_value = []
+    mock_db.get_all_workspaces.return_value = []
+    client.get('/api/chats/')
+    client.get('/api/chats/workspaces')
+    assert client.delete('/api/chats/').status_code == 200
+    mock_db.get_listed_chats.assert_called_once_with(user_b["id"])
+    mock_db.get_all_workspaces.assert_called_once_with(user_b["id"])
+    mock_db.delete_all_chats.assert_called_once_with(user_b["id"])
+
+
+@patch('backend.chat.router.db')
+def test_workspace_create_and_name_check_use_the_callers_id(mock_db, app, login_as, user_b):
+    login_as(app, user_b)
+    mock_db.workspace_name_exists.return_value = False
+    mock_db.create_workspace.return_value = {"id": "w1", "name": "N"}
+    assert app.test_client().post('/api/chats/workspaces', json={"name": "N"}).status_code == 200
+    mock_db.workspace_name_exists.assert_called_once_with("N", user_b["id"])
+    mock_db.create_workspace.assert_called_once_with("N", user_b["id"])
+
+
+@patch('backend.chat.router.db')
+def test_save_chat_creates_the_chat_owned_by_the_caller(mock_db, app, login_as, user_b, owned_by_user_a):
+    login_as(app, user_b)
+    owned_by_user_a.get_workspace_owner.return_value = user_b["id"]
+    owned_by_user_a.ensure_chat_exists.side_effect = lambda chat_id, user_id: user_id  # a new chat: the caller becomes the owner
+    mock_db.get_chat.return_value = None
+    mock_db.get_chat_file_systems.return_value = []
+    assert app.test_client().post('/api/chats/save', json={"chat_id": "new1", "workspace_id": "wsb"}).status_code == 200
+    assert mock_db.save_chat.call_args.kwargs["user_id"] == user_b["id"]
+    owned_by_user_a.ensure_chat_exists.assert_called_with("new1", user_b["id"])  # claimed before the write
+
+
+@patch('backend.chat.router.db')
+def test_save_chat_that_loses_a_create_race_is_404_and_writes_nothing(mock_db, app, login_as, user_b, user_a, owned_by_user_a):
+    """Another user created the same new chat id between the existence check and the save."""
+    login_as(app, user_b)
+    mock_db.get_chat.return_value = None  # looked new
+    mock_db.get_chat_file_systems.return_value = []
+    owned_by_user_a.ensure_chat_exists.return_value = user_a["id"]  # but user_a's row won the race
+    response = app.test_client().post('/api/chats/save', json={"chat_id": "raced", "title": "t"})
+    assert response.status_code == 404
+    mock_db.save_chat.assert_not_called()
+    mock_db.update_chat.assert_not_called()
+
+
+@patch('backend.chat.router.db')
+def test_saving_over_ones_own_chat_is_still_403(mock_db, client):
+    mock_db.get_chat.return_value = {"id": "chat1"}
+    assert client.post('/api/chats/save', json={"chat_id": "chat1"}).status_code == 403
+    mock_db.save_chat.assert_not_called()
+
+
+@patch('backend.chat.router.ChatHandler')
+@patch('backend.chat.router.task_manager')
+@patch('backend.chat.router.db')
+def test_completions_creates_a_new_chat_for_the_caller(mock_db, mock_tm, mock_handler, app, login_as, user_b, owned_by_user_a):
+    login_as(app, user_b)
+    owned_by_user_a.get_chat_owner.return_value = None  # the chat does not exist yet
+    owned_by_user_a.ensure_chat_exists.side_effect = lambda chat_id, user_id: user_id
+    mock_tm.claim_turn.return_value = True
+    mock_db.add_message.return_value = 1
+    mock_db.get_chat.return_value = {"title": "t"}
+
+    async def stream(**kwargs):
+        yield "data: ok\n\n"
+    mock_handler.return_value.initiate_chat.side_effect = lambda **kw: stream()
+    response = app.test_client().post('/v1/chat/completions', json={
+        "chatId": "brand-new", "model": "m", "messages": [{"role": "user", "content": "hi"}]})
+    assert response.status_code == 200
+    owned_by_user_a.ensure_chat_exists.assert_called_once_with("brand-new", user_b["id"])
+
+
+@patch('backend.chat.router.task_manager')
+@patch('backend.chat.router.db')
+def test_completions_rejects_files_of_another_chat_and_writes_nothing(mock_db, mock_tm, client, owned_by_user_a):
+    for meta in ({"id": "f1", "chat_id": "someone-elses-chat"}, None):
+        mock_db.get_file.return_value = meta
+        response = client.post('/v1/chat/completions', json={
+            "chatId": "chat1", "model": "m", "messages": [{"role": "user", "content": "hi"}],
+            "uploadedFiles": [{"file_id": "f1", "name": "x.pdf", "mime_type": "application/pdf"}]})
+        assert response.status_code == 400
+        assert response.get_json() == {"error": "Unknown file"}
+    owned_by_user_a.ensure_chat_exists.assert_not_called()  # not even the chat row is created
+    mock_db.add_message.assert_not_called()
+    mock_tm.claim_turn.assert_not_called()
+
+
+@patch('backend.chat.router.task_manager')
+@patch('backend.chat.router.db')
+def test_completions_on_a_foreign_chat_does_not_reveal_which_files_it_holds(mock_db, mock_tm, b_on_a_chat):
+    body = {"chatId": "chat1", "model": "m", "messages": [{"role": "user", "content": "hi"}],
+            "uploadedFiles": [{"file_id": "f1", "name": "x.pdf", "mime_type": "application/pdf"}]}
+    mock_db.get_file.return_value = {"id": "f1", "chat_id": "chat1"}  # attached to the foreign chat
+    attached = b_on_a_chat.post('/v1/chat/completions', json=body)
+    mock_db.get_file.return_value = None
+    unattached = b_on_a_chat.post('/v1/chat/completions', json=body)
+    assert attached.status_code == unattached.status_code == 404
+    mock_db.add_message.assert_not_called()
+
+
+@pytest.mark.parametrize("bad", [5, True, "file", {"file_id": "f1"}])
+@patch('backend.chat.router.task_manager')
+@patch('backend.chat.router.db')
+def test_completions_rejects_uploaded_files_that_are_not_a_list_with_400(mock_db, mock_tm, bad, client, owned_by_user_a):
+    response = client.post('/v1/chat/completions', json={
+        "chatId": "chat1", "model": "m", "messages": [{"role": "user", "content": "hi"}], "uploadedFiles": bad})
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "uploadedFiles must be a list"}
+    owned_by_user_a.ensure_chat_exists.assert_not_called()
+    mock_db.add_message.assert_not_called()
+    mock_tm.claim_turn.assert_not_called()
+
+
+def test_chat_routes_fail_closed_without_a_current_user():
+    app = Flask(__name__)  # no login: there is no current user
+    app.register_blueprint(chat_bp, url_prefix='/api/chats')
+    with patch('backend.chat.router.db'):
+        assert app.test_client().get('/api/chats/chat1').status_code == 404

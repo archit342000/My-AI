@@ -23,7 +23,7 @@ def temp_db():
 def test_artifact_ops(temp_db):
     db = temp_db
     chat_id = "test_artifacts"
-    db.ensure_chat_exists(chat_id)
+    db.ensure_chat_exists(chat_id, "u1")
     
     file_id = "file_123"
     db.save_file(
@@ -84,7 +84,7 @@ def test_artifact_ops(temp_db):
 def test_flush_sse_chunks_main_detailed(temp_db):
     db = temp_db
     chat_id = "test_flush_main"
-    db.ensure_chat_exists(chat_id)
+    db.ensure_chat_exists(chat_id, "u1")
     
     # 1. Create a parent user message
     msg_parent_id = db.add_message(
@@ -168,7 +168,7 @@ def test_flush_sse_chunks_main_detailed(temp_db):
 def test_flush_sse_chunks_sub_agent(temp_db):
     db = temp_db
     chat_id = "test_flush_sub"
-    db.ensure_chat_exists(chat_id)
+    db.ensure_chat_exists(chat_id, "u1")
     
     # 1. Create a parent message anchoring the sub-agent
     parent_id = db.add_message(

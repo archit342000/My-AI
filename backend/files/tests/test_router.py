@@ -7,10 +7,16 @@ import json
 from backend.files.router import files_bp
 
 @pytest.fixture
-def app():
+def app(login_as, user_a):
     app = Flask(__name__)
     app.register_blueprint(files_bp, url_prefix='/files')
+    login_as(app, user_a)
     return app
+
+@pytest.fixture(autouse=True)
+def owned_by_user_a(owner_db):
+    """Ownership checks read owners from the db: by default every chat belongs to user_a (the logged-in user)."""
+    return owner_db
 
 @pytest.fixture
 def client(app):
@@ -25,7 +31,7 @@ def mock_db():
 @patch('backend.files.router.os.makedirs')
 @patch('backend.files.router.os.remove')
 @patch('backend.files.router.os.path.exists', return_value=True)
-def test_upload_file_endpoint(mock_exists, mock_remove, mock_makedirs, mock_get_file_manager, client, mock_db):
+def test_upload_file_endpoint(mock_exists, mock_remove, mock_makedirs, mock_get_file_manager, client, mock_db, owned_by_user_a):
     # Setup mocks
     mock_file_manager = MagicMock()
     mock_file_manager.upload_file_async = AsyncMock(return_value=MagicMock(
@@ -47,7 +53,7 @@ def test_upload_file_endpoint(mock_exists, mock_remove, mock_makedirs, mock_get_
         res_data = response.get_json()
         assert res_data['success'] is True
         assert res_data['file_id'] == "test_file_id"
-        mock_db.ensure_chat_exists.assert_called_once_with('test_chat')
+        owned_by_user_a.ensure_chat_exists.assert_called_once_with('test_chat', 'user-a')
         mock_file_manager.upload_file_async.assert_called_once()
 
 @patch('backend.files.router.get_file_manager')
@@ -243,7 +249,7 @@ def test_get_file_endpoint(): pass
 @patch('backend.files.router.os.makedirs')
 @patch('backend.files.router.os.remove')
 @patch('backend.files.router.os.path.exists', return_value=True)
-def test_upload_file_endpoint_obscure_extension(mock_exists, mock_remove, mock_makedirs, mock_get_file_manager, client, mock_db):
+def test_upload_file_endpoint_obscure_extension(mock_exists, mock_remove, mock_makedirs, mock_get_file_manager, client, mock_db, owned_by_user_a):
     mock_file_manager = MagicMock()
     mock_file_manager.upload_file_async = AsyncMock(return_value=MagicMock(
         file_id="test_rust_file",
@@ -264,6 +270,16 @@ def test_upload_file_endpoint_obscure_extension(mock_exists, mock_remove, mock_m
         res_data = response.get_json()
         assert res_data['success'] is True
         assert res_data['file_id'] == "test_rust_file"
-        mock_db.ensure_chat_exists.assert_called_once_with('test_chat')
+        owned_by_user_a.ensure_chat_exists.assert_called_once_with('test_chat', 'user-a')
         mock_file_manager.upload_file_async.assert_called_once()
 
+
+
+def test_upload_claims_the_chat_for_the_caller_and_refuses_a_foreign_chat(app, client, login_as, user_a, user_b, owned_by_user_a):
+    data = {"chat_id": "chat1", "file": (io.BytesIO(b"hello"), "a.txt")}
+    with patch('backend.files.router.get_file_manager') as get_fm:
+        login_as(app, user_b)  # chat1 belongs to user_a: ensure_chat_exists returns user_a as the stored owner
+        resp = client.post('/files/upload', data=data, content_type='multipart/form-data')
+    assert resp.status_code == 404
+    get_fm.assert_not_called()  # nothing was written or processed
+    owned_by_user_a.ensure_chat_exists.assert_called_with("chat1", user_b["id"])

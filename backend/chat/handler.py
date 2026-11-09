@@ -99,8 +99,9 @@ class ChatHandler:
         Point 2: If files are provided without a message, stores them and returns.
         Point 3: If a message is provided, triggers the inference engine.
         """
-        # Ensure the chat room exists in the database
-        db.ensure_chat_exists(self.chat_id)
+        # Routes create (or refuse) the chat before a handler runs, so the handler only checks that it exists.
+        if db.get_chat_owner(self.chat_id) is None:
+            raise ValueError(f"Chat {self.chat_id} does not exist")
 
         # Clear resume_suppressed flag on new normal turn
         db.update_chat(self.chat_id, resume_suppressed=0)

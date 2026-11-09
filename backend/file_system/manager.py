@@ -125,6 +125,10 @@ async def create_fs_file(
     try:
         target_chat_id, target_workspace_id, physical_path = resolve_owner_and_physical_path(chat_id, path, workspace_id=workspace_id)
 
+        # Chats are created (and owner-checked) by the routes; a missing chat is an error here, not something to create.
+        if target_chat_id and db.get_chat_owner(target_chat_id) is None:
+            return {"success": False, "error": "Chat not found"}
+
         safe_path = sanitize_path(path)
         if not safe_path:
             return {
@@ -159,9 +163,6 @@ async def create_fs_file(
 
         # Derive title from path
         title = os.path.basename(lookup_path)
-
-        if target_chat_id:
-            db.ensure_chat_exists(target_chat_id)
 
         # Diagnostic: log exactly what is being passed to the DB insert
         logger.info(

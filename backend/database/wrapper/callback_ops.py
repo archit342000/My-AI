@@ -32,6 +32,15 @@ class CallbackOpsMixin:
         finally:
             conn.close()
 
+    def get_callback_chat_id(self, callback_id: str) -> str | None:
+        """Chat id a callback belongs to, or None when the callback is unknown."""
+        conn = make_connection()
+        try:
+            row = conn.execute("SELECT chat_id FROM pending_callbacks WHERE callback_id = ?", (callback_id,)).fetchone()
+            return row[0] if row else None
+        finally:
+            conn.close()
+
     def resolve_callback(self, callback_id: str, response: str):
         """Mark a callback as resolved with the user's response."""
         conn = make_connection()

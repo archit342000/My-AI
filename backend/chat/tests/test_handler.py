@@ -9,6 +9,7 @@ from backend.chat.tests.conftest import MockServerState
 def mock_db():
     # Compression reads the same db singleton; patch it too so no test touches backend/data.
     with patch('backend.chat.handler.db') as mock, patch('backend.inference.compression.db', mock):
+        mock.get_chat_owner.return_value = "user-a"  # routes create the chat first; the handler only checks it exists
         yield mock
 
 @pytest.fixture
@@ -143,7 +144,8 @@ async def test_initiate_chat(mock_db):
             chunks.append(chunk)
         
         assert chunks == ["chunk1"]
-        mock_db.ensure_chat_exists.assert_called_once()
+        mock_db.get_chat_owner.assert_called_once()
+        mock_db.ensure_chat_exists.assert_not_called()
         mock_db.add_collection.assert_called_once()
 
 @pytest.mark.anyio
@@ -393,7 +395,7 @@ async def test_initiate_chat_standalone_file_upload(mock_db):
         chunks.append(chunk)
         
     assert len(chunks) == 0  # No generation triggered
-    mock_db.ensure_chat_exists.assert_called_once()
+    mock_db.get_chat_owner.assert_called_once()
     mock_db.add_collection.assert_called_once_with(
         chat_id="test_chat_files",
         parent_message_id=-1,
@@ -518,3 +520,14 @@ async def test_run_orchestrated_stream_confirmation_flow(mock_db, mock_task_mana
 
 
 
+
+
+@pytest.mark.anyio
+async def test_initiate_chat_on_a_missing_chat_raises_and_creates_nothing(mock_db):
+    mock_db.get_chat_owner.return_value = None
+    handler = ChatHandler("no_such_chat")
+    with pytest.raises(ValueError, match="no_such_chat"):
+        async for _ in handler.initiate_chat(user_message={"id": 1}, model="m"):
+            pass
+    mock_db.ensure_chat_exists.assert_not_called()
+    mock_db.update_chat.assert_not_called()

@@ -3,6 +3,7 @@ import asyncio
 import logging
 from typing import Callable, Any
 
+from backend.auth.context import user_context
 from .executor import TaskExecutor
 
 logger = logging.getLogger(__name__)
@@ -39,8 +40,17 @@ class TaskWorker(threading.Thread):
             kwargs=self.kwargs
         )
 
+        # Log events from the task as the chat's owner (the task has no request, so no current user of its own).
+        from backend.database import db
         try:
-            self.loop.run_until_complete(executor.run())
+            owner = db.get_chat_owner(self.chat_id)
+        except Exception as e:  # a failed lookup must not skip the cleanup below (the chat would stay "running")
+            logger.error(f"TaskWorker {self.chat_id}: could not read the chat owner, logging without a user: {e}")
+            owner = None
+
+        try:
+            with user_context({"id": owner} if owner else None):
+                self.loop.run_until_complete(executor.run())
         except Exception as e:
             logger.error(f"TaskWorker {self.chat_id} failed: {e}", exc_info=True)
         finally:

@@ -16,6 +16,17 @@
   trusts every request and is for local development only; there is no network or header bypass.
 - Internal MCP services are reached only over Docker networks, with their own API keys, and their key checks fail closed: an unconfigured key rejects the protected routes. `playwright_mcp`'s `/portal/*` endpoints need the key too (the app adds it server-side). The portal VNC in `playwright_mcp` is gated by websockify HTTP auth with `PLAYWRIGHT_MCP_API_KEY` (`playwright_mcp/vnc_auth.py`); x11vnc stays passwordless on the container's localhost, so processes inside `playwright_mcp` can still reach it (accepted risk). Sandboxed code runs on `code_runner_runtime`, which sits only on `runner-net`, an internal-only network with no internet, database or app route. The app reaches it through `code_runner_mcp`, a TCP relay that joins `secure-internal` and `runner-net` and forwards only port 8100. `/install` goes through `pkg-proxy`, an nginx reverse proxy with three fixed upstreams (PyPI, `files.pythonhosted.org`, `registry.npmjs.org`) that serves GET and HEAD only; it joins `runner-net` and its own `pkg-egress` network, holds no secrets or mounts, and is not on `secure-internal`. Docker enforces the topology (`internal: true` removes the route out, separate bridges isolate networks) but has no per-destination egress allowlist, so the registry-only limit is enforced by the proxy configuration; the proxy container itself has general egress through `pkg-egress`. Optional, documented and not applied: a host `DOCKER-USER` rule that limits traffic from the `myai-pkg-egress` bridge to TCP 443 and DNS (UDP and TCP 53) and drops the rest (`iptables -I DOCKER-USER -i myai-pkg-egress -p tcp --dport 443 -j ACCEPT`, the same for `-p udp`/`-p tcp --dport 53`, then `-I DOCKER-USER -i myai-pkg-egress -j DROP` placed last); it limits ports only, not destinations. Residual: sandboxed code can reach the proxy, so it can send arbitrary GET requests (any path, query string and the headers nginx does not strip) to the three registry hosts and read the replies, a low-bandwidth outbound channel to public hosts that `/install` allows anyway; request bodies are not forwarded. The proxy shares `runner-net` with the runtime and the relay.
 
+## Ownership
+
+- Chats and workspaces belong to one user (`user_id`). A chat or workspace route calls `require_chat_owner` or
+  `require_workspace_owner` (`backend/auth/ownership.py`) before any read, write, task claim or stream; `claim_chat` creates a
+  chat for the caller or refuses another user's, and `reject_foreign_chat` lets a route validate input first without revealing
+  another user's chat. A foreign or missing id is `404` and writes nothing, and the check fails closed without a current user.
+  Admins get no bypass: `admin` governs configuration, not other users' data. Tests assert the status and that no write mock
+  was called (fixtures: `backend/conftest.py`).
+- Covered so far: the chat and workspace routes, the tools-router callbacks, file-system creation and file upload. Not yet owner-checked
+  (a later change scopes them): the other file, file-system, RAG and code-execution routes, and personas, skills and preferences.
+
 ## Input and output
 
 - Validate every request body, query string and tool argument before using it. Return `400` for bad input.

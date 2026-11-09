@@ -3,6 +3,7 @@ import logging
 import json
 import os
 import mimetypes
+from backend.auth.ownership import claim_chat, require_workspace_owner
 from backend.database import db
 from backend.utils import read_json_object
 from backend import config
@@ -75,6 +76,16 @@ async def create_fs_file_route():
 
     if (not chat_id and not workspace_id) or content is None:
         return jsonify({"error": "Missing chat_id/workspace_id or content"}), 400
+
+    # Create the chat for the caller, or refuse (404) another user's chat or workspace, before any file is written.
+    if workspace_id and workspace_id != "default":  # "default" means "no workspace" (see utils.resolve_owner_and_physical_path)
+        denied = require_workspace_owner(workspace_id)
+        if denied:
+            return denied
+    if chat_id:
+        denied = claim_chat(chat_id)
+        if denied:
+            return denied
 
     from backend.file_system.utils import sanitize_path
     path_parts = []

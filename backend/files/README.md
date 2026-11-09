@@ -11,7 +11,7 @@
 | `__init__.py` | Package entry point and export aggregator. | `FileManager`, `PDFExtractor` |
 | `manager.py` | Core file operations, storage management, and RAG integration. | `FileManager`, `FileMetadata` |
 | `pdf_extractor.py` | Specialized PDF text extraction with OCR fallback. | `PDFExtractor` |
-| `router.py` | API endpoints for uploading, deleting, and managing files. | `files_bp` |
+| `router.py` | API endpoints for uploading, deleting, and managing files. Upload claims the chat for the caller (another user's chat is a 404). | `files_bp` |
 
 ## 🧩 Architectural Context
 *   **Dependencies:**

@@ -7,10 +7,16 @@ from backend.file_system.router import file_system_bp
 from backend.file_system.router import remove_fs_file_tag
 
 @pytest.fixture
-def app():
+def app(login_as, user_a):
     app = Flask(__name__)
     app.register_blueprint(file_system_bp, url_prefix='/api/file_system')
+    login_as(app, user_a)
     return app
+
+@pytest.fixture(autouse=True)
+def owned_by_user_a(owner_db):
+    """Ownership checks read owners from the db: by default every chat belongs to user_a (the logged-in user)."""
+    return owner_db
 
 @pytest.fixture
 def client(app):
@@ -584,6 +590,39 @@ def test_fs_before_request_hook_survives_a_non_object_body(client, body):
     with patch('backend.file_system.utils.get_workspace_for_chat', return_value="ws-9"):
         resp = client.post('/api/file_system/?chat_id=c1&workspace_id=default', data=body, content_type="application/json")
     assert resp.status_code == 400 and resp.get_json() == {"error": "Request body must be a JSON object"}
+
+
+def test_create_fs_file_route_claims_the_chat_for_the_caller_and_refuses_a_foreign_chat(app, client, login_as, user_a, user_b, owned_by_user_a):
+    with patch('backend.file_system.create_fs_file', new_callable=AsyncMock) as mock_create:
+        mock_create.return_value = {"success": True, "file_system_id": "fs-1", "path": "x"}
+        assert client.post('/api/file_system/', json={"chat_id": "c1", "content": "hi"}).status_code == 200
+        owned_by_user_a.ensure_chat_exists.assert_called_with("c1", user_a["id"])
+        mock_create.reset_mock()
+
+        login_as(app, user_b)  # user_a's chat: ensure_chat_exists returns user_a as the stored owner
+        resp = client.post('/api/file_system/', json={"chat_id": "c1", "content": "hi"})
+    assert resp.status_code == 404
+    mock_create.assert_not_called()
+
+
+def test_create_fs_file_route_refuses_a_workspace_of_another_user(client, owned_by_user_a):
+    owned_by_user_a.get_workspace_owner.return_value = "someone-else"
+    with patch('backend.file_system.create_fs_file', new_callable=AsyncMock) as mock_create:
+        by_workspace = client.post('/api/file_system/', json={"workspace_id": "ws-of-b", "content": "x"})
+        with_own_chat = client.post('/api/file_system/', json={"chat_id": "c1", "workspace_id": "ws-of-b", "content": "x"})
+    assert by_workspace.status_code == 404 and with_own_chat.status_code == 404
+    mock_create.assert_not_called()
+
+
+def test_create_fs_file_route_default_workspace_for_a_chat_outside_any_workspace_still_works(client, owned_by_user_a):
+    """"default" means "no workspace" (utils.py); it must not be mistaken for a workspace id that nobody owns."""
+    owned_by_user_a.get_workspace_owner.return_value = None  # no such workspace exists
+    with patch('backend.file_system.create_fs_file', new_callable=AsyncMock) as mock_create, \
+         patch('backend.file_system.utils.get_workspace_for_chat', return_value=None):
+        mock_create.return_value = {"success": True, "file_system_id": "fs-1", "path": "x"}
+        resp = client.post('/api/file_system/', json={"chat_id": "c1", "content": "hi", "workspace_id": "default"})
+    assert resp.status_code == 200
+    mock_create.assert_called_once()
 
 
 def test_fs_before_request_workspace_rewrite_still_reaches_the_route(client):
