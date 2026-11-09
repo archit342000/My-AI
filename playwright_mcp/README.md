@@ -10,7 +10,8 @@
 | File | Purpose | Key Symbols/Exports |
 | :--- | :--- | :--- |
 | `server.py` | Main FastMCP server implementation with browser tools. | `visit_page_tool`, `browser_start_session`, `mcp` |
-| `entrypoint.sh` | Shell script to start the server (typically in a container). | - |
+| `entrypoint.sh` | Shell script to start the server (typically in a container). Starts x11vnc on localhost and, when `PLAYWRIGHT_MCP_API_KEY` is set, websockify for noVNC on port 6080 behind HTTP auth; without a key the portal VNC stays off. | - |
+| `vnc_auth.py` | websockify auth plugin: HTTP Basic auth whose password is the MCP API key (constant-time compare, key re-read on every request, fails closed). The app's portal proxies add the credential server-side, so it never reaches the browser. Accepted residual risk: x11vnc itself (bound to localhost, no password) is reachable by processes inside the same container, including the Chromium that renders arbitrary pages; only the network path from other containers is closed. | `ApiKeyBasicAuth` |
 | `requirements.txt` | Python dependencies for the server. | `playwright`, `FastMCP`, etc. |
 
 ## 🧩 Architectural Context
