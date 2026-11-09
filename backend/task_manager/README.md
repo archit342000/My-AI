@@ -29,6 +29,7 @@
 *   **Patterns:** 
     - **Worker-per-Chat:** Each chat session is isolated in its own thread to ensure high responsiveness and prevent global blocking.
     - **Crash Resilience:** The system maintains task state on disk (in `DATA_DIR/tasks`), enabling it to detect and flag interrupted tasks upon server restart for subsequent recovery.
+*   **Turn claim:** `claim_turn(chat_id)` / `release_turn_claim(chat_id)` reserve a chat's single turn slot. `POST /v1/chat/completions` claims it before storing anything and releases it when the response closes or the request fails; a running task blocks new claims on its own (contract in `docs/standards/api.md`).
 *   **Conventions:** The `task_manager` is a singleton; all background execution must be registered through it to ensure correct signal propagation and resource management.
 *   **Testing:**
     - **Local:** Unit tests in `tests/` ensure strict compliance with the 1:1 exhaustive testing rule. Tests for `executor.py`, `manager.py`, and `worker.py` verify thread orchestration, asyncio event loops, and task state persistence.
