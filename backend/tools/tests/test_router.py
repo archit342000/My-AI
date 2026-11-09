@@ -158,7 +158,7 @@ def test_proxy_portal_vnc_error(client):
         assert resp.status_code == 502
 
 def test_proxy_portal_init(client):
-    with patch('httpx.Client.post') as mock_post:
+    with patch('backend.config.get_secret', return_value="k"), patch('httpx.Client.post') as mock_post:
         mock_post.return_value = MagicMock(
             status_code=200, 
             json=lambda: {"url": "http://portal"}
@@ -166,11 +166,27 @@ def test_proxy_portal_init(client):
         resp = client.post('/tools/portal/init')
         assert resp.status_code == 200
         assert resp.json["url"] == "http://portal"
+        assert mock_post.call_args.kwargs["headers"] == {"X-MCP-API-KEY": "k"}
 
 def test_proxy_portal_init_error(client):
-    with patch('httpx.Client.post', side_effect=Exception("error")):
+    with patch('backend.config.get_secret', return_value="k"), patch('httpx.Client.post', side_effect=Exception("error")):
         resp = client.post('/tools/portal/init')
         assert resp.status_code == 500
+
+def test_proxy_portal_init_without_a_key_is_a_503_and_calls_nothing(client):
+    with patch('backend.config.get_secret', return_value=""), patch('httpx.Client.post') as mock_post:
+        resp = client.post('/tools/portal/init')
+    assert resp.status_code == 503
+    assert resp.json == {"error": "Browser portal is not configured"}
+    mock_post.assert_not_called()
+
+def test_proxy_portal_init_upstream_401_is_a_502_without_the_key(client):
+    with patch('backend.config.get_secret', return_value="super-secret"), patch('httpx.Client.post') as mock_post:
+        mock_post.return_value = MagicMock(status_code=401, text="Unauthorized")
+        resp = client.post('/tools/portal/init')
+    assert resp.status_code == 502
+    assert resp.json == {"error": "Browser portal authentication failed"}
+    assert "super-secret" not in resp.get_data(as_text=True)
 
 def test_clarification_response_missing_id(client):
     resp = client.post('/tools/clarification/response', json={"content": "no id"})
