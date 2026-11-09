@@ -55,6 +55,16 @@ workflow issue. Keep each entry to the core lesson.
 
 ## Docker and sandboxing
 
+- **`RLIMIT_NPROC` is counted host-wide per uid.** Without a user namespace a container uid is the same uid as on the host, so a limit
+  of 64 is already exceeded when a host user with that uid runs hundreds of processes; set the limit after the uid switch, and give
+  sandbox users uids no host user has (the code runner uses 61001 and 61002).
+- **Docker `tmpfs` mounts are `noexec` by default.** Compiled output cannot run from them; the code runner's `/tmp` is mounted `exec`
+  (a Go build failed with a 64 MB `/tmp` in testing).
+- **Compose ignores `uid`, `gid` and `mode` for file secrets.** A bind-mounted secret keeps the host file's owner and mode (a host
+  user's uid can be a container user's uid). Mount it inside a root-only tmpfs directory to keep it from other uids.
+- **Root without `CAP_DAC_OVERRIDE` cannot read or remove another uid's `0700` trees or SysV IPC objects.** Create and clean those as
+  that uid (see `code_runner_mcp/runner_helper.py`), and create the directories the root server must read with explicit modes.
+
 - **Docker cannot allowlist egress by host.** `internal: true` removes the route out and separate bridges isolate networks, but there is no per-destination policy. Give the sandbox egress only through a proxy with fixed upstreams (`pkg-proxy`), never by attaching the runtime to a non-internal network. In nginx, `proxy_set_header` is inherited only by locations that set none of their own: repeat the shared headers.
 
 ## Known defects (not yet fixed)

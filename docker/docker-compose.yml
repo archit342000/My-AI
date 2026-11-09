@@ -129,12 +129,35 @@ services:
     image: my-ai-code-runner
     networks:
       - runner-net
+    # Split-uid isolation (docs/standards/docker.md, "Exception: code_runner_runtime"). The server is root with only
+    # SETUID, SETGID and KILL; user code runs as uid 61001 and installs as 61002.
+    user: "0:0"
+    read_only: true  # leaves only the tmpfs mounts below, /dev/mqueue and the runner_packages volume (written only by runner-pkg) writable
+    init: true
+    cap_drop:
+      - ALL
+    cap_add:
+      - SETUID
+      - SETGID
+      - KILL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:exec,size=512m,mode=1777  # exec: compiled output runs from the sandbox; a Go build failed at 64m in testing
+      - /var/tmp:size=16m,mode=1777
+      - /dev/shm:size=16m,mode=1777
+      - /run/keys:size=1m,mode=0700  # root-only: user code cannot even traverse it, so it cannot read the API key
     volumes:
-      - ../code_runner_mcp:/app:ro
+      - ../code_runner_mcp:/app:ro  # must be world-readable: the helper runs from here as the runner uid
+      # Installed packages (written by runner-pkg, read-only for user code) must survive the read-only root and restarts.
+      - runner_packages:/opt/runner
     secrets:
-      - CODE_RUNNER_API_KEY
+      # Compose ignores uid/gid/mode for file secrets, so the key is mounted inside the root-only tmpfs directory. The
+      # host file must be readable by root (mode 644, or owned by root): the server has no CAP_DAC_OVERRIDE.
+      - source: CODE_RUNNER_API_KEY
+        target: /run/keys/CODE_RUNNER_API_KEY
     environment:
-      - API_KEY_FILE=/run/secrets/CODE_RUNNER_API_KEY
+      - API_KEY_FILE=/run/keys/CODE_RUNNER_API_KEY
       # Installs go through the allowlisted package proxy (pkg-proxy); the runtime itself has no route out.
       - PIP_INDEX_URL=http://pkg-proxy:8080/pypi/simple/
       - PIP_TRUSTED_HOST=pkg-proxy
@@ -151,6 +174,7 @@ services:
         limits:
           memory: ${CODE_RUNNER_MEMORY_LIMIT:-512M}
           cpus: "${CODE_RUNNER_CPU_LIMIT:-1.0}"
+          pids: 512
     restart: unless-stopped
 
   # Package proxy for /install: nginx with fixed upstreams only (PyPI, files.pythonhosted.org, registry.npmjs.org).
@@ -250,6 +274,7 @@ networks:
 
 volumes:
   mysql_data:
+  runner_packages:
 
 secrets:
   # Defining secrets mapped to files in the ../secrets directory

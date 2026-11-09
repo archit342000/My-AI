@@ -7,15 +7,15 @@ import subprocess
 from typing import List, Dict, Optional
 from pydantic import BaseModel, StrictInt
 import executor as executor_module
-from executor import BUSY, CLEANUP_FAILED, RUN_LOCK, CodeExecutor, ExecutionResult, clear_scratch, kill_group
+from executor import BUSY, CLEANUP_FAILED, RUN_LOCK, CodeExecutor, ExecutionResult, clear_scratch, kill_group, remove_sandbox
+import sandbox_user
 from fastapi import FastAPI, Header, HTTPException, Depends, status, WebSocket, WebSocketDisconnect
 import asyncio
-import shutil
 from package_names import validate_packages
 
 logger = logging.getLogger(__name__)
 
-# Ceiling for any client timeout (seconds). It stays below the 600 s idle timeout planned for relay.py,
+# Ceiling for any client timeout (seconds). It stays below the relay's 600 s idle timeout (relay.py),
 # so a long silent run is never cut by the relay before the runner times it out itself.
 MAX_TIMEOUT = 580
 DEFAULT_TIMEOUT = 30
@@ -38,8 +38,13 @@ def load_api_key() -> str:
     """
     key = ""
     if API_KEY_FILE and os.path.exists(API_KEY_FILE):
-        with open(API_KEY_FILE, "r") as f:
-            key = f.read().strip()
+        try:
+            with open(API_KEY_FILE, "r") as f:
+                key = f.read().strip()
+        except PermissionError as exc:
+            raise RuntimeError(
+                f"Cannot read {API_KEY_FILE}: the server runs without CAP_DAC_OVERRIDE, so the host key file must be "
+                "readable by root (mode 644, or owned by root)") from exc
     if not key:
         key = os.environ.get("CODE_RUNNER_API_KEY", "").strip()
     if not key:
@@ -47,8 +52,10 @@ def load_api_key() -> str:
     return key
 
 
-# Fail closed: importing this module (and so starting the service) needs a key.
+# Fail closed: importing this module (and so starting the service) needs a key and the right privileges.
 API_KEY = load_api_key()
+sandbox_user.check_privilege()
+executor_module.ensure_sandbox_base()
 
 
 def _key_matches(candidate: Optional[str]) -> bool:
@@ -150,75 +157,66 @@ def install_packages(req: InstallRequest) -> dict:
         raise HTTPException(status_code=400, detail=str(e))
 
     if mgr == "pip":
-        # Install with --user to avoid permissions issue as runner user
-        cmd = ["pip", "install", "--user", "--no-cache-dir"] + pkgs
-        cwd = None
-    elif mgr == "npm":
-        # Install in home directory of the runner user
-        cmd = ["npm", "install", "--no-save"] + pkgs
-        cwd = "/home/runner"
-        os.makedirs(cwd, exist_ok=True)
+        cmd = ["pip", "install", "--target", sandbox_user.PKG_PYTHON_DIR, "--upgrade", "--no-cache-dir"] + pkgs
+    else:
+        cmd = ["npm", "install", "--prefix", sandbox_user.PKG_NODE_DIR] + pkgs
 
+    # Installs run as runner-pkg (never root, never the user-code uid) into /opt/runner, one thing at a time on the runner.
+    if not RUN_LOCK.acquire(timeout=executor_module.LOCK_WAIT):
+        return {"stdout": "", "stderr": BUSY, "exit_code": 1, "success": False}
     try:
-        res = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd, timeout=120)
-        return {
-            "stdout": res.stdout,
-            "stderr": res.stderr,
-            "exit_code": res.returncode,
-            "success": res.returncode == 0
-        }
-    except subprocess.TimeoutExpired:
-        return {
-            "stdout": "",
-            "stderr": "Installation timed out after 120 seconds.",
-            "exit_code": -1,
-            "success": False
-        }
-    except Exception as e:
-        return {
-            "stdout": "",
-            "stderr": str(e),
-            "exit_code": 1,
-            "success": False
-        }
+        try:
+            res = subprocess.run(sandbox_user.limited(cmd), capture_output=True, text=True, cwd=sandbox_user.PKG_CWD if sandbox_user.isolation_enabled() else None,
+                                 timeout=120, env=sandbox_user.pkg_env(mgr), **sandbox_user.spawn_kwargs("pkg"))
+            result = {
+                "stdout": res.stdout,
+                "stderr": res.stderr,
+                "exit_code": res.returncode,
+                "success": res.returncode == 0
+            }
+        except subprocess.TimeoutExpired:
+            result = {"stdout": "", "stderr": "Installation timed out after 120 seconds.", "exit_code": -1, "success": False}
+        except Exception as e:
+            result = {"stdout": "", "stderr": str(e), "exit_code": 1, "success": False}
+        if clear_scratch():  # the installer's processes and temp files must not outlive the install
+            result["success"] = False
+            result["stderr"] = f"{result['stderr']}\n{CLEANUP_FAILED}".strip()
+        return result
+    finally:
+        RUN_LOCK.release()
 
 @app.get("/packages", dependencies=[Depends(verify_api_key)])
 def list_packages(manager: str = "pip"):
     mgr = manager.lower()
     packages = []
-    
-    if mgr == "pip":
-        cmd = ["pip", "list", "--format=json"]
-        cwd = None
-        try:
-            res = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd, timeout=30)
-            if res.returncode == 0:
-                data = json.loads(res.stdout)
-                for item in data:
-                    packages.append({
-                        "name": item.get("name"),
-                        "version": item.get("version")
-                    })
-        except Exception:
-            pass
-    elif mgr == "npm":
-        cmd = ["npm", "list", "--json", "--depth=0"]
-        cwd = "/home/runner"
-        if os.path.exists(cwd):
-            try:
-                res = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd, timeout=30)
-                if res.returncode == 0:
-                    data = json.loads(res.stdout)
-                    deps = data.get("dependencies", {})
-                    for name, details in deps.items():
-                        packages.append({
-                            "name": name,
-                            "version": details.get("version", "unknown")
-                        })
-            except Exception:
-                pass
-    else:
+    if mgr not in ("pip", "npm"):
         raise HTTPException(status_code=400, detail=f"Unsupported package manager: {mgr}")
+    cwd = sandbox_user.PKG_CWD if sandbox_user.isolation_enabled() else None
+    # Listing also runs as runner-pkg (no subprocess the server starts for a request runs as root) and under the runner
+    # lock, so a run's clean-up (which kills every process of that uid) cannot cut it off.
+    if not RUN_LOCK.acquire(timeout=executor_module.LOCK_WAIT):
+        raise HTTPException(status_code=503, detail=BUSY)
+    try:
+        run_kwargs = dict(capture_output=True, text=True, cwd=cwd, timeout=30, env=sandbox_user.pkg_env(mgr), **sandbox_user.spawn_kwargs("pkg"))
+        if mgr == "pip":
+            try:
+                res = subprocess.run(sandbox_user.limited(["pip", "list", "--path", sandbox_user.PKG_PYTHON_DIR, "--format=json"]), **run_kwargs)
+                if res.returncode == 0:
+                    for item in json.loads(res.stdout):
+                        packages.append({"name": item.get("name"), "version": item.get("version")})
+            except Exception:
+                logger.exception("pip list failed")
+        else:
+            try:
+                res = subprocess.run(sandbox_user.limited(["npm", "list", "--prefix", sandbox_user.PKG_NODE_DIR, "--json", "--depth=0"]), **run_kwargs)
+                if res.returncode == 0:
+                    for name, details in json.loads(res.stdout).get("dependencies", {}).items():
+                        packages.append({"name": name, "version": details.get("version", "unknown")})
+            except Exception:
+                logger.exception("npm list failed")
+
+    finally:
+        RUN_LOCK.release()
 
     return {
         "packages": packages,
@@ -295,10 +293,12 @@ async def execute_ws(websocket: WebSocket) -> None:
                 for proc in (comp_process, process):
                     if proc is not None:
                         await _kill(proc.pid)
+                # Synchronous on purpose (no await between here and the lock release): a cancellation cannot release the
+                # runner lock while a clean-up thread is still working. The helpers are bounded and take about 30 ms.
                 if sandbox_dir:
-                    shutil.rmtree(sandbox_dir, ignore_errors=True)
+                    cleanup_failed = bool(remove_sandbox(sandbox_dir))
                 if clear and holding_lock:  # only the run that holds the runner clears the shared directories
-                    cleanup_failed = bool(clear_scratch())
+                    cleanup_failed = bool(clear_scratch()) or cleanup_failed
             finally:
                 # whatever happened above (even a cancellation during the awaited kill), the group is dead before the
                 # runner is handed to the next run
@@ -348,12 +348,12 @@ async def execute_ws(websocket: WebSocket) -> None:
         if compile_cmd:
             await _send(websocket, {"type": "stdout", "data": "Compiling...\n"})
             comp_process = await asyncio.create_subprocess_exec(
-                *compile_cmd,
+                *sandbox_user.limited(compile_cmd),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=cwd,
                 env=env,
-                start_new_session=True
+                **sandbox_user.spawn_kwargs("runner")
             )
             try:
                 comp_stdout, comp_stderr = await asyncio.wait_for(comp_process.communicate(), timeout=COMPILE_TIMEOUT)
@@ -380,25 +380,25 @@ async def execute_ws(websocket: WebSocket) -> None:
             cmd = ["sqlite3", "sandbox.db", "-header", "-column"]
 
             process = await asyncio.create_subprocess_exec(
-                *cmd,
+                *sandbox_user.limited(cmd),
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=cwd,
                 env=env,
-                start_new_session=True
+                **sandbox_user.spawn_kwargs("runner")
             )
             process.stdin.write(sql_content.encode("utf-8"))
             process.stdin.close()
         else:
             process = await asyncio.create_subprocess_exec(
-                *run_cmd,
+                *sandbox_user.limited(run_cmd),
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=cwd,
                 env=env,
-                start_new_session=True
+                **sandbox_user.spawn_kwargs("runner")
             )
 
         # 5. Concurrent tasks for stdout/stderr streaming and stdin reading
@@ -486,7 +486,7 @@ async def execute_ws(websocket: WebSocket) -> None:
                         except Exception:
                             logger.exception("runner_kill_error")
                 if sandbox_dir:
-                    shutil.rmtree(sandbox_dir, ignore_errors=True)
+                    remove_sandbox(sandbox_dir)
                 if holding_lock:  # only the run that holds the runner may clear the shared directories
                     clear_scratch()
         finally:

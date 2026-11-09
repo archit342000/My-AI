@@ -5,7 +5,7 @@ import sys
 import threading
 import time
 import pytest
-from helpers import _gone, _grandchild_code
+from helpers import _gone, _grandchild_code, read_pid
 from unittest.mock import MagicMock, patch
 
 # Mock API Key environment variables before importing server
@@ -137,6 +137,31 @@ def test_load_api_key_does_not_swallow_an_unreadable_key_file(keyless, tmp_path)
         server.load_api_key()
 
 
+def test_an_unreadable_host_key_file_names_the_cause(keyless, tmp_path):
+    import server
+    key = tmp_path / "key"
+    key.write_text("secret")
+    keyless.setattr("server.API_KEY_FILE", str(key))
+    with patch("builtins.open", side_effect=PermissionError("denied")), pytest.raises(RuntimeError, match="readable by root"):
+        server.load_api_key()
+
+
+def test_the_service_refuses_to_start_as_root_with_the_unprivileged_flag():
+    """Importing the server as (simulated) root with the dev flag must fail: the flag must never run user code as root."""
+    env = {**os.environ, "CODE_RUNNER_API_KEY": "k", "CODE_RUNNER_ALLOW_UNPRIVILEGED": "1"}
+    proc = subprocess.run([sys.executable, "-c", "import os; os.geteuid = lambda: 0; import server"],
+                          cwd=os.path.dirname(os.path.dirname(__file__)), env=env, capture_output=True, text=True, timeout=60)
+    assert proc.returncode != 0 and "must not be set for a root server" in proc.stderr
+
+
+def test_the_service_refuses_to_start_unprivileged_without_the_flag():
+    env = {k: v for k, v in os.environ.items() if k != "CODE_RUNNER_ALLOW_UNPRIVILEGED"}
+    env["CODE_RUNNER_API_KEY"] = "k"
+    proc = subprocess.run([sys.executable, "-c", "import server"], cwd=os.path.dirname(os.path.dirname(__file__)),
+                          env=env, capture_output=True, text=True, timeout=60)
+    assert proc.returncode != 0 and "must start as root" in proc.stderr
+
+
 def test_the_service_refuses_to_start_without_a_key(tmp_path):
     env = {k: v for k, v in os.environ.items() if k not in ("CODE_RUNNER_API_KEY", "API_KEY_FILE")}
     proc = subprocess.run([sys.executable, "-c", "import server"], cwd=os.path.dirname(os.path.dirname(__file__)),
@@ -191,15 +216,74 @@ def test_install_runs_pip_with_valid_names():
     with patch("server.subprocess.run", return_value=MagicMock(stdout="ok", stderr="", returncode=0)) as run:
         res = client.post("/install", headers=AUTH, json={"packages": ["requests", "numpy==1.26.4"], "package_manager": "pip"})
     assert res.status_code == 200 and res.json()["success"] is True
-    assert run.call_args.args[0] == ["pip", "install", "--user", "--no-cache-dir", "requests", "numpy==1.26.4"]
+    assert run.call_args.args[0] == ["pip", "install", "--target", "/opt/runner/python", "--upgrade", "--no-cache-dir", "requests", "numpy==1.26.4"]
+    assert "HOME" not in run.call_args.kwargs["env"]  # pip needs PATH only
 
 
-def test_install_runs_npm_with_valid_names():
-    with patch("server.subprocess.run", return_value=MagicMock(stdout="ok", stderr="", returncode=0)) as run, \
-         patch("server.os.makedirs"):
+def test_install_runs_npm_with_valid_names_and_a_writable_home():
+    with patch("server.subprocess.run", return_value=MagicMock(stdout="ok", stderr="", returncode=0)) as run:
         res = client.post("/install", headers=AUTH, json={"packages": ["lodash@4", "@types/node"], "package_manager": "npm"})
     assert res.status_code == 200 and res.json()["success"] is True
-    assert run.call_args.args[0] == ["npm", "install", "--no-save", "lodash@4", "@types/node"]
+    assert run.call_args.args[0] == ["npm", "install", "--prefix", "/opt/runner/node", "lodash@4", "@types/node"]
+    env = run.call_args.kwargs["env"]
+    assert env["HOME"] == "/opt/runner/pkg-home" and env["npm_config_cache"] == "/opt/runner/pkg-home/.npm"
+
+
+def test_install_takes_the_runner_lock_and_cleans_up_afterwards():
+    import executor
+    seen = []
+
+    def fake_run(*a, **k):
+        seen.append(executor.RUN_LOCK.locked())
+        return MagicMock(stdout="ok", stderr="", returncode=0)
+
+    with patch("server.subprocess.run", side_effect=fake_run), patch("server.clear_scratch", return_value=[]) as clear:
+        res = client.post("/install", headers=AUTH, json={"packages": ["requests"], "package_manager": "pip"})
+    assert res.json()["success"] is True and seen == [True]
+    clear.assert_called_once()
+    assert not executor.RUN_LOCK.locked()
+
+
+def test_install_answers_busy_when_the_runner_lock_cannot_be_taken(monkeypatch):
+    import executor
+    monkeypatch.setattr(executor, "LOCK_WAIT", 0.1)
+    with executor.RUN_LOCK, patch("server.subprocess.run") as run:
+        res = client.post("/install", headers=AUTH, json={"packages": ["requests"], "package_manager": "pip"})
+    assert res.json()["success"] is False and "busy" in res.json()["stderr"]
+    run.assert_not_called()
+
+
+def test_install_reports_a_failed_cleanup():
+    with patch("server.subprocess.run", return_value=MagicMock(stdout="ok", stderr="", returncode=0)), \
+         patch("server.clear_scratch", return_value=["process:123"]):
+        res = client.post("/install", headers=AUTH, json={"packages": ["requests"], "package_manager": "pip"})
+    assert res.json()["success"] is False and "Runner cleanup failed." in res.json()["stderr"]
+
+
+def test_install_and_list_run_as_the_package_uid_when_isolation_is_on(monkeypatch):
+    monkeypatch.delenv("CODE_RUNNER_ALLOW_UNPRIVILEGED")
+    with patch("server.subprocess.run", return_value=MagicMock(stdout="[]", stderr="", returncode=0)) as run, \
+         patch("server.clear_scratch", return_value=[]):
+        client.post("/install", headers=AUTH, json={"packages": ["requests"], "package_manager": "pip"})
+        install_kwargs, install_argv = run.call_args.kwargs, run.call_args.args[0]
+        client.get("/packages?manager=pip", headers=AUTH)
+        list_kwargs, list_argv = run.call_args.kwargs, run.call_args.args[0]
+    for argv in (install_argv, list_argv):
+        assert argv[0] == "prlimit" and not any(a.startswith("--as") for a in argv)
+    for kwargs in (install_kwargs, list_kwargs):
+        assert kwargs["user"] == 61002 and kwargs["group"] == 61002 and kwargs["extra_groups"] == []
+        assert kwargs["start_new_session"] is True
+
+
+def test_packages_lists_from_the_runner_trees():
+    with patch("server.subprocess.run", return_value=MagicMock(stdout='[{"name": "requests", "version": "2.0"}]', returncode=0)) as run:
+        res = client.get("/packages?manager=pip", headers=AUTH)
+    assert res.json()["packages"] == [{"name": "requests", "version": "2.0"}]
+    assert run.call_args.args[0] == ["pip", "list", "--path", "/opt/runner/python", "--format=json"]
+    with patch("server.subprocess.run", return_value=MagicMock(stdout='{"dependencies": {"lodash": {"version": "4.1"}}}', returncode=0)) as run:
+        res = client.get("/packages?manager=npm", headers=AUTH)
+    assert res.json()["packages"] == [{"name": "lodash", "version": "4.1"}]
+    assert run.call_args.args[0] == ["npm", "list", "--prefix", "/opt/runner/node", "--json", "--depth=0"]
 
 
 def test_install_rejects_an_unsupported_manager_and_accepts_an_empty_list():
@@ -306,7 +390,7 @@ def test_websocket_timeout_kills_the_process_group(tmp_path):
     pidfile = tmp_path / "pid"
     frames = _ws_run({"language": "python", "code": _grandchild_code(pidfile) + "time.sleep(30)", "timeout": 2})
     assert frames[-1] == {"type": "exit", "code": -1}
-    assert _gone(int(pidfile.read_text())), "a grandchild survived the live-run timeout"
+    assert _gone(read_pid(pidfile)), "a grandchild survived the live-run timeout"
     assert _scratch_leftovers() == []
 
 
@@ -371,10 +455,8 @@ def test_websocket_client_disconnect_kills_the_group_and_clears(tmp_path):
     pidfile = tmp_path / "pid"
     with client.websocket_connect("/ws/execute", headers=WS_AUTH) as ws:
         ws.send_json({"language": "python", "code": _grandchild_code(pidfile) + "time.sleep(30)", "timeout": 20})
-        end = time.time() + 10
-        while time.time() < end and not pidfile.exists():
-            time.sleep(0.05)
-    assert _gone(int(pidfile.read_text())), "a grandchild survived the client disconnect"
+        read_pid(pidfile)
+    assert _gone(read_pid(pidfile)), "a grandchild survived the client disconnect"
     end = time.time() + 10
     while time.time() < end and executor.RUN_LOCK.locked():
         time.sleep(0.05)
@@ -502,3 +584,48 @@ def test_a_broken_stdin_frame_ends_the_run_and_frees_the_runner():
         while time.time() < end and executor.RUN_LOCK.locked():
             time.sleep(0.05)
         assert not executor.RUN_LOCK.locked()
+
+
+def test_package_children_start_in_a_directory_the_root_server_can_enter(monkeypatch):
+    """chdir runs before the uid switch, and root (no DAC_OVERRIDE) cannot enter the 0700 pkg-home."""
+    monkeypatch.delenv("CODE_RUNNER_ALLOW_UNPRIVILEGED")
+    with patch("server.subprocess.run", return_value=MagicMock(stdout="[]", stderr="", returncode=0)) as run, \
+         patch("server.clear_scratch", return_value=[]):
+        client.post("/install", headers=AUTH, json={"packages": ["requests"], "package_manager": "pip"})
+        client.get("/packages?manager=npm", headers=AUTH)
+        cwds = [c.kwargs["cwd"] for c in run.call_args_list]
+    assert cwds == ["/opt/runner", "/opt/runner"]
+
+
+def test_install_timeout_and_unexpected_errors_are_reported_and_still_clean_up():
+    with patch("server.clear_scratch", return_value=[]) as clear:
+        with patch("server.subprocess.run", side_effect=subprocess.TimeoutExpired("pip", 120)):
+            res = client.post("/install", headers=AUTH, json={"packages": ["requests"], "package_manager": "pip"}).json()
+        assert res["success"] is False and "timed out" in res["stderr"]
+        with patch("server.subprocess.run", side_effect=RuntimeError("boom")):
+            res = client.post("/install", headers=AUTH, json={"packages": ["requests"], "package_manager": "pip"}).json()
+        assert res["success"] is False and res["stderr"] == "boom"
+    assert clear.call_count == 2
+
+
+def test_packages_with_a_failing_or_malformed_listing_is_empty_not_an_error():
+    with patch("server.subprocess.run", return_value=MagicMock(stdout="", returncode=1)):
+        assert client.get("/packages?manager=pip", headers=AUTH).json()["packages"] == []
+    with patch("server.subprocess.run", return_value=MagicMock(stdout="not json", returncode=0)):
+        assert client.get("/packages?manager=npm", headers=AUTH).json()["packages"] == []
+
+
+def test_packages_takes_the_runner_lock_and_answers_busy_when_it_cannot(monkeypatch):
+    import executor
+    seen = []
+
+    def fake_run(*a, **k):
+        seen.append(executor.RUN_LOCK.locked())
+        return MagicMock(stdout="[]", returncode=0)
+
+    with patch("server.subprocess.run", side_effect=fake_run):
+        client.get("/packages?manager=pip", headers=AUTH)
+    assert seen == [True] and not executor.RUN_LOCK.locked()
+    monkeypatch.setattr(executor, "LOCK_WAIT", 0.1)
+    with executor.RUN_LOCK:
+        assert client.get("/packages?manager=pip", headers=AUTH).status_code == 503
