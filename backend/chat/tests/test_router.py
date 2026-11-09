@@ -34,10 +34,13 @@ def free_turn_slot():
 
 @patch('backend.chat.router.db')
 def test_list_chats(mock_db, client):
-    mock_db.get_all_chats.return_value = [{"id": "chat1", "title": "Test Chat"}]
+    mock_db.get_listed_chats.return_value = [{"id": "chat1", "title": "Test Chat"}]
     response = client.get('/api/chats/')
     assert response.status_code == 200
     assert response.json == [{"id": "chat1", "title": "Test Chat"}]
+    # The sidebar list hides empty chats; get_all_chats (every chat) stays for internal callers
+    mock_db.get_listed_chats.assert_called_once_with()
+    mock_db.get_all_chats.assert_not_called()
 
 @patch('backend.chat.router.db')
 def test_list_workspaces(mock_db, client):

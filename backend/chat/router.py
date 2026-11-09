@@ -28,8 +28,8 @@ FILE_SYSTEMS_DIR = os.path.join(config.DATA_DIR, "file_systems")
 @chat_bp.route('', methods=['GET'])
 @chat_bp.route('/', methods=['GET'])
 def list_chats():
-    logger.debug("[API] GET /api/chats - listing all chats")
-    chats = db.get_all_chats()
+    logger.debug("[API] GET /api/chats - listing chats that have content")
+    chats = db.get_listed_chats()
     return jsonify(chats)
 
 @chat_bp.route('/workspaces', methods=['GET'])

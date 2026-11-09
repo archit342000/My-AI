@@ -12,7 +12,7 @@
 | `artifact_ops.py` | Operations for artifacts (canvas-like objects). | `ArtifactOpsMixin` |
 | `base.py` | Base functionality, logging, and connection helpers. | `BaseMixin` |
 | `callback_ops.py` | Persistence for pending clarification callbacks. | `CallbackOpsMixin` |
-| `chat_ops.py` | CRUD for chats, workspaces, and chat metadata; FK-safe delete ordering. | `ChatOpsMixin` |
+| `chat_ops.py` | CRUD for chats, workspaces, and chat metadata; FK-safe delete ordering. `get_listed_chats` returns the chats with content (message, file or chat artifact) for the sidebar; `get_all_chats` returns every chat for internal callers. | `ChatOpsMixin` |
 | `clipboard_ops.py` | Operations for chat clipboards. | `ClipboardOpsMixin` |
 | `file_system_ops.py` | Operations for file system artifacts and versions. | `FileSystemOpsMixin` |
 | `history_ops.py` | Logic for weaving message history and turn anchoring. | `HistoryOpsMixin` |
@@ -34,4 +34,4 @@
 *   **Testing:**
     - **Local:** Unit tests in `tests/` verify SQL execution using an isolated temporary database.
     - **Run Command:** `EMBEDDING_URL="http://mock" AI_URL="http://mock" ./venv/bin/python3 -m pytest backend/database/wrapper/tests/`
-    - `tests/conftest.py` documents the env var requirement; `tests/test_chat_ops.py` includes FK-safety regression tests for `delete_chat` and `delete_all_chats`.
+    - `tests/conftest.py` documents the env var requirement; `tests/test_chat_ops.py` includes FK-safety regression tests for `delete_chat` and `delete_all_chats`, and tests for `get_listed_chats`.
