@@ -91,7 +91,7 @@ export function SystemSettingsModal({ open, onClose }: { open: boolean; onClose:
         {runner ? (
           <form onSubmit={(e) => { e.preventDefault(); setStatus(null); saveRunner.mutate(runner); }}>
             <Field label="Timeout (seconds)">
-              <input type="number" min={1} style={inputStyle} value={runner.code_runner_timeout} onChange={(e) => setRunner({ ...runner, code_runner_timeout: Number(e.target.value) })} />
+              <input type="number" min={1} max={system.data?.code_runner_max_timeout} style={inputStyle} value={runner.code_runner_timeout} onChange={(e) => setRunner({ ...runner, code_runner_timeout: Number(e.target.value) })} />
             </Field>
             <Field label="Memory limit" hint="For example 512M or 1G">
               <input style={inputStyle} value={runner.code_runner_memory_limit} onChange={(e) => setRunner({ ...runner, code_runner_memory_limit: e.target.value })} />

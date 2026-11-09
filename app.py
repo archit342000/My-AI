@@ -142,7 +142,9 @@ def code_execution_ws_proxy(ws):
             return
             
         # Walk and collect files like run_file does!
-        from backend.tools.implementations.code_executor import collect_project_files
+        from backend.tools.implementations.code_executor import (
+            collect_project_files, effective_code_runner_timeout, SETTINGS_TIMEOUT_ERROR,
+        )
         
         try:
             lang, files_list, entry_file = collect_project_files(chat_id, file_path)
@@ -151,8 +153,13 @@ def code_execution_ws_proxy(ws):
             ws.send(json.dumps({"type": "exit", "code": 1}))
             return
             
-        # Get configured code execution timeout
-        timeout = db.get_setting("code_runner_timeout", config.CODE_RUNNER_DEFAULT_TIMEOUT)
+        # Get configured code execution timeout (clamped to the maximum)
+        try:
+            timeout = effective_code_runner_timeout()
+        except ValueError:
+            ws.send(json.dumps({"type": "stderr", "data": SETTINGS_TIMEOUT_ERROR + "\n"}))
+            ws.send(json.dumps({"type": "exit", "code": 1}))
+            return
 
         # 2. Connect to code_runner_mcp
         api_key = config.CODE_RUNNER_API_KEY

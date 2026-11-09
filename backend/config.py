@@ -394,6 +394,7 @@ GIT_ALL_KNOWN_COMMANDS = [
 CODE_RUNNER_URL = os.getenv("CODE_RUNNER_URL", "http://code_runner_mcp:8100")
 CODE_RUNNER_API_KEY = get_secret("CODE_RUNNER_API_KEY")
 CODE_RUNNER_DEFAULT_TIMEOUT = int(os.getenv("CODE_RUNNER_DEFAULT_TIMEOUT", "30"))
+# Keep this at or below the runtime ceiling MAX_TIMEOUT in code_runner_mcp/server.py (it clamps silently above it).
 CODE_RUNNER_MAX_TIMEOUT = int(os.getenv("CODE_RUNNER_MAX_TIMEOUT", "120"))
 CODE_RUNNER_MAX_OUTPUT_SIZE = int(os.getenv("CODE_RUNNER_MAX_OUTPUT_SIZE", "65536"))  # 64KB
 CODE_RUNNER_MEMORY_LIMIT = os.getenv("CODE_RUNNER_MEMORY_LIMIT", "512M")

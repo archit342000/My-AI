@@ -22,7 +22,8 @@
 *   **Flow:**
     1. The main app container makes an HTTP request to `/execute`, `/install`, or `/packages`.
     2. `server.py` verifies the `X-API-KEY` header.
-    3. For `/execute`, `executor.py` writes the requested files into a temporary sandbox directory, sets the cwd to the parent of the entry file, executes the code via a subprocess as the non-privileged `runner` user, and cleans up the sandbox directory.
+    3. Client timeouts are clamped to `1..MAX_TIMEOUT` (580 s, below the relay idle timeout planned for the relay hardening change; a missing timeout means 30 s). `/execute` answers 400 for a non-integer string and 422 for a bool or float; the live-run WebSocket sends an `Error: timeout must be an integer.` frame and exit code 1.
+4. For `/execute`, `executor.py` writes the requested files into a temporary sandbox directory, sets the cwd to the parent of the entry file, executes the code via a subprocess as the non-privileged `runner` user, and cleans up the sandbox directory.
 
 ## 🛠️ Usage & Conventions
 *   **Patterns:** Sandbox isolation by recreating the directory structure under `/tmp/sandbox/<uuid>/` for each run.

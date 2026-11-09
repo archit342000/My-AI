@@ -325,18 +325,33 @@ def get_system_settings():
     settings['code_runner_memory_limit'] = settings.get('code_runner_memory_limit', config.CODE_RUNNER_MEMORY_LIMIT)
     settings['code_runner_cpu_limit'] = settings.get('code_runner_cpu_limit', config.CODE_RUNNER_CPU_LIMIT)
     settings['code_runner_max_output_size'] = settings.get('code_runner_max_output_size', config.CODE_RUNNER_MAX_OUTPUT_SIZE)
+    settings['code_runner_max_timeout'] = config.CODE_RUNNER_MAX_TIMEOUT   # read-only: the ceiling for code_runner_timeout
 
     return jsonify(settings)
 
 @tools_bp.route('/config/settings', methods=['POST'])
 def update_system_settings():
     from backend.database import db
+    from backend import config
     data, err = read_json_object()
     if err:
         return err
+    # Validate before writing anything, so a rejected request changes nothing.
+    if 'code_runner_timeout' in data:
+        value = data['code_runner_timeout']
+        max_timeout = config.CODE_RUNNER_MAX_TIMEOUT
+        is_int = isinstance(value, int) and not isinstance(value, bool)
+        if not is_int and isinstance(value, str) and value.isascii() and value.isdigit() and len(value) <= 9:
+            value, is_int = int(value), True
+        if not is_int or not 1 <= value <= max_timeout:
+            return jsonify({"error": f"code_runner_timeout must be an integer from 1 to {max_timeout}"}), 400
+        data['code_runner_timeout'] = value   # store the integer, whatever form it arrived in
     for key, val in data.items():
         if key == 'github_pat' and val == '__REDACTED__':
             # User submitted placeholder, ignore it
+            continue
+        if key == 'code_runner_max_timeout':
+            # Read-only: shown to clients, never stored
             continue
         db.set_setting(key, val)
         logger.info(f"Updated system setting: {key}")

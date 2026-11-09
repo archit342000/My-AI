@@ -778,8 +778,11 @@
         if (!res.ok) return;
         const data = await res.json();
         if (this.nodes.codeRunnerTimeout) {
+          // The ceiling comes from the API; set it first, because a range input clamps its value to the current max.
+          if (data.code_runner_max_timeout) this.nodes.codeRunnerTimeout.max = data.code_runner_max_timeout;
           this.nodes.codeRunnerTimeout.value = data.code_runner_timeout || 30;
-          this.nodes.codeRunnerTimeoutVal.textContent = (data.code_runner_timeout || 30) + "s";
+          // The slider clamps its value to its max: show what it actually holds.
+          this.nodes.codeRunnerTimeoutVal.textContent = this.nodes.codeRunnerTimeout.value + "s";
         }
         if (this.nodes.codeRunnerMemory) {
           this.nodes.codeRunnerMemory.value = data.code_runner_memory_limit || "512M";
