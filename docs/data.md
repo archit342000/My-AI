@@ -8,7 +8,7 @@ Mount it as a volume; losing it loses chats, files and vectors.
 | Path (under `DATA_DIR`) | Contents |
 |------|----------|
 | `chats.db` | SQLite database: all relational data (see below) |
-| `chroma_db/` | ChromaDB persistent store: vector collections for file, research and preference RAG (`CHROMA_PATH`) |
+| `chroma_db/` | ChromaDB persistent store: vector store for file RAG: the `file_store_vector` and `file_store_bm25` collections (`CHROMA_PATH`; no research or preference collections are written) |
 | `files/` | Uploaded files (`FILE_STORAGE_PATH`) |
 | `file_systems/` | Physical storage for the virtual per-chat file system |
 | `logs/` | `llm_calls/`, `tool_calls/`, `general/*.jsonl`, `app.log`, `network_index.jsonl` (see `docs/standards/errors-and-logging.md`) |
@@ -21,6 +21,9 @@ Mount it as a volume; losing it loses chats, files and vectors.
 - Main tables: `users` (identity and role, seeded with the admin from `ADMIN_EMAIL`), `workspaces`, `chats`, `messages`, `sub_agent_messages`, `personas`, `skills`, `memories`, `files`, `collections`,
   `file_systems` (+ `file_system_versions`, `file_system_permissions`), `pending_callbacks`,
   `system_settings`, `clipboard`, `code_execution_history`. `backend/database/init_db.py` is the authority for columns.
+- Ownership: `workspaces`, `chats`, `personas`, `skills` and `memories` carry `user_id` (nullable column, no foreign key); every other table
+  inherits its owner through `chat_id` or `workspace_id` (artifact tables through `file_system_id`; `users` and `system_settings` are global). On every start `init_db()` assigns ownerless root rows to the admin and stops with an
+  error when they exist and no admin is configured, or when ownerless skills share a name with another skill (rename or delete the duplicates). Skill names are unique per user (`UNIQUE(user_id, name)`); until the wrapper sets owners, triggers (`trg_skills_unowned_name`, `..._update`) reject any skill write that would share a name with another skill when either is ownerless (NULL owners are distinct under `UNIQUE`).
 - Artifact (`file_systems`) ids are UUID4 strings. Older artifacts may still have per-owner numeric ids, which keep working.
   `init_db()` drops the legacy `file_system_counters` table (migration 14). It held only per-owner sequence numbers, no user
   data; see Migrations rule 4 below.
@@ -34,7 +37,7 @@ There is no version table. `init_db()` runs on every start and must be idempoten
 
 1. Add new tables with `CREATE TABLE IF NOT EXISTS`.
 2. Add columns by checking `PRAGMA table_info` and then `ALTER TABLE ... ADD COLUMN` with a default.
-3. Renames and constraint changes recreate the table inside one transaction and also recreate child tables that reference it. Step 11 does this with `_rebuild_table_with_cascade` in `backend/database/init_db.py`: new table, copy by column name, drop, rename, re-create indexes, inside a per-table savepoint with foreign keys off (steps 0-10 are committed first, so each earlier step must stay idempotent), so a failed copy leaves the original table untouched. `_repair_leftover_old_tables` restores `<table>_old` leftovers from earlier failed runs on start, or logs them when both tables hold rows.
+3. Renames and constraint changes recreate the table inside one transaction and also recreate child tables that reference it. Step 11 does this with `_rebuild_table_with_cascade` in `backend/database/init_db.py`: new table, copy by column name, drop, rename, re-create indexes, inside a per-table savepoint with foreign keys off (steps 0-10 are committed first, and `_assign_owners` commits before its skills rebuild, so each earlier step must stay idempotent), so a failed copy leaves the original table untouched. `_repair_leftover_old_tables` restores `<table>_old` leftovers from earlier failed runs on start, or logs them when both tables hold rows.
 4. Backfill data in the same step. Never drop user data without an explicit, documented decision.
 5. Add a test in `backend/database/tests/` that runs `init_db()` twice and against a database created by the previous schema.
 
