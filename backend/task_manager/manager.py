@@ -32,6 +32,7 @@ class TaskManager:
         self._active_tasks: Dict[str, TaskWorker] = {}
         self._lock = threading.RLock()
         self.interrupted_tasks: Set[str] = set()
+        self._claimed_turns: Set[str] = set()
         
         # Cache cleanup thread
         self._cleanup_running = True
@@ -74,6 +75,25 @@ class TaskManager:
         with self._lock:
             worker = self._active_tasks.get(chat_id)
             return worker is not None and worker.is_alive()
+
+    def claim_turn(self, chat_id: str) -> bool:
+        """
+        Claims the single turn slot of a chat. Returns False if a task is alive for the chat or
+        another send already holds the claim. The caller holds the claim for the whole response
+        and releases it with `release_turn_claim` when the response closes or the request fails;
+        a live task blocks new claims on its own.
+        """
+        with self._lock:
+            worker = self._active_tasks.get(chat_id)
+            if chat_id in self._claimed_turns or (worker is not None and worker.is_alive()):
+                return False
+            self._claimed_turns.add(chat_id)
+            return True
+
+    def release_turn_claim(self, chat_id: str):
+        """Releases a claim taken with `claim_turn`. Releasing an unclaimed chat is a no-op."""
+        with self._lock:
+            self._claimed_turns.discard(chat_id)
 
     def pop_task(self, chat_id: str):
         """Removes a task from the active registry."""

@@ -262,6 +262,12 @@ def chat_completions():
     if not chat_id:
         return jsonify({"error": "chatId is required"}), 400
 
+    # One turn per chat: refuse before anything is stored if a turn is running or being started.
+    turns = task_manager  # the same manager claims and releases, whatever happens to the module global
+    if not turns.claim_turn(chat_id):
+        log_event("chat_send_rejected_turn_in_progress", {"chat_id": chat_id})
+        return jsonify({"error": "a response is already in progress"}), 400
+
     log_event("api_chat_completions", {"chat_id": chat_id, "model": model})
 
     try:
@@ -415,9 +421,13 @@ def chat_completions():
             finally:
                 loop.close()
 
-        return Response(generate_stream(), mimetype='text/event-stream')
+        response = Response(generate_stream(), mimetype='text/event-stream')
+        # The claim is held until the stream ends or the client disconnects.
+        response.call_on_close(lambda: turns.release_turn_claim(chat_id))
+        return response
 
     except Exception as e:
+        turns.release_turn_claim(chat_id)
         logger.error(f"Error in chat_completions route: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
 

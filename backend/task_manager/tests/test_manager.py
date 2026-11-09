@@ -1,7 +1,11 @@
 import pytest
+import threading
 import time
 from unittest.mock import MagicMock, patch
 from backend.task_manager.manager import TaskManager
+
+# The `manager` fixture patches threading.Thread; keep a handle on the real class for the race test.
+RealThread = threading.Thread
 
 @pytest.fixture
 def mock_worker_class():
@@ -176,3 +180,40 @@ def test_recover_tasks_listdir_error_resilience():
         mgr = TaskManager()
         mgr.recover_tasks()
         mock_logger.assert_called_with("Failed to list tasks persistence directory: Listdir failed")
+
+
+def test_claim_turn_and_release(manager):
+    assert manager.claim_turn("c1") is True
+    assert manager.claim_turn("c1") is False
+    assert manager.claim_turn("c2") is True  # other chats are independent
+    manager.release_turn_claim("c1")
+    assert manager.claim_turn("c1") is True
+    manager.release_turn_claim("never-claimed")  # no-op
+
+
+def test_claim_turn_refused_while_task_alive(manager, mock_worker_class):
+    mock_worker_class.return_value.is_alive.return_value = True
+    assert manager.start_task("c1", lambda: None) is True
+    assert manager.claim_turn("c1") is False
+    mock_worker_class.return_value.is_alive.return_value = False
+    assert manager.claim_turn("c1") is True
+
+
+def test_claim_turn_only_one_concurrent_claimant_wins(manager):
+    # Smoke test: under the GIL it would usually pass even without the lock, so it does not prove
+    # the locking; that is established by claim_turn doing its check and add inside `self._lock`.
+    workers = 8
+    barrier = threading.Barrier(workers)
+    results = []
+
+    def claim():
+        barrier.wait()
+        results.append(manager.claim_turn("race-chat"))
+
+    threads = [RealThread(target=claim) for _ in range(workers)]
+    for th in threads:
+        th.start()
+    for th in threads:
+        th.join()
+    assert results.count(True) == 1
+    assert results.count(False) == workers - 1

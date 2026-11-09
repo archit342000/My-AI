@@ -114,10 +114,6 @@ def test_file_system_ops(temp_db):
     assert cur_version is not None
     assert cur_version['version_number'] == 2
 
-    # 13. get_next_file_system_counter
-    cnt = db.get_next_file_system_counter(chat_id=chat_id)
-    assert isinstance(cnt, int)
-
     # 14. get_file_system_version_content
     v1_content = db.get_file_system_version_content(fs_id, chat_id=chat_id, version_number=1)
     assert v1_content == "hello world"

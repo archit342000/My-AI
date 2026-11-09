@@ -1,10 +1,12 @@
 import json
+import threading
 import pytest
 from unittest.mock import patch, MagicMock
 from flask import Flask
 
 from backend.chat.router import chat_bp, openai_bp, personas_bp, skills_bp
 from backend.chat.message_edit import NOTE_MARKER
+from backend.task_manager.manager import TaskManager
 
 USER_ROW = {"id": 1, "role": "user", "content": "old"}
 
@@ -20,6 +22,15 @@ def app():
 @pytest.fixture
 def client(app):
     return app.test_client()
+
+@pytest.fixture(autouse=True)
+def free_turn_slot():
+    """The completion tests share the real task_manager singleton, whose turn claim is only released
+    when a response is closed; keep it out of unrelated tests. Tests that exercise the claim patch
+    `backend.chat.router.task_manager` themselves."""
+    with patch('backend.chat.router.task_manager.claim_turn', return_value=True), \
+         patch('backend.chat.router.task_manager.release_turn_claim'):
+        yield
 
 @patch('backend.chat.router.db')
 def test_list_chats(mock_db, client):
@@ -223,6 +234,104 @@ def test_chat_completions_stream_error(mock_chat_handler_class, mock_log_event, 
     data = response.get_data(as_text=True)
     assert "data: ok\n\n" in data
     assert "simulated error" in data
+
+@patch('backend.chat.router.db')
+@patch('backend.chat.router.ChatHandler')
+@patch('backend.chat.router.task_manager')
+def test_chat_completions_rejects_second_send_when_turn_in_progress(mock_task_manager, mock_handler_class, mock_db, client):
+    mock_task_manager.claim_turn.return_value = False
+    response = client.post('/v1/chat/completions', json={
+        "chatId": "chat1", "model": "m", "messages": [{"role": "user", "content": "hi"}],
+    })
+    assert response.status_code == 400
+    assert response.json == {"error": "a response is already in progress"}
+    mock_task_manager.claim_turn.assert_called_once_with("chat1")
+    mock_db.ensure_chat_exists.assert_not_called()
+    mock_db.add_message.assert_not_called()
+    mock_handler_class.assert_not_called()
+    mock_task_manager.release_turn_claim.assert_not_called()
+
+@patch('backend.chat.router.db')
+@patch('backend.chat.router.ChatHandler')
+@patch('backend.chat.router.task_manager')
+def test_chat_completions_releases_claim_when_stream_closes(mock_task_manager, mock_handler_class, mock_db, client):
+    mock_task_manager.claim_turn.return_value = True
+    mock_db.add_message.return_value = 1
+
+    async def initiate_chat(**kwargs):
+        yield "data: chunk\n\n"
+
+    mock_handler_class.return_value.initiate_chat.return_value = initiate_chat()
+    response = client.post('/v1/chat/completions', json={
+        "chatId": "chat1", "model": "m", "messages": [{"role": "user", "content": "hi"}],
+    })
+    assert response.status_code == 200
+    mock_task_manager.release_turn_claim.assert_not_called()  # held while the stream is open
+    response.close()
+    mock_task_manager.release_turn_claim.assert_called_once_with("chat1")
+
+@patch('backend.chat.router.db')
+@patch('backend.chat.router.task_manager')
+def test_chat_completions_releases_claim_on_route_error(mock_task_manager, mock_db, client):
+    mock_task_manager.claim_turn.return_value = True
+    mock_db.ensure_chat_exists.side_effect = Exception("db down")
+    response = client.post('/v1/chat/completions', json={
+        "chatId": "chat1", "model": "m", "messages": [{"role": "user", "content": "hi"}],
+    })
+    assert response.status_code == 500
+    mock_task_manager.release_turn_claim.assert_called_once_with("chat1")
+
+@patch('backend.chat.router.db')
+@patch('backend.chat.router.ChatHandler')
+def test_two_sends_to_one_chat_store_one_user_message(mock_handler_class, mock_db, client):
+    """Regression: a second send while the first is still streaming used to store a second user row."""
+    with patch("backend.task_manager.manager.TaskWorker"), patch("threading.Thread"):
+        real_manager = TaskManager()
+    mock_db.add_message.return_value = 1
+
+    async def initiate_chat(**kwargs):
+        yield "data: chunk\n\n"
+
+    mock_handler_class.return_value.initiate_chat.side_effect = lambda **kw: initiate_chat()
+    body = {"chatId": "chat1", "model": "m", "messages": [{"role": "user", "content": "hi"}]}
+    with patch('backend.chat.router.task_manager', real_manager):
+        first = client.post('/v1/chat/completions', json=body)
+        second = client.post('/v1/chat/completions', json=body)
+        assert first.status_code == 200
+        assert second.status_code == 400
+        assert second.json == {"error": "a response is already in progress"}
+        assert mock_db.add_message.call_count == 1
+
+        first.close()  # the first stream ended, so the chat can take a new turn
+        third = client.post('/v1/chat/completions', json=body)
+        assert third.status_code == 200
+        assert mock_db.add_message.call_count == 2
+
+def test_reattach_stream_with_a_held_claim_and_no_running_task_is_204(client):
+    with patch("backend.task_manager.manager.TaskWorker"), patch("threading.Thread"):
+        real_manager = TaskManager()
+    assert real_manager.claim_turn("chat1")
+    with patch('backend.chat.router.task_manager', real_manager):
+        response = client.get('/api/chats/chat1/stream')
+    assert response.status_code == 204
+
+@patch('backend.database.response_cache')
+def test_reattach_stream_is_served_while_a_turn_runs_and_its_claim_is_held(mock_response_cache, client):
+    with patch("backend.task_manager.manager.TaskWorker") as worker_class, patch("threading.Thread"):
+        real_manager = TaskManager()
+        worker_class.return_value.is_alive.return_value = True
+        assert real_manager.claim_turn("chat1")
+        assert real_manager.start_task("chat1", lambda: None)  # the turn is running now
+
+    async def subscribe(chat_id):
+        yield "data: chunk1\n\n"
+
+    mock_response_cache.subscribe = subscribe
+    with patch('backend.chat.router.task_manager', real_manager):
+        response = client.get('/api/chats/chat1/stream')
+    assert response.status_code == 200
+    assert response.mimetype == 'text/event-stream'
+    assert "data: chunk1\n\n" in response.get_data(as_text=True)
 
 @patch('backend.chat.router.task_manager')
 @patch('backend.database.response_cache')

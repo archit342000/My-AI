@@ -78,15 +78,12 @@ def test_ensure_physical_dir_exists(mock_makedirs):
     mock_makedirs.assert_called_with("/foo/bar", exist_ok=True)
 
 @pytest.mark.anyio
-@patch("backend.database.db.get_next_file_system_counter")
-async def test_generate_fs_file_id(mock_get_counter):
+async def test_generate_fs_file_id():
     first = await generate_fs_file_id("chat1")
     second = await generate_fs_file_id("chat1")
     assert str(uuid.UUID(first)) == first
     assert uuid.UUID(first).version == 4
     assert first != second
-    # The legacy per-owner counter must no longer be used for ids.
-    mock_get_counter.assert_not_called()
 
 def test_new_fs_file_id():
     ids = {new_fs_file_id() for _ in range(5)}

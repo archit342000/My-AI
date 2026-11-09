@@ -231,3 +231,27 @@ describe('resumeTurn (Retry)', () => {
     expect(useToastStore.getState().toasts.some((t) => t.message === 'Select a model first')).toBe(true);
   });
 });
+
+describe('sendTurn when the server refuses the send (400)', () => {
+  it('shows only a toast: no inline error row, nothing kept as interrupted', async () => {
+    mockCompletion(
+      () =>
+        new Response(JSON.stringify({ error: 'a response is already in progress' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+    );
+    await sendTurn(args());
+    expect(useToastStore.getState().toasts.some((t) => t.message === 'a response is already in progress')).toBe(true);
+    expect(useStreamStore.getState().interrupted).toBeNull();
+    expect(useStreamStore.getState().chatId).toBeNull();
+  });
+
+  it('still keeps the partial reply for other failures (500)', async () => {
+    mockCompletion(
+      () => new Response(JSON.stringify({ error: 'boom' }), { status: 500, headers: { 'Content-Type': 'application/json' } }),
+    );
+    await sendTurn(args());
+    expect(useStreamStore.getState().interrupted).toMatchObject({ kind: 'error', message: 'boom' });
+  });
+});

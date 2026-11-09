@@ -25,7 +25,7 @@
     - `backend.tools`: Tool definitions and implementation registry.
     - `backend.logging`: Standardized event logging and tracking.
 *   **Flow:**
-    1. **Request:** `router.py` receives a chat request (e.g., via `openai_bp`).
+    1. **Request:** `router.py` receives a chat request (e.g., via `openai_bp`). `chat_completions` first claims the chat's turn slot (`task_manager.claim_turn`) and returns 400 if a turn is already in progress (`docs/standards/api.md`).
     2. **Orchestration:** `ChatHandler` initiates a background task.
     3. **Execution:** `TurnHandler` wraps the turn logic, ensuring serial execution.
     4. **Inference & Tools:** `ChatHandler` streams from `InferenceEngine`. If tool calls are detected, `ToolHandler` executes them, potentially delegating to `AgentHandler` for sub-agent flows.
