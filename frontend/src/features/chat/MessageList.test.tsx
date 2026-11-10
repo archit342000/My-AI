@@ -8,6 +8,7 @@ import { toTurns } from '../../lib/chat-model';
 import { applyChunk, emptyLiveTurn } from './stream-reducer';
 import { oneToolReply, threeToolReply } from '../../test/fixtures/chat-detail';
 import { chatsApi } from '../../api/chats';
+import { modelsApi } from '../../api/settings';
 import { chatListInvalidated } from '../../test/invalidation';
 import { useStreamStore } from '../../state/stream-store';
 import { useThoughtStore } from '../../state/thought-store';
@@ -493,6 +494,68 @@ describe('MessageList thought box', () => {
     fireEvent.click(within(row).getByRole('button', { name: 'Delete message' }));
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
     await waitFor(() => expect(useThoughtStore.getState().expanded).toEqual({}));
+  });
+});
+
+describe('MessageList bubble column', () => {
+  beforeEach(() => {
+    useStreamStore.setState({ chatId: null, live: null, pending: null, interrupted: null, controller: null });
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    useStreamStore.setState({ chatId: null, live: null, pending: null, interrupted: null, controller: null });
+  });
+
+  it('shows the model display name from the config, and the id until it is known', async () => {
+    vi.spyOn(modelsApi, 'config').mockResolvedValue({ general: { text: 'Google/M' } });
+    const turns = toTurns([
+      { id: 1, chat_id: 'c1', role: 'user', content: 'hi', parent_type: 'main' },
+      { id: 2, chat_id: 'c1', role: 'assistant', content: 'yo', parent_type: 'main', model: 'Google/M' },
+    ] as never);
+    const { container } = renderWithProviders(<MessageList turns={turns} chatId="c1" onChanged={() => undefined} />);
+    expect(container.querySelector('.bot-model-label')?.textContent).toBe('Google/M');
+    await waitFor(() => expect(container.querySelector('.bot-model-label')?.textContent).toBe('General Text (M)'));
+  });
+
+  it('the action row is inside the answer column, after the model label', () => {
+    const { container } = renderWithProviders(
+      <MessageList turns={toTurns(oneToolReply)} chatId="c1" onChanged={() => undefined} />,
+    );
+    const wrapper = container.querySelector('[data-message-id="2"] .message-content-wrapper');
+    const actions = wrapper?.querySelector('.message-actions-container');
+    expect(actions).toBeTruthy();
+    expect(wrapper?.querySelector('.bot-message-footer')?.compareDocumentPosition(actions as Node)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+  });
+
+  it('the Stopped notice and the inline error are inside the answer column', () => {
+    useStreamStore.setState({
+      chatId: 'c1',
+      live: null,
+      pending: null,
+      interrupted: { chatId: 'c1', kind: 'stopped', message: null, live: { steps: [], model: null, redactNotice: null, snapshot: [] } as never },
+      controller: null,
+    });
+    const stopped = renderWithProviders(<MessageList turns={[]} chatId="c1" onChanged={() => undefined} />);
+    expect(stopped.container.querySelector('.message-content-wrapper .turn-notice')).toBeTruthy();
+    stopped.unmount();
+    useStreamStore.setState({
+      interrupted: { chatId: 'c1', kind: 'error', message: 'down', live: { steps: [], model: null, redactNotice: null, snapshot: [] } as never },
+    });
+    const failed = renderWithProviders(<MessageList turns={[]} chatId="c1" onChanged={() => undefined} />);
+    expect(failed.container.querySelector('.message-content-wrapper .chat-error')).toBeTruthy();
+  });
+
+  it('opening the editor focuses the textarea with the caret at the end, and Escape closes it', () => {
+    renderWithProviders(<MessageList turns={toTurns([...msgs] as never)} chatId="c1" onChanged={() => undefined} />);
+    const row = document.querySelector('[data-message-id="1"]') as HTMLElement;
+    fireEvent.click(within(row).getByRole('button', { name: 'Edit message' }));
+    const box = within(row).getByLabelText('Edit message', { selector: 'textarea' }) as HTMLTextAreaElement;
+    expect(box).toHaveFocus();
+    expect(box.selectionStart).toBe(box.value.length);
+    fireEvent.keyDown(box, { key: 'Escape' });
+    expect(within(row).queryByLabelText('Edit message', { selector: 'textarea' })).toBeNull();
   });
 });
 

@@ -151,6 +151,18 @@ describe('retry does not duplicate the user row (F-16)', () => {
     expect(seen.pending).toMatchObject({ text: 'hello' });
   });
 
+  it('refreshes the chat\'s file list when a turn that wrote files ends, so the files button follows them', async () => {
+    mockCompletion(() =>
+      sseResponse(
+        sseText([toolCallChunk('c1', 'create_fs_file', '{}'), toolResultChunk('c1', 'done'), contentChunk('Hi')]),
+      ),
+    );
+    const a = args();
+    const invalidate = vi.spyOn(a.queryClient, 'invalidateQueries');
+    await sendTurn(a);
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['artifacts', 'chat-1|'] });
+  });
+
   it('numbers the pending user turn, which is the key of its reply\'s thought box', async () => {
     const seen: { pending?: unknown } = {};
     mockCompletion(() => sseResponse(sseText([contentChunk('Hi')])), seen);

@@ -5,6 +5,7 @@
 import type { QueryClient } from '@tanstack/react-query';
 import { chatsApi, queryKeys } from '../../api/chats';
 import { ApiError } from '../../api/client';
+import { artifactsKey } from '../../api/filesystem';
 import {
   buildCompletionBody,
   reattachStream,
@@ -13,7 +14,6 @@ import {
   type HistoryMessage,
   type UploadedFile,
 } from '../../api/completions';
-import { artifactsKey } from '../../api/filesystem';
 import { toTurns, turnText } from '../../lib/chat-model';
 import { finishedFileChanges } from '../../lib/fs-tools';
 import type { ChatDetail, ChatSummary } from '../../api/types';

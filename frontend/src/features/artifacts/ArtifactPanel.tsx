@@ -4,7 +4,6 @@ import { queryKeys } from '../../api/chats';
 import {
   artifactsApi,
   artifactsKey,
-  scopeKey,
   type Artifact,
   type ScopeRef,
 } from '../../api/filesystem';
@@ -50,7 +49,7 @@ export function ArtifactPanel({ scope, onClose }: ArtifactPanelProps) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [filter, setFilter] = useState('');
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
-  const key = scopeKey(scope);
+  const [, key] = artifactsKey(scope);
 
   const list = useQuery({
     queryKey: artifactsKey(scope),

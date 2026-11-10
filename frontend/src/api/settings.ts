@@ -110,9 +110,10 @@ export const personasApi = {
     apiRequest(`/api/personas/${encodeURIComponent(id)}`, { method: 'DELETE' }),
 };
 
+/** `GET /api/models/config`: model ids by role (`general.text`, `research.main`, `vision`, `coder` ...). */
 export interface ModelConfig {
-  general?: { text?: string };
-  research?: { main?: string };
+  general?: Record<string, string>;
+  research?: Record<string, string>;
 }
 
 export const modelsApi = {
@@ -135,5 +136,13 @@ export const settingsKeys = {
   skills: ['skills'] as const,
   personas: ['personas'] as const,
   models: ['models'] as const,
+  modelConfig: ['models', 'config'] as const,
   version: ['version'] as const,
+};
+
+/** The model config query: one definition so every observer of it shares the same options. */
+export const modelConfigQuery = {
+  queryKey: settingsKeys.modelConfig,
+  queryFn: () => modelsApi.config(),
+  staleTime: 300_000,
 };

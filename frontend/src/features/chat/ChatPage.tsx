@@ -34,20 +34,10 @@ function ChatTitle({ chatId, title }: { chatId: string; title: string }) {
 
   return (
     <div id="chat-title-header" className="chat-title-header">
-      <div
-        className="chat-header-content"
-        style={{
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          width: '100%',
-          maxWidth: 800,
-          position: 'relative',
-        }}
-      >
+      <div className="chat-header-content chat-title-row">
         {editing ? (
           <input
-            className="chat-title-display"
+            className="chat-title-display chat-title-input"
             autoFocus
             aria-label="Chat title"
             value={draft}

@@ -11,6 +11,7 @@ import { useThemeSync } from '../hooks/useThemeSync';
 import { useModalStore } from '../state/modal-store';
 import { useUiStore } from '../state/ui-store';
 import { useUserStore } from '../state/user-store';
+import { useChatHasNoFiles } from '../features/artifacts/useChatHasNoFiles';
 import { Sidebar } from './Sidebar';
 import { DialogHost } from '../features/settings/DialogHost';
 import { Composer } from '../features/composer/Composer';
@@ -42,6 +43,7 @@ export function RootLayout() {
     if (dialogOpen && window.innerWidth <= 768) useUiStore.getState().setSidebarCollapsed(true);
   }, [dialogOpen]);
   const onLogs = useLocation().pathname.startsWith('/logs');
+  const noFiles = useChatHasNoFiles();
   const sidebarCollapsed = useUiStore((s) => s.sidebarCollapsed);
   const sessionExpired = useUserStore((s) => s.sessionExpired);
   // On phones the sidebar is a drawer: Escape closes it (through the modal stack, so it stays
@@ -93,7 +95,7 @@ export function RootLayout() {
             <button
               id="nav-files-btn"
               type="button"
-              className="btn-secondary glass top-right-btn"
+              className={`btn-secondary glass top-right-btn${noFiles ? ' top-right-btn--empty' : ''}`}
               title="View Files / Artifacts"
               aria-label="View files and artifacts"
               disabled={path === '/'}

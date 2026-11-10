@@ -9,7 +9,7 @@ import {
 } from 'react';
 import { useMatch, useNavigate } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { modelsApi, settingsKeys, skillsApi } from '../../api/settings';
+import { modelConfigQuery, modelsApi, settingsKeys, skillsApi } from '../../api/settings';
 import { Icon } from '../../components/icons/Icon';
 import { IconButton } from '../../components/ui/Button';
 import { Popover } from '../../components/ui/Popover';
@@ -63,11 +63,7 @@ export function Composer() {
     queryFn: modelsApi.list,
     staleTime: 30_000,
   });
-  const modelConfig = useQuery({
-    queryKey: ['models', 'config'],
-    queryFn: modelsApi.config,
-    staleTime: 300_000,
-  });
+  const modelConfig = useQuery(modelConfigQuery);
   const skills = useQuery({
     queryKey: settingsKeys.skills,
     queryFn: skillsApi.list,
