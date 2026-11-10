@@ -35,9 +35,10 @@ describe('SpeedTestPanel', () => {
     vi.stubGlobal('fetch', fetchMock);
     renderWithProviders(<SpeedTestPanel models={models} />);
     chooseModel();
-    fireEvent.change(screen.getByRole('spinbutton', { name: 'Target context (tokens) value' }), {
-      target: { value: '8000' },
-    });
+    // The number box commits on blur.
+    const box = screen.getByRole('spinbutton', { name: 'Target context (tokens) value' });
+    fireEvent.change(box, { target: { value: '8000' } });
+    fireEvent.blur(box);
     fireEvent.click(screen.getByRole('button', { name: 'Run speed test' }));
     expect(fetchMock).not.toHaveBeenCalled();
     expect(screen.getByText(/unloads every loaded model/)).toBeTruthy();

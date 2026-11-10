@@ -18,23 +18,14 @@ const JS_HOOKS = new Set<string>([
  * the test fails if an entry becomes styled, so this list can only shrink.
  */
 const TODO_UNSTYLED = new Set<string>([
-  'bot-message-footer',
   'chat-row',
   'copy-msg-btn',
   'delete-msg-btn',
   'edit-msg-btn',
-  'folder-chevron-wrapper',
-  'full-width-reasoning',
-  'message-content-wrapper',
   'message-text-wrapper',
   'raw-text-content',
   'retry-msg-btn',
-  'sidebar-context-menu-header',
-  'thought-section-wrapper',
-  'thought-text',
   'title-text',
-  'validation-fixing',
-  'workspace-view',
 ]);
 
 function cssSelectors(): Set<string> {

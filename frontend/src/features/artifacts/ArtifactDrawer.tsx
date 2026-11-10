@@ -1,4 +1,11 @@
-import { useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent,
+  type PointerEvent,
+} from 'react';
 import type { ScopeRef } from '../../api/filesystem';
 import { useUiStore } from '../../state/ui-store';
 import { ArtifactPanel } from './ArtifactPanel';
@@ -7,9 +14,26 @@ const WIDTH_KEY = 'my_ai_artifact_width';
 const MIN_WIDTH = 320;
 const DEFAULT_WIDTH = 460;
 const KEY_STEP = 16;
+/** Above this width the drawer sits beside the chat (the chat narrows); at or below it overlays. */
+const SIDE_BY_SIDE_MIN = 1025;
+/** Gap between the drawer and the screen edge (matches `.artifact-drawer { right }`). */
+const EDGE_GAP = 16;
+
+/** Room the chat keeps beside the drawer on a wide screen (the sidebar takes its own). */
+const MIN_CHAT_WIDTH = 400;
 
 function maxWidth(): number {
-  return Math.max(MIN_WIDTH, Math.min(960, window.innerWidth - 48));
+  const screen = Math.min(960, window.innerWidth - 48);
+  if (window.innerWidth < SIDE_BY_SIDE_MIN) return Math.max(MIN_WIDTH, screen);
+  // Side by side: the chat must keep a usable column, so the drawer cannot take the whole window.
+  const sidebar =
+    Number.parseFloat(
+      getComputedStyle(document.documentElement).getPropertyValue('--sidebar-width'),
+    ) || 0;
+  return Math.max(
+    MIN_WIDTH,
+    Math.min(screen, window.innerWidth - sidebar - MIN_CHAT_WIDTH - EDGE_GAP),
+  );
 }
 
 function clamp(width: number): number {
@@ -65,6 +89,23 @@ export function ArtifactDrawer({ scope }: { scope: ScopeRef }) {
     setWidth(next);
     persistWidth(next);
   }
+
+  // Like the legacy right sidebar: `main` keeps clear of the open drawer, so the transcript and the composer narrow
+  // instead of being covered. The variable is removed on close, so other pages are untouched.
+  useEffect(() => {
+    const root = document.documentElement;
+    const sync = () => {
+      if (window.innerWidth >= SIDE_BY_SIDE_MIN)
+        root.style.setProperty('--right-sidebar-width', `${width + EDGE_GAP}px`);
+      else root.style.removeProperty('--right-sidebar-width');
+    };
+    sync();
+    window.addEventListener('resize', sync);
+    return () => {
+      window.removeEventListener('resize', sync);
+      root.style.removeProperty('--right-sidebar-width');
+    };
+  }, [width]);
 
   const style = { '--artifact-width': `${width}px` } as CSSProperties;
 

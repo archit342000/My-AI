@@ -1,0 +1,6 @@
+data: {"choices": [{"delta": {"reasoning_content": "I need to ask which colour."}}], "model": "Stub/Audit-Model"}
+
+data: {"choices": [{"delta": {"tool_calls": [{"id": "call_1", "index": 0, "function": {"name": "request_clarification", "arguments": "{\"question\": \"Which colour?\", \"options\": [\"Red\", \"Blue\"]}"}}]}}], "model": "Stub/Audit-Model"}
+
+data: {"choices": [{"delta": {"tool_calls": [{"id": "call_1", "index": 0, "function": {"name": "request_clarification", "arguments": "{\"question\": \"Which colour?\", \"options\": [\"Red\", \"Blue\"]}"}}]}}], "model": "Stub/Audit-Model"}
+
