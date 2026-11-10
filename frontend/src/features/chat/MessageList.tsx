@@ -1,28 +1,25 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { chatsApi, queryKeys } from '../../api/chats';
 import { Markdown } from '../../components/markdown/Markdown';
+import { StreamingMarkdown } from '../../components/markdown/StreamingMarkdown';
 import { showToast } from '../../components/ui/toast-store';
 import { useAutoFollow } from './useAutoFollow';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Textarea } from '../../components/ui/Field';
 import { EmptyState } from '../../components/ui/EmptyState';
-import {
-  firstMessageId,
-  lastEvent,
-  turnReasoning,
-  turnText,
-  turnTools,
-  type Step,
-  type Turn,
-} from '../../lib/chat-model';
+import { firstMessageId, turnText, type Step, type Turn } from '../../lib/chat-model';
+import { statusOf, timelineOf } from '../../lib/thought-timeline';
 import { emptyLiveTurn, type LiveTurn } from './stream-reducer';
 import { useStreamStore, type InterruptedTurn, type PendingUser } from '../../state/stream-store';
 import { ClarificationPrompt } from './ClarificationPrompt';
-import { ThoughtHeader, ThoughtTimeline } from './ThoughtBlock';
-import { ToolActivityFeed, ToolSummary } from './ToolActivity';
+import { ThoughtBox } from './ThoughtBox';
+import { friendlyToolName } from './tool-names';
+import { useModelDisplayName } from './useModelDisplayName';
+import { thoughtKey, useThoughtStore } from '../../state/thought-store';
 import { MessageActions } from './MessageActions';
+import { ResumeBanner } from './ResumeBanner';
 import { resumeTurn } from './send-turn';
 
 const USER_AVATAR = (
@@ -75,6 +72,7 @@ function UserTurn({
   onRetry: () => void;
 }) {
   const [editing, setEditing] = useState(false);
+  const caretPlaced = useRef(false);
   const [draft, setDraft] = useState(turn.text);
   const queryClient = useQueryClient();
 
@@ -109,6 +107,14 @@ function UserTurn({
           <Textarea
             className="edit-textarea"
             autoGrow
+            autoFocus
+            onFocus={(e) => {
+              // The caret goes to the end once, when the editor opens; tabbing back in keeps where it was.
+              if (caretPlaced.current) return;
+              caretPlaced.current = true;
+              const end = e.currentTarget.value.length;
+              e.currentTarget.setSelectionRange(end, end);
+            }}
             value={draft}
             rows={2}
             aria-label="Edit message"
@@ -167,7 +173,14 @@ function UserTurn({
           text={turn.text}
           role="user"
           canRetry={false}
-          onEdit={canEdit ? () => setEditing(true) : undefined}
+          onEdit={
+            canEdit
+              ? () => {
+                  caretPlaced.current = false;
+                  setEditing(true);
+                }
+              : undefined
+          }
           onDelete={() => void remove(chatId, turn.id, queryClient, onChanged)}
         />
       ) : null}
@@ -183,6 +196,8 @@ async function remove(
 ) {
   try {
     await chatsApi.deleteMessage(chatId, messageId);
+    // The turn numbers after this one shift, so the open boxes of the chat are forgotten.
+    useThoughtStore.getState().clearChat(chatId);
     await queryClient.invalidateQueries({ queryKey: queryKeys.chat(chatId) });
     // A chat with no messages or files leaves the sidebar list.
     await queryClient.invalidateQueries({ queryKey: queryKeys.chats });
@@ -193,69 +208,75 @@ async function remove(
 }
 
 /**
- * Shared bot-row body. The avatar is a grid column, so it lines up with the first block of the
- * turn whether or not a thought header exists (F-23).
+ * Shared bot-row body, laid out as the legacy row. A turn with a thought box (steps to show, or a turn
+ * that is still streaming) has a header row with the avatar beside the box, the timeline under it and
+ * the answer under that, all at full width. A turn with nothing to show has no box: the avatar then
+ * sits beside the answer (F-23). The model label appears only once the turn has text.
  */
 function BotBody({
   model,
   steps,
   active,
-  status,
+  turnKey,
   children,
   footer,
 }: {
   model: string | null | undefined;
   steps: Step[];
+  /** True for as long as the turn streams. */
   active: boolean;
-  status?: string | null;
+  turnKey: string;
   children: ReactNode;
   footer?: ReactNode;
 }) {
-  const [expanded, setExpanded] = useState(false);
-  const reasoning = turnReasoning(steps);
-  const tools = turnTools(steps);
-  const hasReasoning = Boolean(reasoning) || tools.length > 0;
-  return (
-    <div className="bot-turn">
-      <div className="bot-turn__avatar">{BOT_AVATAR}</div>
-      <div className="bot-turn__body">
-        {hasReasoning || active ? (
-          <ThoughtHeader
-            expanded={expanded}
-            active={active}
-            status={status ?? null}
-            onToggle={() => setExpanded((v) => !v)}
-          />
-        ) : null}
-        {tools.length > 0 ? <ToolSummary tools={tools} /> : null}
-        {hasReasoning ? (
-          <ThoughtTimeline expanded={expanded} reasoning={reasoning}>
-            <ToolActivityFeed tools={tools} />
-          </ThoughtTimeline>
-        ) : null}
-        <div className="message-content-wrapper">
-          {children}
-          {model ? (
-            <div className="bot-message-footer">
-              <span className="bot-model-label">{model}</span>
-            </div>
-          ) : null}
-          {footer}
+  const items = useMemo(() => timelineOf(steps), [steps]);
+  const displayName = useModelDisplayName();
+  const hasBox = active || items.length > 0;
+  const content = (
+    <div className="message-content-wrapper">
+      {children}
+      {model && turnText(steps) ? (
+        <div className="bot-message-footer">
+          <span className="bot-model-label">{displayName(model)}</span>
         </div>
-      </div>
+      ) : null}
+      {footer}
     </div>
+  );
+  if (!hasBox) {
+    return (
+      <div className="bot-turn">
+        <div className="bot-turn__avatar">{BOT_AVATAR}</div>
+        <div className="bot-turn__body">{content}</div>
+      </div>
+    );
+  }
+  return (
+    <>
+      <ThoughtBox
+        turnKey={turnKey}
+        items={items}
+        active={active}
+        status={active ? statusOf(steps, friendlyToolName) : null}
+        avatar={BOT_AVATAR}
+      />
+      {content}
+    </>
   );
 }
 
 function AssistantTurn({
   turn,
   chatId,
+  ordinal,
   isLast,
   onRetry,
   onDelete,
 }: {
   turn: Extract<Turn, { kind: 'assistant' }>;
   chatId: string;
+  /** Number of user turns up to the one this reply answers. */
+  ordinal: number;
   isLast: boolean;
   onRetry: () => void;
   onDelete: () => void;
@@ -264,30 +285,44 @@ function AssistantTurn({
   const text = turnText(turn.steps);
   return (
     <div className="message-row chat-row bot-message bot" data-message-id={turn.id}>
-      <BotBody model={turn.model} steps={turn.steps} active={false}>
+      <BotBody
+        model={turn.model}
+        steps={turn.steps}
+        active={false}
+        turnKey={thoughtKey(chatId, ordinal)}
+        footer={
+          <MessageActions
+            text={text}
+            role="assistant"
+            canRetry={isLast}
+            onRetry={onRetry}
+            onDelete={() => void remove(chatId, firstMessageId(turn), queryClient, onDelete)}
+          />
+        }
+      >
         <Markdown text={text} className="message-content raw-text-content" />
       </BotBody>
-      <MessageActions
-        text={text}
-        role="assistant"
-        canRetry={isLast}
-        onRetry={onRetry}
-        onDelete={() => void remove(chatId, firstMessageId(turn), queryClient, onDelete)}
-      />
     </div>
   );
 }
 
-function LiveAssistant({ live, chatId }: { live: LiveTurn; chatId: string }) {
+function LiveAssistant({
+  live,
+  turnKey,
+  chatId,
+}: {
+  live: LiveTurn;
+  turnKey: string;
+  chatId: string;
+}) {
   const content = turnText(live.steps);
-  const thinking = !content;
   return (
     <div className="message-row chat-row bot-message bot streaming thinking" data-live="true">
       <BotBody
         model={live.model}
         steps={live.steps}
-        active={thinking}
-        status={lastEvent(live.steps)}
+        active
+        turnKey={turnKey}
         footer={
           live.pendingRequest ? (
             <ClarificationPrompt
@@ -299,11 +334,11 @@ function LiveAssistant({ live, chatId }: { live: LiveTurn; chatId: string }) {
         }
       >
         {live.redactNotice ? (
-          <div className="validation-fixing">
-            <span className="processing-spinner" /> {live.redactNotice}
+          <div className="validation-fixing" role="status">
+            <span className="ui-spinner" aria-hidden="true" /> Fixing the reply…
           </div>
         ) : null}
-        {content ? <Markdown text={content} className="message-content raw-text-content" /> : null}
+        {content ? <StreamingMarkdown text={content} /> : null}
       </BotBody>
     </div>
   );
@@ -312,33 +347,41 @@ function LiveAssistant({ live, chatId }: { live: LiveTurn; chatId: string }) {
 /** A reply that ended early: the partial text stays, with a Stopped marker or the error and Retry. */
 function InterruptedAssistant({
   interrupted,
+  turnKey,
   onRetry,
+  busy,
 }: {
   interrupted: InterruptedTurn;
+  turnKey: string;
   onRetry: () => void;
+  /** The server is still stopping or generating: Retry waits until the store is idle. */
+  busy: boolean;
 }) {
   const { live } = interrupted;
   const content = turnText(live.steps);
+  // The notice sits in the bubble column, under the answer, like the action row of a finished reply.
+  const notice =
+    interrupted.kind === 'error' ? (
+      <div className="chat-error" role="alert">
+        <span className="chat-error__message">{interrupted.message ?? 'The reply failed.'}</span>
+        <Button variant="secondary" size="sm" disabled={busy} onClick={onRetry}>
+          Retry
+        </Button>
+      </div>
+    ) : (
+      <div className="turn-notice" role="status">
+        <Badge>Stopped</Badge>
+        <span>This partial reply is not saved.</span>
+        <Button variant="secondary" size="sm" disabled={busy} onClick={onRetry}>
+          Retry
+        </Button>
+      </div>
+    );
   return (
     <div className="message-row chat-row bot-message bot" data-interrupted={interrupted.kind}>
-      <BotBody model={live.model} steps={live.steps} active={false}>
+      <BotBody model={live.model} steps={live.steps} active={false} turnKey={turnKey} footer={notice}>
         {content ? <Markdown text={content} className="message-content raw-text-content" /> : null}
       </BotBody>
-      {interrupted.kind === 'error' ? (
-        <div className="chat-error" role="alert">
-          <span className="chat-error__message">{interrupted.message ?? 'The reply failed.'}</span>
-          <Button variant="secondary" size="sm" onClick={onRetry}>
-            Retry
-          </Button>
-        </div>
-      ) : (
-        <div className="turn-notice" role="status">
-          <Badge>Stopped</Badge>
-          <Button variant="secondary" size="sm" onClick={onRetry}>
-            Retry
-          </Button>
-        </div>
-      )}
     </div>
   );
 }
@@ -368,10 +411,13 @@ export function MessageList({
   turns,
   chatId,
   onChanged,
+  resumeNeeded = false,
 }: {
   turns: Turn[];
   chatId: string;
   onChanged: () => void;
+  /** The server says the last turn was interrupted and can be continued. */
+  resumeNeeded?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
@@ -382,7 +428,14 @@ export function MessageList({
     s.interrupted?.chatId === chatId ? s.interrupted : null,
   );
   const dismissInterrupted = useStreamStore((s) => s.dismissInterrupted);
+  const storeBusy = useStreamStore((s) => s.chatId !== null);
   const lastUserIdx = findLast(turns, (t) => t.kind === 'user');
+  // The reply to the Nth user turn is box N, live or saved.
+  // The pending row knows its own number: the saved copy of the same message may already be in `turns`.
+  const liveKey = thoughtKey(
+    chatId,
+    pending?.ordinal ?? turns.filter((t) => t.kind === 'user').length,
+  );
   const follow = useAutoFollow(ref, chatId, pending);
   /**
    * While a retry, resume or reattach streams, the live row replays the whole turn, so the persisted
@@ -404,10 +457,15 @@ export function MessageList({
   const replyPersisted = turns.at(-1)?.kind === 'assistant';
   const showInterrupted = interrupted !== null && !replyPersisted;
   const lastHasReply = lastUserIdx >= 0 && turns.slice(lastUserIdx + 1).some((t) => t.kind === 'assistant');
-  const showUserRetry = !streaming && !showInterrupted && lastUserIdx >= 0 && !lastHasReply;
+  // The server decides (research interruptions can need a resume even after a reply).
+  const showBanner = resumeNeeded && !streaming && !showInterrupted && lastUserIdx >= 0;
+  // One control: the banner replaces the Retry button under the last user turn.
+  const showUserRetry =
+    !streaming && !showInterrupted && !showBanner && lastUserIdx >= 0 && !lastHasReply;
 
   /** Retry regenerates from the stored user message, so attachments are reused as sent. */
   function retryLast() {
+    if (storeBusy) return;
     void resumeTurn(queryClient, chatId);
   }
 
@@ -441,6 +499,7 @@ export function MessageList({
             key={turn.id}
             turn={turn}
             chatId={chatId}
+            ordinal={userTurnsUpTo(turns, i)}
             isLast={i > lastUserIdx}
             onRetry={() => void retry(i)}
             onDelete={onChanged}
@@ -456,10 +515,19 @@ export function MessageList({
         />
       ) : null}
       {pending ? <LiveUser pending={pending} /> : null}
-      {streaming ? <LiveAssistant live={live ?? emptyLiveTurn()} chatId={chatId} /> : null}
-      {showInterrupted && interrupted ? (
-        <InterruptedAssistant interrupted={interrupted} onRetry={retryLast} />
+      {/* A stopped or failed turn has its own row: the live row never shows next to it. */}
+      {streaming && !interrupted ? (
+        <LiveAssistant live={live ?? emptyLiveTurn()} turnKey={liveKey} chatId={chatId} />
       ) : null}
+      {showInterrupted && interrupted ? (
+        <InterruptedAssistant
+          interrupted={interrupted}
+          turnKey={liveKey}
+          onRetry={retryLast}
+          busy={storeBusy}
+        />
+      ) : null}
+      {showBanner ? <ResumeBanner chatId={chatId} /> : null}
       {streaming && !follow.pinned ? (
         <button type="button" className="chat-jump-latest" onClick={follow.jumpToLatest}>
           Jump to latest
@@ -472,4 +540,9 @@ export function MessageList({
 function findLast<T>(items: T[], pred: (t: T) => boolean): number {
   for (let i = items.length - 1; i >= 0; i--) if (pred(items[i]!)) return i;
   return -1;
+}
+
+/** How many user turns there are up to and including index `i`. */
+function userTurnsUpTo(turns: Turn[], i: number): number {
+  return turns.slice(0, i + 1).filter((t) => t.kind === 'user').length;
 }

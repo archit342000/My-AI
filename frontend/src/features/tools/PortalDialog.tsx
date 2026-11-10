@@ -7,10 +7,18 @@ export function PortalDialog({ open, onClose }: { open: boolean; onClose: () => 
   const session = useQuery({ queryKey: ['portal'], queryFn: portalApi.init, enabled: open, staleTime: 0, gcTime: 0 });
   return (
     <Modal open={open} onClose={onClose} title="Browser portal" maxWidth={1100}>
-      {session.isPending ? <div style={{ color: 'var(--content-muted)' }}>Starting browser session…</div> : null}
-      {session.isError ? <div role="alert" style={{ color: 'var(--color-rose-500)' }}>{session.error.message}</div> : null}
+      {session.isPending ? <p className="tool-dialog__note">Starting browser session…</p> : null}
+      {session.isError ? (
+        <div role="alert" className="tool-dialog__error">
+          {session.error.message}
+        </div>
+      ) : null}
       {session.isSuccess ? (
-        <iframe title="Remote browser" src="/api/tools/portal/vnc/vnc.html?autoconnect=true&resize=scale&path=api/tools/portal/ws" style={{ width: '100%', height: '70vh', border: 0, borderRadius: 12, background: '#000' }} />
+        <iframe
+          title="Remote browser"
+          className="portal-frame"
+          src="/api/tools/portal/vnc/vnc.html?autoconnect=true&resize=scale&path=api/tools/portal/ws"
+        />
       ) : null}
     </Modal>
   );

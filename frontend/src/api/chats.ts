@@ -12,6 +12,8 @@ export interface ChatPatch {
   git_mode?: number;
   code_execution_mode?: number;
   thinking_profile?: string;
+  last_model?: string;
+  resume_suppressed?: number;
 }
 
 const enc = encodeURIComponent;

@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { readSse } from '../../../api/sse';
+import { finishedFileChanges } from '../../../lib/fs-tools';
 import { lastEvent, toTurns, turnReasoning, turnText, turnTools } from '../../../lib/chat-model';
 import { applyChunk, emptyLiveTurn, type LiveTurn, type StreamChunk } from '../../../features/chat/stream-reducer';
 
@@ -39,6 +40,14 @@ describe('recorded stream fixtures', () => {
     expect(lastEvent(t.steps)).toBe('Searching the workspace');
     expect(t.steps.map((x) => x.kind)).toEqual(['text', 'tool', 'event', 'text']);
     expect(turnText(t.steps)).toBe('Let me look.\n\nFound one TODO in src/app.ts.');
+  });
+
+  it('files: a finished create_fs_file step and the multi-block reply', async () => {
+    const t = await run('files');
+    expect(finishedFileChanges(t.steps)).toBe(1);
+    expect(turnTools(t.steps)[0]).toMatchObject({ name: 'create_fs_file', result: 'Created notes/hello.md' });
+    expect(turnText(t.steps)).toContain('See [hello](notes/hello.md) for details.');
+    expect(turnText(t.steps)).toContain('still code');
   });
 
   it('two rounds: reasoning, tool, text, reasoning, text stay separate steps', async () => {
