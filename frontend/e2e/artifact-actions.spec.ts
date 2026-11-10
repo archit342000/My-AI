@@ -109,7 +109,9 @@ test('edits save by themselves, a file can be renamed, and two versions can be c
   await page.getByRole('button', { name: /^plan.md/ }).click();
   await expect(page.getByText('v2')).toBeVisible();
   await page.getByRole('button', { name: 'Version history' }).click();
-  await page.locator('button:not([disabled])', { hasText: 'Compare with current' }).first().click();
+  const history = page.getByRole('dialog', { name: 'Version history' });
+  await history.getByRole('button', { name: /^Version 1/ }).click();
+  await history.getByRole('button', { name: 'Compare with current' }).click();
   await expect(page.getByText('1 added, 1 removed')).toBeVisible();
 });
 
