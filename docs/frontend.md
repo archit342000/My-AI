@@ -71,9 +71,11 @@ Sub-agent steps carry the agent name and sit after the tool call that started th
 the live row replaces the persisted rows of the turn being generated. Retry and Delete act on the whole turn
 (they delete its first stored message; the server removes the rest). Text steps are joined with a blank line.
 
+The thought box is the legacy timeline: one box per assistant turn with collapsible entries in the order they happened (Reasoning, `Call: <tool>`, `Tool Result: <tool>`, event dividers, and a labelled group per sub-agent run, which also shows that agent's text). Built by `lib/thought-timeline.ts` from the turn's steps, drawn by `ThoughtBox`, `TimelineEntry` and `ThoughtFullView` (a dialog with every entry open). The header says "Thinking..." with the newest event or running tool for as long as the turn streams, and "Thought Process" after. Whether a box is open is kept in `state/thought-store.ts` by `chatId:ordinal` (the number of user turns up to the one it answers), so it stays open when the live reply is replaced by the saved one; deleting a turn forgets the chat's open boxes. A turn with nothing to show has no box. The retry notice is fixed text with a spinner; the server's message is not shown.
+
 ## Known gaps
 
-- Sub-agent reasoning and tool calls are in the thought box's lists without an agent label, and the newest event shows as the live status line; sub-agent text is kept in the steps but not drawn. The legacy per-agent renderers are not ported.
+- The legacy per-agent renderers (research, browsing) are not ported; sub-agent steps show as a labelled group of entries.
 - The code-execution WebSocket (live runs) is not wired; history is read-only.
 - Mermaid pop-out and file-link navigation are not implemented.
 - The file tree shows one level; nested folders are listed but not expandable.

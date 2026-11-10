@@ -7,6 +7,8 @@ export interface PendingUser {
   text: string;
   images: string[];
   files: UploadedFile[];
+  /** Number of user turns up to and including this message (the key of its reply's thought box). */
+  ordinal: number;
 }
 
 /**

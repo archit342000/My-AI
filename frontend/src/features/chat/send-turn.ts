@@ -163,13 +163,6 @@ export async function sendTurn({
   }
   if (useStreamStore.getState().chatId) return; // already streaming
 
-  const pending: PendingUser | null = userTurnExists
-    ? null
-    : {
-        text,
-        images: [],
-        files,
-      };
   if (!historyOverride && !isNewChat && !queryClient.getQueryData(queryKeys.chat(chatId))) {
     // The chat is not in the cache, so its prior context is unknown; refuse rather than send without it.
     showToast('Could not load this chat. Reload the page and try again.', 'error');
@@ -177,6 +170,14 @@ export async function sendTurn({
   }
   const controller = new AbortController();
   const history = historyOverride ?? historyFromCache(queryClient, chatId);
+  const pending: PendingUser | null = userTurnExists
+    ? null
+    : {
+        text,
+        images: [],
+        files,
+        ordinal: history.filter((m) => m.role === 'user').length + 1,
+      };
   const messages: HistoryMessage[] = [
     ...history,
     { role: 'user', content: text, uploadedFiles: files.length ? files : undefined },
