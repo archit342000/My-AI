@@ -69,8 +69,24 @@ export const artifactsApi = {
     apiJson<{ folders: string[] }>(`/api/file_systems/chat/${encodeURIComponent(chatId)}/folders`).then((r) => r.folders),
 };
 
+/** The fields the history view reads from a `code_execution_history` row (backend/database/init_db.py), newest first. */
+export interface CodeRun {
+  id: string;
+  chat_id: string;
+  language: string;
+  code: string;
+  stdin: string | null;
+  stdout: string | null;
+  stderr: string | null;
+  exit_code: number | null;
+  execution_time_ms: number | null;
+  timed_out: number | null;
+  created_at: string | null;
+}
+
 export const codeExecApi = {
-  history: (chatId: string) => apiJson<unknown[]>(`/api/tools/code-execution/history/${encodeURIComponent(chatId)}`),
+  history: (chatId: string) =>
+    apiJson<CodeRun[]>(`/api/tools/code-execution/history/${encodeURIComponent(chatId)}`),
 };
 
 export const portalApi = {

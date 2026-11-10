@@ -9,7 +9,7 @@ import { Badge, type BadgeTone } from '../../components/ui/Badge';
 import { SegmentedControl } from '../../components/ui/SegmentedControl';
 import { logsApi, toEntries, type LogStream } from './logsApi';
 import { useIsAdmin } from '../../state/user-store';
-import { LOG_LEVELS, columnLabel, levelOf, scalarColumns, type LogLevel } from './log-levels';
+import { LOG_LEVELS, columnLabel, levelOf, rowKeys, scalarColumns, type LogLevel } from './log-levels';
 
 const LIMITS = [50, 100, 200, 500];
 const MAX_CHARS = 4000;
@@ -46,7 +46,8 @@ function LogsContent() {
   const [table, setTable] = useState('chats');
   const [chatId, setChatId] = useState('');
   const [levels, setLevels] = useState<Set<LogLevel>>(new Set());
-  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  // Rows are expanded by their stable key, not their position: the list refreshes every few seconds.
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const tables = useQuery({ queryKey: ['log-tables'], queryFn: logsApi.dbTables, enabled: stream === 'database' });
   const data = useQuery({
@@ -74,11 +75,11 @@ function LogsContent() {
     });
   }, [entries, filter, levels, stream]);
 
-  function toggleExpanded(i: number) {
+  function toggleExpanded(key: string) {
     setExpanded((s) => {
       const n = new Set(s);
-      if (n.has(i)) n.delete(i);
-      else n.add(i);
+      if (n.has(key)) n.delete(key);
+      else n.add(key);
       return n;
     });
   }
@@ -92,6 +93,7 @@ function LogsContent() {
     });
   }
 
+  const rows = useMemo(() => rowKeys(visible), [visible]);
   const isTable = stream === 'network' || stream === 'events' || stream === 'database';
 
   /** Chat ids link to the chat; a `level` column gets the coloured badge. */
@@ -178,13 +180,13 @@ function LogsContent() {
                 </tr>
               </thead>
               <tbody>
-                {visible.map((entry, i) => {
+                {rows.map(({ entry, key }) => {
                   const row = (entry ?? {}) as Record<string, unknown>;
                   const json = JSON.stringify(entry, null, 2) ?? '';
-                  const isOpen = expanded.has(i);
+                  const isOpen = expanded.has(key);
                   return (
-                    <Fragment key={i}>
-                      <tr className="logs-row" aria-expanded={isOpen} onClick={() => toggleExpanded(i)}>
+                    <Fragment key={key}>
+                      <tr className="logs-row" aria-expanded={isOpen} onClick={() => toggleExpanded(key)}>
                         {columns.map((c) => (
                           <td key={c} title={String(row[c] ?? '')}>
                             {renderCell(c, row)}
@@ -206,17 +208,17 @@ function LogsContent() {
           </div>
         ) : (
           <ol className="logs-list">
-            {visible.map((entry, i) => {
+            {rows.map(({ entry, key }) => {
               const text = typeof entry === 'string' ? entry : JSON.stringify(entry, null, 2) ?? '';
-              const isOpen = expanded.has(i);
+              const isOpen = expanded.has(key);
               const level = levelOf(entry);
               const shown = isOpen || text.length <= MAX_CHARS ? text : `${text.slice(0, MAX_CHARS)}\n…`;
               return (
-                <li key={i} className="logs-entry">
+                <li key={key} className="logs-entry">
                   {level ? <Badge tone={LEVEL_TONE[level]}>{level}</Badge> : null}
                   <pre className="logs-json">{shown}</pre>
                   {text.length > MAX_CHARS ? (
-                    <Button variant="ghost" size="sm" onClick={() => toggleExpanded(i)}>
+                    <Button variant="ghost" size="sm" onClick={() => toggleExpanded(key)}>
                       {isOpen ? 'Collapse' : `Show all (${Math.round(text.length / 1024)} KB)`}
                     </Button>
                   ) : null}

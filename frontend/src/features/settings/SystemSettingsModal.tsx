@@ -9,8 +9,8 @@ import { settingsApi, preferencesApi, settingsKeys, type CodeRunnerSettings } fr
 import { useSettingsStore } from '../../state/settings-store';
 import { useUiStore, type ThemeMode } from '../../state/ui-store';
 import { useModalStore, type DialogName } from '../../state/modal-store';
-import { Field, Section, Status } from './forms';
-import { inputStyle } from './form-styles';
+import { Field, Input } from '../../components/ui/Field';
+import { Section, Status } from './forms';
 import { Toggle } from '../../components/ui/Toggle';
 import { SETTINGS_STALE_MS } from '../../api/settings';
 import { useIsAdmin } from '../../state/user-store';
@@ -96,24 +96,61 @@ export function SystemSettingsModal({ open, onClose }: { open: boolean; onClose:
       {isAdmin ? (
         <Section title="Code runner">
           {runner ? (
-            <form onSubmit={(e) => { e.preventDefault(); setStatus(null); saveRunner.mutate(runner); }}>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                setStatus(null);
+                saveRunner.mutate(runner);
+              }}
+            >
               <Field label="Timeout (seconds)">
-                <input type="number" min={1} max={system.data?.code_runner_max_timeout} style={inputStyle} value={runner.code_runner_timeout} onChange={(e) => setRunner({ ...runner, code_runner_timeout: Number(e.target.value) })} />
+                {(c) => (
+                  <Input
+                    {...c}
+                    type="number"
+                    min={1}
+                    max={system.data?.code_runner_max_timeout}
+                    value={runner.code_runner_timeout}
+                    onChange={(e) => setRunner({ ...runner, code_runner_timeout: Number(e.target.value) })}
+                  />
+                )}
               </Field>
               <Field label="Memory limit" hint="For example 512M or 1G">
-                <input style={inputStyle} value={runner.code_runner_memory_limit} onChange={(e) => setRunner({ ...runner, code_runner_memory_limit: e.target.value })} />
+                {(c) => (
+                  <Input
+                    {...c}
+                    value={runner.code_runner_memory_limit}
+                    onChange={(e) => setRunner({ ...runner, code_runner_memory_limit: e.target.value })}
+                  />
+                )}
               </Field>
               <Field label="CPU limit (cores)">
-                <input style={inputStyle} value={runner.code_runner_cpu_limit} onChange={(e) => setRunner({ ...runner, code_runner_cpu_limit: e.target.value })} />
+                {(c) => (
+                  <Input
+                    {...c}
+                    value={runner.code_runner_cpu_limit}
+                    onChange={(e) => setRunner({ ...runner, code_runner_cpu_limit: e.target.value })}
+                  />
+                )}
               </Field>
               <Field label="Max output (bytes)">
-                <input type="number" min={1024} style={inputStyle} value={runner.code_runner_max_output_size} onChange={(e) => setRunner({ ...runner, code_runner_max_output_size: Number(e.target.value) })} />
+                {(c) => (
+                  <Input
+                    {...c}
+                    type="number"
+                    min={1024}
+                    value={runner.code_runner_max_output_size}
+                    onChange={(e) => setRunner({ ...runner, code_runner_max_output_size: Number(e.target.value) })}
+                  />
+                )}
               </Field>
-              <button type="submit" className="btn-primary" disabled={saveRunner.isPending}>Save code runner settings</button>
+              <Button variant="primary" type="submit" disabled={saveRunner.isPending}>
+                Save code runner settings
+              </Button>
               <Status message={status} tone={status === 'Saved' ? 'success' : 'error'} />
             </form>
           ) : (
-            <div style={{ color: 'var(--content-muted)' }}>Loading…</div>
+            <div className="settings-loading">Loading…</div>
           )}
         </Section>
       ) : null}
@@ -132,9 +169,7 @@ export function SystemSettingsModal({ open, onClose }: { open: boolean; onClose:
         </Button>
       </Section>
 
-      <div style={{ fontSize: '0.75rem', color: 'var(--content-muted)' }}>
-        Version {version.data?.version ?? '…'}
-      </div>
+      <div className="settings-version">Version {version.data?.version ?? '…'}</div>
       <ConfirmDialog
         open={confirmReset}
         title="Reset preferences"

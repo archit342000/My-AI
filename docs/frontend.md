@@ -64,6 +64,13 @@ A React build missing from `dist/` returns 503 with the build command.
 - The attachment `[System Note: ...]` the router appends to a user message is for the model: `src/lib/chat-model.ts` strips it from
   user bubbles and the edit box and shows its files as chips. The stored message keeps it.
 - Dialogs use `Modal`, which handles Escape (top of stack only), focus trap, focus restore and scroll lock.
+  Management lists (`CrudDialog`: skills, personas, memory) show the form's own title and put Cancel then Save in the modal footer;
+  the form gets the dialog's `formId` and reports `setCanSave`. The persona form offers only the flags the server stores. Number inputs (`.ui-input[type=number]`) hide the native spinner everywhere; typing is the way to change them.
+  The browser portal's iframe sits on a neutral surface token (not black) while it loads. Log rows are expanded by a stable key
+  (`rowKeys`); identical id-less rows are told apart by their order from the end, so when the oldest of several identical rows falls
+  off the row limit the rest shift (known limit).
+  While a form is open, Escape, the backdrop and the close button return to the list (so typed text is not lost by accident), the
+  back chevron steps up one level (form, list, parent dialog), and focus moves to the first control of the new view.
 - Generated files (`*.generated.ts`) come from `scripts/`. Do not edit them by hand.
 
 ## Streaming

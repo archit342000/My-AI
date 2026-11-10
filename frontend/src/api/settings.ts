@@ -38,7 +38,6 @@ export interface Persona {
   research_mode: number | boolean;
   file_system_mode: number | boolean;
   browsing_mode: number | boolean;
-  git_mode: number | boolean;
 }
 
 /** Settings rarely change while the dialog is open; reopening within this window reuses cached data (F-54). */
