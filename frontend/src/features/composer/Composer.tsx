@@ -432,7 +432,7 @@ export function Composer() {
           size="md"
           onClick={() => fileInput.current?.click()}
         />
-        <ToolsMenu />
+        <ToolsMenu sheetAnchorRef={inputContainer} />
         <input
           ref={fileInput}
           type="file"

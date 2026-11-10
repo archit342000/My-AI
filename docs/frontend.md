@@ -26,7 +26,7 @@ A React build missing from `dist/` returns 503 with the build command.
 | `src/app/` | User gate, router, root layout (holds the one composer for `/` and `/chat/:chatId`), sidebar |
 | `src/components/` | Shared UI: `ui/` (Modal, Toast, ContextMenu, ConfirmDialog), `icons/`, `markdown/`, `background/` |
 | `src/features/` | `chat/`, `composer/`, `sidebar/`, `artifacts/`, `workspace/`, `settings/`, `tools/`, `logs/`, `home/`, `dev/` |
-| `src/lib/` | Pure logic with unit tests: markdown pipeline, chat model, scroll, particles, theme |
+| `src/lib/` | Pure logic with unit tests: markdown pipeline, chat model, popover placement, scroll, particles, theme |
 | `src/state/` | Zustand stores: UI, settings, stream, modal, current user |
 | `src/styles/legacy.css` | Legacy stylesheet, imported unchanged; class names are shared with the legacy UI |
 | `scripts/` | Generators for icon and tool-label data from `static/js/` |
