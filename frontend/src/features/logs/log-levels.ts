@@ -100,16 +100,26 @@ function toneOf(entry: unknown, level: LogLevel | null): LogTone {
   return 'neutral';
 }
 
+/** A date and a time at the start of a text line, as loggers write them. */
+const LINE_STAMP = /^\[?(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})(?:[.,]\d+)?\]?\s*/;
+/** The level word of a text line with the separators around it. */
+const LINE_LEVEL = /^[\s|:-]*\b(?:DEBUG|INFO|WARNING|WARN|ERROR|CRITICAL)\b[\s|:-]*/;
+
 /** One line for a log entry: what the folded row shows before it is opened. */
 export function logSummary(entry: unknown): LogSummary {
   const level = levelOf(entry);
   if (typeof entry === 'string') {
     const line = entry.split('\n')[0] ?? '';
+    // "2026-11-11 04:52:07,142 | DEBUG | logger | message": the time and the level have their own places.
+    const stamped = LINE_STAMP.exec(line);
+    const rest = (stamped ? line.slice(stamped[0].length) : line)
+      .replace(LINE_LEVEL, '')
+      .replace(/^[\s|:-]+/, '');
     return {
       tone: toneOf(entry, level),
-      when: null,
+      when: stamped ? `${stamped[1]}T${stamped[2]}` : null,
       what: level ?? 'Line',
-      detail: line,
+      detail: rest || line,
       chatId: null,
     };
   }

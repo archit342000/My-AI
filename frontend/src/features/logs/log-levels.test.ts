@@ -72,15 +72,29 @@ describe('rowKey', () => {
 
 describe('logSummary', () => {
   it('a text line shows its level and its first line, toned by the level', () => {
-    expect(logSummary('2026-11-10 ERROR could not reach the server\nretrying')).toEqual({
+    expect(logSummary('ERROR could not reach the server\nretrying')).toEqual({
       tone: 'bad',
       when: null,
       what: 'ERROR',
-      detail: '2026-11-10 ERROR could not reach the server',
+      detail: 'could not reach the server',
+      chatId: null,
+    });
+    // A line that starts with a date and time gives them to the row's time.
+    expect(
+      logSummary('2026-11-11 04:52:07,142 | DEBUG | backend.db | [DB CONNECTION] opened'),
+    ).toEqual({
+      tone: 'neutral',
+      when: '2026-11-11T04:52:07',
+      what: 'DEBUG',
+      detail: 'backend.db | [DB CONNECTION] opened',
       chatId: null,
     });
     expect(logSummary('WARN slow').tone).toBe('warn');
-    expect(logSummary('just text')).toMatchObject({ tone: 'neutral', what: 'Line' });
+    expect(logSummary('just text')).toMatchObject({
+      tone: 'neutral',
+      what: 'Line',
+      detail: 'just text',
+    });
   });
 
   it('a network row leads with its method, then the rest, toned by its status', () => {
