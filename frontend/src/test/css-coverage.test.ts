@@ -29,7 +29,6 @@ const TODO_UNSTYLED = new Set<string>([
   'message-text-wrapper',
   'raw-text-content',
   'retry-msg-btn',
-  'sidebar-context-menu-header',
   'thought-section-wrapper',
   'thought-text',
   'title-text',

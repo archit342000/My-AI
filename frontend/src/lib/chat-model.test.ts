@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { StoredMessage } from '../api/types';
+import { oneToolChat, plainChat, threeToolChat } from '../test/fixtures/api';
 import {
   isAbsent,
   parseAttachments,
@@ -199,5 +200,26 @@ describe('toTurns with an attachment note', () => {
       text: 'look',
       images: ['data:image/png;base64,AAA'],
     });
+  });
+});
+
+describe('recorded chats from the real backend', () => {
+  it('reads a plain chat as one user and one assistant turn', () => {
+    const turns = toTurns(plainChat.messages);
+    expect(turns.map((t) => t.kind)).toEqual(['user', 'assistant']);
+  });
+
+  // The turn-model change draws one row per user message; until it lands the stored tool rounds
+  // (assistant, tool, assistant, ...) come out as several assistant turns, so these are expected to fail.
+  it.fails('reads a chat with three tool rounds as one assistant turn', () => {
+    const turns = toTurns(threeToolChat.messages);
+    expect(turns.filter((t) => t.kind === 'assistant')).toHaveLength(1);
+  });
+
+  it.fails('keeps the tool calls the server returns as a list', () => {
+    const tools = (messages: StoredMessage[]) =>
+      toTurns(messages).flatMap((t) => (t.kind === 'assistant' ? t.tools : []));
+    expect(tools(oneToolChat.messages)).toHaveLength(1);
+    expect(tools(threeToolChat.messages)).toHaveLength(3);
   });
 });

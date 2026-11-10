@@ -14,6 +14,7 @@ The previous vanilla UI stays at `/legacy/` for one release and then gets remove
 | Typecheck, lint | `npm run typecheck`, `npm run lint` |
 | Unit tests | `npm run test` (Vitest + Testing Library) |
 | End to end | `npm run e2e` (Playwright, system Chrome at `/opt/google/chrome/chrome`) |
+| Full-stack end to end | `npm run e2e:stack` (real backend and scripted model; not in `check.sh`; see `docs/standards/testing.md`) |
 
 Backend: `FRONTEND=react|legacy` selects which UI Flask serves at `/`. `/legacy/` always serves the old UI.
 A React build missing from `dist/` returns 503 with the build command.
@@ -24,7 +25,7 @@ A React build missing from `dist/` returns 503 with the build command.
 |------|----------|
 | `src/api/` | Typed `fetch` client, SSE reader, endpoint modules per area |
 | `src/app/` | User gate, router, root layout, sidebar |
-| `src/components/` | Shared UI: `ui/` (Modal, Toast, ContextMenu, ConfirmDialog), `icons/`, `markdown/`, `background/` |
+| `src/components/` | Shared UI: `ui/` (Modal, Toast, Menu, Popover, ConfirmDialog), `icons/`, `markdown/`, `background/` |
 | `src/features/` | `chat/`, `composer/`, `sidebar/`, `artifacts/`, `workspace/`, `settings/`, `tools/`, `logs/`, `home/`, `dev/` |
 | `src/lib/` | Pure logic with unit tests: markdown pipeline, chat model, scroll, particles, theme |
 | `src/state/` | Zustand stores: UI, settings, stream, modal, current user |

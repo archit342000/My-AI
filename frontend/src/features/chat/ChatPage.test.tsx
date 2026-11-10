@@ -5,6 +5,7 @@ import { ChatPage } from './ChatPage';
 import { chatsApi } from '../../api/chats';
 import { ApiError } from '../../api/client';
 import { useUiStore } from '../../state/ui-store';
+import { plainChat, threeToolChat } from '../../test/fixtures/api';
 
 const detail = (over: Record<string, unknown> = {}) => ({
   id: 'c1',
@@ -64,5 +65,30 @@ describe('ChatPage', () => {
     renderWithProviders(<ChatPage />, { route: '/chat/c1', path: '/chat/:chatId' });
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/chats/c1/stream', expect.anything()));
     vi.unstubAllGlobals();
+  });
+
+  describe('with chats recorded from the real backend', () => {
+    const botRows = () => document.querySelectorAll('.bot-turn');
+
+    it('draws a plain reply as one assistant row', async () => {
+      vi.spyOn(chatsApi, 'get').mockResolvedValue(plainChat);
+      renderWithProviders(<ChatPage />, {
+        route: `/chat/${plainChat.id}`,
+        path: '/chat/:chatId',
+      });
+      await waitFor(() => expect(botRows()).toHaveLength(1));
+    });
+
+    // Expected to fail until the turn-model change merges: develop draws one row per stored
+    // assistant message.
+    it.fails('draws a reply with three tool rounds as one assistant row', async () => {
+      vi.spyOn(chatsApi, 'get').mockResolvedValue(threeToolChat);
+      renderWithProviders(<ChatPage />, {
+        route: `/chat/${threeToolChat.id}`,
+        path: '/chat/:chatId',
+      });
+      await waitFor(() => expect(botRows().length).toBeGreaterThan(0));
+      expect(botRows()).toHaveLength(1);
+    });
   });
 });
