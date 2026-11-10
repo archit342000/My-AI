@@ -84,3 +84,28 @@ describe('remembered sidebar state', () => {
     expect(localStorage.getItem('my_ai_sidebar_collapsed')).toBe('0'); // still the desktop choice
   });
 });
+
+describe('ui-store file requests', () => {
+  it('openArtifact opens the drawer and records the path until it is cleared', async () => {
+    const { useUiStore } = await import('./ui-store');
+    useUiStore.setState({ artifactsOpen: false, requestedArtifactPath: null });
+    useUiStore.getState().openArtifact('notes/hello.md');
+    expect(useUiStore.getState()).toMatchObject({
+      artifactsOpen: true,
+      requestedArtifactPath: 'notes/hello.md',
+    });
+    useUiStore.getState().clearRequestedArtifact();
+    expect(useUiStore.getState().requestedArtifactPath).toBeNull();
+    expect(useUiStore.getState().artifactsOpen).toBe(true);
+  });
+
+  it('closing the drawer drops a request that was never answered', async () => {
+    const { useUiStore } = await import('./ui-store');
+    useUiStore.getState().openArtifact('late.md');
+    useUiStore.getState().setArtifactsOpen(false);
+    expect(useUiStore.getState().requestedArtifactPath).toBeNull();
+    useUiStore.getState().openArtifact('late.md');
+    useUiStore.getState().toggleArtifacts();
+    expect(useUiStore.getState().requestedArtifactPath).toBeNull();
+  });
+});

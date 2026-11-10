@@ -3,6 +3,7 @@ import { NavLink, useMatch, useNavigate } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { chatsApi, queryKeys } from '../api/chats';
 import { discardTemporaryChat, startTemporaryChat } from '../features/chat/temporary-chat';
+import { discardNewChatDraft } from '../features/composer/draft-cleanup';
 import { PromptDialog } from '../components/ui/PromptDialog';
 import { showToast } from '../components/ui/toast-store';
 import { Icon } from '../components/icons/Icon';
@@ -46,6 +47,7 @@ export function Sidebar() {
 
   function newChat() {
     void discardTemporaryChat(queryClient);
+    void discardNewChatDraft(queryClient);
     useUiStore.getState().setNewChatWorkspaceId(null);
     navigate('/');
   }

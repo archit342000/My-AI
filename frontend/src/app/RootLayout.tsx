@@ -7,18 +7,27 @@ import { discardTemporaryChat, shouldDiscardTemporaryChat } from '../features/ch
 import { Outlet, useLocation } from 'react-router';
 import { AmbientBackground } from '../components/background/AmbientBackground';
 import { ToastViewport } from '../components/ui/Toast';
+import { usePlatformClass } from '../hooks/usePlatformClass';
 import { useThemeSync } from '../hooks/useThemeSync';
+import { useModalStore } from '../state/modal-store';
 import { useUiStore } from '../state/ui-store';
 import { useUserStore } from '../state/user-store';
+import { discardNewChatDraft } from '../features/composer/draft-cleanup';
+import { useDraftCleanup } from '../features/composer/useDraftCleanup';
+import { useChatHasNoFiles } from '../features/artifacts/useChatHasNoFiles';
 import { Sidebar } from './Sidebar';
 import { DialogHost } from '../features/settings/DialogHost';
+import { Composer } from '../features/composer/Composer';
 
 /** App frame: animated background, sidebar, routed main area, toasts. */
 export function RootLayout() {
   const themeMode = useUiStore((s) => s.themeMode);
   useThemeSync(themeMode);
+  usePlatformClass();
   const toggleArtifacts = useUiStore((s) => s.toggleArtifacts);
   const queryClient = useQueryClient();
+  // Unsent files are deleted when the page closes, whichever route is open.
+  useDraftCleanup();
   const path = useLocation().pathname;
   const previousPath = useRef(path);
   // Leaving the landing page abandons a temporary chat. Keyed on the path only, so starting a chat
@@ -28,13 +37,22 @@ export function RootLayout() {
     if (shouldDiscardTemporaryChat(previousPath.current, path, hasTemporary)) {
       void discardTemporaryChat(queryClient);
     }
+    // Files staged for a new chat that was never sent are abandoned when the user leaves the landing page.
+    // (A send clears them first, so starting a chat never gets here with files.)
+    if (previousPath.current === '/' && path !== '/') void discardNewChatDraft(queryClient);
     previousPath.current = path;
   }, [path, queryClient]);
   // On phones the sidebar overlays the page, so close it after navigating.
   useEffect(() => {
     if (window.innerWidth <= 768) useUiStore.getState().setSidebarCollapsed(true);
   }, [path]);
+  // A dialog opened from the drawer covers the page, so the drawer closes (phone widths only).
+  const dialogOpen = useModalStore((s) => s.open !== null);
+  useEffect(() => {
+    if (dialogOpen && window.innerWidth <= 768) useUiStore.getState().setSidebarCollapsed(true);
+  }, [dialogOpen]);
   const onLogs = useLocation().pathname.startsWith('/logs');
+  const noFiles = useChatHasNoFiles();
   const sidebarCollapsed = useUiStore((s) => s.sidebarCollapsed);
   const sessionExpired = useUserStore((s) => s.sessionExpired);
   // On phones the sidebar is a drawer: Escape closes it (through the modal stack, so it stays
@@ -69,6 +87,7 @@ export function RootLayout() {
           label={sidebarCollapsed ? 'Open sidebar' : 'Close sidebar'}
           tooltip={false}
           aria-expanded={!sidebarCollapsed}
+          hidden={!sidebarCollapsed}
           onClick={() => useUiStore.getState().toggleSidebar()}
         />
         {sidebarCollapsed ? null : (
@@ -81,13 +100,14 @@ export function RootLayout() {
         )}
         <Sidebar />
         <main>
-          {onLogs || path === '/' || path.startsWith('/workspace/') ? null : (
+          {onLogs || path.startsWith('/workspace/') ? null : (
             <button
               id="nav-files-btn"
               type="button"
-              className="btn-secondary glass top-right-btn"
+              className={`btn-secondary glass top-right-btn${noFiles ? ' top-right-btn--empty' : ''}`}
               title="View Files / Artifacts"
               aria-label="View files and artifacts"
+              disabled={path === '/'}
               onClick={toggleArtifacts}
             >
               <svg
@@ -105,6 +125,8 @@ export function RootLayout() {
             </button>
           )}
           <Outlet />
+          {/* One composer for the landing page and chats, so a route change never remounts it. */}
+          {path === '/' || path.startsWith('/chat/') ? <Composer /> : null}
         </main>
       </div>
       <DialogHost />

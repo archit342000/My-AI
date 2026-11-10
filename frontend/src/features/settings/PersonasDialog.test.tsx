@@ -34,10 +34,33 @@ describe('PersonasDialog', () => {
     fireEvent.change(screen.getByRole('textbox', { name: /Name/ }), { target: { value: 'Analyst' } });
     fireEvent.change(screen.getByRole('textbox', { name: /Instructions/ }), { target: { value: 'Be rigorous' } });
     fireEvent.click(screen.getByRole('switch', { name: 'Research mode' }));
-    fireEvent.click(screen.getByRole('switch', { name: 'Git mode' }));
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(create).toHaveBeenCalled());
-    expect(create.mock.calls[0]![0]).toMatchObject({ name: 'Analyst', content: 'Be rigorous', research_mode: 1, git_mode: 1, is_default: 0 });
+    expect(create.mock.calls[0]?.[0]).toMatchObject({ name: 'Analyst', content: 'Be rigorous', research_mode: 1, is_default: 0 });
+    const body: unknown = create.mock.calls[0]?.[0];
+    expect(body).not.toHaveProperty('git_mode');
+  });
+
+  it('editing sends only the fields the server stores, even if the row carries more', async () => {
+    vi.spyOn(personasApi, 'list').mockResolvedValue([{ ...persona, git_mode: 1, extra_runtime_field: 'x' } as never]);
+    const update = vi.spyOn(personasApi, 'update').mockResolvedValue(new Response(null) as never);
+    renderWithProviders(<PersonasDialog open onClose={() => undefined} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit Coach (default)' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(update).toHaveBeenCalled());
+    const body = update.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(Object.keys(body).sort()).toEqual(['browsing_mode', 'content', 'file_system_mode', 'is_default', 'name', 'research_mode']);
+  });
+
+  it('offers only the flags the server stores', async () => {
+    vi.spyOn(personasApi, 'list').mockResolvedValue([]);
+    renderWithProviders(<PersonasDialog open onClose={() => undefined} />);
+    fireEvent.click(await screen.findByRole('button', { name: /Add/ }));
+    expect(screen.queryByRole('switch', { name: 'Git mode' })).toBeNull();
+    expect(screen.queryByRole('switch', { name: /Code execution/i })).toBeNull();
+    for (const name of ['Default persona', 'Research mode', 'File system mode', 'Browsing mode']) {
+      expect(screen.getByRole('switch', { name })).toBeTruthy();
+    }
   });
 
   it('a duplicate persona name shows the server message inline (N10)', async () => {

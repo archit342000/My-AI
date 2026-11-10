@@ -8,12 +8,27 @@ import { useModalStore } from '../state/modal-store';
 import { chatsApi } from '../api/chats';
 import { useToastStore } from '../components/ui/toast-store';
 import { ADMIN, USER, signInAs } from '../test/roles';
+import * as filesApi from '../api/files';
+import { useAttachmentStore } from '../state/attachment-store';
 
 /** Shows the current pathname so tests can assert navigation. */
 function LocationProbe() {
   const loc = useLocation();
   return <div data-testid="location">{loc.pathname}</div>;
 }
+
+const stagedFile = (key: string, fileId: string) => ({
+  key,
+  name: key,
+  size: 1,
+  mimeType: 'text/plain',
+  file: new File(['x'], key),
+  chatId: key,
+  status: 'ready' as const,
+  progress: 1,
+  uploaded: { file_id: fileId, name: key, size: 1, mime_type: 'text/plain' },
+  error: null,
+});
 
 const withProbe = (
   <>
@@ -67,6 +82,17 @@ describe('Sidebar', () => {
     chat.unmount();
     renderWithProviders(withProbe, { route: '/', path: '/*' });
     expect(screen.getByRole('button', { name: 'Temporary Chat' }).className).not.toContain('temp-chat-btn--dim');
+  });
+
+  it('New chat throws away the files staged for the unsent new chat, and gives the next one a fresh id', async () => {
+    vi.spyOn(chatsApi, 'list').mockResolvedValue([]);
+    const del = vi.spyOn(filesApi, 'deleteFile').mockResolvedValue(undefined);
+    const draft = useAttachmentStore.getState().draftChatId;
+    useAttachmentStore.getState().add(draft, [stagedFile(draft, 'f1')]);
+    renderWithProviders(withProbe, { route: '/', path: '/*' });
+    fireEvent.click(screen.getByRole('button', { name: 'New Chat' }));
+    await waitFor(() => expect(del).toHaveBeenCalledWith('f1', {}));
+    expect(useAttachmentStore.getState().draftChatId).not.toBe(draft);
   });
 
   it('links to the logs page', () => {

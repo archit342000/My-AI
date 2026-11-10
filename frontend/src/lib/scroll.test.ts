@@ -17,6 +17,11 @@ describe('computeKeyboardOffset', () => {
     expect(computeKeyboardOffset(900, 895)).toBe(0);
     expect(computeKeyboardOffset(900, 600)).toBe(300);
   });
+
+  it('subtracts how far the browser scrolled the visual viewport', () => {
+    expect(computeKeyboardOffset(900, 600, 120)).toBe(180);
+    expect(computeKeyboardOffset(900, 600, 295)).toBe(0); // 5px left: jitter
+  });
 });
 
 describe('createFollowController', () => {

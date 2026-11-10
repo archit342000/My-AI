@@ -9,7 +9,7 @@ React 19 + TypeScript + Vite single-page app. Replaces the legacy UI in `static/
 | `npm run dev` | Vite dev server on :5173, proxies `/api`, `/v1`, `/legacy` to Flask on :5000 (`BACKEND_URL` to override) |
 | `npm run build` | Typecheck, then build to `dist/` (Flask serves it when `FRONTEND=react`) |
 | `npm run typecheck` / `lint` / `test` | Strict TS, ESLint, Vitest + Testing Library |
-| `npm run e2e` | Playwright, uses system Chrome at `/opt/google/chrome/chrome` |
+| `npm run e2e` | Playwright, uses system Chrome at `/opt/google/chrome/chrome`; the `phone` project runs only `mobile-keyboard.spec.ts` (Pixel 7 profile), the `desktop` project the rest |
 | `node scripts/gen-icons.cjs` | Regenerates `src/components/icons/workspace-icons.generated.ts` from `static/js/icons.js` |
 | `node scripts/gen-tool-labels.cjs` | Regenerates `src/features/chat/tool-labels.generated.ts` from `static/js/constants.js` |
 
@@ -27,7 +27,7 @@ React 19 + TypeScript + Vite single-page app. Replaces the legacy UI in `static/
 
 ## Conventions
 
-- Keep legacy class names and `localStorage` keys so existing browsers and styles keep working. Settings keys are per user through `nsKey()` (the admin keeps the existing names, others get `<key>:<userId>`); admin-only controls are hidden with `useIsAdmin()`. See `docs/frontend.md`.
+- Keep legacy class names and `localStorage` keys so existing browsers and styles keep working. Settings keys are per user through `nsKey()` (the admin keeps the existing names, others get `<key>:<userId>`; newer keys: `my_ai_modes`, and `userPreferences` inside `my_ai_chat_defaults`); admin-only controls are hidden with `useIsAdmin()`. See `docs/frontend.md`.
 - Server state goes through TanStack Query; UI state through Zustand.
 - Markdown HTML is always sanitised by DOMPurify before it reaches the DOM.
-- Every modal must close on Escape (use `Modal`, which handles the stack).
+- Every modal must close on Escape (use `Modal`, which handles the stack). One exception: in a management dialog's form (`CrudDialog`) the first Escape returns to the list and a second one closes.

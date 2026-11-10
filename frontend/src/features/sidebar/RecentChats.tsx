@@ -13,6 +13,7 @@ import { iconPaths, type IconName } from '../../components/icons/icon-paths';
 import { isWorkspaceExpanded, setWorkspaceExpanded } from '../../lib/workspace-prefs';
 import type { ChatSummary, Workspace } from '../../api/types';
 import { useChatList, useWorkspaceList } from '../chat/useChatQueries';
+import { stopIfStreaming } from '../chat/send-turn';
 
 type Target = { kind: 'chat'; chat: ChatSummary } | { kind: 'workspace'; workspace: Workspace };
 type Pending = { op: 'rename' | 'delete' | 'icon' | 'move-new'; target: Target } | null;
@@ -140,7 +141,11 @@ export function SidebarChats() {
 
   async function confirmDelete(t: Target) {
     if (t.kind === 'chat') {
-      await run(() => chatsApi.remove(t.chat.id), 'Delete failed');
+      // A chat that is generating is stopped first (the server's delete does not stop its turn).
+      await run(async () => {
+        await stopIfStreaming(t.chat.id, Boolean(t.chat.is_running));
+        return chatsApi.remove(t.chat.id);
+      }, 'Delete failed');
       if (activeChat?.params.chatId === t.chat.id) navigate('/', { replace: true });
     } else {
       await run(() => chatsApi.deleteWorkspace(t.workspace.id), 'Delete failed');

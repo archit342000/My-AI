@@ -8,6 +8,14 @@ interface UiState {
   sidebarWidth: number;
   setSidebarWidth: (width: number) => void;
   artifactsOpen: boolean;
+  /** True while a page that has a files drawer is open (a file link can be followed there). */
+  filesAvailable: boolean;
+  setFilesAvailable: (available: boolean) => void;
+  /** A file the transcript asked the files panel to select (by title or file name), or null. */
+  requestedArtifactPath: string | null;
+  /** Opens the files drawer and asks it to select `path`. */
+  openArtifact: (path: string) => void;
+  clearRequestedArtifact: () => void;
   themeMode: ThemeMode;
   /** Id of the active temporary chat (not listed, deleted when abandoned), or null. */
   temporaryChatId: string | null;
@@ -75,13 +83,24 @@ export const useUiStore = create<UiState>((set) => ({
     set({ sidebarWidth: next });
   },
   artifactsOpen: false,
+  filesAvailable: false,
+  setFilesAvailable: (available) => set({ filesAvailable: available }),
+  requestedArtifactPath: null,
+  openArtifact: (path) => set({ artifactsOpen: true, requestedArtifactPath: path }),
+  clearRequestedArtifact: () => set({ requestedArtifactPath: null }),
   themeMode: readTheme(),
   temporaryChatId: null,
   setTemporaryChatId: (id) => set({ temporaryChatId: id }),
   newChatWorkspaceId: null,
   setNewChatWorkspaceId: (id) => set({ newChatWorkspaceId: id }),
-  toggleArtifacts: () => set((s) => ({ artifactsOpen: !s.artifactsOpen })),
-  setArtifactsOpen: (open) => set({ artifactsOpen: open }),
+  // Closing the drawer also drops a file request it never answered.
+  toggleArtifacts: () =>
+    set((s) => ({
+      artifactsOpen: !s.artifactsOpen,
+      requestedArtifactPath: s.artifactsOpen ? null : s.requestedArtifactPath,
+    })),
+  setArtifactsOpen: (open) =>
+    set((s) => ({ artifactsOpen: open, requestedArtifactPath: open ? s.requestedArtifactPath : null })),
   setSidebarCollapsed: (collapsed) => {
     rememberCollapsed(collapsed);
     set({ sidebarCollapsed: collapsed });
