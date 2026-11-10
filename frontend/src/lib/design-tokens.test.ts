@@ -9,7 +9,6 @@ const SET_FROM_SCRIPT = new Set([
   '--fill',
   '--keyboard-offset',
   '--progress',
-  '--right-sidebar-width',
   '--sidebar-expanded-width',
 ]);
 
@@ -19,7 +18,6 @@ const KNOWN_UNDEFINED = [
   '--color-primary-light',
   '--color-sky-500',
   '--shadow-sm',
-  '--surface-2',
   '--surface-primary',
   '--text-main',
 ];

@@ -102,14 +102,17 @@
   font-size: 13px;
 }
 .task-list-item {
-  list-style: none;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
   margin-left: calc(var(--space-5) * -1 + 2px);
+  list-style: none;
 }
 .task-list-item-checkbox {
+  flex: none;
   width: 16px;
   height: 16px;
-  margin: 0 var(--space-2) 0 0;
-  vertical-align: -2px;
+  margin: 4px 0 0;
   accent-color: var(--accent);
 }
 .message-content blockquote {

@@ -73,7 +73,12 @@ export function buildTree(items: Artifact[], options: BuildTreeOptions = {}): Tr
     }
     const segments = path.split('/');
     const name = segments[segments.length - 1] ?? path;
-    folder(segments.slice(0, -1).join('/')).children.push({ kind: 'file', path, name, artifact: item });
+    folder(segments.slice(0, -1).join('/')).children.push({
+      kind: 'file',
+      path,
+      name,
+      artifact: item,
+    });
   }
 
   sortNodes(root.children);
@@ -108,4 +113,72 @@ export function folderPaths(nodes: TreeNode[]): string[] {
 export function parentFolder(path: string): string {
   const at = path.lastIndexOf('/');
   return at === -1 ? '' : path.slice(0, at);
+}
+
+/** How many files a folder holds, counting the folders inside it. */
+export function countFiles(folder: TreeFolder): number {
+  let n = 0;
+  for (const child of folder.children) n += child.kind === 'file' ? 1 : countFiles(child);
+  return n;
+}
+
+/** File endings the code runner accepts (`CODE_EXTENSION_MAP` in backend/config.py). */
+const RUNNABLE = new Set([
+  'py',
+  'c',
+  'cpp',
+  'cc',
+  'cxx',
+  'java',
+  'js',
+  'mjs',
+  'ts',
+  'go',
+  'rs',
+  'sh',
+  'bash',
+  'php',
+  'sql',
+]);
+
+/** True when the file's ending is one the code runner can run. */
+export function isRunnable(path: string): boolean {
+  const dot = path.lastIndexOf('.');
+  return dot !== -1 && RUNNABLE.has(path.slice(dot + 1).toLowerCase());
+}
+
+/** The language a new file gets from its name (what the editor and preview go by). */
+export function languageForName(name: string): string {
+  const dot = name.lastIndexOf('.');
+  const ext = dot === -1 ? '' : name.slice(dot + 1).toLowerCase();
+  const known: Record<string, string> = {
+    md: 'markdown',
+    markdown: 'markdown',
+    txt: 'text',
+    html: 'html',
+    htm: 'html',
+    css: 'css',
+    js: 'javascript',
+    mjs: 'javascript',
+    jsx: 'jsx',
+    ts: 'typescript',
+    tsx: 'tsx',
+    json: 'json',
+    py: 'python',
+    c: 'c',
+    cpp: 'cpp',
+    cc: 'cpp',
+    cxx: 'cpp',
+    java: 'java',
+    go: 'go',
+    rs: 'rust',
+    sh: 'bash',
+    bash: 'bash',
+    php: 'php',
+    sql: 'sql',
+    xml: 'xml',
+    yml: 'yaml',
+    yaml: 'yaml',
+  };
+  return known[ext] ?? (ext || 'markdown');
 }

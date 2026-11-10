@@ -27,7 +27,7 @@ for (const viewport of VIEWPORTS) {
 
     await page.setViewportSize(viewport);
     await page.goto(`/chat/${chatId}`);
-    await page.getByRole('button', { name: 'View files and artifacts' }).click();
+    await page.getByRole('button', { name: 'Files', exact: true }).click();
 
     const overlay = page.locator('.artifact-drawer');
     await expect(overlay).toBeVisible();

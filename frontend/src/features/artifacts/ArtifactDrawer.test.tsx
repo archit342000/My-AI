@@ -4,72 +4,71 @@ import { artifactsApi } from '../../api/filesystem';
 import { renderWithProviders } from '../../test/render';
 import { ArtifactDrawer } from './ArtifactDrawer';
 
-const rootVar = () => document.documentElement.style.getPropertyValue('--right-sidebar-width');
 const setWidth = (value: number) =>
   Object.defineProperty(window, 'innerWidth', { configurable: true, value });
+const panelWidth = () =>
+  (screen.getByRole('complementary', { name: 'Files' }) as HTMLElement).style.getPropertyValue(
+    '--artifact-width',
+  );
+const press = (key: string) =>
+  act(() => {
+    screen
+      .getByRole('separator', { name: 'Drag to resize the files panel' })
+      .dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+  });
 
 afterEach(() => {
   vi.restoreAllMocks();
   setWidth(1024);
   localStorage.removeItem('my_ai_artifact_width');
-  document.documentElement.style.removeProperty('--right-sidebar-width');
+  document.getElementById('app-root')?.remove();
 });
 
-describe('ArtifactDrawer beside the chat', () => {
-  it('on a wide window it publishes its width plus the edge gap, so the chat narrows, and removes it on unmount', () => {
-    vi.spyOn(artifactsApi, 'list').mockResolvedValue([]);
-    setWidth(1440);
-    const view = renderWithProviders(<ArtifactDrawer scope={{ chatId: 'c1' }} />);
-    expect(rootVar()).toBe('476px'); // 460 default + 16
-    view.unmount();
-    expect(rootVar()).toBe('');
-  });
-
-  it('follows the window: at 1024px and below it overlays and sets nothing', () => {
-    vi.spyOn(artifactsApi, 'list').mockResolvedValue([]);
-    setWidth(1000);
-    renderWithProviders(<ArtifactDrawer scope={{ chatId: 'c1' }} />);
-    expect(rootVar()).toBe('');
-    setWidth(1400);
-    act(() => window.dispatchEvent(new Event('resize')));
-    expect(rootVar()).toBe('476px');
-    setWidth(900);
-    act(() => window.dispatchEvent(new Event('resize')));
-    expect(rootVar()).toBe('');
-  });
-
-  it('a resized drawer republishes its new width', () => {
+describe('ArtifactDrawer', () => {
+  it('is a panel named Files, at its default width', () => {
     vi.spyOn(artifactsApi, 'list').mockResolvedValue([]);
     setWidth(1440);
     renderWithProviders(<ArtifactDrawer scope={{ chatId: 'c1' }} />);
-    const handle = screen.getByRole('separator', { name: 'Resize files panel' });
-    act(() => {
-      handle.dispatchEvent(
-        new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true, cancelable: true }),
-      );
-    });
-    expect(rootVar()).toBe('492px'); // 476 + one 16px key step
+    expect(panelWidth()).toBe('400px');
+    expect(screen.getByRole('heading', { name: 'Files' })).toBeTruthy();
   });
 
-  it('side by side starts above 1024px: 1024 overlays, 1025 narrows the chat', () => {
+  it('joins the app frame as a panel of its own, beside the content panel', () => {
     vi.spyOn(artifactsApi, 'list').mockResolvedValue([]);
-    setWidth(1024);
-    const a = renderWithProviders(<ArtifactDrawer scope={{ chatId: 'c1' }} />);
-    expect(rootVar()).toBe('');
-    a.unmount();
-    setWidth(1025);
+    const frame = document.createElement('div');
+    frame.id = 'app-root';
+    document.body.appendChild(frame);
     renderWithProviders(<ArtifactDrawer scope={{ chatId: 'c1' }} />);
-    expect(rootVar()).not.toBe('');
+    expect(frame.contains(screen.getByRole('complementary', { name: 'Files' }))).toBe(true);
   });
 
-  it('beside the chat the drawer cannot take the whole window: the chat keeps a column', () => {
+  it('the arrow keys resize it and the width is remembered', () => {
+    vi.spyOn(artifactsApi, 'list').mockResolvedValue([]);
+    setWidth(1440);
+    const first = renderWithProviders(<ArtifactDrawer scope={{ chatId: 'c1' }} />);
+    press('ArrowLeft');
+    expect(panelWidth()).toBe('416px');
+    press('ArrowRight');
+    press('ArrowRight');
+    expect(panelWidth()).toBe('384px');
+    first.unmount();
+    renderWithProviders(<ArtifactDrawer scope={{ chatId: 'c1' }} />);
+    expect(panelWidth()).toBe('384px');
+  });
+
+  it('cannot take the whole window: the chat keeps a column', () => {
     vi.spyOn(artifactsApi, 'list').mockResolvedValue([]);
     localStorage.setItem('my_ai_artifact_width', '960');
     setWidth(1280);
-    document.documentElement.style.setProperty('--sidebar-width', '256px');
     renderWithProviders(<ArtifactDrawer scope={{ chatId: 'c1' }} />);
-    const reserved = Number.parseInt(rootVar(), 10);
-    expect(1280 - 256 - reserved).toBeGreaterThanOrEqual(400); // room left for the chat
-    document.documentElement.style.removeProperty('--sidebar-width');
+    expect(1280 - Number.parseInt(panelWidth(), 10)).toBeGreaterThanOrEqual(360);
+  });
+
+  it('never goes below its smallest width, even in a narrow window', () => {
+    vi.spyOn(artifactsApi, 'list').mockResolvedValue([]);
+    setWidth(700);
+    renderWithProviders(<ArtifactDrawer scope={{ chatId: 'c1' }} />);
+    for (let i = 0; i < 10; i++) press('ArrowRight');
+    expect(panelWidth()).toBe('320px');
   });
 });

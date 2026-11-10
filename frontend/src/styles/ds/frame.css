@@ -345,7 +345,6 @@ main {
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  margin-right: var(--right-sidebar-width, 0px);
   border: 1px solid var(--edge);
   border-radius: var(--r-panel);
   background: var(--glass-open);

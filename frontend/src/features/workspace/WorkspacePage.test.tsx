@@ -25,7 +25,10 @@ describe('WorkspacePage', () => {
   it('shows the workspace name and its chats', async () => {
     vi.spyOn(chatsApi, 'listWorkspaces').mockResolvedValue(ws as never);
     vi.spyOn(chatsApi, 'list').mockResolvedValue(chats as never);
-    renderWithProviders(<WorkspacePage />, { route: '/workspace/w1', path: '/workspace/:workspaceId' });
+    renderWithProviders(<WorkspacePage />, {
+      route: '/workspace/w1',
+      path: '/workspace/:workspaceId',
+    });
     expect(await screen.findByRole('heading', { name: 'Research' })).toBeTruthy();
     expect(screen.getByText('Paper draft')).toBeTruthy();
   });
@@ -33,14 +36,20 @@ describe('WorkspacePage', () => {
   it('shows the empty state when the workspace has no chats', async () => {
     vi.spyOn(chatsApi, 'listWorkspaces').mockResolvedValue(ws as never);
     vi.spyOn(chatsApi, 'list').mockResolvedValue([] as never);
-    renderWithProviders(<WorkspacePage />, { route: '/workspace/w1', path: '/workspace/:workspaceId' });
+    renderWithProviders(<WorkspacePage />, {
+      route: '/workspace/w1',
+      path: '/workspace/:workspaceId',
+    });
     expect(await screen.findByText('No chats in this workspace yet.')).toBeTruthy();
   });
 
   it('unknown workspace id shows not-found', async () => {
     vi.spyOn(chatsApi, 'listWorkspaces').mockResolvedValue([] as never);
     vi.spyOn(chatsApi, 'list').mockResolvedValue([] as never);
-    renderWithProviders(<WorkspacePage />, { route: '/workspace/nope', path: '/workspace/:workspaceId' });
+    renderWithProviders(<WorkspacePage />, {
+      route: '/workspace/nope',
+      path: '/workspace/:workspaceId',
+    });
     expect(await screen.findByText('Workspace not found.')).toBeTruthy();
   });
 
@@ -48,18 +57,29 @@ describe('WorkspacePage', () => {
     vi.spyOn(chatsApi, 'listWorkspaces').mockResolvedValue(ws as never);
     vi.spyOn(chatsApi, 'list').mockResolvedValue([] as never);
     const req = vi.spyOn(client, 'apiRequest').mockResolvedValue(new Response(null) as never);
-    renderWithProviders(<WorkspacePage />, { route: '/workspace/w1', path: '/workspace/:workspaceId' });
+    renderWithProviders(<WorkspacePage />, {
+      route: '/workspace/w1',
+      path: '/workspace/:workspaceId',
+    });
     fireEvent.click(await screen.findByRole('button', { name: 'Rename workspace' }));
     fireEvent.change(screen.getByLabelText('Workspace name'), { target: { value: '  Papers  ' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-    await waitFor(() => expect(req).toHaveBeenCalledWith('/api/chats/workspaces/w1', expect.objectContaining({ method: 'PATCH', json: { name: 'Papers' } })));
+    await waitFor(() =>
+      expect(req).toHaveBeenCalledWith(
+        '/api/chats/workspaces/w1',
+        expect.objectContaining({ method: 'PATCH', json: { name: 'Papers' } }),
+      ),
+    );
   });
 
   it('a blank rename is not sent', async () => {
     vi.spyOn(chatsApi, 'listWorkspaces').mockResolvedValue(ws as never);
     vi.spyOn(chatsApi, 'list').mockResolvedValue([] as never);
     const req = vi.spyOn(client, 'apiRequest');
-    renderWithProviders(<WorkspacePage />, { route: '/workspace/w1', path: '/workspace/:workspaceId' });
+    renderWithProviders(<WorkspacePage />, {
+      route: '/workspace/w1',
+      path: '/workspace/:workspaceId',
+    });
     fireEvent.click(await screen.findByRole('button', { name: 'Rename workspace' }));
     fireEvent.change(screen.getByLabelText('Workspace name'), { target: { value: '   ' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
@@ -70,11 +90,16 @@ describe('WorkspacePage', () => {
     vi.spyOn(chatsApi, 'listWorkspaces').mockResolvedValue(ws as never);
     vi.spyOn(chatsApi, 'list').mockResolvedValue([] as never);
     vi.spyOn(client, 'apiRequest').mockRejectedValue(new Error('name exists'));
-    renderWithProviders(<WorkspacePage />, { route: '/workspace/w1', path: '/workspace/:workspaceId' });
+    renderWithProviders(<WorkspacePage />, {
+      route: '/workspace/w1',
+      path: '/workspace/:workspaceId',
+    });
     fireEvent.click(await screen.findByRole('button', { name: 'Rename workspace' }));
     fireEvent.change(screen.getByLabelText('Workspace name'), { target: { value: 'X' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-    await waitFor(() => expect(useToastStore.getState().toasts.some((t) => t.message === 'name exists')).toBe(true));
+    await waitFor(() =>
+      expect(useToastStore.getState().toasts.some((t) => t.message === 'name exists')).toBe(true),
+    );
   });
 
   it('a failed workspace delete tells the user (N6)', async () => {
@@ -82,17 +107,26 @@ describe('WorkspacePage', () => {
     vi.spyOn(chatsApi, 'listWorkspaces').mockResolvedValue(ws as never);
     vi.spyOn(chatsApi, 'list').mockResolvedValue([] as never);
     vi.spyOn(client, 'apiRequest').mockRejectedValue(new Error('locked'));
-    renderWithProviders(<WorkspacePage />, { route: '/workspace/w1', path: '/workspace/:workspaceId' });
+    renderWithProviders(<WorkspacePage />, {
+      route: '/workspace/w1',
+      path: '/workspace/:workspaceId',
+    });
     fireEvent.click(await screen.findByRole('button', { name: 'Delete workspace' }));
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
-    await waitFor(() => expect(useToastStore.getState().toasts.some((t) => t.type === 'error')).toBe(true), { timeout: 500 });
+    await waitFor(
+      () => expect(useToastStore.getState().toasts.some((t) => t.type === 'error')).toBe(true),
+      { timeout: 500 },
+    );
   });
 
   it('shows how many chats the workspace has', async () => {
     vi.spyOn(chatsApi, 'listWorkspaces').mockResolvedValue(ws as never);
     vi.spyOn(chatsApi, 'list').mockResolvedValue(chats as never);
     vi.spyOn(artifactsApi, 'list').mockResolvedValue([] as never);
-    renderWithProviders(<WorkspacePage />, { route: '/workspace/w1', path: '/workspace/:workspaceId' });
+    renderWithProviders(<WorkspacePage />, {
+      route: '/workspace/w1',
+      path: '/workspace/:workspaceId',
+    });
     expect(await screen.findByText('1 chat')).toBeTruthy();
   });
 
@@ -100,7 +134,10 @@ describe('WorkspacePage', () => {
     vi.spyOn(chatsApi, 'listWorkspaces').mockResolvedValue(ws as never);
     vi.spyOn(chatsApi, 'list').mockResolvedValue([] as never);
     vi.spyOn(artifactsApi, 'list').mockResolvedValue([] as never);
-    const { container } = renderWithProviders(<WorkspacePage />, { route: '/workspace/w1', path: '/workspace/:workspaceId' });
+    const { container } = renderWithProviders(<WorkspacePage />, {
+      route: '/workspace/w1',
+      path: '/workspace/:workspaceId',
+    });
     fireEvent.click(await screen.findByRole('button', { name: 'Rename workspace' }));
     expect(screen.getByLabelText('Workspace name').className).toContain('ui-input');
     expect(container.querySelector('[style]')).toBeNull();
@@ -113,7 +150,10 @@ describe('WorkspacePage', () => {
     vi.spyOn(client, 'apiRequest').mockResolvedValue(new Response(null) as never);
     const assign = vi.fn();
     vi.stubGlobal('location', { ...window.location, assign });
-    const { client: queryClient } = renderWithProviders(<WorkspacePage />, { route: '/workspace/w1', path: '/workspace/:workspaceId' });
+    const { client: queryClient } = renderWithProviders(<WorkspacePage />, {
+      route: '/workspace/w1',
+      path: '/workspace/:workspaceId',
+    });
     const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
     fireEvent.click(await screen.findByRole('button', { name: 'Delete workspace' }));
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
@@ -128,24 +168,30 @@ describe('WorkspacePage', () => {
       vi.spyOn(chatsApi, 'listWorkspaces').mockResolvedValue(ws as never);
       vi.spyOn(chatsApi, 'list').mockResolvedValue(chats as never);
       vi.spyOn(artifactsApi, 'list').mockResolvedValue([] as never);
-      return renderWithProviders(<WorkspacePage />, { route: '/workspace/w1', path: '/workspace/:workspaceId' });
+      return renderWithProviders(<WorkspacePage />, {
+        route: '/workspace/w1',
+        path: '/workspace/:workspaceId',
+      });
     };
 
     it('is always there, once, whatever the Files toggle says', async () => {
       renderPage();
-      expect(await screen.findByRole('region', { name: 'Artifacts' })).toBeTruthy();
+      expect(await screen.findByRole('region', { name: 'Files' })).toBeTruthy();
       expect(screen.getAllByRole('heading', { name: 'Files' })).toHaveLength(1);
       expect(screen.queryByRole('button', { name: 'Close files panel' })).toBeNull();
     });
 
-    it('a workspace whose list holds only the server\'s placeholder folder shows the empty state', async () => {
+    it("a workspace whose list holds only the server's placeholder folder shows the empty state", async () => {
       vi.spyOn(chatsApi, 'listWorkspaces').mockResolvedValue(ws as never);
       vi.spyOn(chatsApi, 'list').mockResolvedValue([] as never);
       vi.spyOn(artifactsApi, 'list').mockResolvedValue([
         { id: '', type: 'directory', filename: 'workspace', title: 'workspace' },
       ] as never);
-      renderWithProviders(<WorkspacePage />, { route: '/workspace/w1', path: '/workspace/:workspaceId' });
-      await screen.findByRole('region', { name: 'Artifacts' });
+      renderWithProviders(<WorkspacePage />, {
+        route: '/workspace/w1',
+        path: '/workspace/:workspaceId',
+      });
+      await screen.findByRole('region', { name: 'Files' });
       await waitFor(() => expect(screen.queryByText('workspace')).toBeNull());
     });
   });

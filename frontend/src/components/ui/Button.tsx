@@ -72,6 +72,8 @@ export interface IconButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonEle
   size?: 'md' | 'sm';
   tone?: 'default' | 'danger';
   tooltip?: boolean;
+  /** Why the button is off, shown as its tip while it is disabled. */
+  reason?: string;
 }
 
 const ICON_SIZE_CLASS: Record<'md' | 'sm', string | undefined> = {
@@ -90,19 +92,22 @@ export function IconButton({
   size = 'md',
   tone = 'default',
   tooltip = true,
+  reason,
   type = 'button',
   className,
   ...rest
 }: IconButtonProps) {
+  const why = rest.disabled && reason ? reason : undefined;
   const button = (
     <button
       {...rest}
       type={type}
       aria-label={label}
+      aria-description={why}
       className={cx('ui-icon-button', ICON_SIZE_CLASS[size], TONE_CLASS[tone], className)}
     >
       <Icon name={icon} size={size === 'sm' ? 14 : 16} />
     </button>
   );
-  return tooltip ? <Tooltip content={label}>{button}</Tooltip> : button;
+  return tooltip || why ? <Tooltip content={why ?? label}>{button}</Tooltip> : button;
 }

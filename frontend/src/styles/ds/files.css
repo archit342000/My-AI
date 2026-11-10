@@ -2,3 +2,582 @@
  * Files panel and editor.
  * Console at Rest: only shared values from tokens.css. See the rule book in the console-at-rest repository.
  */
+
+/* ── The Files panel beside a chat: a third panel of the app frame ── */
+
+.artifact-drawer {
+  position: relative;
+  z-index: var(--z-page);
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  width: var(--artifact-width, 400px);
+  min-height: 0;
+  padding: var(--space-3) 14px 14px;
+  border: 1px solid var(--edge);
+  border-radius: var(--r-panel);
+  background: var(--glass-open);
+  -webkit-backdrop-filter: var(--panel-blur);
+  backdrop-filter: var(--panel-blur);
+  box-shadow: var(--shadow);
+  animation: files-in var(--t-base) ease-out;
+}
+@keyframes files-in {
+  from {
+    opacity: 0;
+    scale: 0.985;
+  }
+}
+.artifact-drawer__handle {
+  position: absolute;
+  top: var(--space-4);
+  bottom: var(--space-4);
+  left: -8px;
+  z-index: 3;
+  width: 12px;
+  cursor: col-resize;
+  touch-action: none;
+}
+.artifact-drawer__handle::after {
+  position: absolute;
+  top: 50%;
+  left: 4px;
+  width: 4px;
+  height: 48px;
+  border-radius: 2px;
+  background: var(--edge-strong);
+  content: '';
+  opacity: 0;
+  translate: 0 -50%;
+  transition:
+    opacity var(--t-base) var(--ease-spring),
+    background-color var(--t-base) var(--ease-spring);
+}
+.artifact-drawer__handle:hover::after,
+.artifact-drawer__handle:active::after,
+.artifact-drawer__handle:focus-visible::after {
+  background: var(--accent);
+  opacity: 1;
+}
+.artifact-drawer__handle:focus-visible {
+  outline: none;
+}
+
+.artifact-panel {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  min-height: 0;
+}
+.artifact-panel__header {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  min-height: var(--touch);
+}
+.artifact-panel__title,
+.files-full__title {
+  margin: 0;
+  padding-left: var(--space-1);
+  font-family: var(--display);
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.artifact-panel__body,
+.files-full__body {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.fb-host {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* Full screen: the same browser, lifted out to fill the window. */
+.files-full {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--z-menu) - 1);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  animation: files-in var(--t-base) ease-out;
+}
+.files-full__head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 60px;
+  padding: 0 var(--pad);
+  border-bottom: 1px solid var(--edge);
+}
+.files-full__body {
+  padding: 14px var(--pad) var(--pad);
+}
+
+/* The file browser inside a page (a workspace): a box of its own with a fixed height. */
+.artifact-inline {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  height: 580px;
+  padding: 14px;
+  border: 1px solid var(--edge);
+  border-radius: var(--r-panel);
+  background: color-mix(in srgb, var(--glass-strong) 55%, transparent);
+}
+
+/* ── The file browser: the list, then the editor; side by side where there is room ── */
+
+.fb {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  container: fb / inline-size;
+}
+.fb-list,
+.fb-edit {
+  flex: 1;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  min-height: 0;
+}
+.fb-list {
+  display: flex;
+}
+.fb-edit {
+  display: none;
+}
+.fb[data-view='edit'] .fb-list {
+  display: none;
+}
+.fb[data-view='edit'] .fb-edit {
+  display: flex;
+}
+@container fb (min-width: 640px) {
+  .fb > .fb-list,
+  .fb[data-view='edit'] > .fb-list {
+    display: flex;
+    flex: none;
+    width: 268px;
+    margin-right: var(--space-4);
+  }
+  .fb > .fb-edit {
+    display: flex;
+  }
+  .fb-back {
+    display: none;
+  }
+}
+@container fb (min-width: 1000px) {
+  .fb > .fb-list,
+  .fb[data-view='edit'] > .fb-list {
+    width: 300px;
+  }
+}
+
+.fb-tools {
+  display: flex;
+  flex: none;
+  gap: var(--space-2);
+}
+.fb-search {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+}
+.fb-search__icon {
+  position: absolute;
+  top: 50%;
+  left: 13px;
+  color: var(--muted);
+  pointer-events: none;
+  translate: 0 -50%;
+}
+.fb-search__input {
+  width: 100%;
+  padding-right: 42px;
+  padding-left: 38px;
+}
+.fb-search__input::-webkit-search-cancel-button {
+  display: none;
+}
+.fb-search__clear {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  translate: 0 -50%;
+}
+.fb-new {
+  flex: none;
+  border: 1px solid var(--edge);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+.fb-files {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+  scrollbar-width: thin;
+  scrollbar-color: var(--edge-strong) transparent;
+}
+.fb-files:empty {
+  display: none;
+}
+.fb-kids {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 2px 0 0 var(--space-4);
+  padding: 0 0 0 6px;
+  border-left: 1px solid var(--edge);
+  list-style: none;
+}
+.fb-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.fb-row__main {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  min-height: 40px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--t-fast) var(--ease-spring);
+}
+.fb-results .fb-row__main {
+  width: 100%;
+}
+.fb-row__main > svg {
+  flex: none;
+  color: var(--muted);
+}
+.fb-row__main:hover {
+  background: var(--well);
+}
+.artifact-item[aria-current='true'] {
+  background: var(--glass-strong);
+  font-weight: 500;
+}
+.artifact-tree__folder {
+  font-weight: 500;
+}
+.fb-row__chevron {
+  transition: transform var(--t-base) var(--ease-spring);
+}
+.artifact-tree__folder[aria-expanded='true'] .fb-row__chevron {
+  transform: rotate(90deg);
+}
+.fb-row__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fb-row__count {
+  flex: none;
+  color: var(--muted);
+}
+.fb-row__more {
+  flex: none;
+  opacity: 0;
+}
+.fb-row:hover > .fb-row__more,
+.fb-row:focus-within > .fb-row__more,
+.fb-row__more[aria-expanded='true'] {
+  opacity: 1;
+}
+@media (hover: none) {
+  .fb-row__more {
+    opacity: 1;
+  }
+}
+.fb-snip {
+  display: -webkit-box;
+  margin: -2px var(--space-2) 6px 38px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+.fb-status,
+.fb-nofile {
+  margin: auto;
+  color: var(--muted);
+}
+.fb-nofile {
+  display: none;
+}
+@container fb (min-width: 640px) {
+  .fb-nofile {
+    display: block;
+  }
+}
+
+/* ── The editor side ── */
+
+.fb-bar {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px var(--space-2);
+  min-height: var(--touch);
+}
+.fb-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--mono);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fb-bar .ui-chip {
+  flex: none;
+  min-height: 24px;
+  padding: 0 var(--space-2);
+  font-size: 12px;
+}
+.fb-state {
+  flex: none;
+}
+.fb-acts {
+  gap: 2px;
+  min-height: 40px;
+}
+.fb-acts__gap {
+  flex: 1;
+}
+.fb-edit > .ui-notice {
+  flex: none;
+  margin: 0;
+}
+.fb-plan {
+  flex-wrap: wrap;
+}
+.fb-suggest {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--edge);
+  border-radius: var(--r-ctl);
+  background: var(--glass-strong);
+}
+.fb-suggest__buttons,
+.file-place__buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+.file-place {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+.file-place__title {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.fb-code {
+  display: flex;
+  flex: 1;
+  min-height: 120px;
+  overflow: hidden;
+  border: 1px solid var(--edge);
+  border-radius: var(--r-ctl);
+  background: var(--code-bg);
+  transition: border-color var(--t-base) var(--ease-spring);
+}
+.fb-code:focus-within {
+  border-color: var(--accent);
+}
+.fb-code > .fb-status {
+  color: var(--code-comment);
+}
+.code-editor {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.fb-prev {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-4) 18px;
+  border: 1px solid var(--edge);
+  border-radius: var(--r-ctl);
+  background: color-mix(in srgb, var(--glass-strong) 70%, transparent);
+  scrollbar-width: thin;
+  scrollbar-color: var(--edge-strong) transparent;
+}
+.fb-prev .task-list-item-checkbox {
+  cursor: pointer;
+}
+/* A web page is shown the way it is written: on white, whatever the theme. */
+.fb-prev--page {
+  display: flex;
+  padding: 0;
+  overflow: hidden;
+  background: Canvas;
+  color-scheme: light;
+}
+.fb-prev__frame {
+  flex: 1;
+  width: 100%;
+  border: 0;
+}
+
+.fb-out {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  max-height: 42%;
+  overflow: hidden;
+  border: 1px solid var(--edge);
+  border-radius: var(--r-ctl);
+  background: var(--glass-strong);
+}
+.fb-out__head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 40px;
+  padding: 0 4px 0 14px;
+}
+.fb-out__text {
+  margin: 0;
+  overflow: auto;
+  padding: 2px 14px var(--space-3);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  scrollbar-width: thin;
+  scrollbar-color: var(--edge-strong) transparent;
+}
+
+/* In the narrow panel the action row stays on one line. */
+@container fb (max-width: 440px) {
+  .fb-acts {
+    gap: 0;
+  }
+  .fb-acts .ui-icon-button {
+    width: 32px;
+    height: 32px;
+  }
+  .fb-acts .ui-segmented__item {
+    min-height: 30px;
+    padding: 0 9px;
+  }
+}
+
+/* ── Tablet: no room for three panels, so the Files panel lies over the content panel ── */
+
+@media (min-width: 600px) and (max-width: 1023px) {
+  .artifact-drawer {
+    position: fixed;
+    top: var(--space-3);
+    right: max(var(--space-4), env(safe-area-inset-right, 0px));
+    bottom: var(--space-3);
+    z-index: var(--z-float);
+    width: min(var(--artifact-width, 400px), calc(100vw - var(--space-4) * 2));
+    background: linear-gradient(var(--pop), var(--pop)), var(--bg);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    box-shadow: var(--shadow-lift);
+  }
+}
+
+/* ── Phone: the panel is a full screen of its own; the list, then the editor, edge to edge ── */
+
+@media (max-width: 599px) {
+  .artifact-drawer {
+    position: fixed;
+    inset: 0;
+    z-index: calc(var(--z-float) + 8);
+    width: auto;
+    padding: 10px 14px max(14px, env(safe-area-inset-bottom));
+    border: 0;
+    border-radius: 0;
+    /* A screen of its own: nothing of the chat shows through. */
+    background: linear-gradient(var(--pop), var(--pop)), var(--bg);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  .artifact-drawer__handle,
+  .fb-fullbtn {
+    display: none;
+  }
+  .fb-row__main {
+    min-height: 48px;
+  }
+  .fb-state .dat {
+    display: none;
+  }
+  .fb-acts .ui-segmented {
+    flex: 1 0 100%;
+  }
+  .fb-acts .ui-segmented__item {
+    flex: 1;
+    min-height: 38px;
+  }
+  .fb-acts .ui-icon-button,
+  .fb-back {
+    width: 44px;
+    height: 44px;
+  }
+  .file-place {
+    padding-bottom: max(var(--space-5), env(safe-area-inset-bottom));
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .artifact-drawer,
+  .files-full {
+    animation: none;
+  }
+}

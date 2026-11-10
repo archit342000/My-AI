@@ -154,10 +154,10 @@ export function WorkspacePage() {
         ) : null}
       </div>
 
-      {/* One Files section: the panel brings its own heading. */}
-      <div className="artifact-inline">
+      <section className="artifact-inline" aria-label="Files">
+        <h2 className="artifact-panel__title">Files</h2>
         <ArtifactPanel scope={{ workspaceId }} />
-      </div>
+      </section>
 
       <ConfirmDialog
         open={confirming}

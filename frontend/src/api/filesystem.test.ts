@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { artifactsApi } from './filesystem';
+import { artifactsApi, codeExecApi } from './filesystem';
 
 type Call = [string, RequestInit | undefined];
 
@@ -99,5 +99,17 @@ describe('artifactsApi version calls (chat scope)', () => {
       version2: 2,
     });
     expect(diff.added_lines).toEqual(['b']);
+  });
+});
+
+describe('codeExecApi', () => {
+  it('runFile posts the chat and the path, and returns what the run printed', async () => {
+    const call = stub({ result: 'hello\n' });
+    const out = await codeExecApi.runFile('c1', 'src/app.py');
+    const [url, init] = call();
+    expect(url).toBe('/api/tools/code-execution/run-file');
+    expect(init?.method).toBe('POST');
+    expect(JSON.parse(String(init?.body))).toEqual({ chat_id: 'c1', path: 'src/app.py' });
+    expect(out).toBe('hello\n');
   });
 });

@@ -29,6 +29,9 @@ export const UI_ICON_PATHS = {
     '<path d="M12 3.5a8.5 8.5 0 1 0 8.5 8.5" stroke-dasharray="0.1 3.6"/><path d="M12 7.5V12l3 2"/>',
   'new-workspace':
     '<path d="M3.5 7.5a2 2 0 0 1 2-2H10l2 2.5h6.5a2 2 0 0 1 2 2v7.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/><path d="M12 11.5v5M9.5 14h5"/>',
+  undo: '<path d="M8 7L4 11l4 4"/><path d="M4 11h10a5.5 5.5 0 0 1 0 11h-3"/>',
+  redo: '<path d="M16 7l4 4-4 4"/><path d="M20 11H10a5.5 5.5 0 0 0 0 11h3"/>',
+  download: '<path d="M12 4v11M7 10.5l5 5 5-5M5 20h14"/>',
   copy: '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
   'refresh-cw':
     '<path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.5 9a9 9 0 0 1 14.9-3.4L23 10M1 14l4.6 4.4A9 9 0 0 0 20.5 15"/>',
