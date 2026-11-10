@@ -4,6 +4,7 @@ import { useChatDetail } from '../chat/useChatQueries';
 import { useStreamStore } from '../../state/stream-store';
 import { useUiStore } from '../../state/ui-store';
 import { useSphereDim } from '../../hooks/useSphereDim';
+import { OnSphere } from '../../components/background/OnSphere';
 
 /** New-chat landing: the welcome hero and composer. In temporary mode it also shows the unsaved transcript. */
 export function HomePage() {
@@ -26,12 +27,10 @@ export function HomePage() {
       ) : (
         <div id="messages">
           <div id="welcome-hero">
-            <div className="empty-state-content">
-              <div className="empty-state-greeting">
-                <span className="greeting-text font-heading">Hello there</span>
-                <span className="greeting-sub font-heading">How can I help you today?</span>
-              </div>
-            </div>
+            <OnSphere className="greeting">
+              <h1 className="greeting-text">Hello there</h1>
+              <p className="greeting-sub">How can I help you today?</p>
+            </OnSphere>
           </div>
         </div>
       )}

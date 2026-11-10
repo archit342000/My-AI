@@ -621,6 +621,8 @@ input[type='range'].ui-slider__input {
   z-index: var(--z-menu);
   min-width: 220px;
   max-width: calc(100vw - var(--space-4));
+  overflow-y: auto;
+  overscroll-behavior: contain;
   border: 1px solid var(--edge);
   border-radius: var(--r-panel);
   background: var(--pop);

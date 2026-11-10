@@ -23,6 +23,9 @@ import { useUiStore } from '../../state/ui-store';
 import { useStreamStore } from '../../state/stream-store';
 import { sendTurn, stopTurn } from '../chat/send-turn';
 import { rippleSphere } from '../../lib/sphere-signal';
+import { cx } from '../../lib/cx';
+import { Notice } from '../../components/ui/Notice';
+import { ActiveTools } from '../tools/ActiveTools';
 import { useChatDetail } from '../chat/useChatQueries';
 import { useKeyboardOffset } from '../../hooks/useKeyboardOffset';
 import { rovingTarget } from '../../lib/roving';
@@ -357,18 +360,15 @@ export function Composer() {
       style={{ transform: keyboard ? `translateY(-${keyboard}px)` : undefined }} // dynamic-style
     >
       {temporary ? (
-        <div id="temp-chat-banner" className="temp-chat-banner">
-          <Icon name="clock" size={14} strokeWidth={2.5} />
-          <span>Temporary chat — not saved to history</span>
-          <button
-            id="save-temp-chat-btn"
-            type="button"
-            className="temp-chat-save-btn"
-            onClick={() => void saveTemporary()}
-          >
-            Save Chat
-          </button>
-        </div>
+        <Notice
+          className="temp-chat-banner"
+          actionLabel="Save chat"
+          onAction={() => void saveTemporary()}
+        >
+          <span id="temp-chat-banner">
+            Temporary chat. Nothing here is saved unless you save it.
+          </span>
+        </Notice>
       ) : null}
       <HelpDialog
         open={helpOpen}
@@ -378,31 +378,37 @@ export function Composer() {
         }}
         commands={commands}
       />
-      {dragging ? (
-        <div className="composer-drop-hint" role="status">
-          Drop files to attach
-        </div>
-      ) : null}
-      {attachments.length > 0 ? (
-        <div className="composer-chips" aria-label="Attached files">
-          {attachments.map((a) => (
-            <AttachmentChip
-              key={a.key}
-              item={a}
-              onRemove={() => remove(a.key)}
-              onRetry={() => retry(a.key)}
-            />
-          ))}
-        </div>
-      ) : null}
-
       {!hasModel ? (
         <div className="composer-hint" role="note">
-          Choose a model in Chat Settings
+          Choose a model in Settings first
         </div>
       ) : null}
 
-      <div className="input-container" ref={inputContainer}>
+      <div
+        className={cx(
+          'input-container',
+          dragging && 'input-container--drop',
+          temporary && 'input-container--temporary',
+        )}
+        ref={inputContainer}
+      >
+        {dragging ? (
+          <div className="composer-drop-hint" role="status">
+            Drop files to attach
+          </div>
+        ) : null}
+        {attachments.length > 0 ? (
+          <div className="composer-chips" aria-label="Attached files">
+            {attachments.map((a) => (
+              <AttachmentChip
+                key={a.key}
+                item={a}
+                onRemove={() => remove(a.key)}
+                onRetry={() => retry(a.key)}
+              />
+            ))}
+          </div>
+        ) : null}
         <Popover
           open={slashOpen}
           anchorRef={inputContainer}
@@ -430,17 +436,6 @@ export function Composer() {
             </div>
           ))}
         </Popover>
-        <button
-          id="attach-btn"
-          type="button"
-          className="input-action-btn"
-          title="Attach files"
-          aria-label="Attach files"
-          onClick={() => fileInput.current?.click()}
-        >
-          <Icon name="plus" size={20} />
-        </button>
-        <ToolsMenu sheetAnchorRef={inputContainer} />
         <input
           ref={fileInput}
           type="file"
@@ -474,33 +469,49 @@ export function Composer() {
             addFiles(pasted);
           }}
         />
-        <div id="send-btn-wrapper">
-          {streaming ? (
+        <div className="composer-row">
+          <div className="composer-left">
             <button
-              id="send-btn"
+              id="attach-btn"
               type="button"
-              className="send-btn"
-              title={stopping ? 'Stopping' : 'Stop'}
-              aria-label={stopping ? 'Stopping' : 'Stop generating'}
-              disabled={stopping}
-              onClick={() => void stopTurn()}
+              className="ui-icon-button"
+              title="Attach files"
+              aria-label="Attach files"
+              onClick={() => fileInput.current?.click()}
             >
-              <Icon name="close" size={18} strokeWidth={2.5} />
+              <Icon name="plus" size={20} />
             </button>
-          ) : (
-            <button
-              id="send-btn"
-              type="button"
-              className="send-btn"
-              title="Send"
-              aria-label="Send message"
-              disabled={sendBlocked}
-              aria-disabled={nothingToSend ? true : undefined}
-              onClick={() => void send()}
-            >
-              <Icon name="send" size={18} />
-            </button>
-          )}
+            <ToolsMenu sheetAnchorRef={inputContainer} />
+            <ActiveTools />
+          </div>
+          <div id="send-btn-wrapper">
+            {streaming ? (
+              <button
+                id="send-btn"
+                type="button"
+                className="ui-button ui-button--primary send-btn"
+                title={stopping ? 'Stopping' : 'Stop'}
+                aria-label={stopping ? 'Stopping' : 'Stop generating'}
+                disabled={stopping}
+                onClick={() => void stopTurn()}
+              >
+                <span className="send-btn__stop" aria-hidden="true" />
+              </button>
+            ) : (
+              <button
+                id="send-btn"
+                type="button"
+                className="ui-button ui-button--primary send-btn"
+                title="Send"
+                aria-label="Send message"
+                disabled={sendBlocked}
+                aria-disabled={nothingToSend ? true : undefined}
+                onClick={() => void send()}
+              >
+                <Icon name="send" size={18} />
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>

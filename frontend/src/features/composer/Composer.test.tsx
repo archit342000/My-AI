@@ -49,12 +49,12 @@ describe('Composer', () => {
     expect(screen.getByPlaceholderText('Start a conversation...')).toBeTruthy();
   });
 
-  it('the attach and tools buttons are plain composer action buttons', () => {
+  it('the attach and tools buttons are the shared icon button', () => {
     renderWithProviders(<Composer />);
     const attach = screen.getByRole('button', { name: 'Attach files' });
     expect(attach.id).toBe('attach-btn');
-    expect(attach.className).toBe('input-action-btn');
-    expect(document.getElementById('tools-button')?.className).toBe('input-action-btn');
+    expect(attach.className).toBe('ui-icon-button');
+    expect(document.getElementById('tools-button')?.className).toBe('ui-icon-button');
   });
 
   it('send is disabled while a file uploads, and enabled again once it is ready', async () => {
@@ -97,7 +97,7 @@ describe('Composer', () => {
   it('explains why send is disabled when no model is set (F4)', () => {
     useSettingsStore.setState({ model: null } as never);
     renderWithProviders(<Composer />);
-    expect(screen.getByText('Choose a model in Chat Settings')).toBeTruthy();
+    expect(screen.getByText('Choose a model in Settings first')).toBeTruthy();
   });
 
   it('does not send on the Safari composition-ending Enter (keyCode 229, isComposing false)', () => {

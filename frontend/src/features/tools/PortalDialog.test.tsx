@@ -19,7 +19,9 @@ describe('PortalDialog', () => {
     vi.spyOn(portalApi, 'init').mockResolvedValue({ url: '/x', session_id: 's' });
     renderWithProviders(<PortalDialog open onClose={() => undefined} />);
     const frame = (await screen.findByTitle('Remote browser')) as HTMLIFrameElement;
-    expect(frame.getAttribute('src')).toBe('/api/tools/portal/vnc/vnc.html?autoconnect=true&resize=scale&path=api/tools/portal/ws');
+    expect(frame.getAttribute('src')).toBe(
+      '/api/tools/portal/vnc/vnc.html?autoconnect=true&resize=scale&path=api/tools/portal/ws',
+    );
   });
 
   it('shows a loading message while the session starts', () => {
@@ -31,7 +33,9 @@ describe('PortalDialog', () => {
   it('shows the start error', async () => {
     vi.spyOn(portalApi, 'init').mockRejectedValue(new ApiError(503, {}, 'browser container down'));
     renderWithProviders(<PortalDialog open onClose={() => undefined} />);
-    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('browser container down'));
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent('browser container down'),
+    );
   });
 
   it('does not start a session while closed', () => {
