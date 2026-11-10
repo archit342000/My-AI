@@ -8,16 +8,25 @@ export interface ToastItem {
   type: ToastType;
   /** Set once the toast starts its fade-out, so the viewport can animate it out. */
   leaving: boolean;
+  /** One thing the person can still do about it, usually Undo. */
+  action?: ToastAction;
 }
 
-export const TOAST_VISIBLE_MS = 3000;
+export interface ToastAction {
+  label: string;
+  onAction: () => void;
+}
+
+/** A brief message stays 2.6 seconds, or 6 when it offers an action such as Undo (rule book 7.11). */
+export const TOAST_VISIBLE_MS = 2600;
+export const TOAST_ACTION_MS = 6000;
 export const TOAST_FADE_MS = 300;
 /** Most toasts on screen at once; the oldest one leaves first when a new one overflows. */
 export const TOAST_MAX_VISIBLE = 4;
 
 interface ToastState {
   toasts: ToastItem[];
-  show: (message: string, type?: ToastType) => number;
+  show: (message: string, type?: ToastType, action?: ToastAction) => number;
   dismiss: (id: number) => void;
 }
 
@@ -25,13 +34,16 @@ let nextId = 1;
 
 export const useToastStore = create<ToastState>((set, get) => ({
   toasts: [],
-  show: (message, type = 'info') => {
+  show: (message, type = 'info', action) => {
     const id = nextId++;
-    set((s) => ({ toasts: [...s.toasts, { id, message, type, leaving: false }] }));
+    set((s) => ({ toasts: [...s.toasts, { id, message, type, leaving: false, action }] }));
     // Errors stay until the user dismisses them, so a failure cannot be missed.
-    if (type !== 'error') setTimeout(() => get().dismiss(id), TOAST_VISIBLE_MS);
+    if (type !== 'error') {
+      setTimeout(() => get().dismiss(id), action ? TOAST_ACTION_MS : TOAST_VISIBLE_MS);
+    }
     const active = get().toasts.filter((t) => !t.leaving);
-    for (const t of active.slice(0, Math.max(0, active.length - TOAST_MAX_VISIBLE))) get().dismiss(t.id);
+    for (const t of active.slice(0, Math.max(0, active.length - TOAST_MAX_VISIBLE)))
+      get().dismiss(t.id);
     return id;
   },
   dismiss: (id) => {
@@ -43,6 +55,6 @@ export const useToastStore = create<ToastState>((set, get) => ({
 }));
 
 /** Imperative helper for non-component code. Same behaviour as legacy `window.showToast`. */
-export function showToast(message: string, type: ToastType = 'info'): number {
-  return useToastStore.getState().show(message, type);
+export function showToast(message: string, type: ToastType = 'info', action?: ToastAction): number {
+  return useToastStore.getState().show(message, type, action);
 }

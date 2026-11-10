@@ -2,3 +2,396 @@
  * Things that open on top: pop-up, window, sheet, small pop-up, brief message, notice, whole-screen wait, bigger view (7.11).
  * Console at Rest: only shared values from tokens.css. See the rule book in the console-at-rest repository.
  */
+
+/* ── The veil and the pop-up (confirming what cannot be undone) ── */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-popup);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  background: var(--scrim);
+  overscroll-behavior: none;
+}
+.modal-backdrop.open {
+  display: flex;
+  animation: fade var(--t-base) ease-out;
+}
+.modal-content {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 440px;
+  max-height: min(85vh, 100%);
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--edge);
+  border-radius: var(--r-panel);
+  background: var(--pop);
+  color: var(--fg);
+  box-shadow: var(--shadow-lift);
+  animation: modalIn var(--t-enter) var(--ease-spring);
+}
+.modal-header {
+  flex: none;
+  padding: var(--space-5) var(--space-5) var(--space-3);
+}
+.ui-modal__header-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.ui-modal__header-row > .ui-icon-button {
+  margin: -10px;
+}
+.ui-modal__header-row > .ui-icon-button:first-child {
+  margin-right: 0;
+}
+.ui-modal__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-family: var(--display);
+  font-size: var(--text-popup);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  text-align: left;
+}
+.ui-modal__status {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+}
+.modal-body {
+  flex: 1;
+  min-height: 0;
+  padding: 0 var(--space-5) var(--space-5);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  color: var(--muted);
+}
+.modal-footer {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding: 0 var(--space-5) var(--space-5);
+}
+
+/* ── The large window: tools and bigger views ── */
+
+.ui-modal--window .modal-content {
+  height: min(46rem, 100%);
+  max-height: 100%;
+}
+.ui-modal--window .modal-header {
+  padding: var(--space-3) var(--space-4) var(--space-3) var(--space-5);
+  border-bottom: 1px solid var(--edge);
+}
+.ui-modal--window .ui-modal__header-row > .ui-icon-button {
+  margin: 0;
+}
+.ui-modal--window .ui-modal__title {
+  font-size: var(--text-heading);
+  letter-spacing: -0.01em;
+}
+.ui-modal--window .modal-body {
+  padding: var(--space-4) var(--space-5) var(--space-5);
+  color: var(--fg);
+}
+.ui-modal--window .modal-footer {
+  padding: var(--space-3) var(--space-5);
+  border-top: 1px solid var(--edge);
+}
+
+/* ── The bottom sheet: what menus, drop-downs and small pop-ups become on a phone ── */
+
+.ui-sheet-veil {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-popup);
+  display: flex;
+  align-items: flex-end;
+  background: var(--scrim);
+  animation: fade var(--t-base) ease-out;
+}
+.ui-sheet {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-height: 85dvh;
+  padding-bottom: env(safe-area-inset-bottom);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--edge);
+  border-bottom: 0;
+  border-radius: var(--r-sheet);
+  background: var(--pop);
+  color: var(--fg);
+  box-shadow: var(--shadow-lift);
+  animation: sheetIn var(--t-slow) var(--ease-spring);
+}
+.ui-sheet__grip {
+  flex: none;
+  width: 36px;
+  height: 4px;
+  margin: var(--space-2) auto var(--space-1);
+  border-radius: 2px;
+  background: var(--edge-strong);
+}
+.ui-sheet .ui-menu__item,
+.ui-sheet .ui-select__option {
+  min-height: var(--touch);
+}
+
+/* ── The small pop-up attached to a control: name or rename something ── */
+
+.ui-prompt {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ui-prompt__input {
+  width: 100%;
+}
+.ui-prompt__label {
+  font-weight: 500;
+  color: var(--fg);
+}
+.ui-prompt__pop {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+.ui-prompt__title {
+  margin: 0;
+  font-family: var(--display);
+  font-size: var(--text-heading);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.ui-prompt__buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+/* ── Brief messages: bottom centre, 2.6 seconds, 6 with Undo ── */
+
+.ui-toast-viewport {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--space-5) + var(--composer-h, 0px) + env(safe-area-inset-bottom));
+  z-index: var(--z-top);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  width: max-content;
+  max-width: calc(100vw - var(--space-5));
+  translate: -50% 0;
+  pointer-events: none;
+}
+.ui-toast {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--touch);
+  max-width: 100%;
+  padding: 0 var(--space-2) 0 var(--space-4);
+  border: 1px solid var(--edge);
+  border-radius: var(--r-ctl);
+  background: var(--pop);
+  color: var(--fg);
+  box-shadow: var(--shadow-lift);
+  pointer-events: auto;
+  animation: msgIn var(--t-enter) var(--ease-spring);
+}
+.ui-toast--leaving {
+  opacity: 0;
+  transition: opacity var(--t-slow) ease;
+}
+.ui-toast__icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--led);
+}
+.ui-toast--success .ui-toast__icon {
+  color: var(--ok);
+}
+.ui-toast--error .ui-toast__icon {
+  color: var(--bad);
+}
+.ui-toast__message {
+  min-width: 0;
+  padding: var(--space-2) 0;
+  overflow-wrap: anywhere;
+}
+.ui-toast__action {
+  flex: none;
+}
+.ui-toast__dismiss {
+  flex: none;
+}
+
+/* ── The notice strip: stays until dealt with ── */
+
+.ui-notice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--touch);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
+  border: 1px solid var(--edge);
+  border-radius: var(--r-ctl);
+  background: var(--glass-strong);
+  color: var(--fg);
+}
+.ui-notice__light {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--led);
+}
+.ui-notice--ok .ui-notice__light {
+  background: var(--ok);
+}
+.ui-notice--warn .ui-notice__light {
+  background: var(--warn);
+}
+.ui-notice--bad .ui-notice__light {
+  background: var(--bad);
+}
+.ui-notice--bad {
+  border-color: color-mix(in srgb, var(--bad) 45%, transparent);
+}
+.ui-notice__text {
+  flex: 1;
+  min-width: 0;
+  padding-right: var(--space-2);
+}
+
+/* ── The whole-screen wait ── */
+
+.ui-hold {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-top);
+  display: grid;
+  place-items: center;
+  padding: var(--space-5);
+  background: color-mix(in srgb, var(--bg) 80%, transparent);
+  -webkit-backdrop-filter: var(--panel-blur);
+  backdrop-filter: var(--panel-blur);
+  animation: fade var(--t-base) ease-out;
+}
+.ui-hold__in {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  width: min(26rem, 100%);
+  text-align: center;
+}
+.ui-hold__title {
+  margin: 0;
+  font-family: var(--display);
+  font-size: var(--text-section);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.ui-hold__text {
+  margin: 0;
+  color: var(--muted);
+}
+.ui-hold__bar {
+  width: 100%;
+  height: 4px;
+  margin-top: var(--space-2);
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--well);
+}
+.ui-hold__bar i {
+  display: block;
+  width: 40%;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--led);
+  animation: ui-flow 1.4s var(--ease-spring) infinite;
+}
+@keyframes ui-flow {
+  from {
+    transform: translateX(-110%);
+  }
+  to {
+    transform: translateX(260%);
+  }
+}
+
+/* ── The bigger view: a picture or a diagram, with zoom ── */
+
+.ui-viewer__zoom {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.ui-viewer__stage {
+  display: grid;
+  place-items: center;
+  min-height: 100%;
+  overflow: auto;
+  border-radius: var(--r-ctl);
+  background: var(--well);
+}
+.ui-viewer__content {
+  padding: var(--space-4);
+}
+.image-lightbox__img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+.mermaid-popout {
+  min-width: min(60rem, 80vw);
+}
+
+/* ── Phones: a pop-up rises from the bottom, a window fills the screen ── */
+
+@media (max-width: 599px) {
+  .modal-backdrop {
+    align-items: flex-end;
+    padding: 0;
+  }
+  .modal-content {
+    max-width: none !important;
+    max-height: 90dvh;
+    padding-bottom: env(safe-area-inset-bottom);
+    border-bottom: 0;
+    border-radius: var(--r-sheet);
+    animation: sheetIn var(--t-slow) var(--ease-spring);
+  }
+  .ui-modal--window .modal-content {
+    height: 100dvh;
+    max-height: 100dvh;
+    padding-top: env(safe-area-inset-top);
+    border: 0;
+    border-radius: 0;
+  }
+  .modal-footer > * {
+    flex: 1 1 auto;
+  }
+  .ui-toast-viewport {
+    width: calc(100vw - var(--space-5));
+  }
+}

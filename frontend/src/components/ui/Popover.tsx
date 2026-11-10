@@ -9,6 +9,7 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { cx } from '../../lib/cx';
+import { useMediaQuery } from '../../hooks/useMediaQuery';
 import {
   computePosition,
   readVisibleViewport,
@@ -38,6 +39,8 @@ export interface PopoverProps {
   label?: string;
   id?: string;
   className?: string;
+  /** On a phone, rise from the bottom as a sheet instead of hanging from the anchor (menus, drop-downs). */
+  sheetOnPhone?: boolean;
 }
 
 function samePosition(a: Position | null, b: Position): boolean {
@@ -72,7 +75,10 @@ export function Popover({
   label,
   id,
   className,
+  sheetOnPhone = false,
 }: PopoverProps) {
+  const phone = useMediaQuery('(max-width: 599px)');
+  const asSheet = sheetOnPhone && phone;
   const [pos, setPos] = useState<Position | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef(onClose);
@@ -139,6 +145,32 @@ export function Popover({
   }, [open, anchorRef]);
 
   if (!open) return null;
+
+  if (asSheet) {
+    // The veil carries data-popover so a press on it is not an "outside" press for other popovers;
+    // it closes this one itself.
+    return createPortal(
+      <div
+        className="ui-sheet-veil"
+        data-popover=""
+        onPointerDown={(event) => {
+          if (event.target === event.currentTarget) closeRef.current('outside');
+        }}
+      >
+        <div
+          ref={panelRef}
+          id={id}
+          role={role}
+          aria-label={label}
+          className={cx('ui-sheet', className)}
+        >
+          <div className="ui-sheet__grip" aria-hidden="true" />
+          {children}
+        </div>
+      </div>,
+      document.body,
+    );
+  }
 
   const placementStyle: CSSProperties = pos
     ? {

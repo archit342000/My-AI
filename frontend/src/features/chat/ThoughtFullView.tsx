@@ -1,4 +1,4 @@
-import { Modal } from '../../components/ui/Modal';
+import { Window } from '../../components/ui/Window';
 import type { TimelineItem } from '../../lib/thought-timeline';
 import { TimelineEntry } from './TimelineEntry';
 
@@ -13,12 +13,12 @@ export function ThoughtFullView({
   items: TimelineItem[];
 }) {
   return (
-    <Modal open={open} onClose={onClose} title="Thought process" maxWidth={820}>
+    <Window open={open} onClose={onClose} title="Thought process" maxWidth={820}>
       <div className="activity-feed thought-full-view">
         {items.map((item) => (
           <TimelineEntry key={item.key} item={item} defaultOpen />
         ))}
       </div>
-    </Modal>
+    </Window>
   );
 }

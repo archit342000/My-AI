@@ -1,6 +1,6 @@
 import { Icon, type UiIconName } from '../icons/Icon';
 import { cx } from '../../lib/cx';
-import { IconButton } from './Button';
+import { Button, IconButton } from './Button';
 import { useToastStore, type ToastType } from './toast-store';
 
 const ICON_FOR: Record<ToastType, UiIconName> = {
@@ -30,6 +30,18 @@ export function ToastViewport() {
             <Icon name={ICON_FOR[t.type]} size={16} />
           </span>
           <span className="ui-toast__message">{t.message}</span>
+          {t.action ? (
+            <Button
+              variant="link"
+              className="ui-toast__action"
+              onClick={() => {
+                t.action?.onAction();
+                dismiss(t.id);
+              }}
+            >
+              {t.action.label}
+            </Button>
+          ) : null}
           <IconButton
             icon="close"
             label="Dismiss notification"

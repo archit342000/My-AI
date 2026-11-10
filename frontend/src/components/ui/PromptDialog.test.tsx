@@ -37,7 +37,7 @@ describe('PromptDialog (F-33)', () => {
     );
     const input = screen.getByRole('textbox');
     fireEvent.change(input, { target: { value: 'Renamed' } });
-    fireEvent.click(screen.getByRole('button', { name: 'OK' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     expect(onSubmit).toHaveBeenCalledWith('Renamed');
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(onCancel).toHaveBeenCalled();

@@ -208,6 +208,7 @@ export function Select({
         anchorRef={triggerRef}
         onClose={() => closeList()}
         role="listbox"
+        sheetOnPhone
         id={listId}
         label={ariaLabel}
         minWidth={200}

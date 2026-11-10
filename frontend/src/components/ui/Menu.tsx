@@ -95,6 +95,7 @@ export function Menu({ items, trigger, label, width, minWidth = 200, point, onCl
         point={controlled && point ? point : undefined}
         onClose={close}
         role="menu"
+        sheetOnPhone
         label={label}
         width={width}
         minWidth={minWidth}
@@ -305,6 +306,7 @@ function SubMenu({
         }}
         placement="right"
         role="menu"
+        sheetOnPhone
         label={entry.label}
         minWidth={220}
       >

@@ -1593,96 +1593,6 @@ background: var(--accent-border);
 }.breadcrumb-item.active {
   color: var(--accent);
   font-weight: 600;
-}
-
-/* 5.R Modals */.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: transparent !important;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: var(--z-modal);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 300ms var(--ease-spring);
-  overscroll-behavior: none;
-}
-.modal-backdrop::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: transparent;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  z-index: -1;
-  pointer-events: none;
-}
-.modal-backdrop.open {
-  opacity: 1;
-  pointer-events: auto;
-}.modal-content {
-  background: transparent !important;
-  border: 1px solid var(--sidebar-border-color);
-  border-radius: var(--radius-2xl);
-  max-width: 512px;
-  width: 90%;
-  max-height: 85vh;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  transform: scale(0.92) translateY(8px);
-  opacity: 0;
-  transition:
-    transform 300ms var(--ease-spring),
-    opacity 200ms ease;
-  color: var(--content-primary);
-  position: relative;
-  box-shadow:
-    0 30px 60px rgba(0, 0, 0, 0.12),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.1);
-}
-.modal-content::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: var(--glass-bg);
-  backdrop-filter: var(--glass-blur-sidebar);
-  -webkit-backdrop-filter: var(--glass-blur-sidebar);
-  z-index: -1;
-  pointer-events: none;
-}
-.modal-header {
-  padding: 32px 32px 20px 32px;
-  flex-shrink: 0;
-}.modal-header h2 {
-  font-weight: 800;
-  letter-spacing: -0.03em;
-}.modal-body {
-  padding: 0 32px 32px 32px;
-  overflow-y: auto;
-  flex: 1;
-  scrollbar-width: thin;
-  scrollbar-color: var(--accent-border) transparent;
-  -webkit-overflow-scrolling: touch;
-  overscroll-behavior: contain;
-}.modal-body::-webkit-scrollbar {
-  width: 6px;
-}.modal-body::-webkit-scrollbar-track {
-  background: transparent;
-}.modal-body::-webkit-scrollbar-thumb {
-  background-color: var(--accent-border);
-  border-radius: 10px;
-}.dark .modal-content {
-  background: transparent !important;
-  /* Re-Unified translucency */
-  border: 1px solid var(--sidebar-border-color);
-  box-shadow:
-    0 40px 80px rgba(0, 0, 0, 0.5),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.08);
-  /* Prism edge */
 }.modern-input {
   width: 100%;
   height: 3.5rem !important;
@@ -1698,33 +1608,6 @@ background: var(--accent-border);
   border-color: var(--accent) !important;
   background: var(--bg-base) !important;
   box-shadow: 0 0 0 4px var(--accent-subtle) !important;
-}.dark .modal-content .hardware-surface {
-  background: rgba(255, 255, 255, 0.03) !important;
-  border-color: rgba(255, 255, 255, 0.05) !important;
-}.dark .modal-content .badge {
-  background: rgba(var(--accent-rgb), 0.2);
-  color: var(--accent-light);
-}
-
-.modal-backdrop.open .modal-content {
-  transform: scale(1) translateY(0);
-  opacity: 1;
-}
-
-/* Thought Process Full View Modal Enhancements */
-#thought-full-view-modal .modal-content {
-  border: 1px solid rgba(var(--accent-rgb), 0.2);
-  box-shadow: 0 30px 60px rgba(0, 0, 0, 0.35);
-  background: var(--bg-base) !important; /* Use solid base background */
-  width: 98vw; /* Take more width on small screens */
-  max-width: 1000px;
-}
-
-#thought-full-view-modal .modal-header {
-  padding: 1rem 1.5rem; /* Reduced padding */
-  background: var(--bg-header) !important;
-  backdrop-filter: blur(20px) saturate(160%) !important;
-  -webkit-backdrop-filter: blur(20px) saturate(160%) !important;
 }
 
 #thought-modal-body {
@@ -2734,8 +2617,6 @@ background: var(--accent-border);
     animation: none;
   }.avatar-orbit {
     animation: none;
-  }.modal-content, .modal-backdrop {
-    transition-duration: 0ms;
   }.thought-body {
     transition-duration: 0ms;
   }.thought-container.reasoning-active {
@@ -5046,16 +4927,6 @@ max-height: 70vh;
 /* Tool Result Styling */.tool-result-content code {
   max-height: 500px;
   overflow-y: auto;
-}
-
-/* ═══════════════════════════════════════════
-   iPadOS Compatibility Fixes
-   ═══════════════════════════════════════════ */#version-history-modal .modal-content {
-  height: 80vh;
-  height: 80svh;
-}#browser-portal-modal .modal-content {
-  height: 90vh;
-  height: 90svh;
 }#preferences-file-system-overlay .file-system-body, #version-list, #version-diff-body {
   -webkit-overflow-scrolling: touch;
 }.tool-call-activity .sse-chunk-sub-label {
@@ -5467,10 +5338,6 @@ max-height: 70vh;
   background: rgba(255, 255, 255, 0.96) !important;
 }
 
-.is-ios .modal-backdrop {
-  background: rgba(15, 15, 20, 0.6) !important;
-}
-
 /* Dark mode overrides for is-ios premium glass fallbacks */
 .dark.is-ios .modal-content::before,
 .dark.is-ios aside,
@@ -5488,10 +5355,6 @@ max-height: 70vh;
   background: rgba(20, 20, 25, 0.95) !important;
 }
 
-.dark.is-ios .modal-backdrop {
-  background: rgba(5, 5, 8, 0.8) !important;
-}
-
 .is-ios .bot-message .message-content {
   transform: none !important;
   transition: none !important;
@@ -5506,17 +5369,6 @@ max-height: 70vh;
 .is-ios .file-system-body:has(.file-system-editor-container:not(.hidden)),
 .is-ios .file-system-body:has(.file-system-preview-container:not(.hidden)) {
   overflow: hidden !important;
-}
-
-/* Ensure WebKit recognizes scrollable overflow in settings and general modals by enforcing explicit heights */
-.is-ios .modal-content {
-  max-height: 80vh !important;
-  height: auto !important;
-}
-.is-ios .modal-body {
-  height: 100% !important;
-  max-height: 100% !important;
-  display: block !important;
 }
 
 /* ==========================================
