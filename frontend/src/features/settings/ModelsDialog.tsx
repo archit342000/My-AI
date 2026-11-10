@@ -90,7 +90,7 @@ export function ModelsDialog({ open, onClose, onBack }: { open: boolean; onClose
             />
           )}
         </UiField>
-        <Button variant="primary" disabled={!target || speed.isPending} onClick={() => { setResult(null); speed.mutate(); }}>
+        <Button variant="primary" className="models-run" disabled={!target || speed.isPending} onClick={() => { setResult(null); speed.mutate(); }}>
           {speed.isPending ? 'Running…' : 'Run speed test'}
         </Button>
         {result ? <pre className="font-mono model-result">{result}</pre> : null}

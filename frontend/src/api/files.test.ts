@@ -14,6 +14,14 @@ describe('deleteFile', () => {
     expect(init.method).toBe('DELETE');
   });
 
+  it('passes keepalive through, so the delete can finish while the page closes', async () => {
+    const fetchMock = vi.fn(async () => new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    await deleteFile('f1', { keepalive: true });
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(init.keepalive).toBe(true);
+  });
+
   it('throws an ApiError with the server message on a non-2xx response', async () => {
     const body = JSON.stringify({ error: 'File not found' });
     vi.stubGlobal('fetch', vi.fn(async () => new Response(body, { status: 404 })));

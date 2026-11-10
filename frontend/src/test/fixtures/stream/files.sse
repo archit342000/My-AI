@@ -1,0 +1,10 @@
+data: {"choices": [{"delta": {"reasoning_content": "I will write a file."}}], "model": "Gemma4-26B-A4B-it-GGUF"}
+
+data: {"choices": [{"delta": {"tool_calls": [{"id": "call_1", "index": 0, "function": {"name": "create_fs_file", "arguments": "{\"path\":\"notes/hello.md\",\"content\":\"# Hello\"}"}}]}}], "model": "Gemma4-26B-A4B-it-GGUF"}
+
+data: {"choices": [{"delta": {"tool_result": {"tool_call_id": "call_1", "content": "Created notes/hello.md"}}}], "model": "Gemma4-26B-A4B-it-GGUF"}
+
+data: {"choices": [{"delta": {"content": "I created the file.\n\nSee [hello](notes/hello.md) for details.\n\n```\nnot a split\n\nstill code\n```"}}], "model": "Gemma4-26B-A4B-it-GGUF"}
+
+data: [DONE]
+
