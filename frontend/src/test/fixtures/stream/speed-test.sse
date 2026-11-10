@@ -1,0 +1,22 @@
+data: {"test_status": "Unloading existing models..."}
+
+data: {"test_status": "Loading model..."}
+
+data: {"test_status": "Starting Turn 1 (Current Context: 0/8000)"}
+
+data: {"choices": [{"delta": {"content": "Hello"}}]}
+
+data: {"choices": [{"delta": {"content": " world"}}]}
+
+data: {"timings": {"prompt_ms": 500, "prompt_n": 1000, "predicted_ms": 2000, "predicted_n": 100}, "usage": {"total_tokens": 1100}}
+
+data: {"test_status": "Starting Turn 2 (Current Context: 1100/8000)"}
+
+data: {"choices": [{"delta": {"content": "More"}}]}
+
+data: {"timings": {"prompt_ms": 1000, "prompt_n": 3000, "predicted_ms": 4000, "predicted_n": 100}, "usage": {"total_tokens": 4200}}
+
+data: {"test_status": "Completed: reached the target context"}
+
+data: [DONE]
+

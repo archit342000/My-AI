@@ -1,5 +1,6 @@
 /** Settings, preferences, skills, personas, agents, browser and model endpoints (phase 5). */
 import { apiJson, apiRequest } from './client';
+import { readSse } from './sse';
 
 export interface CodeRunnerSettings {
   code_runner_timeout: number;
@@ -108,12 +109,25 @@ export const modelsApi = {
   list: () => apiJson<{ data: LoadedModel[] }>('/api/models/').then((r) => r.data),
   load: (model: string) => apiRequest('/api/models/load', { method: 'POST', json: { model } }),
   unload: (model: string) => apiRequest('/api/models/unload', { method: 'POST', json: { model } }),
-  testSpeed: (model: string, targetContextThreshold: number) =>
-    apiJson<Record<string, unknown>>('/api/models/test-speed', {
-      method: 'POST',
-      json: { model, target_context_threshold: targetContextThreshold },
-    }),
 };
+
+/**
+ * Runs the model speed test and yields its events (status lines, token deltas, timings, usage).
+ * The server unloads every loaded model first. Throws on HTTP errors; aborting `signal` stops it.
+ */
+export async function* testSpeedStream(
+  model: string,
+  targetContextThreshold: number,
+  signal: AbortSignal,
+): AsyncGenerator<unknown> {
+  const response = await apiRequest('/api/models/test-speed', {
+    method: 'POST',
+    json: { model, target_context_threshold: targetContextThreshold },
+    signal,
+  });
+  if (!response.body) throw new Error('Empty response from server');
+  yield* readSse(response.body);
+}
 
 export const settingsKeys = {
   system: ['settings', 'system'] as const,
