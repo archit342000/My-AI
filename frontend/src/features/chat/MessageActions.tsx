@@ -40,7 +40,9 @@ export function MessageActions({ text, role, canRetry, onEdit, onRetry, onDelete
 
   return (
     <>
-      <div className={`message-actions-container ${role === 'user' ? 'user-actions' : 'bot-actions'}`}>
+      <div
+        className={`message-actions-container ${role === 'user' ? 'user-actions' : 'bot-actions'}`}
+      >
         <IconButton
           className="action-btn copy-msg-btn"
           size="sm"
@@ -49,7 +51,13 @@ export function MessageActions({ text, role, canRetry, onEdit, onRetry, onDelete
           onClick={() => void copy()}
         />
         {onEdit ? (
-          <IconButton className="action-btn edit-msg-btn" size="sm" icon="edit" label="Edit message" onClick={onEdit} />
+          <IconButton
+            className="action-btn edit-msg-btn"
+            size="sm"
+            icon="edit"
+            label="Edit message"
+            onClick={onEdit}
+          />
         ) : null}
         {canRetry && onRetry ? (
           <IconButton

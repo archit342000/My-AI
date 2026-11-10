@@ -21,7 +21,6 @@ const TODO_UNSTYLED = new Set<string>([
   'copy-msg-btn',
   'delete-msg-btn',
   'edit-msg-btn',
-  'message-text-wrapper',
   'raw-text-content',
   'retry-msg-btn',
 ]);

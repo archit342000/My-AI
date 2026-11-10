@@ -51,220 +51,6 @@
   --off-track: #71717a;
 }
 
-/* ───────────────────────── Tool activity (activity-item) ───────────────────────── */
-
-.activity-feed {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  margin-top: var(--space-2);
-}
-.activity-item {
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  background: var(--surface-secondary);
-  overflow: hidden;
-}
-.activity-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-  width: 100%;
-  min-height: 34px;
-  padding: 6px var(--space-3);
-  border: none;
-  background: transparent;
-  color: var(--content-primary);
-  font: inherit;
-  font-size: 0.8rem;
-  font-weight: 600;
-  text-align: left;
-  cursor: pointer;
-  appearance: none;
-}
-.activity-header:hover {
-  background: var(--surface-hover);
-}
-.activity-header:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: -2px;
-}
-.activity-type {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-/* Animated body: 0fr collapses the row to nothing, 1fr lets it grow to its content height. */
-.activity-content-wrapper {
-  display: grid;
-  grid-template-rows: 0fr;
-  transition: grid-template-rows 0.2s ease;
-}
-.activity-item.expanded > .activity-content-wrapper {
-  grid-template-rows: 1fr;
-}
-.activity-body {
-  min-height: 0;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding: 0 var(--space-3);
-}
-.activity-item.expanded .activity-body {
-  padding-bottom: var(--space-3);
-}
-/* Legacy hides `.activity-item .activity-content` (display:none, max-height:0) unless it is a
-   direct child of `.expanded`; open/close is now handled by `.activity-content-wrapper`. */
-.activity-item .activity-content {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  min-width: 0;
-  max-height: none;
-}
-.activity-content pre {
-  margin: 0;
-  max-height: 320px;
-  overflow: auto;
-  padding: var(--space-2);
-  border-radius: var(--radius-sm);
-  background: var(--bg-chat-display);
-  color: var(--content-primary);
-  font-size: 0.75rem;
-  line-height: 1.5;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-.activity-more {
-  align-self: flex-start;
-  padding: 2px 0;
-  border: none;
-  background: transparent;
-  color: var(--accent);
-  font: inherit;
-  font-size: 0.75rem;
-  font-weight: 600;
-  cursor: pointer;
-}
-.activity-more:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-  border-radius: var(--radius-sm);
-}
-.activity-running {
-  flex: 0 0 auto;
-  margin-left: auto;
-  font-size: 0.7rem;
-  font-weight: 600;
-  color: var(--accent);
-}
-.timeline-reasoning {
-  min-width: 0;
-  font-size: 0.8rem;
-  line-height: 1.55;
-  color: var(--content-secondary);
-  overflow-wrap: anywhere;
-}
-.event-divider {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  font-size: 0.72rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--content-muted);
-}
-.event-divider::before,
-.event-divider::after {
-  content: "";
-  flex: 1;
-  height: 1px;
-  background: var(--border-subtle);
-}
-.sub-agent-item > .activity-header .activity-type {
-  color: var(--accent);
-}
-.sub-agent-entries {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-.thought-full-view {
-  margin-top: 0;
-}
-@media (prefers-reduced-motion: reduce) {
-  .activity-content-wrapper {
-    transition: none;
-  }
-}
-
-/* ───────────────────────── Chat transcript helpers (chat-*, messages-list) ───────────────────────── */
-
-.chat-jump-latest {
-  position: sticky;
-  bottom: var(--space-4);
-  align-self: center;
-  margin-top: var(--space-2);
-  padding: 6px var(--space-4);
-  border: 1px solid var(--accent-border);
-  border-radius: 999px;
-  background: var(--surface-elevated);
-  color: var(--accent);
-  font: inherit;
-  font-size: 0.8rem;
-  font-weight: 600;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.14);
-  cursor: pointer;
-}
-.chat-jump-latest:hover {
-  background: var(--accent-subtle);
-}
-.chat-jump-latest:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-}
-
-/* Links in an answer or a file preview are readable in both themes (legacy leaves the browser's blue). */
-.message-row .message-content a,
-.artifact-drawer .message-content a {
-  color: var(--accent);
-}
-
-/* In the dark theme a highlighted code block has one surface: the block's, not the highlighter's own. */
-.dark .code-block-wrapper pre code.hljs {
-  background: transparent;
-}
-
-/* ───────────────────────── Message edit box (edit-box) ───────────────────────── */
-
-.edit-box {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  width: min(100%, 560px);
-  max-width: 80%;
-  padding: var(--space-3);
-  border: 1px solid var(--accent-border);
-  border-radius: var(--radius-xl);
-  background: var(--surface-elevated);
-}
-.edit-textarea {
-  resize: none; /* it grows with its content */
-  min-height: 56px;
-  max-height: 60vh;
-  background: var(--bg-input);
-}
-.edit-box__actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: var(--space-2);
-}
-
 /* The /help dialog. */
 .help-list {
   display: flex;
@@ -295,356 +81,10 @@
   color: var(--content-muted);
 }
 
-/* ───────────────────────── Chat transcript (bot-turn, avatars, notices, tool summary) ───────────────────────── */
-
-/* Assistant turn: avatar column + body column. The avatar sits on the first block (F-23). */
-.bot-turn {
-  display: grid;
-  grid-template-columns: 32px minmax(0, 1fr);
-  column-gap: var(--space-3);
-  align-items: start;
-  width: 100%;
-}
-
-.bot-turn__avatar {
-  grid-column: 1;
-  padding-top: var(--space-1);
-}
-
-.bot-turn__body {
-  grid-column: 2;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  min-width: 0;
-}
-
-.avatar {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.avatar--user {
-  color: var(--content-muted);
-  font-weight: 800;
-  font-size: 0.75rem;
-}
-
-.avatar--bot {
-  color: white;
-  font-weight: 800;
-  font-size: 0.75rem;
-}
-
-.thought-status {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-width: 0;
-  flex-wrap: wrap;
-}
-
-.thought-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-/* Latest stream event (e.g. "Searching the web") while the model is still thinking. */
-.thought-status-line {
-  flex-basis: 100%;
-  font-size: 0.78rem;
-  color: var(--content-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 /* Header geometry of the legacy thought box: 56px tall (36px button, 10px above and below). */
 :root {
   --thought-action-size: 2.25rem;
   --thought-inset: 14px;
-}
-
-/* Thought box row, as the legacy markup: [avatar | box header] over a full-width timeline and answer. */
-.assistant-header-row {
-  display: flex;
-  align-items: stretch;
-  gap: var(--space-4);
-  width: 100%;
-  margin-bottom: var(--space-3);
-}
-
-.assistant-avatar-column {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.thought-section-wrapper {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.thought-content-wrapper {
-  width: 100%;
-}
-
-.thought-section-wrapper .thought-container {
-  margin-bottom: 0;
-}
-
-/* The header holds two sibling buttons: the toggle (status, title, chevron) and the full view, which sits
-   over the toggle just left of its chevron, where the legacy header has it. */
-.thought-header {
-  position: relative;
-  padding: 0;
-}
-
-.thought-toggle {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  min-width: 0;
-  min-height: calc(var(--thought-action-size) + 20px);
-  padding: 10px var(--thought-inset);
-  border: none;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.thought-toggle .thought-status {
-  margin-right: calc(var(--thought-action-size) + var(--space-3));
-}
-
-.thought-toggle:focus-visible,
-.thought-full-view-btn:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: -2px;
-}
-
-.thought-actions {
-  position: absolute;
-  top: 50%;
-  right: calc(var(--thought-inset) + 24px + var(--space-2));
-  transform: translateY(-50%);
-}
-
-.thought-full-view-btn {
-  width: var(--thought-action-size);
-  height: var(--thought-action-size);
-  padding: 0;
-  border-radius: var(--radius-lg);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.thought-full-view-btn:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-.thought-timeline-wrapper.full-width-reasoning {
-  width: 100%;
-  margin-bottom: 0;
-}
-
-.thought-timeline-wrapper .activity-feed {
-  margin-top: 0;
-}
-
-.message-content-wrapper {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-}
-
-.bot-message-footer {
-  display: flex;
-  align-items: center;
-  margin-top: var(--space-1);
-  padding: 0 var(--space-1);
-}
-
-.bot-model-label {
-  font-size: 0.65rem;
-  font-weight: 500;
-  color: var(--content-muted);
-  user-select: none;
-  opacity: 0.8;
-}
-
-/* The notice while the server asks the model to fix a reply. */
-.validation-fixing {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin-bottom: var(--space-2);
-  font-size: 0.85rem;
-  color: var(--content-muted);
-}
-
-/* Tool cards: one neutral border. Legacy `.activity-item` sets `border: none !important` and a 3px
-   `border-left` with !important, so this override must be !important too and more specific. */
-.activity-feed > .activity-item {
-  border: 1px solid var(--border-subtle) !important;
-  border-left: 1px solid var(--border-subtle) !important;
-}
-
-.message-images {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  margin-bottom: var(--space-3);
-}
-
-.message-image {
-  max-width: 200px;
-  max-height: 200px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-subtle);
-  cursor: pointer;
-}
-
-.message-attachments {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1);
-  margin-top: var(--space-2);
-}
-
-.message-file-chip {
-  display: inline-flex;
-  max-width: 100%;
-  padding: 2px var(--space-2);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-full);
-  font-size: 0.8rem;
-  color: var(--content-secondary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.turn-retry {
-  margin-top: var(--space-2);
-}
-
-/* Inline notice under a reply that ended early (stopped). */
-.turn-notice {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin-top: var(--space-2);
-  font-size: 0.8rem;
-  color: var(--content-muted);
-}
-
-/* Error under a turn: danger surface, message and a Retry button. */
-.chat-error {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  max-width: 800px;
-  width: 100%;
-  margin: var(--space-2) 0 0;
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--danger);
-  border-radius: var(--radius-lg);
-  background: var(--danger-subtle);
-  color: var(--danger-text);
-  font-size: 0.9rem;
-}
-
-.chat-error__message {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.chat-error__action {
-  flex: none;
-  padding: var(--space-1) var(--space-3);
-  border: 1px solid currentColor;
-  border-radius: var(--radius-md);
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-}
-
-.chat-loading {
-  min-height: 40vh;
-}
-
-/* A reply that is still streaming is drawn block by block; the blocks stack like one document. */
-.streaming-blocks {
-  display: block;
-}
-
-.streaming-block {
-  display: block;
-}
-
-/* Empty chat: the same hero as the landing page, centred in the transcript area. */
-.chat-empty {
-  min-height: 50vh;
-  justify-content: center;
-}
-
-.message-actions-container .ui-icon-button {
-  width: 26px;
-  height: 26px;
-  color: var(--content-secondary);
-}
-
-/* Mobile: the user-turn actions wrap onto their own line under the bubble. Inside the row-reverse
-   flex, a plain sibling was pushed past the left edge of the viewport (F-22/F-23 follow-up). */
-@media (max-width: 768px) {
-  .message-row.user-message {
-    flex-wrap: wrap;
-  }
-  .message-row.user-message > .message-actions-container.user-actions {
-    flex: 0 0 100%;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    max-width: 100%;
-    min-width: 0;
-    margin-top: var(--space-1);
-  }
-}
-
-/* Messages scroll beneath the composer; the bottom padding keeps the last turn above it (F-19). */
-.messages-list {
-  scrollbar-width: thin;
-  scrollbar-color: var(--border-subtle) transparent;
-  padding-bottom: calc(var(--composer-h, 180px) + var(--keyboard-offset, 0px) + var(--space-4));
-}
-
-/* On phones the legacy stylesheet fixes `#messages` padding with !important; the keyboard offset must still count. */
-@media (max-width: 768px) {
-  #messages.messages-list {
-    padding-bottom: calc(var(--composer-h, 180px) + var(--keyboard-offset, 0px) + var(--space-4)) !important;
-  }
-}
-
-.messages-list::-webkit-scrollbar {
-  width: 6px;
-}
-
-.messages-list::-webkit-scrollbar-thumb {
-  background: var(--border-subtle);
-  border-radius: var(--radius-full);
 }
 
 /* ───────────────────────── Model manager rows (F-30) ───────────────────────── */
@@ -953,18 +393,6 @@
   }
 }
 
-/* ───────────────────────── Code editor frame (F-42) ───────────────────────── */
-
-.code-editor {
-  height: 100%;
-  min-height: 200px;
-  min-width: 0;
-  overflow: hidden;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  background: var(--surface-secondary);
-}
-
 .custom-scroll {
   scrollbar-width: thin;
   scrollbar-color: var(--border-subtle) transparent;
@@ -1142,57 +570,12 @@
   color: var(--content-muted);
 }
 
-.logs-table-wrap {
-  flex: 1;
-  min-height: 0;
-  min-width: 0;
-  max-width: 100%;
-  overflow: auto; /* wide tables scroll here, not under the page edge */
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  background: var(--surface-secondary);
-}
-
-.logs-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.8rem;
-}
-
-.logs-table th {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  padding: var(--space-2) var(--space-3);
-  background: var(--bg-primary);
-  border-bottom: 1px solid var(--border-subtle);
-  text-align: left;
-  font-weight: 600;
-  color: var(--content-secondary);
-}
-
-.logs-table td {
-  max-width: 260px;
-  padding: var(--space-2) var(--space-3);
-  border-bottom: 1px solid var(--border-subtle);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--content-primary);
-}
-
 .logs-row {
   cursor: pointer;
 }
 
 .logs-row:hover {
   background: var(--surface-hover);
-}
-
-.logs-row-detail td {
-  white-space: normal;
-  max-width: none;
-  background: var(--bg-chat-display);
 }
 
 .logs-list {
@@ -1409,42 +792,6 @@ html {
   border: 0;
   border-radius: var(--radius-lg);
   background: var(--bg-primary);
-}
-.code-run {
-  margin-bottom: var(--space-4);
-  padding: var(--space-3);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  background: var(--surface-secondary);
-}
-.code-run__head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2) var(--space-3);
-  margin-bottom: var(--space-2);
-}
-.code-run__language {
-  font-weight: 600;
-  color: var(--content-primary);
-}
-.code-run__meta {
-  font-size: 0.75rem;
-  color: var(--content-muted);
-}
-.code-run__block {
-  margin: var(--space-2) 0 0;
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-md);
-  background: var(--bg-primary);
-  font-size: 0.75rem;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  max-height: 260px;
-  overflow: auto;
-}
-.code-run__block--error {
-  color: var(--danger-text);
 }
 
 /* ───────────────────────── Settings sections (settings-section) ───────────────────────── */
@@ -1793,33 +1140,6 @@ html {
   margin-top: var(--legacy-space-6);
 }
 
-/* ───────────────────────── Clarification prompt (clarify) ───────────────────────── */
-
-/* The question a waiting turn asks, in the bubble column under the live reply. */
-.clarify {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  width: 100%;
-  margin-top: var(--space-3);
-  padding: var(--space-4);
-  border: 1px solid var(--accent-border);
-  border-radius: var(--radius-xl);
-  background: var(--surface-elevated);
-}
-.clarify__question {
-  min-width: 0;
-}
-.clarify__custom {
-  width: 100%;
-  background: var(--bg-input);
-}
-.clarify__actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--space-2);
-}
-
 /* ───────────────────────── Phone layout (768px and below) ───────────────────────── */
 
 /* The top band on phones: tall enough for the 3.5rem buttons at 1.25rem from the top, plus 0.25rem. Side inset clears a button. */
@@ -1829,16 +1149,6 @@ html {
 }
 
 @media (max-width: 768px) {
-
-  /* A reply without a thought box stacks like the legacy row: avatar on top, answer at the full column width. */
-  .bot-turn {
-    grid-template-columns: minmax(0, 1fr);
-    row-gap: var(--space-3);
-  }
-  .bot-turn__avatar,
-  .bot-turn__body {
-    grid-column: 1;
-  }
   .model-row {
     flex-wrap: wrap;
   }
@@ -1847,18 +1157,96 @@ html {
     white-space: normal;
     overflow-wrap: anywhere;
   }
-  .edit-box {
-    max-width: 100%;
-  }
-  .edit-box__actions {
-    flex-wrap: nowrap;
-  }
-  .edit-box__actions .ui-button {
-    padding-inline: var(--space-2);
-  }
 
   /* The logs page has no title header: its content starts below the band. */
   .logs-main {
     padding: calc(var(--phone-topbar-h) + var(--space-3)) var(--space-3) var(--space-3);
   }
+}
+
+/* Kept until their own screens are converted (files, logs, tool windows). */
+.code-editor {
+  height: 100%;
+  min-height: 200px;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-secondary);
+}
+.logs-table-wrap {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  max-width: 100%;
+  overflow: auto; 
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-secondary);
+}
+.logs-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+.logs-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border-subtle);
+  text-align: left;
+  font-weight: 600;
+  color: var(--content-secondary);
+}
+.logs-table td {
+  max-width: 260px;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border-subtle);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--content-primary);
+}
+.logs-row-detail td {
+  white-space: normal;
+  max-width: none;
+  background: var(--bg-chat-display);
+}
+.code-run {
+  margin-bottom: var(--space-4);
+  padding: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--surface-secondary);
+}
+.code-run__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-2);
+}
+.code-run__language {
+  font-weight: 600;
+  color: var(--content-primary);
+}
+.code-run__meta {
+  font-size: 0.75rem;
+  color: var(--content-muted);
+}
+.code-run__block {
+  margin: var(--space-2) 0 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  font-size: 0.75rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 260px;
+  overflow: auto;
+}
+.code-run__block--error {
+  color: var(--danger-text);
 }

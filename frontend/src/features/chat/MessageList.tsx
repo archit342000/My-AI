@@ -5,7 +5,6 @@ import { Markdown } from '../../components/markdown/Markdown';
 import { StreamingMarkdown } from '../../components/markdown/StreamingMarkdown';
 import { showToast } from '../../components/ui/toast-store';
 import { useAutoFollow } from './useAutoFollow';
-import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Textarea } from '../../components/ui/Field';
 import { EmptyState } from '../../components/ui/EmptyState';
@@ -21,39 +20,9 @@ import { thoughtKey, useThoughtStore } from '../../state/thought-store';
 import { MessageActions } from './MessageActions';
 import { ResumeBanner } from './ResumeBanner';
 import { resumeTurn } from './send-turn';
-
-const USER_AVATAR = (
-  <div className="avatar-wrapper">
-    <div className="avatar avatar--user">
-      <svg
-        width="20"
-        height="20"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-        <circle cx="12" cy="7" r="4" />
-      </svg>
-    </div>
-  </div>
-);
-
-const BOT_AVATAR = (
-  <div className="avatar-wrapper">
-    <div className="avatar-orbit" />
-    <div className="avatar avatar--bot">
-      <svg width="18" height="18" viewBox="0 0 32 32" fill="none">
-        <path d="M16 2L26 12L16 30L6 12Z" fill="white" opacity="0.9" />
-        <path d="M16 2L26 12H6Z" fill="white" opacity="0.3" />
-        <circle cx="16" cy="12" r="2.5" fill="white" opacity="0.7" />
-      </svg>
-    </div>
-  </div>
-);
+import { UserText } from './UserText';
+import { StatusLight } from '../../components/ui/StatusLight';
+import { clockTime, toDate } from '../../lib/format-time';
 
 function UserTurn({
   turn,
@@ -100,8 +69,7 @@ function UserTurn({
   }
 
   return (
-    <div className="message-row chat-row user-message" data-message-id={turn.id}>
-      {USER_AVATAR}
+    <div className="message-row user-message" data-message-id={turn.id}>
       {editing ? (
         <div className="edit-box">
           <Textarea
@@ -151,7 +119,7 @@ function UserTurn({
               ))}
             </div>
           ) : null}
-          {turn.text ? <Markdown text={turn.text} className="message-text-wrapper" /> : null}
+          {turn.text ? <UserText text={turn.text} /> : null}
           {turn.files.length > 0 ? (
             <div className="message-attachments">
               {turn.files.map((f, i) => (
@@ -208,13 +176,13 @@ async function remove(
 }
 
 /**
- * Shared bot-row body, laid out as the legacy row. A turn with a thought box (steps to show, or a turn
- * that is still streaming) has a header row with the avatar beside the box, the timeline under it and
- * the answer under that, all at full width. A turn with nothing to show has no box: the avatar then
- * sits beside the answer (F-23). The model label appears only once the turn has text.
+ * The body of a reply: a label saying which model wrote it and when, the Thought process box
+ * (when there is something to show, or while the reply is being written) and the answer under it.
+ * There are no avatars: the label and the alignment say who is speaking.
  */
 function BotBody({
   model,
+  time,
   steps,
   active,
   turnKey,
@@ -222,6 +190,7 @@ function BotBody({
   footer,
 }: {
   model: string | null | undefined;
+  time?: number | string | null;
   steps: Step[];
   /** True for as long as the turn streams. */
   active: boolean;
@@ -232,35 +201,33 @@ function BotBody({
   const items = useMemo(() => timelineOf(steps), [steps]);
   const displayName = useModelDisplayName();
   const hasBox = active || items.length > 0;
-  const content = (
-    <div className="message-content-wrapper">
-      {children}
-      {model && turnText(steps) ? (
-        <div className="bot-message-footer">
-          <span className="bot-model-label">{displayName(model)}</span>
-        </div>
-      ) : null}
-      {footer}
-    </div>
-  );
-  if (!hasBox) {
-    return (
-      <div className="bot-turn">
-        <div className="bot-turn__avatar">{BOT_AVATAR}</div>
-        <div className="bot-turn__body">{content}</div>
-      </div>
-    );
-  }
+  const when = toDate(time);
+  // The label appears once the reply has text, so an empty row never shows a name alone.
+  const hasLabel = Boolean(model) && Boolean(turnText(steps));
   return (
     <>
-      <ThoughtBox
-        turnKey={turnKey}
-        items={items}
-        active={active}
-        status={active ? statusOf(steps, friendlyToolName) : null}
-        avatar={BOT_AVATAR}
-      />
-      {content}
+      {hasLabel && model ? (
+        <div className="bot-message-footer">
+          <span className="bot-model-label dat keep">{displayName(model)}</span>
+          {when ? (
+            <time className="bot-time dat keep" dateTime={when.toISOString()}>
+              {clockTime(when)}
+            </time>
+          ) : null}
+        </div>
+      ) : null}
+      {hasBox ? (
+        <ThoughtBox
+          turnKey={turnKey}
+          items={items}
+          active={active}
+          status={active ? statusOf(steps, friendlyToolName) : null}
+        />
+      ) : null}
+      <div className="message-content-wrapper">
+        {children}
+        {footer}
+      </div>
     </>
   );
 }
@@ -284,9 +251,10 @@ function AssistantTurn({
   const queryClient = useQueryClient();
   const text = turnText(turn.steps);
   return (
-    <div className="message-row chat-row bot-message bot" data-message-id={turn.id}>
+    <div className="message-row bot-message bot" data-message-id={turn.id}>
       <BotBody
         model={turn.model}
+        time={turn.time}
         steps={turn.steps}
         active={false}
         turnKey={thoughtKey(chatId, ordinal)}
@@ -317,7 +285,7 @@ function LiveAssistant({
 }) {
   const content = turnText(live.steps);
   return (
-    <div className="message-row chat-row bot-message bot streaming thinking" data-live="true">
+    <div className="message-row bot-message bot streaming thinking" data-live="true">
       <BotBody
         model={live.model}
         steps={live.steps}
@@ -335,7 +303,7 @@ function LiveAssistant({
       >
         {live.redactNotice ? (
           <div className="validation-fixing" role="status">
-            <span className="ui-spinner" aria-hidden="true" /> Fixing the reply…
+            <span className="ui-spinner" aria-hidden="true" /> Fixing the reply
           </div>
         ) : null}
         {content ? <StreamingMarkdown text={content} /> : null}
@@ -370,7 +338,7 @@ function InterruptedAssistant({
       </div>
     ) : (
       <div className="turn-notice" role="status">
-        <Badge>Stopped</Badge>
+        <StatusLight label="Stopped" tone="warn" />
         <span>This partial reply is not saved.</span>
         <Button variant="secondary" size="sm" disabled={busy} onClick={onRetry}>
           Retry
@@ -378,8 +346,14 @@ function InterruptedAssistant({
       </div>
     );
   return (
-    <div className="message-row chat-row bot-message bot" data-interrupted={interrupted.kind}>
-      <BotBody model={live.model} steps={live.steps} active={false} turnKey={turnKey} footer={notice}>
+    <div className="message-row bot-message bot" data-interrupted={interrupted.kind}>
+      <BotBody
+        model={live.model}
+        steps={live.steps}
+        active={false}
+        turnKey={turnKey}
+        footer={notice}
+      >
         {content ? <Markdown text={content} className="message-content raw-text-content" /> : null}
       </BotBody>
     </div>
@@ -388,10 +362,9 @@ function InterruptedAssistant({
 
 function LiveUser({ pending }: { pending: PendingUser }) {
   return (
-    <div className="message-row chat-row user-message" data-pending="true">
-      {USER_AVATAR}
+    <div className="message-row user-message" data-pending="true">
       <div className="message-content raw-text-content">
-        {pending.text ? <Markdown text={pending.text} className="message-text-wrapper" /> : null}
+        {pending.text ? <UserText text={pending.text} /> : null}
         {pending.files.length ? (
           <div className="message-attachments">
             {pending.files.map((f) => (
@@ -456,7 +429,8 @@ export function MessageList({
   // Once the server has persisted a reply after the user turn, the persisted copy takes over.
   const replyPersisted = turns.at(-1)?.kind === 'assistant';
   const showInterrupted = interrupted !== null && !replyPersisted;
-  const lastHasReply = lastUserIdx >= 0 && turns.slice(lastUserIdx + 1).some((t) => t.kind === 'assistant');
+  const lastHasReply =
+    lastUserIdx >= 0 && turns.slice(lastUserIdx + 1).some((t) => t.kind === 'assistant');
   // The server decides (research interruptions can need a resume even after a reply).
   const showBanner = resumeNeeded && !streaming && !showInterrupted && lastUserIdx >= 0;
   // One control: the banner replaces the Retry button under the last user turn.
@@ -510,8 +484,8 @@ export function MessageList({
         <EmptyState
           className="chat-empty"
           icon="sparkles"
-          title={<span className="font-heading">Hello there</span>}
-          description="How can I help you today?"
+          title="Nothing here yet"
+          description="Send a message to start the conversation."
         />
       ) : null}
       {pending ? <LiveUser pending={pending} /> : null}
@@ -529,7 +503,11 @@ export function MessageList({
       ) : null}
       {showBanner ? <ResumeBanner chatId={chatId} /> : null}
       {streaming && !follow.pinned ? (
-        <button type="button" className="chat-jump-latest" onClick={follow.jumpToLatest}>
+        <button
+          type="button"
+          className="ui-button ui-button--quiet ui-button--sm chat-jump-latest"
+          onClick={follow.jumpToLatest}
+        >
           Jump to latest
         </button>
       ) : null}

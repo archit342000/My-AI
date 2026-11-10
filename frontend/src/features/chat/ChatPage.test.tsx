@@ -14,7 +14,14 @@ const detail = (over: Record<string, unknown> = {}) => ({
   is_running: false,
   messages: [
     { id: 1, chat_id: 'c1', role: 'user', content: 'first question', parent_type: 'main' },
-    { id: 2, chat_id: 'c1', role: 'assistant', content: 'first answer', parent_type: 'main', model: 'M' },
+    {
+      id: 2,
+      chat_id: 'c1',
+      role: 'assistant',
+      content: 'first answer',
+      parent_type: 'main',
+      model: 'M',
+    },
   ],
   ...over,
 });
@@ -26,7 +33,13 @@ describe('ChatPage', () => {
   });
   afterEach(() => {
     vi.restoreAllMocks();
-    useStreamStore.setState({ chatId: null, live: null, pending: null, interrupted: null, controller: null });
+    useStreamStore.setState({
+      chatId: null,
+      live: null,
+      pending: null,
+      interrupted: null,
+      controller: null,
+    });
   });
 
   it('renders the title and the persisted turns', async () => {
@@ -43,7 +56,10 @@ describe('ChatPage', () => {
   });
 
   it('the rename field is a pill-styled input and the header row carries no inline style', async () => {
-    const { container } = renderWithProviders(<ChatPage />, { route: '/chat/c1', path: '/chat/:chatId' });
+    const { container } = renderWithProviders(<ChatPage />, {
+      route: '/chat/c1',
+      path: '/chat/:chatId',
+    });
     fireEvent.click(await screen.findByText('My chat'));
     const field = screen.getByLabelText('Chat title');
     expect(field).toHaveClass('chat-title-display', 'chat-title-input');
@@ -58,7 +74,10 @@ describe('ChatPage', () => {
   });
 
   it('tells the transcript a files drawer exists while the chat page is open', async () => {
-    const { unmount } = renderWithProviders(<ChatPage />, { route: '/chat/c1', path: '/chat/:chatId' });
+    const { unmount } = renderWithProviders(<ChatPage />, {
+      route: '/chat/c1',
+      path: '/chat/:chatId',
+    });
     await screen.findByText('My chat');
     expect(useUiStore.getState().filesAvailable).toBe(true);
     unmount();
@@ -74,7 +93,10 @@ describe('ChatPage', () => {
 
   it('keeps the chat on screen when a background refetch fails with a server error', async () => {
     const get = vi.spyOn(chatsApi, 'get').mockResolvedValue(detail() as never);
-    const { client } = renderWithProviders(<ChatPage />, { route: '/chat/c1', path: '/chat/:chatId' });
+    const { client } = renderWithProviders(<ChatPage />, {
+      route: '/chat/c1',
+      path: '/chat/:chatId',
+    });
     expect(await screen.findByText('first answer')).toBeTruthy();
     get.mockRejectedValue(new ApiError(500, {}, 'boom'));
     void client.invalidateQueries({ queryKey: ['chat', 'c1'] }); // the hook retries a 500 for seconds
@@ -85,7 +107,10 @@ describe('ChatPage', () => {
 
   it('shows not-found when a refetch says the chat is gone, even with the old data cached', async () => {
     const get = vi.spyOn(chatsApi, 'get').mockResolvedValue(detail() as never);
-    const { client } = renderWithProviders(<ChatPage />, { route: '/chat/c1', path: '/chat/:chatId' });
+    const { client } = renderWithProviders(<ChatPage />, {
+      route: '/chat/c1',
+      path: '/chat/:chatId',
+    });
     expect(await screen.findByText('first answer')).toBeTruthy();
     get.mockRejectedValue(new ApiError(404, {}, 'missing'));
     await client.invalidateQueries({ queryKey: ['chat', 'c1'] });
@@ -93,10 +118,19 @@ describe('ChatPage', () => {
     expect(screen.getByRole('button', { name: 'New chat' })).toBeTruthy();
   });
 
-  it('keeps seeded data on screen while the chat\'s own turn runs and the server still says 404', async () => {
+  it("keeps seeded data on screen while the chat's own turn runs and the server still says 404", async () => {
     vi.spyOn(chatsApi, 'get').mockRejectedValue(new ApiError(404, {}, 'missing'));
-    useStreamStore.setState({ chatId: 'c1', live: null, pending: null, interrupted: null, controller: null });
-    const { client } = renderWithProviders(<ChatPage />, { route: '/chat/c1', path: '/chat/:chatId' });
+    useStreamStore.setState({
+      chatId: 'c1',
+      live: null,
+      pending: null,
+      interrupted: null,
+      controller: null,
+    });
+    const { client } = renderWithProviders(<ChatPage />, {
+      route: '/chat/c1',
+      path: '/chat/:chatId',
+    });
     client.setQueryData(['chat', 'c1'], detail());
     await client.invalidateQueries({ queryKey: ['chat', 'c1'] });
     expect(screen.queryByRole('alert')).toBeNull();
@@ -105,8 +139,17 @@ describe('ChatPage', () => {
 
   it('shows no error for a chat that is not on the server yet while its turn runs', async () => {
     vi.spyOn(chatsApi, 'get').mockRejectedValue(new ApiError(404, {}, 'missing'));
-    useStreamStore.setState({ chatId: 'c1', live: null, pending: null, interrupted: null, controller: null });
-    const { container } = renderWithProviders(<ChatPage />, { route: '/chat/c1', path: '/chat/:chatId' });
+    useStreamStore.setState({
+      chatId: 'c1',
+      live: null,
+      pending: null,
+      interrupted: null,
+      controller: null,
+    });
+    const { container } = renderWithProviders(<ChatPage />, {
+      route: '/chat/c1',
+      path: '/chat/:chatId',
+    });
     await waitFor(() => expect(chatsApi.get).toHaveBeenCalled());
     expect(screen.queryByRole('alert')).toBeNull();
     expect(container.querySelector('.chat-loading')).not.toBeNull();
@@ -130,7 +173,9 @@ describe('ChatPage', () => {
     const fetchMock = vi.fn(async () => new Response(null, { status: 204 }));
     vi.stubGlobal('fetch', fetchMock);
     renderWithProviders(<ChatPage />, { route: '/chat/c1', path: '/chat/:chatId' });
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/chats/c1/stream', expect.anything()));
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith('/api/chats/c1/stream', expect.anything()),
+    );
     vi.unstubAllGlobals();
   });
 

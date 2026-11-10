@@ -57,7 +57,13 @@ export function ClarificationPrompt({
   }
 
   return (
-    <section ref={section} className="clarify" role="group" aria-live="polite" aria-label="The assistant has a question">
+    <section
+      ref={section}
+      className="clarify"
+      role="group"
+      aria-live="polite"
+      aria-label="The assistant has a question"
+    >
       <div className="clarify__question">
         <Markdown text={request.question} className="message-content raw-text-content" />
       </div>

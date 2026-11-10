@@ -1,22 +1,9 @@
-import hljsDark from 'highlight.js/styles/github-dark.min.css?inline';
-import hljsLight from 'highlight.js/styles/github.min.css?inline';
 import type { GlassMode, ThemeMode } from '../state/ui-store';
 
 /** Resolves a theme mode to dark/light. `prefersDark` is the OS setting (used only for "system"). */
 export function resolveDark(mode: ThemeMode, prefersDark: boolean): boolean {
   if (mode === 'system') return prefersDark;
   return mode === 'dark';
-}
-
-/** Legacy parity: swap the highlight.js theme with the page theme (`#highlight-theme`). */
-function applyHighlightTheme(dark: boolean): void {
-  let el = document.getElementById('highlight-theme') as HTMLStyleElement | null;
-  if (!el) {
-    el = document.createElement('style');
-    el.id = 'highlight-theme';
-    document.head.appendChild(el);
-  }
-  el.textContent = dark ? hljsDark : hljsLight;
 }
 
 /**
@@ -27,7 +14,6 @@ function applyHighlightTheme(dark: boolean): void {
 export function applyDarkClass(isDark: boolean): void {
   document.documentElement.classList.toggle('dark', isDark);
   document.documentElement.dataset.theme = isDark ? 'dark' : 'light';
-  applyHighlightTheme(isDark);
 }
 
 export type ResolvedGlass = 'frosted' | 'solid';

@@ -23,7 +23,7 @@ test('the tool calls of the turn are kept after a reload', async ({ page }) => {
   await expect(botRows(page)).toHaveCount(1);
   await botRows(page)
     .first()
-    .getByRole('button', { name: /Thought Process/ })
+    .getByRole('button', { name: /Thought process/ })
     .click();
   // All three calls are listed in the reply's box, each with its result.
   await expect(botRows(page).first().getByText('Call: Get Time')).toHaveCount(3);

@@ -2,3 +2,611 @@
  * Conversation: messages, thought process, cards.
  * Console at Rest: only shared values from tokens.css. See the rule book in the console-at-rest repository.
  */
+
+/* ── The thread ── */
+
+#messages {
+  position: relative;
+  z-index: var(--z-page);
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 22px;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: var(--space-5) max(var(--pad), calc((100% - var(--measure)) / 2)) var(--space-5);
+  scrollbar-width: thin;
+  scrollbar-color: var(--edge-strong) transparent;
+  overscroll-behavior: contain;
+}
+.messages-list > * {
+  flex: none;
+}
+.chat-loading {
+  flex: 1;
+  min-height: 0;
+}
+.chat-empty {
+  margin: auto;
+}
+
+@keyframes msg-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+.message-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+  animation: msg-in var(--t-enter) var(--ease-spring) both;
+}
+
+/* ── What the user said ── */
+
+.user-message {
+  align-self: flex-end;
+  align-items: flex-end;
+  gap: var(--space-2);
+  max-width: min(30rem, 92%);
+}
+.user-message > .message-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-width: 100%;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--edge);
+  border-radius: 14px 14px 14px 3px;
+  background: var(--glass-strong);
+  overflow-wrap: anywhere;
+}
+.user-message[data-pending='true'] > .message-content {
+  opacity: 0.7;
+}
+.user-message:has(.edit-box) {
+  width: min(30rem, 100%);
+  max-width: 100%;
+}
+.user-text {
+  min-width: 0;
+}
+.user-text__body--folded {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 5;
+  line-clamp: 5;
+}
+.user-text__more {
+  display: block;
+  min-height: 32px;
+  margin-top: var(--space-1);
+  padding: 0;
+}
+.skill-name {
+  margin-right: 6px;
+  padding: 1px 6px;
+  border-radius: 6px 6px 6px 2px;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-family: var(--mono);
+  font-size: 0.88em;
+  white-space: nowrap;
+}
+.message-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.message-image {
+  max-width: min(100%, 15rem);
+  max-height: 15rem;
+  border: 1px solid var(--edge);
+  border-radius: var(--r-sm);
+  object-fit: cover;
+  cursor: zoom-in;
+}
+.lightbox-img {
+  cursor: zoom-in;
+}
+.message-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.message-file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  min-height: 28px;
+  padding: 0 10px;
+  overflow: hidden;
+  border: 1px solid var(--edge);
+  border-radius: var(--r-sm);
+  background: var(--well);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.turn-retry {
+  align-self: flex-end;
+}
+
+/* Changing a message in place. */
+.edit-box {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 100%;
+}
+.edit-textarea {
+  width: 100%;
+  min-height: 5.5rem;
+  max-height: 40vh;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--edge-strong);
+  border-radius: var(--r-ctl);
+  background: var(--glass-strong);
+  color: var(--fg);
+  font: inherit;
+  line-height: 1.6;
+  resize: vertical;
+}
+.edit-textarea:focus-visible {
+  border-color: var(--accent);
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.edit-box__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+/* ── What the assistant said ── */
+
+.bot-message {
+  align-self: stretch;
+}
+.message-content-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.bot-message-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+}
+.bot-model-label,
+.bot-time {
+  color: var(--muted);
+}
+.thinking .message-content:empty {
+  display: none;
+}
+.validation-fixing {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--muted);
+  font-size: 14px;
+}
+
+/* The row of small buttons under a message: in view on hover, focus and touch screens. */
+.message-actions-container {
+  display: flex;
+  gap: 2px;
+  margin: -4px 0 0 -8px;
+  opacity: 0;
+  transition: opacity var(--t-base) var(--ease-spring);
+}
+.user-message .message-actions-container {
+  margin: -2px -8px 0 0;
+}
+.message-row:hover .message-actions-container,
+.message-row:focus-within .message-actions-container,
+.message-row:last-child .message-actions-container {
+  opacity: 1;
+}
+@media (hover: none) {
+  .message-actions-container {
+    opacity: 1;
+  }
+}
+.action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 36px;
+  min-height: 36px;
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition:
+    background-color var(--t-fast) var(--ease-spring),
+    color var(--t-fast) var(--ease-spring);
+}
+.action-btn:hover {
+  background: var(--well);
+  color: var(--fg);
+}
+.action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Thought process: one fold, steps along a line in the order they happened ── */
+
+.thought-container {
+  border: 1px solid var(--edge);
+  border-radius: var(--r-ctl);
+  background: color-mix(in srgb, var(--glass-strong) 55%, transparent);
+}
+.thought-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding-right: var(--space-1);
+}
+.thought-toggle {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  min-height: var(--touch);
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--r-ctl);
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--t-base) var(--ease-spring);
+}
+.thought-toggle:hover {
+  background: var(--well);
+}
+.thought-chevron,
+.activity-chevron {
+  flex: none;
+  color: var(--muted);
+  transition: transform var(--t-base) var(--ease-spring);
+}
+.thought-container.expanded .thought-chevron,
+.activity-item.expanded .activity-chevron {
+  transform: rotate(90deg);
+}
+.thought-header-title {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: 500;
+}
+.thought-status-line {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.thought-actions {
+  display: flex;
+  flex: none;
+}
+.thought-full-view-btn {
+  color: var(--muted);
+}
+@keyframes thought-dot {
+  0%,
+  80%,
+  100% {
+    opacity: 0.25;
+  }
+  40% {
+    opacity: 1;
+  }
+}
+.thought-progress-dots {
+  display: inline-flex;
+  gap: 3px;
+}
+.thought-progress-dots > span {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--led);
+  animation: thought-dot 1.2s ease-in-out infinite;
+}
+.thought-progress-dots > span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.thought-progress-dots > span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+.reasoning-active {
+  border-color: color-mix(in srgb, var(--led) 45%, var(--edge));
+}
+.thought-timeline-wrapper {
+  min-width: 0;
+}
+.thought-body {
+  padding: 4px 14px var(--space-4) 18px;
+  animation: ds-fade var(--t-base) ease-out;
+}
+@keyframes ds-fade {
+  from {
+    opacity: 0;
+  }
+}
+.activity-feed {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+  padding-left: var(--space-4);
+  border-left: 1px solid var(--edge-strong);
+}
+.thought-full-view {
+  margin: var(--space-2) 0;
+}
+.activity-item {
+  min-width: 0;
+  border: 1px solid var(--edge);
+  border-radius: var(--r-sm);
+  background: var(--well);
+}
+.activity-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 40px;
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+.activity-item:not(.expanded) .activity-header:hover {
+  background: var(--well);
+}
+.activity-type {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.activity-running {
+  flex: none;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.activity-content-wrapper {
+  display: none;
+  min-width: 0;
+}
+.activity-item.expanded > .activity-content-wrapper {
+  display: block;
+}
+.activity-body {
+  min-width: 0;
+  padding: 2px 10px 10px;
+  color: var(--muted);
+  font-size: 14px;
+}
+.activity-content {
+  min-width: 0;
+  max-height: 22rem;
+  overflow: auto;
+  padding: var(--space-3) 14px;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--bg) 70%, transparent);
+  color: var(--fg);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  scrollbar-width: thin;
+  scrollbar-color: var(--edge-strong) transparent;
+}
+.activity-more {
+  display: block;
+  min-height: 32px;
+  margin-top: var(--space-1);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent-text);
+  font: inherit;
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.timeline-reasoning {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+.event-divider {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.event-divider::before,
+.event-divider::after {
+  flex: 1;
+  height: 1px;
+  background: var(--edge);
+  content: '';
+}
+.sub-agent-entries {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  padding-left: var(--space-3);
+  border-left: 1px solid var(--edge);
+}
+
+/* ── A question back to the user, and the resume offer: one card ── */
+
+.clarify,
+.resume-banner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) 18px;
+  border: 1px solid var(--edge);
+  border-radius: var(--r-panel);
+  background: color-mix(in srgb, var(--glass-strong) 55%, transparent);
+}
+.clarify__question {
+  min-width: 0;
+}
+.clarify__custom {
+  width: 100%;
+  min-height: var(--touch);
+  padding: 10px 14px;
+  border: 1px solid var(--edge-strong);
+  border-radius: var(--r-ctl);
+  background: var(--glass-strong);
+  color: var(--fg);
+  font: inherit;
+  resize: vertical;
+}
+.clarify__custom:focus-visible {
+  border-color: var(--accent);
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.clarify__actions,
+.resume-banner-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+.resume-banner-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.resume-confirm,
+.resume-dismiss {
+  flex: none;
+}
+
+/* ── Notices inside the thread ── */
+
+.turn-notice {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  color: var(--muted);
+  font-size: 14px;
+}
+.chat-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid color-mix(in srgb, var(--bad) 45%, var(--edge));
+  border-radius: var(--r-ctl);
+  background: color-mix(in srgb, var(--bad) 8%, transparent);
+}
+main > .chat-error {
+  margin: var(--space-5) auto;
+  max-width: min(var(--measure), calc(100% - var(--pad) * 2));
+}
+.chat-error__message {
+  flex: 1;
+  min-width: 12rem;
+  overflow-wrap: anywhere;
+}
+.chat-error__action {
+  min-height: 36px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--edge-strong);
+  border-radius: var(--r-ctl);
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+.chat-error__action:hover {
+  background: var(--well);
+}
+.chat-jump-latest {
+  position: sticky;
+  bottom: 0;
+  z-index: var(--z-float);
+  align-self: center;
+  background: var(--pop);
+  box-shadow: var(--shadow-lift);
+}
+
+@media (max-width: 599px) {
+  #messages {
+    gap: 18px;
+    padding: var(--space-4) var(--pad);
+  }
+  .thought-body {
+    padding: 4px 10px 14px 12px;
+  }
+  .activity-feed {
+    padding-left: var(--space-3);
+  }
+  .action-btn {
+    min-width: 40px;
+    min-height: 40px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .message-row,
+  .thought-body,
+  .thought-progress-dots > span {
+    animation: none;
+  }
+}

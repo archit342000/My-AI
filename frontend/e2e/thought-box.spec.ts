@@ -77,7 +77,7 @@ test('a box opened while the turn streams stays open on the saved reply, and the
   await live.locator('.thought-toggle').click();
   await expect(live.locator('.thought-container.expanded')).toHaveCount(1);
 
-  // Saved: the live row is gone, the same box is still open and says Thought Process.
+  // Saved: the live row is gone, the same box is still open and says Thought process.
   await expect(page.locator('[data-live="true"]')).toHaveCount(0);
   const saved = page.locator('.bot-message').last();
   await expect(saved).toContainText('There are 3 files.');

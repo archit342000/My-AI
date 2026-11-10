@@ -58,7 +58,7 @@ Run from `frontend/`: `npm run typecheck`, `npm run lint`, `npm run test`. End-t
 
 `npm run e2e:stack` starts the real Flask backend on a throwaway data directory with a scripted model
 (`frontend/e2e/stack/`) and drives the built UI: send, multi-round tool turns, stop and retry,
-temporary chat, and the legacy-UI geometry of the chat page (`geometry.json`). It is not part of
+and temporary chat. It is not part of
 `scripts/check.sh`. It needs the repo `venv` Python (or `E2E_PYTHON`), a cached tokenizer
 (`E2E_TOKENIZER`, default `Qwen/Qwen3.6-35B-A3B`) and a built `dist/`. A spec for a known bug can be
 marked `test.fail()` (and a unit test `it.fails`) so the suite stays green; the change that fixes the bug removes the

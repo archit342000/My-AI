@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { Markdown } from '../../components/markdown/Markdown';
 import type { TimelineItem } from '../../lib/thought-timeline';
+import { Icon } from '../../components/icons/Icon';
 import { ClippedText } from './ClippedText';
 import { friendlyToolName } from './tool-names';
 
@@ -79,11 +80,9 @@ export function TimelineEntry({
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
       >
+        <Icon name="chevron-right" size={12} strokeWidth={2.4} className="activity-chevron" />
         <span className="activity-type">{type}</span>
         {running ? <span className="activity-running">Running</span> : null}
-        <span className="thought-chevron" aria-hidden="true">
-          {open ? '▾' : '▸'}
-        </span>
       </button>
       <div className="activity-content-wrapper" inert={!open}>
         <div className="activity-body">{body}</div>

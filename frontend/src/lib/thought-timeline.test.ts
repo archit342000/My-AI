@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { Step } from './chat-model';
-import { statusOf, timelineOf } from './thought-timeline';
+import {
+  statusOf,
+  timelineOf,
+  toolCount,
+  toolSummary,
+  type TimelineItem,
+} from './thought-timeline';
 
 const reasoning = (text: string, agent: string | null = null): Step => ({
   kind: 'reasoning',
@@ -97,5 +103,32 @@ describe('statusOf', () => {
   it('falls back to a running tool, then to nothing', () => {
     expect(statusOf([tool('a', 'x'), tool('b', null)], label)).toBe('Label b');
     expect(statusOf([tool('a', 'x'), reasoning('r')], label)).toBeNull();
+  });
+});
+
+describe('toolCount and toolSummary', () => {
+  const call = (key: string): TimelineItem => ({
+    kind: 'call',
+    key,
+    name: 't',
+    args: '',
+    running: false,
+  });
+  const items: TimelineItem[] = [
+    { kind: 'reasoning', key: 'r', text: 'x' },
+    call('a'),
+    { kind: 'result', key: 'ar', name: 't', result: '' },
+    { kind: 'group', key: 'g', label: 'Research agent', items: [call('b'), call('c')] },
+  ];
+
+  it('counts calls, also inside sub-agent groups, and not their results', () => {
+    expect(toolCount(items)).toBe(3);
+    expect(toolCount([])).toBe(0);
+  });
+
+  it('says it in words, singular and plural, and nothing when no tool was used', () => {
+    expect(toolSummary(items)).toBe('3 tools used');
+    expect(toolSummary([call('a')])).toBe('1 tool used');
+    expect(toolSummary([{ kind: 'reasoning', key: 'r', text: 'x' }])).toBe('');
   });
 });

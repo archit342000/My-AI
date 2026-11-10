@@ -11,35 +11,26 @@ const items: TimelineItem[] = [
 ];
 
 function box(props: Partial<React.ComponentProps<typeof ThoughtBox>> = {}) {
-  return (
-    <ThoughtBox
-      turnKey="c1:1"
-      items={items}
-      active={false}
-      status={null}
-      avatar={<i data-testid="avatar" />}
-      {...props}
-    />
-  );
+  return <ThoughtBox turnKey="c1:1" items={items} active={false} status={null} {...props} />;
 }
 
 describe('ThoughtBox', () => {
   afterEach(() => useThoughtStore.setState({ expanded: {} }));
 
-  it('says Thinking... with the status line while active, and Thought Process once it has ended', () => {
+  it('says Thinking... with the status line while active, and Thought process once it has ended', () => {
     const { rerender } = render(box({ active: true, status: 'Searching the web' }));
     expect(screen.getByText(/Thinking\.\.\./)).toBeTruthy();
     expect(screen.getByText('Searching the web')).toBeTruthy();
     rerender(box({ active: false, status: 'Searching the web' }));
-    expect(screen.getByText('Thought Process')).toBeTruthy();
+    expect(screen.getByText('Thought process')).toBeTruthy();
     expect(screen.queryByText('Searching the web')).toBeNull();
   });
 
-  it('puts the avatar beside the header and lists the entries in order when expanded', () => {
+  it('has no avatar, and lists the entries in order when expanded', () => {
     const { container } = render(box());
-    expect(container.querySelector('.assistant-header-row [data-testid="avatar"]')).toBeTruthy();
+    expect(container.querySelector('.avatar, .assistant-avatar-column')).toBeNull();
     expect(screen.queryByRole('button', { name: /Reasoning/ })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: /Thought Process/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Thought process/ }));
     const labels = screen.getAllByRole('button').map((b) => b.textContent ?? '');
     const order = ['Reasoning', 'Call: Web Search', 'Tool Result: Web Search'].map((l) =>
       labels.findIndex((t) => t.includes(l)),
@@ -56,13 +47,13 @@ describe('ThoughtBox', () => {
     const again = render(box({ active: false }));
     expect(again.container.querySelector('.thought-container.expanded')).toBeTruthy();
     expect(
-      screen.getByRole('button', { name: /Thought Process/ }).getAttribute('aria-expanded'),
+      screen.getByRole('button', { name: /Thought process/ }).getAttribute('aria-expanded'),
     ).toBe('true');
   });
 
   it('the full view button opens a dialog with every entry, and Escape closes it', () => {
     render(box());
-    const open = screen.getByRole('button', { name: 'Full screen view' });
+    const open = screen.getByRole('button', { name: 'Open bigger view' });
     fireEvent.click(open);
     const dialog = screen.getByRole('dialog');
     expect(dialog.textContent).toContain('Reasoning');
@@ -76,7 +67,7 @@ describe('ThoughtBox', () => {
     expect(container.querySelectorAll('button button').length).toBe(0);
     expect(
       container.querySelectorAll(
-        '.thought-header > button, .thought-header > .thought-actions > button',
+        '.thought-header > button, .thought-header > .thought-actions button',
       ).length,
     ).toBe(2);
   });
@@ -84,7 +75,7 @@ describe('ThoughtBox', () => {
   it('the full view button is disabled when there is nothing to show', () => {
     render(box({ items: [], active: true }));
     expect(
-      (screen.getByRole('button', { name: 'Full screen view' }) as HTMLButtonElement).disabled,
+      (screen.getByRole('button', { name: 'Open bigger view' }) as HTMLButtonElement).disabled,
     ).toBe(true);
   });
 });

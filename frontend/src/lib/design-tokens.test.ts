@@ -19,12 +19,8 @@ const KNOWN_UNDEFINED = [
   '--color-primary-light',
   '--color-sky-500',
   '--shadow-sm',
-  '--surface-1',
   '--surface-2',
-  '--surface-3',
-  '--surface-4',
   '--surface-primary',
-  '--surface-tertiary',
   '--text-main',
 ];
 

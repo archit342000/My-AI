@@ -70,3 +70,17 @@ export function statusOf(steps: Step[], toolLabel: (name: string) => string): st
   }
   return null;
 }
+
+/** How many tool calls a timeline holds, counting those inside sub-agent groups. */
+export function toolCount(items: TimelineItem[]): number {
+  return items.reduce(
+    (n, item) => n + (item.kind === 'call' ? 1 : item.kind === 'group' ? toolCount(item.items) : 0),
+    0,
+  );
+}
+
+/** "3 tools used", "1 tool used", or "" when no tool was called. */
+export function toolSummary(items: TimelineItem[]): string {
+  const n = toolCount(items);
+  return n === 0 ? '' : `${n} ${n === 1 ? 'tool' : 'tools'} used`;
+}
