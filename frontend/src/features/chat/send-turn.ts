@@ -14,6 +14,7 @@ import {
   type UploadedFile,
 } from '../../api/completions';
 import { toTurns, turnText } from '../../lib/chat-model';
+import type { ChatDetail, ChatSummary } from '../../api/types';
 import { showToast } from '../../components/ui/toast-store';
 import { useSettingsStore } from '../../state/settings-store';
 import { useStreamStore, type PendingUser } from '../../state/stream-store';
@@ -97,6 +98,44 @@ async function consume(
   }
 }
 
+/** Shown when a send or Retry is refused because another chat's turn is running. */
+export const BUSY_TOAST =
+  'Another chat is still generating. Wait for it to finish or stop it there.';
+
+/**
+ * Puts a brand-new chat in the caches before the route changes to it: the detail query then has
+ * data when the chat page mounts (no loading or not-found state), and the sidebar lists it at once.
+ * An unloaded chat list is left alone; it loads with the chat in it.
+ */
+function seedNewChat(queryClient: QueryClient, chatId: string, title: string): () => void {
+  const detail: ChatDetail = {
+    id: chatId,
+    title,
+    timestamp: Date.now() / 1000,
+    workspace_id: useUiStore.getState().newChatWorkspaceId,
+    is_running: false,
+    messages: [],
+  };
+  queryClient.setQueryData(queryKeys.chat(chatId), detail);
+  const summary: ChatSummary = {
+    id: chatId,
+    title,
+    timestamp: detail.timestamp,
+    workspace_id: detail.workspace_id,
+    is_running: false,
+  };
+  queryClient.setQueryData<ChatSummary[]>(queryKeys.chats, (list) =>
+    list ? [summary, ...list.filter((c) => c.id !== chatId)] : list,
+  );
+  // Undo for a failed create: the chat never existed on the server.
+  return () => {
+    queryClient.removeQueries({ queryKey: queryKeys.chat(chatId) });
+    queryClient.setQueryData<ChatSummary[]>(queryKeys.chats, (list) =>
+      list ? list.filter((c) => c.id !== chatId) : list,
+    );
+  };
+}
+
 type Settings = ReturnType<typeof useSettingsStore.getState>;
 
 /** The request body shared by a new turn (`/v1/chat/completions`) and Retry (`/resume`). */
@@ -139,6 +178,10 @@ export interface SendArgs {
   temporary?: boolean;
   /** Overrides the history taken from the cache (used by retry and regenerate). */
   history?: HistoryMessage[];
+  /** Called once the turn is accepted and the chat is seeded, to move the route to a new chat. */
+  navigate?: () => void;
+  /** Called once the turn is accepted (the stream store has started), to clear the composer. */
+  onAccepted?: () => void;
   /**
    * The user turn already exists in the transcript (retry, or regenerate after an edit), so no
    * optimistic "pending" user row is shown; otherwise the message would appear twice (F-16).
@@ -155,13 +198,20 @@ export async function sendTurn({
   temporary,
   history: historyOverride,
   userTurnExists = false,
-}: SendArgs): Promise<void> {
+  navigate,
+  onAccepted,
+}: SendArgs): Promise<boolean> {
   const settings = useSettingsStore.getState();
   if (!settings.model) {
     showToast('Select a model first', 'error');
-    return;
+    return false;
   }
-  if (useStreamStore.getState().chatId) return; // already streaming
+  const running = useStreamStore.getState().chatId;
+  if (running) {
+    // The same chat submitted twice is a double click; only another chat's turn needs explaining.
+    if (running !== chatId) showToast(BUSY_TOAST, 'error');
+    return false;
+  }
 
   const pending: PendingUser | null = userTurnExists
     ? null
@@ -170,10 +220,16 @@ export async function sendTurn({
         images: [],
         files,
       };
-  if (!historyOverride && !isNewChat && !queryClient.getQueryData(queryKeys.chat(chatId))) {
+  if (
+    !historyOverride &&
+    !isNewChat &&
+    !temporary &&
+    !queryClient.getQueryData(queryKeys.chat(chatId))
+  ) {
     // The chat is not in the cache, so its prior context is unknown; refuse rather than send without it.
+    // (A temporary chat has no row until its first turn; the server builds its context itself.)
     showToast('Could not load this chat. Reload the page and try again.', 'error');
-    return;
+    return false;
   }
   const controller = new AbortController();
   const history = historyOverride ?? historyFromCache(queryClient, chatId);
@@ -183,6 +239,11 @@ export async function sendTurn({
   ];
 
   useStreamStore.getState().start(chatId, pending, controller);
+  const unseed = isNewChat
+    ? seedNewChat(queryClient, chatId, text.substring(0, 50) || 'New Conversation')
+    : null;
+  onAccepted?.();
+  navigate?.();
 
   if (isNewChat) {
     // A chat started from a workspace page is filed into that workspace on creation (F-47).
@@ -201,8 +262,9 @@ export async function sendTurn({
       });
     } catch (err) {
       useStreamStore.getState().finish();
+      unseed?.();
       showToast(err instanceof Error ? err.message : 'Could not create chat', 'error');
-      return;
+      return true;
     }
     useUiStore.getState().setNewChatWorkspaceId(null);
   }
@@ -210,6 +272,7 @@ export async function sendTurn({
   const body = completionBody(settings, settings.model, chatId, messages, { userPreferences: temporary ? false : settings.userPreferences, files });
 
   await consume(queryClient, chatId, streamCompletion(body, controller.signal), true);
+  return true;
 }
 
 /**
@@ -222,7 +285,10 @@ export async function resumeTurn(queryClient: QueryClient, chatId: string): Prom
     showToast('Select a model first', 'error');
     return;
   }
-  if (useStreamStore.getState().chatId) return; // already streaming
+  if (useStreamStore.getState().chatId) {
+    showToast(BUSY_TOAST, 'error');
+    return;
+  }
 
   const controller = new AbortController();
   useStreamStore.getState().start(chatId, null, controller);

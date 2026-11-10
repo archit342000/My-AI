@@ -21,6 +21,19 @@ describe('RootLayout', () => {
     expect(screen.getByRole('button', { name: 'View files and artifacts' })).toBeTruthy();
   });
 
+  it('has one composer on the landing page and in a chat, and none on other pages', () => {
+    vi.spyOn(chatsApi, 'list').mockResolvedValue([]);
+    vi.spyOn(chatsApi, 'listWorkspaces').mockResolvedValue([]);
+    const home = renderWithProviders(<RootLayout />);
+    expect(screen.getByPlaceholderText('Type a message…')).toBeTruthy();
+    home.unmount();
+    const chat = renderWithProviders(<RootLayout />, { route: '/chat/c1', path: '/chat/:chatId' });
+    expect(screen.getByPlaceholderText('Type a message…')).toBeTruthy();
+    chat.unmount();
+    renderWithProviders(<RootLayout />, { route: '/logs', path: '/logs' });
+    expect(screen.queryByPlaceholderText('Type a message…')).toBeNull();
+  });
+
   it('the artifacts toggle flips the store flag', () => {
     vi.spyOn(chatsApi, 'list').mockResolvedValue([]);
     vi.spyOn(chatsApi, 'listWorkspaces').mockResolvedValue([]);

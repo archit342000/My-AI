@@ -69,7 +69,7 @@ describe('MessageList', () => {
   it('Save & regenerate edits the message and resumes, without posting a new turn', async () => {
     const edit = vi.spyOn(chatsApi, 'editMessage').mockResolvedValue({} as never);
     const resume = vi.spyOn(sendTurnModule, 'resumeTurn').mockResolvedValue(undefined);
-    const send = vi.spyOn(sendTurnModule, 'sendTurn').mockResolvedValue(undefined);
+    const send = vi.spyOn(sendTurnModule, 'sendTurn').mockResolvedValue(true);
     renderWithProviders(<MessageList turns={toTurns([...msgs] as never)} chatId="c1" onChanged={() => undefined} />);
     const row = document.querySelector('[data-message-id="1"]') as HTMLElement;
     fireEvent.click(within(row).getByRole('button', { name: 'Edit message' }));
@@ -207,7 +207,7 @@ describe('MessageList', () => {
   it('retry on the last reply deletes it, then resumes from the stored user message (no new user row)', async () => {
     const del = vi.spyOn(chatsApi, 'deleteMessage').mockResolvedValue(new Response(null, { status: 200 }));
     const resume = vi.spyOn(sendTurnModule, 'resumeTurn').mockResolvedValue(undefined);
-    const send = vi.spyOn(sendTurnModule, 'sendTurn').mockResolvedValue(undefined);
+    const send = vi.spyOn(sendTurnModule, 'sendTurn').mockResolvedValue(true);
     renderWithProviders(<MessageList turns={toTurns([...msgs] as never)} chatId="c1" onChanged={() => undefined} />);
     const a2 = document.querySelector('[data-message-id="4"]') as HTMLElement;
     fireEvent.click(within(a2).getByRole('button', { name: 'Retry response' }));
@@ -219,7 +219,7 @@ describe('MessageList', () => {
 
   it('the user bubble Retry (no reply yet) resumes without sending a new turn', async () => {
     const resume = vi.spyOn(sendTurnModule, 'resumeTurn').mockResolvedValue(undefined);
-    const send = vi.spyOn(sendTurnModule, 'sendTurn').mockResolvedValue(undefined);
+    const send = vi.spyOn(sendTurnModule, 'sendTurn').mockResolvedValue(true);
     renderWithProviders(<MessageList turns={toTurns(msgs.slice(0, 3) as never)} chatId="c1" onChanged={() => undefined} />);
     const u2 = document.querySelector('[data-message-id="3"]') as HTMLElement;
     fireEvent.click(within(u2).getByRole('button', { name: 'Retry response' }));
