@@ -4,12 +4,20 @@ import { preferencesApi, settingsKeys, type Preference } from '../../api/setting
 import { showToast } from '../../components/ui/toast-store';
 import { memoryTagLabel } from '../../lib/labels';
 import { CrudDialog, type FormFooter } from './CrudList';
-import { Field } from '../../components/ui/Field';
+import { Select } from '../../components/ui/Select';
+import { filterPreferences, tagsOf, type PreferenceSort } from '../../lib/list-filter';
+import { Field, Input } from '../../components/ui/Field';
 
 export function PreferencesDialog({ open, onClose, onBack }: { open: boolean; onClose: () => void; onBack?: () => void }) {
   const queryClient = useQueryClient();
   const list = useQuery({ queryKey: settingsKeys.preferences, queryFn: preferencesApi.list, enabled: open });
   const refresh = () => queryClient.invalidateQueries({ queryKey: settingsKeys.preferences });
+  const [query, setQuery] = useState('');
+  const [tag, setTag] = useState('');
+  const [sort, setSort] = useState<PreferenceSort>('newest');
+  const all = list.data ?? [];
+  const shown = filterPreferences(all, { query, tag, sort });
+  const filtering = query.trim() !== '' || tag !== '';
 
   return (
     <CrudDialog<Preference>
@@ -19,7 +27,36 @@ export function PreferencesDialog({ open, onClose, onBack }: { open: boolean; on
       noun="memory"
       title="Memory & preferences"
       emptyText="Nothing saved yet. Preferences you add here are applied to every chat."
-      items={list.data ?? []}
+      items={shown}
+      filtering={filtering}
+      toolbar={
+        <>
+          <Input
+            aria-label="Search memory"
+            placeholder="Search…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+          <Select
+            aria-label="Filter by tag"
+            value={tag}
+            onChange={setTag}
+            options={[
+              { value: '', label: 'All tags' },
+              ...tagsOf(all).map((t) => ({ value: t, label: t })),
+            ]}
+          />
+          <Select
+            aria-label="Sort"
+            value={sort}
+            onChange={(v) => setSort(v === 'oldest' ? 'oldest' : 'newest')}
+            options={[
+              { value: 'newest', label: 'Newest' },
+              { value: 'oldest', label: 'Oldest' },
+            ]}
+          />
+        </>
+      }
       describe={(p) => ({ id: p.id, title: p.content, subtitle: memoryTagLabel(p.tag), fullText: p.content })}
       renderForm={(initial, onDone, footer) => <PreferenceForm initial={initial} onDone={onDone} onSaved={refresh} footer={footer} />}
       onDelete={async (item) => {

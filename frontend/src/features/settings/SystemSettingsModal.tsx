@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Modal } from '../../components/ui/Modal';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
@@ -14,6 +15,12 @@ import { Section, Status } from './forms';
 import { Toggle } from '../../components/ui/Toggle';
 import { SETTINGS_STALE_MS } from '../../api/settings';
 import { useIsAdmin } from '../../state/user-store';
+import { chatsApi, queryKeys } from '../../api/chats';
+import { useStreamStore } from '../../state/stream-store';
+import { stopIfStreaming } from '../chat/send-turn';
+import { discardTemporaryChat } from '../chat/temporary-chat';
+import { GitSettingsSection } from './GitSettingsSection';
+import { ChatDefaultsSection } from './ChatDefaultsSection';
 
 const THEMES: Array<[ThemeMode, string]> = [['light', 'Light'], ['dark', 'Dark'], ['system', 'System']];
 
@@ -31,6 +38,8 @@ export function SystemSettingsModal({ open, onClose }: { open: boolean; onClose:
   const [runner, setRunner] = useState<CodeRunnerSettings | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
+  const [confirmClear, setConfirmClear] = useState(false);
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (system.data && !runner) {
@@ -51,6 +60,37 @@ export function SystemSettingsModal({ open, onClose }: { open: boolean; onClose:
     },
     onError: (e) => setStatus(e instanceof Error ? e.message : 'Save failed'),
   });
+
+  /** Deletes every chat of the caller, then shows an empty home page. */
+  async function deleteAllChats() {
+    try {
+      // Every turn that is generating is stopped first (the server's delete does not stop it): the ones
+      // the chat list reports as running, which includes turns started in another tab, and this tab's own.
+      const running = async () => (await chatsApi.list()).filter((c) => c.is_running).map((c) => c.id);
+      const ids = new Set(await running());
+      const own = useStreamStore.getState().chatId;
+      if (own) ids.add(own);
+      await Promise.all([...ids].map((id) => stopIfStreaming(id, true)));
+      // A stop the server refused is only toasted by the stop itself: do not delete under a live turn.
+      if ((await running()).length > 0) throw new Error('A chat is still generating. Try again once it has stopped.');
+      await chatsApi.bulkDelete();
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Could not delete the chats', 'error');
+      return;
+    }
+    // The chats are gone from here on; a failure below only leaves the screen to be refreshed.
+    try {
+      await discardTemporaryChat(queryClient);
+      queryClient.removeQueries({ queryKey: ['chat'] });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.chats });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.workspaces });
+    } catch {
+      showToast('The chats were deleted, but the lists could not be refreshed. Reload the page.', 'error');
+    }
+    showToast('All chats deleted', 'success');
+    onClose();
+    navigate('/', { replace: true });
+  }
 
   const reset = useMutation({
     mutationFn: () => preferencesApi.reset(),
@@ -92,6 +132,8 @@ export function SystemSettingsModal({ open, onClose }: { open: boolean; onClose:
           description="Send attached images to the model so it can read them."
         />
       </Section>
+
+      <ChatDefaultsSection />
 
       {isAdmin ? (
         <Section title="Code runner">
@@ -155,6 +197,8 @@ export function SystemSettingsModal({ open, onClose }: { open: boolean; onClose:
         </Section>
       ) : null}
 
+      {isAdmin && system.data ? <GitSettingsSection system={system.data} /> : null}
+
       <Section title="Manage">
         <div className="settings-links">
           {links.map(([name, label]) => (
@@ -167,9 +211,24 @@ export function SystemSettingsModal({ open, onClose }: { open: boolean; onClose:
         <Button variant="danger" onClick={() => setConfirmReset(true)}>
           Reset preferences
         </Button>
+        <Button variant="danger" onClick={() => setConfirmClear(true)}>
+          Delete all chats
+        </Button>
       </Section>
 
       <div className="settings-version">Version {version.data?.version ?? '…'}</div>
+      <ConfirmDialog
+        open={confirmClear}
+        title="Delete all chats"
+        message="Delete every chat, with its messages and files? This cannot be undone."
+        confirmLabel="Delete all"
+        danger
+        onCancel={() => setConfirmClear(false)}
+        onConfirm={() => {
+          setConfirmClear(false);
+          void deleteAllChats();
+        }}
+      />
       <ConfirmDialog
         open={confirmReset}
         title="Reset preferences"

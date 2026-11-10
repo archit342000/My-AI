@@ -34,6 +34,13 @@ describe('CrudDialog', () => {
     expect(screen.getByText('id 2')).toBeTruthy();
   });
 
+  it('shows the toolbar above the list and reads "No matches" while it is filtering', () => {
+    setup({ items: [], filtering: true, toolbar: <input aria-label="search" /> });
+    expect(screen.getByLabelText('search')).toBeTruthy();
+    expect(screen.getByText('No matches')).toBeTruthy();
+    expect(screen.queryByText('Nothing here')).toBeNull();
+  });
+
   it('shows the empty text when there are no items', () => {
     setup({ items: [] });
     expect(screen.getByText('Nothing here')).toBeTruthy();

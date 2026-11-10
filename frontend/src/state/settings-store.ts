@@ -130,6 +130,14 @@ interface Defaults {
   modes: ModeToggles;
 }
 
+/** The new-chat defaults System Settings can edit. */
+export interface DefaultsPatch {
+  thinking_profile?: string;
+  userPreferences?: boolean;
+  max_tokens?: number;
+  thinking_budget_tokens?: number;
+}
+
 interface SettingsState {
   model: string | null;
   modelName: string | null;
@@ -159,6 +167,11 @@ interface SettingsState {
   setSampling: (patch: Partial<SamplingParams>) => void;
   setVisionEnabled: (on: boolean) => void;
   setUserPreferences: (on: boolean) => void;
+  /**
+   * Edits the new-chat defaults (System Settings). The active values follow them unless a chat's own
+   * values are active.
+   */
+  setDefaults: (patch: DefaultsPatch) => void;
   setMode: (key: keyof ModeToggles, on: boolean) => void;
 }
 
@@ -189,6 +202,25 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   visionEnabled: false,
   defaults: BASE_DEFAULTS,
   chatScoped: false,
+  setDefaults: (patch) => {
+    const state = get();
+    const sampling = { ...state.defaults.sampling };
+    if (patch.thinking_profile !== undefined) {
+      sampling.thinking_profile = patch.thinking_profile;
+      sampling.enable_thinking = enableThinkingFor(patch.thinking_profile);
+    }
+    if (patch.max_tokens !== undefined) sampling.max_tokens = patch.max_tokens;
+    if (patch.thinking_budget_tokens !== undefined)
+      sampling.thinking_budget_tokens = patch.thinking_budget_tokens;
+    const userPreferences = patch.userPreferences ?? state.defaults.userPreferences;
+    write(KEYS.sampling, JSON.stringify(sampling));
+    if (patch.userPreferences !== undefined) {
+      write(KEYS.chatDefaults, JSON.stringify({ ...readChatDefaults(), userPreferences }));
+    }
+    const defaults = { ...state.defaults, sampling, userPreferences };
+    // An open chat keeps its own values; otherwise the active values follow the defaults.
+    set(state.chatScoped ? { defaults } : { defaults, sampling, userPreferences });
+  },
   setUserPreferences: (on) => {
     if (!get().chatScoped) {
       write(KEYS.chatDefaults, JSON.stringify({ ...readChatDefaults(), userPreferences: on }));
