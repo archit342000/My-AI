@@ -48,6 +48,21 @@ describe('SystemSettingsModal code runner timeout', () => {
   });
 });
 
+describe('SystemSettingsModal code runner form', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('uses the shared input and button styles and has no inline styles', async () => {
+    mockSystem({ code_runner_max_timeout: 120 });
+    renderWithProviders(<SystemSettingsModal open onClose={() => undefined} />);
+    for (const label of ['Timeout (seconds)', 'Memory limit', 'CPU limit (cores)', 'Max output (bytes)']) {
+      expect((await screen.findByLabelText(label)).className).toContain('ui-input');
+    }
+    const save = screen.getByRole('button', { name: 'Save code runner settings' });
+    expect(save.className).toContain('ui-button');
+    expect(document.querySelectorAll('.modal-content [style]').length).toBe(0); // nothing inside the dialog is styled inline
+  });
+});
+
 describe('SystemSettingsModal by role', () => {
   afterEach(() => vi.restoreAllMocks());
 
