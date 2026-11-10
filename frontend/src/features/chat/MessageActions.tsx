@@ -34,7 +34,7 @@ export function MessageActions({ text, role, canRetry, onEdit, onRetry, onDelete
       await navigator.clipboard.writeText(text);
       setCopied(true);
     } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Copy failed', 'error');
+      showToast(err instanceof Error ? err.message : "Couldn't copy. Try again.", 'error');
     }
   }
 
@@ -81,7 +81,7 @@ export function MessageActions({ text, role, canRetry, onEdit, onRetry, onDelete
         open={confirming}
         title="Delete message?"
         message="This removes the message from the chat. It cannot be undone."
-        confirmLabel="Delete"
+        confirmLabel="Delete message"
         danger
         onCancel={() => setConfirming(false)}
         onConfirm={() => {

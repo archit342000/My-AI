@@ -56,7 +56,7 @@ export function useSpeedTest(): UseSpeedTest {
             setPhase('stopped');
           } else {
             setState({ ...current, status: 'Failed' });
-            setError(e instanceof Error ? e.message : 'Speed test failed');
+            setError(e instanceof Error ? e.message : 'The speed test did not finish.');
             setPhase('failed');
           }
         } finally {

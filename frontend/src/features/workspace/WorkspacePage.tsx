@@ -45,14 +45,20 @@ export function WorkspacePage() {
       }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.workspaces }),
     onError: (e) =>
-      showToast(e instanceof Error ? e.message : 'The workspace could not be renamed', 'error'),
+      showToast(
+        e instanceof Error ? e.message : 'The workspace could not be renamed. Try again.',
+        'error',
+      ),
   });
 
   const setIcon = useMutation({
     mutationFn: (icon: string | null) => chatsApi.setWorkspaceIcon(workspaceId, icon),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.workspaces }),
     onError: (e) =>
-      showToast(e instanceof Error ? e.message : 'The icon could not be changed', 'error'),
+      showToast(
+        e instanceof Error ? e.message : 'The icon could not be changed. Try again.',
+        'error',
+      ),
   });
 
   const remove = useMutation({
@@ -65,7 +71,10 @@ export function WorkspacePage() {
       navigate('/', { replace: true });
     },
     onError: (e) =>
-      showToast(e instanceof Error ? e.message : 'The workspace could not be deleted', 'error'),
+      showToast(
+        e instanceof Error ? e.message : 'The workspace could not be deleted. Try again.',
+        'error',
+      ),
   });
 
   if (!workspace) {

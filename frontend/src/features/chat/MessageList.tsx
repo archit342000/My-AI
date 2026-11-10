@@ -55,7 +55,7 @@ function UserTurn({
     try {
       await chatsApi.editMessage(chatId, turn.id, draft);
     } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Edit failed', 'error');
+      showToast(err instanceof Error ? err.message : "Couldn't save the edit. Try again.", 'error');
       return;
     }
     setEditing(false);
@@ -171,7 +171,10 @@ async function remove(
     await queryClient.invalidateQueries({ queryKey: queryKeys.chats });
     onChanged();
   } catch (err) {
-    showToast(err instanceof Error ? err.message : 'Delete failed', 'error');
+    showToast(
+      err instanceof Error ? err.message : "Couldn't delete the message. Try again.",
+      'error',
+    );
   }
 }
 
@@ -331,7 +334,9 @@ function InterruptedAssistant({
   const notice =
     interrupted.kind === 'error' ? (
       <div className="chat-error" role="alert">
-        <span className="chat-error__message">{interrupted.message ?? 'The reply failed.'}</span>
+        <span className="chat-error__message">
+          {interrupted.message ?? "The answer couldn't be finished."}
+        </span>
         <Button variant="secondary" size="sm" disabled={busy} onClick={onRetry}>
           Retry
         </Button>
@@ -448,7 +453,10 @@ export function MessageList({
     try {
       await chatsApi.deleteMessage(chatId, firstMessageId(turns[assistantIdx]!));
     } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Retry failed', 'error');
+      showToast(
+        err instanceof Error ? err.message : "Couldn't try again. Reload the page.",
+        'error',
+      );
       return;
     }
     await queryClient.invalidateQueries({ queryKey: queryKeys.chat(chatId) });

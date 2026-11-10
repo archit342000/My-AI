@@ -37,13 +37,13 @@ describe('RootLayout', () => {
     vi.spyOn(chatsApi, 'list').mockResolvedValue([]);
     vi.spyOn(chatsApi, 'listWorkspaces').mockResolvedValue([]);
     const home = renderWithProviders(<RootLayout />);
-    expect(screen.getByPlaceholderText('Start a conversation...')).toBeTruthy();
+    expect(screen.getByPlaceholderText('Start a conversation…')).toBeTruthy();
     home.unmount();
     const chat = renderWithProviders(<RootLayout />, { route: '/chat/c1', path: '/chat/:chatId' });
-    expect(screen.getByPlaceholderText('Start a conversation...')).toBeTruthy();
+    expect(screen.getByPlaceholderText('Start a conversation…')).toBeTruthy();
     chat.unmount();
     renderWithProviders(<RootLayout />, { route: '/logs', path: '/logs' });
-    expect(screen.queryByPlaceholderText('Start a conversation...')).toBeNull();
+    expect(screen.queryByPlaceholderText('Start a conversation…')).toBeNull();
   });
 
   it('the artifacts toggle flips the store flag', () => {

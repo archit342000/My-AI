@@ -15,7 +15,7 @@ export function ResumeBanner({ chatId }: { chatId: string }) {
       await chatsApi.patch(chatId, { resume_suppressed: 1 });
       await queryClient.invalidateQueries({ queryKey: queryKeys.chat(chatId) });
     } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Could not dismiss', 'error');
+      showToast(err instanceof Error ? err.message : "Couldn't dismiss this. Try again.", 'error');
     } finally {
       setBusy(false);
     }

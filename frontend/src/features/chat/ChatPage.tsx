@@ -32,7 +32,10 @@ function ChatTitle({ chatId, title }: { chatId: string; title: string }) {
       await queryClient.invalidateQueries({ queryKey: queryKeys.chat(chatId) });
       await queryClient.invalidateQueries({ queryKey: queryKeys.chats });
     } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Rename failed', 'error');
+      showToast(
+        err instanceof Error ? err.message : "Couldn't rename the chat. Try again.",
+        'error',
+      );
     }
   }
 

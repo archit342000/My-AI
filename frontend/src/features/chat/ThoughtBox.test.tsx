@@ -17,9 +17,9 @@ function box(props: Partial<React.ComponentProps<typeof ThoughtBox>> = {}) {
 describe('ThoughtBox', () => {
   afterEach(() => useThoughtStore.setState({ expanded: {} }));
 
-  it('says Thinking... with the status line while active, and Thought process once it has ended', () => {
+  it('says Thinking… with the status line while active, and Thought process once it has ended', () => {
     const { rerender } = render(box({ active: true, status: 'Searching the web' }));
-    expect(screen.getByText(/Thinking\.\.\./)).toBeTruthy();
+    expect(screen.getByText(/Thinking…/)).toBeTruthy();
     expect(screen.getByText('Searching the web')).toBeTruthy();
     rerender(box({ active: false, status: 'Searching the web' }));
     expect(screen.getByText('Thought process')).toBeTruthy();
@@ -32,7 +32,7 @@ describe('ThoughtBox', () => {
     expect(screen.queryByRole('button', { name: /Reasoning/ })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: /Thought process/ }));
     const labels = screen.getAllByRole('button').map((b) => b.textContent ?? '');
-    const order = ['Reasoning', 'Call: Web Search', 'Tool Result: Web Search'].map((l) =>
+    const order = ['Reasoning', 'Call: Web search', 'Result: Web search'].map((l) =>
       labels.findIndex((t) => t.includes(l)),
     );
     expect(order.every((i) => i >= 0)).toBe(true);
@@ -57,7 +57,7 @@ describe('ThoughtBox', () => {
     fireEvent.click(open);
     const dialog = screen.getByRole('dialog');
     expect(dialog.textContent).toContain('Reasoning');
-    expect(dialog.textContent).toContain('Tool Result: Web Search');
+    expect(dialog.textContent).toContain('Result: Web search');
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(screen.queryByRole('dialog')).toBeNull();
   });

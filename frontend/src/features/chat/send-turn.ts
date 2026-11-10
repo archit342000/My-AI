@@ -23,7 +23,6 @@ import { useStreamStore, type InterruptedTurn, type PendingUser } from '../../st
 import { useUiStore } from '../../state/ui-store';
 import { applyChunk, emptyLiveTurn, StreamError, type StreamChunk } from './stream-reducer';
 
-
 export function historyFromCache(queryClient: QueryClient, chatId: string): HistoryMessage[] {
   const detail = queryClient.getQueryData<{ messages: Parameters<typeof toTurns>[0] }>(
     queryKeys.chat(chatId),
@@ -219,7 +218,8 @@ async function consume(
       if (chatIsShown(chatId)) store.interrupt(onRefusal.restore);
       onRefusal.onRefused?.();
     } else {
-      const message = err instanceof Error ? err.message : 'Stream failed';
+      const message =
+        err instanceof Error ? err.message : 'The answer stopped arriving. Try again.';
       // Keep the partial reply under an inline error with Retry (F-14).
       store.interrupt({ chatId, live, kind: 'error', message });
       if (!(err instanceof StreamError)) console.error(err);
@@ -398,7 +398,7 @@ export async function sendTurn({
   ) {
     // The chat is not in the cache, so its prior context is unknown; refuse rather than send without it.
     // (A temporary chat has no row until its first turn; the server builds its context itself.)
-    showToast('Could not load this chat. Reload the page and try again.', 'error');
+    showToast("Couldn't load this chat. Reload the page and try again.", 'error');
     return false;
   }
   const controller = new AbortController();
@@ -444,7 +444,10 @@ export async function sendTurn({
     } catch (err) {
       useStreamStore.getState().finish();
       unseed?.();
-      showToast(err instanceof Error ? err.message : 'Could not create chat', 'error');
+      showToast(
+        err instanceof Error ? err.message : "Couldn't start the chat. Try again.",
+        'error',
+      );
       return true;
     }
     useUiStore.getState().setNewChatWorkspaceId(null);
@@ -452,7 +455,10 @@ export async function sendTurn({
 
   if (!isNewChat && !temporary) rememberModel(queryClient, chatId, settings.model);
 
-  const body = completionBody(settings, settings.model, chatId, messages, { userPreferences: temporary ? false : settings.userPreferences, files });
+  const body = completionBody(settings, settings.model, chatId, messages, {
+    userPreferences: temporary ? false : settings.userPreferences,
+    files,
+  });
 
   await consume(
     queryClient,
@@ -484,7 +490,9 @@ export async function resumeTurn(queryClient: QueryClient, chatId: string): Prom
   const controller = new AbortController();
   const interrupted = useStreamStore.getState().interrupted;
   useStreamStore.getState().start(chatId, null, controller);
-  const body = completionBody(settings, settings.model, chatId, [], { userPreferences: settings.userPreferences });
+  const body = completionBody(settings, settings.model, chatId, [], {
+    userPreferences: settings.userPreferences,
+  });
   await consume(
     queryClient,
     chatId,
@@ -583,7 +591,7 @@ export async function reattachTurn(queryClient: QueryClient, chatId: string): Pr
     await consume(queryClient, chatId, source);
   } catch (err) {
     if (started) useStreamStore.getState().finish();
-    console.error('Reattach failed', err);
+    console.error("Couldn't pick the answer up again. Reload the page.", err);
   } finally {
     reattaching.delete(chatId);
   }

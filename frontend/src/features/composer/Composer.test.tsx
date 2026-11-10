@@ -18,8 +18,7 @@ import type { UploadedFile } from '../../api/completions';
 import { chatListInvalidated } from '../../test/invalidation';
 import * as sendTurnModule from '../chat/send-turn';
 
-const textarea = () =>
-  screen.getByPlaceholderText('Start a conversation...') as HTMLTextAreaElement;
+const textarea = () => screen.getByPlaceholderText('Start a conversation…') as HTMLTextAreaElement;
 const sendBtn = () =>
   screen.getByRole('button', { name: /Send message|Stop generating/ }) as HTMLButtonElement;
 
@@ -54,7 +53,7 @@ describe('Composer', () => {
 
   it('uses the legacy placeholder', () => {
     renderWithProviders(<Composer />);
-    expect(screen.getByPlaceholderText('Start a conversation...')).toBeTruthy();
+    expect(screen.getByPlaceholderText('Start a conversation…')).toBeTruthy();
   });
 
   it('the attach and tools buttons are the shared icon button', () => {
@@ -161,7 +160,7 @@ describe('Composer', () => {
     renderWithProviders(<Composer />);
     const box = () => screen.getByRole('combobox') as HTMLTextAreaElement;
     expect(box()).toBeDisabled();
-    expect(box().placeholder).toBe('Waiting for a connection...');
+    expect(box().placeholder).toBe('Waiting for a connection…');
     expect(screen.getByRole('status')).toHaveTextContent(
       'No connection. Everything here is saved; sending is paused until you are back online.',
     );
@@ -171,7 +170,7 @@ describe('Composer', () => {
       window.dispatchEvent(new Event('online'));
     });
     expect(box()).toBeEnabled();
-    expect(box().placeholder).toBe('Start a conversation...');
+    expect(box().placeholder).toBe('Start a conversation…');
     expect(screen.queryByText(/No connection/)).toBeNull();
   });
 
@@ -360,9 +359,7 @@ describe('Composer', () => {
     vi.spyOn(chatsApi, 'get').mockRejectedValue(new ApiError(404, {}, 'missing'));
     renderWithProviders(<Composer />, { route: '/chat/gone', path: '/chat/:chatId' });
     await waitFor(() => expect(chatsApi.get).toHaveBeenCalled());
-    await waitFor(() =>
-      expect(screen.queryByPlaceholderText('Start a conversation...')).toBeNull(),
-    );
+    await waitFor(() => expect(screen.queryByPlaceholderText('Start a conversation…')).toBeNull());
   });
 
   it("does not replace an opened chat's model with the default pick while chat settings are active", async () => {

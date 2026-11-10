@@ -4,7 +4,12 @@ import { describe, expect, it } from 'vitest';
 import { readSse } from '../../../api/sse';
 import { finishedFileChanges } from '../../../lib/fs-tools';
 import { lastEvent, toTurns, turnReasoning, turnText, turnTools } from '../../../lib/chat-model';
-import { applyChunk, emptyLiveTurn, type LiveTurn, type StreamChunk } from '../../../features/chat/stream-reducer';
+import {
+  applyChunk,
+  emptyLiveTurn,
+  type LiveTurn,
+  type StreamChunk,
+} from '../../../features/chat/stream-reducer';
 
 function load(name: string): ReadableStream<Uint8Array> {
   const text = readFileSync(resolve(__dirname, `${name}.sse`), 'utf8');
@@ -45,7 +50,10 @@ describe('recorded stream fixtures', () => {
   it('files: a finished create_fs_file step and the multi-block reply', async () => {
     const t = await run('files');
     expect(finishedFileChanges(t.steps)).toBe(1);
-    expect(turnTools(t.steps)[0]).toMatchObject({ name: 'create_fs_file', result: 'Created notes/hello.md' });
+    expect(turnTools(t.steps)[0]).toMatchObject({
+      name: 'create_fs_file',
+      result: 'Created notes/hello.md',
+    });
     expect(turnText(t.steps)).toContain('See [hello](notes/hello.md) for details.');
     expect(turnText(t.steps)).toContain('still code');
   });
@@ -70,7 +78,14 @@ describe('recorded stream fixtures', () => {
         content: 'Checking.',
         tool_calls: [{ id: 'call_1', function: { name: 'list_files', arguments: '{}' } }],
       },
-      { id: 3, chat_id: 'c', role: 'tool', parent_type: 'main', tool_call_id: 'call_1', content: '3 files' },
+      {
+        id: 3,
+        chat_id: 'c',
+        role: 'tool',
+        parent_type: 'main',
+        tool_call_id: 'call_1',
+        content: '3 files',
+      },
       {
         id: 4,
         chat_id: 'c',
@@ -86,7 +101,7 @@ describe('recorded stream fixtures', () => {
   it('redact: rolls back the failed attempt', async () => {
     const t = await run('redact');
     expect(turnText(t.steps)).toBe('Draft one\n\nFixed answer.');
-    expect(t.redactNotice).toBe('Correcting formatting...');
+    expect(t.redactNotice).toBe('Correcting formatting…');
   });
 
   it('clarify: the waiting turn has one tool step with valid arguments and a pending request', async () => {
@@ -94,7 +109,14 @@ describe('recorded stream fixtures', () => {
     const tools = turnTools(t.steps);
     expect(tools).toHaveLength(1);
     expect(tools[0]?.result).toBeNull();
-    expect(JSON.parse(tools[0]?.args ?? '')).toEqual({ question: 'Which colour?', options: ['Red', 'Blue'] });
-    expect(t.pendingRequest).toEqual({ id: 'call_1', question: 'Which colour?', options: ['Red', 'Blue'] });
+    expect(JSON.parse(tools[0]?.args ?? '')).toEqual({
+      question: 'Which colour?',
+      options: ['Red', 'Blue'],
+    });
+    expect(t.pendingRequest).toEqual({
+      id: 'call_1',
+      question: 'Which colour?',
+      options: ['Red', 'Blue'],
+    });
   });
 });

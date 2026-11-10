@@ -131,7 +131,7 @@ export function Composer() {
       const id = await saveTemporaryChat(queryClient, first);
       if (id) navigate(`/chat/${id}`);
     } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Could not save chat', 'error');
+      showToast(err instanceof Error ? err.message : "Couldn't save the chat. Try again.", 'error');
     }
   }
 
@@ -182,7 +182,10 @@ export function Composer() {
             // The chip is gone: drop the file too, then refresh the list (its chat is rejudged).
             void deleteFile(uploaded.file_id)
               .catch((err: unknown) =>
-                showToast(err instanceof Error ? err.message : 'Could not remove file', 'error'),
+                showToast(
+                  err instanceof Error ? err.message : "Couldn't remove the file. Try again.",
+                  'error',
+                ),
               )
               .then(refreshChatList);
             return;
@@ -192,7 +195,8 @@ export function Composer() {
         })
         .catch((err: unknown) => {
           if (store.takeDoomed(item.key)) return; // nobody is waiting for it
-          const message = err instanceof Error ? err.message : 'Upload failed';
+          const message =
+            err instanceof Error ? err.message : "Couldn't upload the file. Try again.";
           store.update(listKey, item.key, { status: 'error', error: message });
           showToast(message, 'error');
         })
@@ -258,7 +262,10 @@ export function Composer() {
     } else if (chip.uploaded) {
       void deleteFile(chip.uploaded.file_id)
         .catch((err: unknown) =>
-          showToast(err instanceof Error ? err.message : 'Could not remove file', 'error'),
+          showToast(
+            err instanceof Error ? err.message : "Couldn't remove the file. Try again.",
+            'error',
+          ),
         )
         .then(refreshChatList);
     }
@@ -463,7 +470,7 @@ export function Composer() {
           aria-controls={slashOpen ? listId : undefined}
           aria-autocomplete="list"
           aria-activedescendant={slashOpen ? `${listId}-${active}` : undefined}
-          placeholder={online ? 'Start a conversation...' : 'Waiting for a connection...'}
+          placeholder={online ? 'Start a conversation…' : 'Waiting for a connection…'}
           disabled={!online}
           onChange={(e) => {
             setText(e.target.value);

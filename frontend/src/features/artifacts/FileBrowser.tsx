@@ -161,7 +161,7 @@ export function FileBrowser({ ref, scope, full, onToggleFull }: FileBrowserProps
   /** Saves what is unsaved; says so and returns false when that fails (the file then stays open). */
   async function saved(): Promise<boolean> {
     if (await auto.flush()) return true;
-    showToast('Could not save your changes, so this file stays open', 'error');
+    showToast("Couldn't save your changes, so this file stays open", 'error');
     return false;
   }
 
@@ -199,7 +199,7 @@ export function FileBrowser({ ref, scope, full, onToggleFull }: FileBrowserProps
     if (!requestedPath || useUiStore.getState().requestedArtifactPath === null) return;
     if (list.isError && !list.data) {
       useUiStore.getState().clearRequestedArtifact();
-      showToast('Could not load files', 'error');
+      showToast("Couldn't load the files", 'error');
       return;
     }
     // Wait while the list is refetching: a panel opened on a cached list may not have the new file yet.
@@ -258,7 +258,7 @@ export function FileBrowser({ ref, scope, full, onToggleFull }: FileBrowserProps
       setRun(null);
       setSelected(res.id);
     },
-    onError: (e) => showToast(message(e, 'Could not create the file'), 'error'),
+    onError: (e) => showToast(message(e, "Couldn't create the file. Try again."), 'error'),
   });
   const remove = useMutation({
     mutationFn: (id: string) => artifactsApi.remove(id, scope),
@@ -266,7 +266,7 @@ export function FileBrowser({ ref, scope, full, onToggleFull }: FileBrowserProps
       if (id === selected) setSelected(null);
       await refreshList();
     },
-    onError: (e) => showToast(message(e, 'Could not delete the file'), 'error'),
+    onError: (e) => showToast(message(e, "Couldn't delete the file. Try again."), 'error'),
   });
   // Rename and move are updates of the file's title and folder (a file read from disk cannot be renamed or moved).
   const relocate = useMutation({
@@ -276,18 +276,18 @@ export function FileBrowser({ ref, scope, full, onToggleFull }: FileBrowserProps
       await queryClient.invalidateQueries({ queryKey: ['artifacts', key] });
       await queryClient.invalidateQueries({ queryKey: ['artifact', id, key] });
     },
-    onError: (e) => showToast(message(e, 'Could not rename or move the file'), 'error'),
+    onError: (e) => showToast(message(e, "Couldn't rename or move the file. Try again."), 'error'),
   });
   const createFolder = useMutation({
     mutationFn: (path: string) => artifactsApi.createDirectory(scope, path),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['artifacts', key] }),
-    onError: (e) => showToast(message(e, 'Could not create the folder'), 'error'),
+    onError: (e) => showToast(message(e, "Couldn't create the folder. Try again."), 'error'),
   });
   const removeFolder = useMutation({
     mutationFn: (path: string) => artifactsApi.deleteDirectory(scope, path),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['artifacts', key] }),
     // The server only removes an empty folder and says so in its own words.
-    onError: (e) => showToast(message(e, 'Could not delete the folder'), 'error'),
+    onError: (e) => showToast(message(e, "Couldn't delete the folder. Try again."), 'error'),
   });
 
   // Where the file is comes from the list entry (it carries the folder); the single-file read may not.
@@ -330,7 +330,7 @@ export function FileBrowser({ ref, scope, full, onToggleFull }: FileBrowserProps
       await navigator.clipboard.writeText(content);
       showToast('Copied', 'success');
     } catch (err) {
-      showToast(message(err, 'Could not copy'), 'error');
+      showToast(message(err, "Couldn't copy. Try again."), 'error');
     }
   }
 
@@ -517,7 +517,7 @@ export function FileBrowser({ ref, scope, full, onToggleFull }: FileBrowserProps
       setSuggesting(false);
       setSuggestion('');
     } catch (err) {
-      showToast(message(err, 'Could not send the answer'), 'error');
+      showToast(message(err, "Couldn't send the answer. Try again."), 'error');
     } finally {
       setAnswering(false);
     }
@@ -621,7 +621,7 @@ export function FileBrowser({ ref, scope, full, onToggleFull }: FileBrowserProps
         ) : null}
         {list.isError ? (
           <Notice tone="bad" actionLabel="Try again" onAction={() => void list.refetch()}>
-            {message(list.error, 'Could not load the files')}
+            {message(list.error, "Couldn't load the files")}
           </Notice>
         ) : null}
         {empty ? (
@@ -640,7 +640,7 @@ export function FileBrowser({ ref, scope, full, onToggleFull }: FileBrowserProps
       <div className="fb-edit" aria-busy={loadingNext || undefined}>
         {detail.isError && !current ? (
           <Notice tone="bad" actionLabel="Try again" onAction={() => void detail.refetch()}>
-            {message(detail.error, 'Could not open the file')}
+            {message(detail.error, "Couldn't open the file")}
           </Notice>
         ) : null}
         {current ? (

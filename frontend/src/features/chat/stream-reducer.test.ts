@@ -1,8 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { lastEvent, turnReasoning, turnText, turnTools, type Step } from '../../lib/chat-model';
-import { applyChunk, attachResult, emptyLiveTurn, mergeToolCalls, StreamError } from './stream-reducer';
+import {
+  applyChunk,
+  attachResult,
+  emptyLiveTurn,
+  mergeToolCalls,
+  StreamError,
+} from './stream-reducer';
 
-const delta = (d: Record<string, unknown>, extra: Record<string, unknown> = {}) => ({ choices: [{ delta: d }], ...extra });
+const delta = (d: Record<string, unknown>, extra: Record<string, unknown> = {}) => ({
+  choices: [{ delta: d }],
+  ...extra,
+});
 const tool = (id: string, result: string | null = null, agent: string | null = null): Step => ({
   kind: 'tool',
   id,
@@ -27,13 +36,18 @@ describe('applyChunk', () => {
     let t = emptyLiveTurn();
     t = applyChunk(t, delta({ reasoning_content: 'r1' }));
     t = applyChunk(t, delta({ content: 'First.' }));
-    t = applyChunk(t, delta({ tool_calls: [{ id: 'c1', function: { name: 'grep_search', arguments: '{}' } }] }));
+    t = applyChunk(
+      t,
+      delta({ tool_calls: [{ id: 'c1', function: { name: 'grep_search', arguments: '{}' } }] }),
+    );
     t = applyChunk(t, delta({ tool_result: { tool_call_id: 'c1', content: 'hit' } }));
     t = applyChunk(t, delta({ reasoning_content: 'r2' }));
     t = applyChunk(t, delta({ content: 'Second.' }));
     expect(t.steps.map((s) => s.kind)).toEqual(['reasoning', 'text', 'tool', 'reasoning', 'text']);
     expect(turnText(t.steps)).toBe('First.\n\nSecond.');
-    expect(turnTools(t.steps)).toEqual([{ id: 'c1', name: 'grep_search', args: '{}', result: 'hit' }]);
+    expect(turnTools(t.steps)).toEqual([
+      { id: 'c1', name: 'grep_search', args: '{}', result: 'hit' },
+    ]);
   });
 
   it('records the model name', () => {
@@ -45,7 +59,10 @@ describe('applyChunk', () => {
   });
 
   it('keeps sub-agent content out of the answer text but in the steps', () => {
-    const t = applyChunk(emptyLiveTurn(), delta({ content: 'inner' }, { parent_type: 'sub_agent' }));
+    const t = applyChunk(
+      emptyLiveTurn(),
+      delta({ content: 'inner' }, { parent_type: 'sub_agent' }),
+    );
     expect(turnText(t.steps)).toBe('');
     expect(t.steps).toEqual([{ kind: 'text', text: 'inner', agent: 'sub_agent' }]);
   });
@@ -65,12 +82,9 @@ describe('applyChunk', () => {
     t = applyChunk(t, delta({ reasoning_content: ' more' }, { parent_type: 'researcher' }));
     t = applyChunk(t, delta({ tool_result: { tool_call_id: 'a', content: 'A' } }));
     t = applyChunk(t, delta({ content: 'sub two' }, { parent_type: 'researcher' }));
-    expect(t.steps.map((s) => (s.kind === 'tool' ? `tool:${s.id}` : `${s.kind}:${s.agent}`))).toEqual([
-      'tool:a',
-      'reasoning:researcher',
-      'tool:b',
-      'text:researcher',
-    ]);
+    expect(
+      t.steps.map((s) => (s.kind === 'tool' ? `tool:${s.id}` : `${s.kind}:${s.agent}`)),
+    ).toEqual(['tool:a', 'reasoning:researcher', 'tool:b', 'text:researcher']);
     expect(t.steps[1]).toMatchObject({ text: 'sub thinks more' });
   });
 
@@ -95,30 +109,41 @@ describe('applyChunk', () => {
     let t = applyChunk(emptyLiveTurn(), delta({ content: 'good' }));
     t = applyChunk(t, delta({ role: 'event', content: 'attempt' }));
     t = applyChunk(t, delta({ content: ' bad' }));
-    t = applyChunk(t, { __redact__: true, message: 'Correcting formatting...' });
+    t = applyChunk(t, { __redact__: true, message: 'Correcting the formatting…' });
     expect(turnText(t.steps)).toBe('good');
-    expect(t.redactNotice).toBe('Correcting formatting...');
+    expect(t.redactNotice).toBe('Correcting the formatting…');
   });
 });
 
 describe('tool calls', () => {
   it('starts a call on a new id and appends argument fragments by id', () => {
-    let steps = mergeToolCalls([], [{ id: 'c1', function: { name: 'grep_search', arguments: '{"q"' } }]);
+    let steps = mergeToolCalls(
+      [],
+      [{ id: 'c1', function: { name: 'grep_search', arguments: '{"q"' } }],
+    );
     steps = mergeToolCalls(steps, [{ id: 'c1', function: { arguments: ':1}' } }]);
-    expect(turnTools(steps)).toEqual([{ id: 'c1', name: 'grep_search', args: '{"q":1}', result: null }]);
+    expect(turnTools(steps)).toEqual([
+      { id: 'c1', name: 'grep_search', args: '{"q":1}', result: null },
+    ]);
   });
 
   it('continues a call by index when a fragment has no id', () => {
-    let steps = mergeToolCalls([], [
-      { id: 'a', index: 0, function: { name: 'x', arguments: '{' } },
-      { id: 'b', index: 1, function: { name: 'y', arguments: '{' } },
-    ]);
+    let steps = mergeToolCalls(
+      [],
+      [
+        { id: 'a', index: 0, function: { name: 'x', arguments: '{' } },
+        { id: 'b', index: 1, function: { name: 'y', arguments: '{' } },
+      ],
+    );
     steps = mergeToolCalls(steps, [{ index: 1, function: { arguments: '}' } }]);
     expect(turnTools(steps).map((t) => t.args)).toEqual(['{', '{}']);
   });
 
   it('does not write a no-id fragment of a new round into a finished call of the previous round', () => {
-    let steps = mergeToolCalls([], [{ id: 'a', index: 0, function: { name: 'x', arguments: '{' } }]);
+    let steps = mergeToolCalls(
+      [],
+      [{ id: 'a', index: 0, function: { name: 'x', arguments: '{' } }],
+    );
     steps = attachResult(steps, { tool_call_id: 'a', content: 'A' });
     steps = mergeToolCalls(steps, [{ id: 'b', index: 0, function: { name: 'y', arguments: '{' } }]);
     steps = mergeToolCalls(steps, [{ index: 0, function: { arguments: '}' } }]);
@@ -127,7 +152,9 @@ describe('tool calls', () => {
 
   it('attaches a result by tool_call_id, or to the newest pending call', () => {
     const steps = [tool('a'), tool('b')];
-    expect(turnTools(attachResult(steps, { tool_call_id: 'a', content: 'A' }))[0]?.result).toBe('A');
+    expect(turnTools(attachResult(steps, { tool_call_id: 'a', content: 'A' }))[0]?.result).toBe(
+      'A',
+    );
     expect(turnTools(attachResult(steps, { content: 'latest' }))[1]?.result).toBe('latest');
   });
 });
@@ -137,26 +164,44 @@ describe('clarification requests', () => {
     delta({ tool_calls: [{ id, index: 0, function: { name, arguments: args } }] });
   const ARGS = '{"question":"Which colour?","options":["Red","Blue"]}';
 
-  it('the model\'s own call alone sets nothing: the request exists once the server repeats it', () => {
+  it("the model's own call alone sets nothing: the request exists once the server repeats it", () => {
     const t = applyChunk(emptyLiveTurn(), call('c1', 'request_clarification', ARGS));
     expect(t.pendingRequest).toBeNull();
     expect(turnTools(t.steps)).toHaveLength(1);
   });
 
-  it('the repeated chunk sets the pending request and leaves the step\'s arguments alone', () => {
+  it("the repeated chunk sets the pending request and leaves the step's arguments alone", () => {
     let t = applyChunk(emptyLiveTurn(), call('c1', 'request_clarification', ARGS));
     t = applyChunk(t, call('c1', 'request_clarification', ARGS));
-    expect(t.pendingRequest).toEqual({ id: 'c1', question: 'Which colour?', options: ['Red', 'Blue'] });
-    expect(turnTools(t.steps)).toEqual([{ id: 'c1', name: 'request_clarification', args: ARGS, result: null }]);
+    expect(t.pendingRequest).toEqual({
+      id: 'c1',
+      question: 'Which colour?',
+      options: ['Red', 'Blue'],
+    });
+    expect(turnTools(t.steps)).toEqual([
+      { id: 'c1', name: 'request_clarification', args: ARGS, result: null },
+    ]);
     const only = turnTools(t.steps)[0];
-    expect(JSON.parse(only?.args ?? '')).toEqual({ question: 'Which colour?', options: ['Red', 'Blue'] });
+    expect(JSON.parse(only?.args ?? '')).toEqual({
+      question: 'Which colour?',
+      options: ['Red', 'Blue'],
+    });
   });
 
-  it('a request raised under another tool\'s id (a code-runner approval) leaves that step as it was', () => {
+  it("a request raised under another tool's id (a code-runner approval) leaves that step as it was", () => {
     let t = applyChunk(emptyLiveTurn(), call('run1', 'run_code', '{"code":"print(1)"}'));
-    t = applyChunk(t, call('run1', 'request_clarification', '{"question":"Allow network access?","options":["Allow","Deny"]}'));
+    t = applyChunk(
+      t,
+      call(
+        'run1',
+        'request_clarification',
+        '{"question":"Allow network access?","options":["Allow","Deny"]}',
+      ),
+    );
     expect(t.pendingRequest).toMatchObject({ id: 'run1', question: 'Allow network access?' });
-    expect(turnTools(t.steps)).toEqual([{ id: 'run1', name: 'run_code', args: '{"code":"print(1)"}', result: null }]);
+    expect(turnTools(t.steps)).toEqual([
+      { id: 'run1', name: 'run_code', args: '{"code":"print(1)"}', result: null },
+    ]);
   });
 
   it('the tool result for that id closes the request; another id does not', () => {

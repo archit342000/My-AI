@@ -29,8 +29,8 @@ describe('TimelineEntry', () => {
       </>,
     );
     expect(screen.getByRole('button', { name: /Reasoning/ })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /Call: Web Search/ })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /Tool Result: Web Search/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Call: Web search/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Result: Web search/ })).toBeTruthy();
     expect(screen.getByRole('separator', { name: 'Searching' })).toBeTruthy();
   });
 
@@ -73,7 +73,7 @@ describe('TimelineEntry', () => {
     render(<TimelineEntry item={group} defaultOpen />);
     expect(screen.getByRole('button', { name: /Browsing agent/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /Reasoning/ })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /Call: Web Search/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Call: Web search/ })).toBeTruthy();
   });
 
   it('carries no bubble styling in a body', () => {

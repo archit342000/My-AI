@@ -50,9 +50,9 @@ const legacyRenderer: RendererObject = {
     if (lang === 'mermaid') {
       return `<div class="mermaid-wrapper-container">
   <div class="mermaid-controls">
-    <button class="mermaid-ctrl-btn zoom-in-btn" title="Zoom In"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ZOOM_ICONS.in}</svg></button>
-    <button class="mermaid-ctrl-btn zoom-out-btn" title="Zoom Out"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ZOOM_ICONS.out}</svg></button>
-    <button class="mermaid-ctrl-btn zoom-reset-btn" title="Reset Zoom"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ZOOM_ICONS.reset}</svg></button>
+    <button class="mermaid-ctrl-btn zoom-in-btn" title="Zoom in"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ZOOM_ICONS.in}</svg></button>
+    <button class="mermaid-ctrl-btn zoom-out-btn" title="Zoom out"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ZOOM_ICONS.out}</svg></button>
+    <button class="mermaid-ctrl-btn zoom-reset-btn" title="Reset zoom"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ZOOM_ICONS.reset}</svg></button>
     <button class="mermaid-ctrl-btn zoom-popout-btn" title="Pop Out / Fullscreen"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ZOOM_ICONS.popout}</svg></button>
   </div>
   <div class="mermaid-pan-viewport"><pre class="mermaid">${escapeHtml(text)}</pre></div>
@@ -107,7 +107,7 @@ const legacyRenderer: RendererObject = {
       !/^[/#]/.test(href) &&
       !/^(mailto|tel):/.test(href)
     ) {
-      return `<a href="${href}" class="file-link" data-path="${href}" title="Open file in workspace">${text}</a>`;
+      return `<a href="${href}" class="file-link" data-path="${href}" title="Open this file">${text}</a>`;
     }
     const titleAttr = title ? ` title="${title}"` : '';
     return `<a href="${href}"${titleAttr} target="_blank" rel="noopener noreferrer">${text}</a>`;

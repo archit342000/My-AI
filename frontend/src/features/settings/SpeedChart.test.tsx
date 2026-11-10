@@ -17,7 +17,7 @@ describe('SpeedChart', () => {
     const labels = Array.from(container.querySelectorAll('.speed-chart__label')).map(
       (t) => t.textContent,
     );
-    expect(labels).toEqual(['1,100 tokens', '4,200 tokens', '50.0 tok/s', '25.0 tok/s']);
+    expect(labels).toEqual(['1,100 tokens', '4,200 tokens', '50.0 tokens/s', '25.0 tokens/s']);
   });
 
   it('draws only the axes without points', () => {

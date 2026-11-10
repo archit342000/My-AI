@@ -71,7 +71,7 @@ test('a box opened while the turn streams stays open on the saved reply, and the
   await page.locator('#chat-textarea').fill('List the files');
   await page.keyboard.press('Enter');
 
-  // Live: the header says Thinking... until the stream ends; open the box now.
+  // Live: the header says Thinking… until the stream ends; open the box now.
   const live = page.locator('[data-live="true"]');
   await expect(live.locator('.thought-header-title')).toContainText(/thinking/i);
   await live.locator('.thought-toggle').click();
@@ -85,8 +85,8 @@ test('a box opened while the turn streams stays open on the saved reply, and the
   await expect(saved.locator('.thought-header-title')).toHaveText(/thought process/i);
   await expect(saved.locator('.thought-timeline-wrapper .activity-type')).toHaveText([
     'Reasoning',
-    'Call: List Files',
-    'Tool Result: List Files',
+    'Call: List files',
+    'Result: List files',
     'Reasoning',
   ]);
   await expect(page.locator('.tool-summary')).toHaveCount(0);

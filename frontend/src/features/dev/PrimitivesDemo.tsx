@@ -89,7 +89,7 @@ export function PrimitivesDemo() {
           <IconButton icon="trash" label="Delete" tone="danger" />
           <IconButton icon="close" label="Close" size="sm" />
           <Button onClick={() => setModalOpen(true)}>Open modal</Button>
-          <Button onClick={() => showToast('Saved successfully', 'success')}>Toast</Button>
+          <Button onClick={() => showToast('Saved', 'success')}>Toast</Button>
         </div>
         <div className="ui-demo__row">
           <Tooltip content="Tooltip text">

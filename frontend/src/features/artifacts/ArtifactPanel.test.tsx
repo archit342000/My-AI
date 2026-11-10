@@ -194,7 +194,7 @@ describe('ArtifactPanel', () => {
       useUiStore.setState({ requestedArtifactPath: 'notes.md' });
       renderWithProviders(<ArtifactPanel scope={{ chatId: 'c' }} />);
       await waitFor(() => expect(useUiStore.getState().requestedArtifactPath).toBeNull());
-      expect(toasts()).toContain('Could not load files');
+      expect(toasts()).toContain("Couldn't load the files");
     });
 
     it('says once that a requested file is not in the list', async () => {
@@ -433,7 +433,7 @@ describe('ArtifactPanel', () => {
       fireEvent.click(screen.getByRole('button', { name: /^app.py/ }));
       expect(await screen.findByText(/could not be saved/)).toBeTruthy();
       expect(editorText()).toBe('# Changed');
-      expect(toasts()).toContain('Could not save your changes, so this file stays open');
+      expect(toasts()).toContain("Couldn't save your changes, so this file stays open");
       expect(screen.getByText('Not saved')).toBeTruthy();
       update.mockResolvedValue({} as never);
       fireEvent.click(screen.getByRole('button', { name: 'Try again' }));

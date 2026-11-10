@@ -10,7 +10,7 @@ import { ThoughtFullView } from './ThoughtFullView';
 /**
  * The Thought process box of one reply (rule book 1.2, "detail waits until asked"): one folded box
  * holding the reply's thoughts and tool calls in the order they happened. While the reply is being
- * written the header says "Thinking..." with the latest activity; afterwards "Thought process" and
+ * written the header says "Thinking…" with the latest activity; afterwards "Thought process" and
  * how many tools were used. Whether the box is open lives in the thought store under `turnKey`, so
  * it survives the swap from the live row to the saved one.
  */
@@ -42,7 +42,7 @@ export function ThoughtBox({
           <span className="thought-header-title">
             {active ? (
               <>
-                Thinking...
+                Thinking…
                 <span className="thought-progress-dots" aria-hidden="true">
                   <span />
                   <span />

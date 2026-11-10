@@ -55,7 +55,7 @@ export function TimelineEntry({
       body = <ClippedText text={prettyArgs(item.args)} label="Arguments" />;
       break;
     case 'result':
-      type = `Tool Result: ${friendlyToolName(item.name)}`;
+      type = `Result: ${friendlyToolName(item.name)}`;
       tone = 'tool-result-item';
       body = <ClippedText text={item.result} label="Result" />;
       break;

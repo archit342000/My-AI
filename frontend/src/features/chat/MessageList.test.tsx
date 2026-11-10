@@ -224,7 +224,11 @@ describe('MessageList', () => {
     const invalidate = vi.spyOn(client, 'invalidateQueries');
     const row = document.querySelector('[data-message-id="1"]') as HTMLElement;
     fireEvent.click(within(row).getByRole('button', { name: 'Delete message' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    fireEvent.click(
+      within(screen.getByRole('dialog', { name: 'Delete message?' })).getByRole('button', {
+        name: 'Delete message',
+      }),
+    );
     await waitFor(() => expect(chatListInvalidated(invalidate)).toBe(true));
   });
 
@@ -512,7 +516,11 @@ describe('MessageList with a tool reply in the real API shape', () => {
     );
     const row = container.querySelector('[data-message-id="2"]') as HTMLElement;
     fireEvent.click(within(row).getByRole('button', { name: 'Delete message' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    fireEvent.click(
+      within(screen.getByRole('dialog', { name: 'Delete message?' })).getByRole('button', {
+        name: 'Delete message',
+      }),
+    );
     await waitFor(() => expect(del).toHaveBeenCalledWith('c1', '2'));
     expect(del).toHaveBeenCalledTimes(1);
   });
@@ -537,7 +545,7 @@ describe('MessageList thought box', () => {
     vi.restoreAllMocks();
   });
 
-  it('keeps saying Thinking... while the turn streams, even once the answer text has started', () => {
+  it('keeps saying Thinking… while the turn streams, even once the answer text has started', () => {
     useStreamStore.setState({
       chatId: 'c1',
       live: live([{ kind: 'text', text: 'answer so far', agent: null }]),
@@ -546,7 +554,7 @@ describe('MessageList thought box', () => {
       controller: null,
     });
     renderWithProviders(<MessageList turns={[]} chatId="c1" onChanged={() => undefined} />);
-    expect(screen.getByText(/Thinking\.\.\./)).toBeTruthy();
+    expect(screen.getByText(/Thinking…/)).toBeTruthy();
     expect(screen.queryByText('Thought process')).toBeNull();
   });
 
@@ -571,10 +579,10 @@ describe('MessageList thought box', () => {
     expect(container.querySelector('.tool-summary')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: /Thought process/ }));
     expect(container.querySelector('.thought-timeline-wrapper')?.textContent).toContain(
-      'Call: List Files',
+      'Call: List files',
     );
     expect(container.querySelector('.thought-timeline-wrapper')?.textContent).toContain(
-      'Tool Result: List Files',
+      'Result: List files',
     );
   });
 
@@ -656,7 +664,11 @@ describe('MessageList thought box', () => {
     );
     const row = document.querySelector('[data-message-id="2"]') as HTMLElement;
     fireEvent.click(within(row).getByRole('button', { name: 'Delete message' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    fireEvent.click(
+      within(screen.getByRole('dialog', { name: 'Delete message?' })).getByRole('button', {
+        name: 'Delete message',
+      }),
+    );
     await waitFor(() => expect(useThoughtStore.getState().expanded).toEqual({}));
   });
 });

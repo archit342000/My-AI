@@ -50,7 +50,10 @@ export function ClarificationPrompt({
       await clarificationApi.respond(chatId, request.id, answer);
       setAnsweredId(request.id);
     } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Could not send the answer', 'error');
+      showToast(
+        err instanceof Error ? err.message : "Couldn't send the answer. Try again.",
+        'error',
+      );
     } finally {
       setSending(false);
     }
