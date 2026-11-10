@@ -47,6 +47,14 @@ describe('ChatPage', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('This chat no longer exists.');
   });
 
+  it('tells the transcript a files drawer exists while the chat page is open', async () => {
+    const { unmount } = renderWithProviders(<ChatPage />, { route: '/chat/c1', path: '/chat/:chatId' });
+    await screen.findByText('My chat');
+    expect(useUiStore.getState().filesAvailable).toBe(true);
+    unmount();
+    expect(useUiStore.getState().filesAvailable).toBe(false);
+  });
+
   it('offers a way back from a missing chat', async () => {
     vi.spyOn(chatsApi, 'get').mockRejectedValue(new ApiError(404, {}, 'missing'));
     renderWithProviders(<ChatPage />, { route: '/chat/c1', path: '/chat/:chatId' });

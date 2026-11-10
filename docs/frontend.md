@@ -79,9 +79,20 @@ another chat is refused with a toast that says why. A chat page shows not-found 
 starting (the server creates the chat a moment after the page opens); other load errors show only when the chat
 has no data. If creating a new chat fails, the typed text is lost and the page shows not-found with a way back.
 
+After a turn: when a file-changing tool finishes (`lib/fs-tools.ts`), the stream consumer invalidates the files list
+of the chat and, the first time in a turn and only in file-system mode, opens the files drawer. A chat the server marks
+`resume_needed` shows a Resume/Dismiss banner (replacing the Retry button under the last message). A stopped reply is
+not saved by the server, and its notice says so. While a reply streams it is rendered block by block
+(`StreamingMarkdown`), so finished blocks keep their DOM; saved replies render in one pass. Blocks end at blank lines
+outside code and math fences, so a loose list or a table with blank lines is drawn per block until the reply is saved. File links in a reply open
+the file in the files drawer (`ui-store.openArtifact`), and the mermaid pop-out opens the diagram in a dialog.
+The resume banner is per chat: while another chat generates, its Resume is refused with the busy toast. While a reply streams, each block is
+rendered on its own, so a JSON-escaped `\n` in a one-line block can look different until the reply is saved.
+A stopped reply's notice lives only in the open page: after a reload the reply is gone, as the server rolled it back.
+The chat's model is saved as `last_model` with the first send and whenever it changes.
+
 ## Known gaps
 
 - Sub-agent reasoning and tool calls are in the thought box's lists without an agent label, and the newest event shows as the live status line; sub-agent text is kept in the steps but not drawn. The legacy per-agent renderers are not ported.
 - The code-execution WebSocket (live runs) is not wired; history is read-only.
-- Mermaid pop-out and file-link navigation are not implemented.
 - The file tree shows one level; nested folders are listed but not expandable.

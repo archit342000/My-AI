@@ -105,6 +105,15 @@ export function ChatPage() {
   const streaming = useStreamStore((s) => s.chatId);
   const artifactsOpen = useUiStore((s) => s.artifactsOpen);
 
+  // A file request belongs to the chat it was made in: leaving the chat drops it.
+  useEffect(() => () => useUiStore.getState().clearRequestedArtifact(), [chatId]);
+
+  // Tell file links in the transcript that a files drawer exists on this page.
+  useEffect(() => {
+    useUiStore.getState().setFilesAvailable(true);
+    return () => useUiStore.getState().setFilesAvailable(false);
+  }, []);
+
   // Reattach to a turn the server is still generating (after reload or navigation).
   useEffect(() => {
     if (chatId && data?.is_running && !streaming) void reattachTurn(queryClient, chatId);
@@ -138,7 +147,12 @@ export function ChatPage() {
   return (
     <>
       <ChatTitle chatId={data.id} title={data.title || 'Untitled chat'} />
-      <MessageList turns={turns} chatId={data.id} onChanged={() => void refetch()} />
+      <MessageList
+        turns={turns}
+        chatId={data.id}
+        onChanged={() => void refetch()}
+        resumeNeeded={Boolean(data.resume_needed)}
+      />
       {artifactsOpen ? <ArtifactDrawer scope={{ chatId: data.id }} /> : null}
     </>
   );
