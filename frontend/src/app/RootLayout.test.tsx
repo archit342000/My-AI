@@ -201,18 +201,18 @@ describe('RootLayout', () => {
       useUiStore.setState({ sidebarCollapsed: true });
     });
 
-    it('opening a dialog closes the open drawer on a phone, and leaves the sidebar alone on a desktop', () => {
+    it('opening a tool window closes the open drawer on a phone, and leaves the sidebar alone on a desktop', () => {
       vi.spyOn(chatsApi, 'list').mockResolvedValue([]);
       vi.spyOn(chatsApi, 'listWorkspaces').mockResolvedValue([]);
       setWidth(390);
       useUiStore.setState({ sidebarCollapsed: false });
       renderWithProviders(<RootLayout />);
-      act(() => useModalStore.getState().show('system-settings'));
+      act(() => useModalStore.getState().show('code-history'));
       expect(useUiStore.getState().sidebarCollapsed).toBe(true);
       act(() => useModalStore.getState().close());
       setWidth(1440);
       act(() => useUiStore.setState({ sidebarCollapsed: false }));
-      act(() => useModalStore.getState().show('system-settings'));
+      act(() => useModalStore.getState().show('code-history'));
       expect(useUiStore.getState().sidebarCollapsed).toBe(false);
     });
 

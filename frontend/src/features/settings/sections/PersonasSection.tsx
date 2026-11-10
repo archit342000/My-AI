@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { personasApi, settingsKeys, type Persona } from '../../api/settings';
-import { CrudDialog, type FormFooter } from './CrudList';
-import { Field } from '../../components/ui/Field';
-import { Toggle } from '../../components/ui/Toggle';
-import { firstSentencePreview } from '../../lib/preview-text';
+import { personasApi, settingsKeys, type Persona } from '../../../api/settings';
+import { trackSave } from '../../../lib/save-light';
+import { CrudList, type FormFooter } from '../CrudList';
+import { SettingsSection } from '../forms';
+import { Field } from '../../../components/ui/Field';
+import { Toggle } from '../../../components/ui/Toggle';
+import { firstSentencePreview } from '../../../lib/preview-text';
 
 type PersonaBody = Omit<Persona, 'id'>;
 type FlagKey = 'is_default' | 'research_mode' | 'file_system_mode' | 'browsing_mode';
@@ -29,31 +31,38 @@ const FLAGS: Array<{ key: FlagKey; label: string; description: string }> = [
   { key: 'browsing_mode', label: 'Browsing mode', description: 'Allows opening web pages with the browser tool.' },
 ];
 
-export function PersonasDialog({ open, onClose, onBack }: { open: boolean; onClose: () => void; onBack?: () => void }) {
+/** Personas: standing instructions that can be switched on for a chat. */
+export function PersonasSection() {
   const queryClient = useQueryClient();
-  const list = useQuery({ queryKey: settingsKeys.personas, queryFn: personasApi.list, enabled: open });
+  const list = useQuery({ queryKey: settingsKeys.personas, queryFn: personasApi.list });
   const refresh = () => queryClient.invalidateQueries({ queryKey: settingsKeys.personas });
   return (
-    <CrudDialog<Persona>
-      open={open}
-      onClose={onClose}
-      onBack={onBack}
-      noun="persona"
+    <SettingsSection
+      id="personas"
       title="Personas"
-      emptyText="No personas yet. A persona sets the assistant's role and instructions."
-      items={list.data ?? []}
-      describe={(p) => ({
-        id: p.id,
-        title: p.name + (p.is_default ? ' (default)' : ''),
-        subtitle: firstSentencePreview(p.content),
-        fullText: p.content,
-      })}
-      renderForm={(initial, onDone, footer) => <PersonaForm initial={initial} onDone={onDone} onSaved={refresh} footer={footer} />}
-      onDelete={async (item) => {
-        await personasApi.remove(item.id);
-        await refresh();
-      }}
-    />
+      lead="A persona is a set of standing instructions you can switch on for a chat."
+    >
+      <CrudList<Persona>
+        noun="persona"
+        emptyText="No personas yet."
+        loading={list.isPending}
+        items={list.data ?? []}
+        describe={(p) => ({
+          id: p.id,
+          title: p.name,
+          tag: p.is_default ? 'Default' : undefined,
+          subtitle: firstSentencePreview(p.content),
+          fullText: p.content,
+        })}
+        renderForm={(initial, onDone, footer) => (
+          <PersonaForm initial={initial} onDone={onDone} onSaved={refresh} footer={footer} />
+        )}
+        onDelete={async (item) => {
+          await trackSave(personasApi.remove(item.id));
+          await refresh();
+        }}
+      />
+    </SettingsSection>
   );
 }
 
@@ -112,12 +121,13 @@ function PersonaForm({
           return;
         }
         try {
-          if (initial) await personasApi.update(initial.id, form);
-          else await personasApi.create(form);
+          await trackSave(
+            initial ? personasApi.update(initial.id, form) : personasApi.create(form),
+          );
           await onSaved();
           onDone();
         } catch (err) {
-          setError(err instanceof Error ? err.message : 'Save failed');
+          setError(err instanceof Error ? err.message : 'The persona could not be saved. Try again.');
         }
       }}
     >
@@ -125,14 +135,14 @@ function PersonaForm({
         label="Name"
         required
         error={touched.name ? errors.name ?? null : null}
-        hint={touched.name && errors.name ? undefined : 'Shown in the persona list and the chat settings.'}
+        hint={touched.name && errors.name ? undefined : 'Shown in this list and where you pick a persona.'}
       >
         {(c) => (
           <input
             {...c}
             ref={nameRef}
             className="ui-input"
-            placeholder="e.g. Code reviewer"
+            placeholder="For example: Careful reviewer"
             value={form.name}
             onBlur={() => setTouched((t) => ({ ...t, name: true }))}
             onChange={(e) => set('name', e.target.value)}

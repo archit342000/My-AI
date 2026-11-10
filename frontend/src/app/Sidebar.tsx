@@ -14,7 +14,7 @@ import { rippleSphere } from '../lib/sphere-signal';
 import { useSidebarResize } from './useSidebarResize';
 import { useUiStore } from '../state/ui-store';
 import { SidebarChats } from '../features/sidebar/RecentChats';
-import { useModalStore } from '../state/modal-store';
+import { useOpenSettings } from '../features/settings/settings-nav';
 import { useIsAdmin, useUserStore } from '../state/user-store';
 
 /** The app's mark: two dotted rings, the dot sphere in small. Pressing it sends a ripple through the sphere. */
@@ -46,7 +46,7 @@ export function Sidebar() {
   const toggle = useUiStore((s) => s.toggleSidebar);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const showDialog = useModalStore((s) => s.show);
+  const openSettings = useOpenSettings();
   const temporaryChatId = useUiStore((s) => s.temporaryChatId);
   const isAdmin = useIsAdmin();
   const user = useUserStore((s) => s.user);
@@ -168,14 +168,14 @@ export function Sidebar() {
           icon="sliders"
           label="Settings"
           collapsed={collapsed}
-          onClick={() => showDialog('chat-settings')}
+          onClick={() => openSettings('chat')}
         />
         <FootItem
           id="system-settings-trigger"
           icon="chip"
           label="System"
           collapsed={collapsed}
-          onClick={() => showDialog('system-settings')}
+          onClick={() => openSettings('system')}
         />
         {isAdmin ? <FootItem icon="list" label="Logs" collapsed={collapsed} to="/logs" /> : null}
         {user && !collapsed ? (

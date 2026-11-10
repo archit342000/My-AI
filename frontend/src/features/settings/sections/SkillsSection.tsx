@@ -1,40 +1,57 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { skillsApi, settingsKeys, type Skill } from '../../api/settings';
-import { CrudDialog, type FormFooter } from './CrudList';
-import { filterSkills } from '../../lib/list-filter';
-import { Field, Input } from '../../components/ui/Field';
+import { skillsApi, settingsKeys, type Skill } from '../../../api/settings';
+import { trackSave } from '../../../lib/save-light';
+import { CrudList, type FormFooter } from '../CrudList';
+import { SettingsSection } from '../forms';
+import { filterSkills } from '../../../lib/list-filter';
+import { Field, Input } from '../../../components/ui/Field';
 
-export function SkillsDialog({ open, onClose, onBack }: { open: boolean; onClose: () => void; onBack?: () => void }) {
+/** Skills: named recipes the model follows when asked for with a slash. */
+export function SkillsSection() {
   const queryClient = useQueryClient();
-  const list = useQuery({ queryKey: settingsKeys.skills, queryFn: skillsApi.list, enabled: open });
+  const list = useQuery({ queryKey: settingsKeys.skills, queryFn: skillsApi.list });
   const refresh = () => queryClient.invalidateQueries({ queryKey: settingsKeys.skills });
   const [query, setQuery] = useState('');
   return (
-    <CrudDialog<Skill>
-      open={open}
-      onClose={onClose}
-      onBack={onBack}
-      noun="skill"
+    <SettingsSection
+      id="skills"
       title="Skills"
-      emptyText="No skills yet. A skill is a named set of instructions you trigger with /name."
-      items={filterSkills(list.data ?? [], query)}
-      filtering={query.trim() !== ''}
-      toolbar={
-        <Input
-          aria-label="Search skills"
-          placeholder="Search…"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
-      }
-      describe={(s) => ({ id: s.id, title: `/${s.name}`, subtitle: s.description, fullText: s.description })}
-      renderForm={(initial, onDone, footer) => <SkillForm initial={initial} onDone={onDone} onSaved={refresh} footer={footer} />}
-      onDelete={async (item) => {
-        await skillsApi.remove(item.id);
-        await refresh();
-      }}
-    />
+      lead="A skill is a named recipe the model follows when you ask for it with a slash."
+    >
+      <CrudList<Skill>
+        noun="skill"
+        emptyText="No skills yet."
+        loading={list.isPending}
+        items={filterSkills(list.data ?? [], query)}
+        filtering={query.trim() !== ''}
+        toolbar={
+          (list.data ?? []).length > 0 ? (
+            <Input
+              type="search"
+              aria-label="Search skills"
+              placeholder="Search skills"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          ) : undefined
+        }
+        describe={(s) => ({
+          id: s.id,
+          title: `/${s.name}`,
+          mono: true,
+          subtitle: s.description,
+          fullText: s.description,
+        })}
+        renderForm={(initial, onDone, footer) => (
+          <SkillForm initial={initial} onDone={onDone} onSaved={refresh} footer={footer} />
+        )}
+        onDelete={async (item) => {
+          await trackSave(skillsApi.remove(item.id));
+          await refresh();
+        }}
+      />
+    </SettingsSection>
   );
 }
 
@@ -97,19 +114,18 @@ function SkillForm({
         }
         const body = { name: draft.name.trim(), description: draft.description.trim(), instructions: draft.instructions.trim() };
         try {
-          if (initial) await skillsApi.update(initial.id, body);
-          else await skillsApi.create(body);
+          await trackSave(initial ? skillsApi.update(initial.id, body) : skillsApi.create(body));
           await onSaved();
           onDone();
         } catch (err) {
-          setError(err instanceof Error ? err.message : 'Save failed');
+          setError(err instanceof Error ? err.message : 'The skill could not be saved. Try again.');
         }
       }}
     >
-      <Field label="Name" required error={shown('name')} hint={shown('name') ? undefined : 'Typed after a slash in the composer.'}>
+      <Field label="Name" required error={shown('name')} hint={shown('name') ? undefined : 'Typed after a slash in the message box.'}>
         {(c) => (
-          <div className="skill-name">
-            <span className="skill-name__prefix" aria-hidden="true">/</span>
+          <div className="skill-field">
+            <span className="skill-field__prefix" aria-hidden="true">/</span>
             <input
               {...c}
               ref={nameRef}

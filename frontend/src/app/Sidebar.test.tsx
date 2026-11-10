@@ -15,7 +15,12 @@ import { subscribeSphere } from '../lib/sphere-signal';
 /** Shows the current pathname so tests can assert navigation. */
 function LocationProbe() {
   const loc = useLocation();
-  return <div data-testid="location">{loc.pathname}</div>;
+  return (
+    <>
+      <div data-testid="location">{loc.pathname}</div>
+      <div data-testid="search">{loc.pathname + loc.search}</div>
+    </>
+  );
 }
 
 const stagedFile = (key: string, fileId: string) => ({
@@ -53,12 +58,12 @@ describe('Sidebar', () => {
     expect(useUiStore.getState().sidebarCollapsed).toBe(true);
   });
 
-  it('settings buttons open the chat and system dialogs', () => {
-    renderWithProviders(<Sidebar />);
+  it('Settings and System open the settings page over the page that is open, at their part', () => {
+    renderWithProviders(withProbe, { route: '/chat/c1', path: '/*' });
     fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
-    expect(useModalStore.getState().open).toBe('chat-settings');
+    expect(screen.getByTestId('search').textContent).toBe('/chat/c1?settings=chat');
     fireEvent.click(screen.getByRole('button', { name: 'System' }));
-    expect(useModalStore.getState().open).toBe('system-settings');
+    expect(screen.getByTestId('search').textContent).toBe('/chat/c1?settings=system');
   });
 
   it('New chat navigates to the home route', () => {

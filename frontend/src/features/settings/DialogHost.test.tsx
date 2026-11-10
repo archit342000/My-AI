@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, screen } from '@testing-library/react';
+import { codeExecApi, portalApi } from '../../api/filesystem';
+import { useModalStore } from '../../state/modal-store';
 import { renderWithProviders } from '../../test/render';
 import { ADMIN, USER, signInAs } from '../../test/roles';
 import { DialogHost } from './DialogHost';
-import { useModalStore } from '../../state/modal-store';
-import { settingsApi } from '../../api/settings';
 
 describe('DialogHost by role', () => {
   afterEach(() => {
@@ -12,29 +12,28 @@ describe('DialogHost by role', () => {
     useModalStore.setState({ open: null });
   });
 
-  it.each(['agent-config', 'models', 'stealth', 'portal'] as const)('a user cannot open the admin dialog %s', (name) => {
+  it('a user cannot open the browser window (admin only)', () => {
     signInAs(USER);
-    const agents = vi.spyOn(settingsApi, 'getAgents').mockResolvedValue({} as never);
+    const init = vi.spyOn(portalApi, 'init').mockResolvedValue({});
     renderWithProviders(<DialogHost />);
-    act(() => useModalStore.getState().show(name));
+    act(() => useModalStore.getState().show('portal'));
     expect(screen.queryByRole('dialog')).toBeNull();
-    expect(agents).not.toHaveBeenCalled();
+    expect(init).not.toHaveBeenCalled();
   });
 
-  it('a user can still open a per-user dialog', () => {
+  it('a user can open the code run history', () => {
     signInAs(USER);
-    vi.spyOn(settingsApi, 'getSystem').mockResolvedValue({} as never);
-    vi.spyOn(settingsApi, 'version').mockResolvedValue({ version: '1' });
-    renderWithProviders(<DialogHost />);
-    act(() => useModalStore.getState().show('system-settings'));
+    vi.spyOn(codeExecApi, 'history').mockResolvedValue([]);
+    renderWithProviders(<DialogHost />, { route: '/chat/c1', path: '/chat/:chatId' });
+    act(() => useModalStore.getState().show('code-history'));
     expect(screen.getByRole('dialog')).toBeInTheDocument();
   });
 
-  it('the admin can open an admin dialog', () => {
+  it('the admin can open the browser window', () => {
     signInAs(ADMIN);
-    vi.spyOn(settingsApi, 'getAgents').mockResolvedValue({} as never);
+    vi.spyOn(portalApi, 'init').mockResolvedValue({});
     renderWithProviders(<DialogHost />);
-    act(() => useModalStore.getState().show('agent-config'));
+    act(() => useModalStore.getState().show('portal'));
     expect(screen.getByRole('dialog')).toBeInTheDocument();
   });
 });

@@ -2,3 +2,552 @@
  * Settings page.
  * Console at Rest: only shared values from tokens.css. See the rule book in the console-at-rest repository.
  */
+
+/* ── The page: a layer over the content panel, with its own header ── */
+
+.setpage:focus {
+  outline: none;
+}
+.setpage {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-float);
+  display: flex;
+  flex-direction: column;
+  border-radius: inherit;
+  /* Opaque enough to hide the page beneath, in both panel modes. */
+  background: linear-gradient(var(--glass-open), var(--glass-open)), var(--bg);
+  animation: set-in var(--t-base) ease-out;
+}
+@keyframes set-in {
+  from {
+    opacity: 0;
+    scale: 0.99;
+  }
+}
+.set-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 58px;
+  padding: 0 var(--pad) 0 calc(var(--pad) - 14px);
+}
+.set-head__back {
+  padding: 0 14px 0 var(--space-2);
+}
+.set-head__title {
+  flex: 1;
+  margin: 0;
+  font-family: var(--display);
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.set-saved {
+  flex: none;
+}
+.set-rule {
+  flex: none;
+  margin: 0 var(--pad);
+}
+.set-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+/* The list of parts: a column beside the settings, a row of tabs on a phone. */
+.set-nav {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 2px;
+  width: 232px;
+  margin-left: max(0px, calc((100% - 232px - 40rem - var(--pad) * 2) / 2));
+  overflow-y: auto;
+  padding: var(--space-5) var(--space-3) var(--space-5) calc(var(--pad) - 10px);
+}
+.set-nav__item {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--touch);
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--t-fast) var(--ease-spring);
+}
+.set-nav__item > svg {
+  flex: none;
+  color: var(--muted);
+}
+.set-nav__item:hover {
+  background: var(--well);
+}
+.set-nav__item[aria-current='true'] {
+  background: var(--glass-strong);
+  font-weight: 500;
+}
+.set-nav__item[aria-current='true'] > svg {
+  color: var(--accent-text);
+}
+
+.set-content {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: var(--space-5) var(--pad) 56px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--edge-strong) transparent;
+  /* Scrolling content fades out under the header line instead of being cut off against it. */
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, black 18px);
+  mask-image: linear-gradient(to bottom, transparent 0, black 18px);
+}
+.set-col {
+  display: flex;
+  flex-direction: column;
+  gap: 40px;
+  max-width: 40rem;
+}
+.set-section {
+  display: flex;
+  flex-direction: column;
+  scroll-margin-top: var(--space-4);
+}
+.set-section__title {
+  margin: 0 0 6px;
+  font-family: var(--display);
+  font-size: var(--text-section, 22px);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.set-lead {
+  max-width: 34rem;
+  margin: -2px 0 var(--space-3);
+}
+.set-sub {
+  margin: 26px 0 var(--space-1);
+}
+.set-section__title + .set-sub {
+  margin-top: 10px;
+}
+.set-sub__danger {
+  color: var(--bad);
+}
+.set-foot,
+.set-about {
+  margin: 0;
+}
+.set-about {
+  padding-top: var(--space-4);
+}
+
+/* ── One setting ── */
+
+.set-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  min-height: 64px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--edge);
+}
+.set-row__text {
+  flex: 1;
+  min-width: 0;
+}
+.set-row__label {
+  display: block;
+  margin: 0;
+  font-size: inherit;
+  font-weight: 500;
+}
+.set-row__control {
+  display: flex;
+  flex: none;
+  justify-content: flex-end;
+  min-width: 0;
+}
+.set-row--wide > .set-row__control {
+  width: min(280px, 52%);
+}
+.set-row--wide > .set-row__control > * {
+  flex: 1;
+  min-width: 0;
+}
+.set-row--wide > .set-row__control > .ui-segmented {
+  flex: none;
+}
+.set-row > .ui-toggle {
+  flex: 1;
+}
+.set-row > .ui-button {
+  flex: none;
+}
+.set-optional {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2) var(--space-3);
+}
+.set-optional--set {
+  flex-direction: column;
+  align-items: stretch;
+}
+.set-optional--set > .ui-button {
+  align-self: flex-end;
+}
+
+/* ── Lists you can add to: personas, skills, memory, models ── */
+
+.crud {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+.crud-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  width: 100%;
+}
+.crud-toolbar > .ui-input {
+  flex: 1 1 12rem;
+}
+.crud-toolbar > .ui-select {
+  flex: 0 1 11rem;
+}
+.crud-list {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.crud-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 64px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--edge);
+}
+.crud-text {
+  flex: 1;
+  min-width: 0;
+}
+.crud-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  font-weight: 500;
+}
+.crud-title__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.crud-title__name.font-mono {
+  font-size: 13.5px;
+}
+.crud-title .ui-chip {
+  min-height: 24px;
+  padding: 0 9px;
+  font-size: 12.5px;
+}
+.crud-text__sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.crud-none {
+  margin: 0;
+  padding: 14px 0;
+}
+.crud-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  width: 100%;
+  padding: 6px var(--space-4) var(--space-4);
+  border: 1px solid var(--edge);
+  border-radius: var(--r-panel);
+  background: color-mix(in srgb, var(--glass-strong) 55%, transparent);
+  animation: msg-in 0.3s var(--ease-spring) both;
+}
+.crud-form .ui-field,
+.agent .ui-field,
+.set-token .ui-field {
+  padding: 10px 0 4px;
+}
+.crud-form__foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding-top: var(--space-2);
+}
+.crud-flags {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+}
+.crud-error {
+  color: var(--bad);
+  font-size: var(--text-small, 13px);
+}
+.skill-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.skill-field__prefix {
+  color: var(--muted);
+  font-family: var(--mono);
+}
+.skill-field > .ui-input {
+  flex: 1;
+  font-family: var(--mono);
+}
+.model-row__action {
+  flex: none;
+  min-width: 5.5rem;
+}
+.model-list .statline {
+  flex: none;
+}
+
+/* ── Agents, the code runner: small grids of fields ── */
+
+.agent {
+  padding: var(--space-4) 0 var(--space-3);
+  border-bottom: 1px solid var(--edge);
+}
+.field-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  align-items: start;
+  gap: 4px var(--space-4);
+}
+.field-grid--two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.field-grid--two .ui-field {
+  padding: 10px 0 4px;
+}
+.set-token {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding-bottom: var(--space-3);
+}
+.set-token > .ui-field {
+  width: 100%;
+}
+.settings-status {
+  font-size: var(--text-small, 13px);
+}
+.settings-status--info {
+  color: var(--muted);
+}
+.settings-status--success {
+  color: var(--ok);
+}
+.settings-status--error {
+  color: var(--bad);
+}
+.settings-checks {
+  min-width: 0;
+  margin: 0;
+  padding: var(--space-3) 0 0;
+  border: 0;
+}
+.settings-checks__legend {
+  padding: 0 0 var(--space-2);
+}
+.settings-checks__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 2px var(--space-4);
+}
+
+/* ── Speed test ── */
+
+.speed-pick {
+  display: flex;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.speed-pick > .ui-select {
+  flex: 1;
+  min-width: 0;
+}
+.speed-pick > .ui-button {
+  flex: none;
+}
+.speed-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: 14px 0 var(--space-1);
+  animation: msg-in 0.3s var(--ease-spring) both;
+}
+.speed-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  min-height: var(--touch);
+}
+.speed-panel__status,
+.speed-panel__warnings {
+  margin: 0;
+}
+.speed-panel__warnings {
+  padding-left: 18px;
+  color: var(--warn);
+}
+.speed-chart {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+  padding: var(--space-3) var(--space-3) 6px;
+  border: 1px solid var(--edge);
+  border-radius: var(--r-ctl);
+  background: color-mix(in srgb, var(--glass-strong) 70%, transparent);
+}
+.speed-chart__axis {
+  stroke: var(--edge-strong);
+  stroke-width: 1;
+}
+.speed-chart__line {
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.speed-chart__dot {
+  fill: var(--accent);
+}
+.speed-chart__label {
+  fill: var(--muted);
+  font-family: var(--mono);
+  font-size: 10px;
+}
+.speed-chart__label--end {
+  text-anchor: end;
+}
+.facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--space-4) 28px;
+  margin: 0;
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--edge);
+  border-bottom: 1px solid var(--edge);
+}
+.facts > div {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.facts dd {
+  margin: 0;
+  font-weight: 500;
+}
+
+/* ── Phone: tabs across the top; a wide control goes under its name, full width ── */
+
+@media (max-width: 599px) {
+  .setpage {
+    position: fixed;
+    z-index: calc(var(--z-float) + 6);
+    border-radius: 0;
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+  .set-head {
+    min-height: 62px;
+    padding: 6px 6px 0;
+  }
+  .set-saved .dat {
+    display: none;
+  }
+  .set-body {
+    flex-direction: column;
+  }
+  .set-nav {
+    flex-direction: row;
+    gap: 6px;
+    width: auto;
+    margin-left: 0;
+    overflow-x: auto;
+    padding: var(--space-3) var(--pad) var(--space-1);
+    scrollbar-width: none;
+  }
+  .set-nav::-webkit-scrollbar {
+    display: none;
+  }
+  .set-nav__item {
+    padding: 0 14px;
+    border: 1px solid var(--edge);
+  }
+  .set-nav__item > svg {
+    display: none;
+  }
+  .set-nav__item[aria-current='true'] {
+    border-color: transparent;
+    background: var(--accent-soft);
+    color: var(--accent-text);
+  }
+  .set-content {
+    padding: var(--space-3) var(--pad) max(56px, env(safe-area-inset-bottom));
+    scrollbar-width: none;
+  }
+  .set-row {
+    gap: var(--space-3);
+  }
+  .set-row--wide {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    padding: 14px 0;
+  }
+  .set-row--wide > .set-row__control {
+    width: 100%;
+  }
+  .set-row--wide > .set-row__control > .ui-segmented {
+    flex: 1;
+  }
+  .set-row--wide .ui-segmented__item {
+    flex: 1;
+    min-height: 40px;
+  }
+  .field-grid,
+  .field-grid--two {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .setpage,
+  .crud-form,
+  .speed-panel {
+    animation: none;
+  }
+}

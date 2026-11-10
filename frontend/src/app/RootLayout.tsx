@@ -21,6 +21,8 @@ import { HeaderStatus } from './HeaderStatus';
 import { PageTitleSlot } from './page-header-context';
 import { Sidebar } from './Sidebar';
 import { DialogHost } from '../features/settings/DialogHost';
+import { SettingsPage } from '../features/settings/SettingsPage';
+import { sectionFromSearch } from '../features/settings/settings-nav';
 import { Composer } from '../features/composer/Composer';
 
 /** App frame: animated background, sidebar, routed main area, toasts. */
@@ -34,7 +36,8 @@ export function RootLayout() {
   const queryClient = useQueryClient();
   // Unsent files are deleted when the page closes, whichever route is open.
   useDraftCleanup();
-  const path = useLocation().pathname;
+  const location = useLocation();
+  const path = location.pathname;
   const previousPath = useRef(path);
   // Leaving the landing page abandons a temporary chat. Keyed on the path only, so starting a chat
   // (which changes the id) never discards it.
@@ -53,7 +56,8 @@ export function RootLayout() {
     if (isPhoneWidth()) useUiStore.getState().setSidebarCollapsed(true);
   }, [path]);
   // A dialog opened from the drawer covers the page, so the drawer closes (phone widths only).
-  const dialogOpen = useModalStore((s) => s.open !== null);
+  const settingsOpen = sectionFromSearch(location.search) !== null;
+  const dialogOpen = useModalStore((s) => s.open !== null) || settingsOpen;
   useEffect(() => {
     if (dialogOpen && isPhoneWidth()) useUiStore.getState().setSidebarCollapsed(true);
   }, [dialogOpen]);
@@ -120,6 +124,8 @@ export function RootLayout() {
           </PageTitleSlot.Provider>
           {/* One composer for the landing page and chats, so a route change never remounts it. */}
           {path === '/' || path.startsWith('/chat/') ? <Composer /> : null}
+          {/* Settings lie over the page: what is underneath stays as it was (a chat keeps its own values). */}
+          {settingsOpen ? <SettingsPage /> : null}
         </main>
       </div>
       <DialogHost />

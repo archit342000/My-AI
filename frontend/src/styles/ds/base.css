@@ -154,3 +154,15 @@ body {
   background: var(--bg);
   border-radius: var(--r-ctl);
 }
+
+/* Small helpers used across screens. */
+.ui-hint {
+  color: var(--muted);
+  font-size: var(--text-small, 13px);
+}
+.font-mono {
+  font-family: var(--mono);
+}
+.font-heading {
+  font-family: var(--display);
+}

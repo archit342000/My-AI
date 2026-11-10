@@ -10,13 +10,13 @@ async function openSpeedTest(page: Page) {
   await page.route('**/api/models/', (route) =>
     route.fulfill({ json: { data: [{ id: 'Stub/Model', status: { value: 'loaded' } }] } }),
   );
-  await page.goto('/');
-  await page.getByRole('button', { name: 'System settings' }).click();
-  await page.getByRole('button', { name: 'Model manager' }).click();
-  await page.getByRole('combobox', { name: 'Speed test target' }).click();
+  // The settings page has an address of its own for each part.
+  await page.goto('/settings/models');
+  await expect(page).toHaveURL(/\/\?settings=models$/);
+  await page.getByRole('combobox', { name: 'Model to test' }).click();
   await page.getByRole('option', { name: /Stub\/Model/ }).click();
-  await page.getByRole('button', { name: 'Run speed test' }).click();
   await page.getByRole('button', { name: 'Run', exact: true }).click();
+  await page.getByRole('button', { name: 'Run the test' }).click();
 }
 
 test('the speed test shows its figures and a chart', async ({ page }) => {
@@ -24,10 +24,10 @@ test('the speed test shows its figures and a chart', async ({ page }) => {
     route.fulfill({ contentType: 'text/event-stream', body: STREAM }),
   );
   await openSpeedTest(page);
-  await expect(page.getByRole('status').filter({ hasText: 'Completed' })).toBeVisible();
-  const figures = page.locator('.speed-test__figures');
-  await expect(figures).toContainText('4,200');
-  await expect(figures).toContainText('37.50 tok/s');
+  await expect(page.locator('.speed-panel__head')).toContainText('Done · Stub/Model');
+  const figures = page.locator('.facts');
+  await expect(figures).toContainText('4,200 of');
+  await expect(figures).toContainText('37.5 tokens a second');
   await expect(page.locator('.speed-chart__dot')).toHaveCount(2);
 });
 
@@ -36,6 +36,6 @@ test('a running speed test can be stopped', async ({ page }) => {
   await page.route('**/api/models/test-speed', () => new Promise<void>(() => undefined));
   await openSpeedTest(page);
   await page.getByRole('button', { name: 'Stop' }).click();
-  await expect(page.getByRole('status').filter({ hasText: 'Stopped' })).toBeVisible();
+  await expect(page.locator('.speed-panel__head')).toContainText('Stopped · Stub/Model');
   await expect(page.getByRole('button', { name: 'Stop' })).toHaveCount(0);
 });

@@ -10,10 +10,73 @@ const basic = readFileSync(
   'utf8',
 );
 
+/** Opens the settings page at System, from the navigation panel. */
 async function openSystemSettings(page: Page) {
-  await page.getByRole('button', { name: 'System settings' }).click();
-  await expect(page.getByRole('dialog', { name: 'System Settings' })).toBeVisible();
+  await page.getByRole('button', { name: 'System', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Settings' })).toBeVisible();
 }
+
+test('Settings is a page with Back, not a pop-up, and System opens the same page at its part', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  const settings = page.getByRole('region', { name: 'Settings' });
+  await expect(settings).toBeVisible();
+  await expect(page).toHaveURL(/\?settings=chat$/);
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  const parts = page.getByRole('navigation', { name: 'Settings sections' });
+  await expect(parts.getByRole('button')).toHaveText([
+    'Chat',
+    'Models',
+    'Personas',
+    'Skills',
+    'Memory',
+    'Agents',
+    'System',
+  ]);
+  await settings.getByRole('button', { name: 'Back' }).click();
+  await expect(settings).toHaveCount(0);
+  await expect(page).toHaveURL(/\/$/);
+
+  await openSystemSettings(page);
+  await expect(page).toHaveURL(/\?settings=system$/);
+  await expect(parts.getByRole('button', { name: 'System' })).toHaveAttribute(
+    'aria-current',
+    'true',
+  );
+  await expect(settings.getByRole('heading', { name: 'System', exact: true })).toBeInViewport();
+  // The list follows the scrolling, and a part can be reached from it.
+  await parts.getByRole('button', { name: 'Personas' }).click();
+  await expect(settings.getByRole('heading', { name: 'Personas', exact: true })).toBeInViewport();
+  await expect(parts.getByRole('button', { name: 'Personas' })).toHaveAttribute(
+    'aria-current',
+    'true',
+  );
+  // Scrolling by hand moves the highlight too.
+  await settings.locator('.set-content').evaluate((el) => (el.scrollTop = 0));
+  await expect(parts.getByRole('button', { name: 'Chat' })).toHaveAttribute('aria-current', 'true');
+  await page.goBack();
+  await expect(settings).toHaveCount(0);
+});
+
+test('a setting is kept the moment it changes and the page says Saved', async ({ page }) => {
+  await page.goto('/');
+  await openSystemSettings(page);
+  const settings = page.getByRole('region', { name: 'Settings' });
+  await expect(settings.locator('.set-saved')).toHaveCount(0);
+  await settings
+    .getByRole('radiogroup', { name: 'Panels' })
+    .getByRole('radio', { name: 'Solid' })
+    .click();
+  await expect(settings.locator('.set-saved')).toHaveText('Saved');
+  await expect(page.locator('html')).toHaveAttribute('data-glass', 'solid');
+  await page.reload();
+  await expect(page.locator('html')).toHaveAttribute('data-glass', 'solid');
+  await expect(
+    page.getByRole('radiogroup', { name: 'Panels' }).getByRole('radio', { name: 'Solid' }),
+  ).toHaveAttribute('aria-checked', 'true');
+});
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
@@ -41,9 +104,12 @@ test('delete all chats asks first, empties the list and lands on an empty home p
   await page.goto('/');
   await expect(page.getByText('First chat')).toBeVisible();
   await openSystemSettings(page);
-  await page.getByRole('button', { name: 'Delete all chats' }).click();
-  expect(deleted).toBe(0); // nothing is deleted before the confirmation
   await page.getByRole('button', { name: 'Delete all', exact: true }).click();
+  expect(deleted).toBe(0); // nothing is deleted before the confirmation
+  await page
+    .getByRole('dialog', { name: 'Delete all chats?' })
+    .getByRole('button', { name: 'Delete all chats' })
+    .click();
   await expect(page.getByText('First chat')).toHaveCount(0);
   await expect(page.getByText('Second chat')).toHaveCount(0);
   await expect(page).toHaveURL(/\/$/);
@@ -79,13 +145,13 @@ test('an admin saves a GitHub token (status only) and chooses allowed git comman
   });
   await page.goto('/');
   await openSystemSettings(page);
-  await expect(page.getByText('Not configured.')).toBeVisible();
+  await expect(page.getByText(/^None set\./)).toBeVisible();
   const field = page.getByLabel('GitHub token');
   await field.fill('ghp_secret_value');
   await page.getByRole('button', { name: 'Save token' }).click();
   await expect(page.getByText('Token saved')).toBeVisible();
   await expect(field).toHaveValue('');
-  await expect(page.getByText('Configured.', { exact: false })).toBeVisible();
+  await expect(page.getByText(/^One is set\./)).toBeVisible();
   // the token is sent once and never shown again
   expect(posts.filter((p) => 'github_pat' in p)).toHaveLength(1);
   await expect(page.locator('body')).not.toContainText('ghp_secret_value');
@@ -93,7 +159,7 @@ test('an admin saves a GitHub token (status only) and chooses allowed git comman
   await expect.poll(() => allowed).toEqual(['status', 'diff']);
 });
 
-test('a default thinking profile set in System Settings is used by the next new chat', async ({
+test('a thinking profile set in Settings away from a chat is what the next new chat starts with', async ({
   page,
 }) => {
   const bodies: Array<Record<string, unknown>> = [];
@@ -103,10 +169,13 @@ test('a default thinking profile set in System Settings is used by the next new 
   });
   await page.goto('/');
   await openSystemSettings(page);
-  await page.getByRole('combobox', { name: 'Default thinking profile' }).click();
-  await page.getByRole('option', { name: 'None' }).click();
+  await page
+    .getByRole('radiogroup', { name: 'Thinking profile' })
+    .getByRole('radio', { name: 'None' })
+    .click();
   await page.keyboard.press('Escape');
-  await page.getByRole('button', { name: 'New Chat' }).click();
+  await expect(page.getByRole('region', { name: 'Settings' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'New chat' }).click();
   await page.locator('#chat-textarea').fill('hello');
   await page.keyboard.press('Enter');
   await expect.poll(() => bodies.length).toBeGreaterThan(0);
@@ -127,8 +196,7 @@ test('the memory list can be searched, filtered by tag and sorted', async ({ pag
   );
   await page.goto('/');
   await openSystemSettings(page);
-  await page.getByRole('button', { name: 'Memory & preferences' }).click();
-  const titles = page.locator('.crud-row__title');
+  const titles = page.locator('#settings-memory .crud-title__name');
   await expect(titles).toHaveText([
     'The project is called Atlas',
     'Use metric units',
@@ -137,8 +205,8 @@ test('the memory list can be searched, filtered by tag and sorted', async ({ pag
   await page.getByLabel('Search memory').fill('atlas');
   await expect(titles).toHaveText(['The project is called Atlas']);
   await page.getByLabel('Search memory').fill('');
-  await page.getByRole('combobox', { name: 'Sort' }).click();
-  await page.getByRole('option', { name: 'Oldest' }).click();
+  await page.getByRole('combobox', { name: 'Order' }).click();
+  await page.getByRole('option', { name: 'Oldest first' }).click();
   await expect(titles.first()).toHaveText('Answer in British English');
   await page.getByRole('combobox', { name: 'Filter by tag' }).click();
   await page.getByRole('option', { name: 'Project' }).click();

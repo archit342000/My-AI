@@ -35,7 +35,7 @@ import { AttachmentChip } from './AttachmentChip';
 import { HelpDialog } from './HelpDialog';
 import { filesIn, useFileDrop } from './useFileDrop';
 import { ToolsMenu } from '../tools/ToolsMenu';
-import { useModalStore } from '../../state/modal-store';
+import { useOpenSettings } from '../settings/settings-nav';
 
 const MAX_TEXTAREA_PX = 200;
 const NO_ATTACHMENTS: Attachment[] = [];
@@ -45,6 +45,7 @@ export function Composer() {
   // The composer lives in the layout (one instance across routes), so it reads the id from the URL.
   const routeChatId = useMatch('/chat/:chatId')?.params.chatId;
   const navigate = useNavigate();
+  const openSettings = useOpenSettings();
   const queryClient = useQueryClient();
   const [text, setText] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
@@ -272,7 +273,7 @@ export function Composer() {
     const content = text.trim();
     if (content === '/skills') {
       setText('');
-      useModalStore.getState().show('skills');
+      openSettings('skills');
       return;
     }
     if (content === '/help') {

@@ -198,12 +198,6 @@ body {
   color: var(--content-primary);
 }.hidden {
   display: none !important;
-}
-
-/* 2. Typography Utilities (Directive 2) */.font-heading {
-  font-family: var(--font-heading);
-}.font-mono {
-  font-family: var(--font-mono);
 }.text-h2 {
   font-family: var(--font-heading);
   font-size: 1.125rem;
@@ -594,14 +588,6 @@ body {
   }100% {
     transform: rotate(360deg);
   }
-}#model-switch-overlay {
-  z-index: var(--z-critical) !important;
-  /* Max Z-Index allowed by system */
-  background: rgba(0, 0, 0, 0.6) !important;
-  backdrop-filter: blur(4px) !important;
-  -webkit-backdrop-filter: blur(4px) !important;
-  pointer-events: auto !important;
-  cursor: wait;
 }
 
 @keyframes typing-pulse {
@@ -1983,33 +1969,6 @@ font-weight: 500;
   display: flex;
   flex: 1;
   min-width: 0;
-}
-
-/* Make sure the text highlights shine through */
-.skill-highlight-input {
-  background: rgba(var(--accent-rgb), 0.18);
-  border: 1px solid rgba(var(--accent-rgb), 0.35);
-  border-radius: 4px;
-  padding: 1px 3px;
-  margin: -1px -3px;
-  box-shadow: 0 0 4px rgba(var(--accent-rgb), 0.1);
-  display: inline;
-}
-
-/* User Message bubble skill highlights */
-.skill-highlight {
-  display: inline-flex;
-  align-items: center;
-  font-family: monospace;
-  font-weight: 600;
-  font-size: 0.85rem;
-  background: rgba(var(--accent-rgb), 0.12);
-  color: var(--accent-light);
-  border: 1px solid rgba(var(--accent-rgb), 0.25);
-  padding: 2px 6px;
-  border-radius: 6px;
-  margin: 0 4px;
-  vertical-align: middle;
 }
 
 

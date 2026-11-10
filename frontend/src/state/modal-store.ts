@@ -1,17 +1,10 @@
 import { create } from 'zustand';
 
-/** Which app-level dialog is open. Only one at a time; stacking is handled by `Modal`. */
-export type DialogName =
-  | 'chat-settings'
-  | 'system-settings'
-  | 'preferences'
-  | 'skills'
-  | 'personas'
-  | 'agent-config'
-  | 'models'
-  | 'stealth'
-  | 'portal'
-  | 'code-history';
+/**
+ * Which tool window is open. Only one at a time; stacking is handled by `Modal`. Settings are not
+ * here: they are a page of their own (`features/settings/SettingsPage.tsx`).
+ */
+export type DialogName = 'portal' | 'code-history';
 
 interface ModalState {
   open: DialogName | null;
