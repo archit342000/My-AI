@@ -1,23 +1,25 @@
-import { PageTitle } from '../../app/PageTitle';
-import { Fragment, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router';
-import { EmptyState } from '../../components/ui/EmptyState';
-import { Select } from '../../components/ui/Select';
-import { Input } from '../../components/ui/Field';
+import { PageTitle } from '../../app/PageTitle';
+import { Icon } from '../../components/icons/Icon';
 import { Button } from '../../components/ui/Button';
-import { Badge, type BadgeTone } from '../../components/ui/Badge';
+import { EmptyState } from '../../components/ui/EmptyState';
+import { Input } from '../../components/ui/Field';
+import { Notice } from '../../components/ui/Notice';
 import { SegmentedControl } from '../../components/ui/SegmentedControl';
-import { logsApi, toEntries, type LogStream } from './logsApi';
+import { Select } from '../../components/ui/Select';
+import { clockTime, fullDateTime, toDate } from '../../lib/format-time';
 import { useIsAdmin } from '../../state/user-store';
 import {
   LOG_LEVELS,
-  columnLabel,
   levelOf,
+  logSummary,
   rowKeys,
-  scalarColumns,
   type LogLevel,
+  type LogTone,
 } from './log-levels';
+import { logsApi, toEntries, type LogStream } from './logsApi';
 
 const LIMITS = [50, 100, 200, 500];
 const MAX_CHARS = 4000;
@@ -25,18 +27,25 @@ const MAX_CHARS = 4000;
 const STREAMS: Array<{ value: LogStream; label: string }> = [
   { value: 'network', label: 'Network' },
   { value: 'events', label: 'Events' },
-  { value: 'app', label: 'App logs' },
+  { value: 'app', label: 'App' },
   { value: 'database', label: 'Database' },
 ];
 
-const LEVEL_TONE: Record<LogLevel, BadgeTone> = {
-  DEBUG: 'neutral',
-  INFO: 'accent',
-  WARNING: 'warning',
-  ERROR: 'danger',
+const LEVEL_NAME: Record<LogLevel, string> = {
+  DEBUG: 'Debug',
+  INFO: 'Info',
+  WARNING: 'Warning',
+  ERROR: 'Error',
 };
 
-/** Logs viewer: network calls, events, app log lines and database rows. Admin only; large entries are truncated. */
+const TONE_CLASS: Record<LogTone, string | undefined> = {
+  neutral: 'off',
+  ok: 'ok',
+  warn: 'warn',
+  bad: 'bad',
+};
+
+/** Logs: network calls, events, app log lines and database rows. Admin only. */
 export function LogsPage() {
   const isAdmin = useIsAdmin();
   // The content is a separate component so none of its queries are even created for a user.
@@ -44,7 +53,8 @@ export function LogsPage() {
     <LogsContent />
   ) : (
     <EmptyState
-      icon="info"
+      className="logs-denied"
+      icon="lock"
       title="Not available"
       description="The logs are only available to the administrator."
     />
@@ -58,8 +68,8 @@ function LogsContent() {
   const [table, setTable] = useState('chats');
   const [chatId, setChatId] = useState('');
   const [levels, setLevels] = useState<Set<LogLevel>>(new Set());
-  // Rows are expanded by their stable key, not their position: the list refreshes every few seconds.
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  // Rows are open by their stable key, not their position: the list refreshes every few seconds.
+  const [open, setOpen] = useState<Set<string>>(new Set());
 
   const tables = useQuery({
     queryKey: ['log-tables'],
@@ -76,10 +86,9 @@ function LogsContent() {
     refetchInterval: 5000,
   });
 
-  // The database stream stays disabled until a chat id is typed; that is not a loading state (F-04).
+  // The database log waits until a chat id is typed; that is not a loading state.
   const awaitingChatId = stream === 'database' && !chatId;
   const entries = useMemo(() => toEntries(data.data), [data.data]);
-  const columns = useMemo(() => scalarColumns(entries), [entries]);
   const visible = useMemo(() => {
     const q = filter.trim().toLowerCase();
     return entries.filter((e) => {
@@ -87,219 +96,178 @@ function LogsContent() {
         const level = levelOf(e);
         if (!level || !levels.has(level)) return false;
       }
-      return !q || JSON.stringify(e).toLowerCase().includes(q);
+      return !q || (typeof e === 'string' ? e : JSON.stringify(e)).toLowerCase().includes(q);
     });
   }, [entries, filter, levels, stream]);
-
-  function toggleExpanded(key: string) {
-    setExpanded((s) => {
-      const n = new Set(s);
-      if (n.has(key)) n.delete(key);
-      else n.add(key);
-      return n;
-    });
-  }
-
-  function toggleLevel(level: LogLevel) {
-    setLevels((s) => {
-      const n = new Set(s);
-      if (n.has(level)) n.delete(level);
-      else n.add(level);
-      return n;
-    });
-  }
-
   const rows = useMemo(() => rowKeys(visible), [visible]);
-  const isTable = stream === 'network' || stream === 'events' || stream === 'database';
 
-  /** Chat ids link to the chat; a `level` column gets the coloured badge. */
-  function renderCell(column: string, row: Record<string, unknown>) {
-    const value = row[column];
-    const text = value === null || value === undefined ? '' : String(value);
-    if (column === 'chat_id' && text) {
-      return (
-        <Link to={`/chat/${encodeURIComponent(text)}`} onClick={(e) => e.stopPropagation()}>
-          {text}
-        </Link>
-      );
-    }
-    if (column === 'level') {
-      const level = levelOf(row);
-      if (level) return <Badge tone={LEVEL_TONE[level]}>{level}</Badge>;
-    }
-    return text;
+  function toggle<T>(set: Set<T>, value: T): Set<T> {
+    const next = new Set(set);
+    if (next.has(value)) next.delete(value);
+    else next.add(value);
+    return next;
   }
+
+  const filtering = filter.trim() !== '' || (stream === 'app' && levels.size > 0);
 
   return (
     <div className="logs-page">
-      <div className="logs-main">
-        <header className="logs-toolbar">
-          <h1 className="font-heading logs-title">Logs</h1>
-          <PageTitle>Logs</PageTitle>
-          <SegmentedControl
-            label="Log stream"
-            value={stream}
-            onChange={(v) => {
-              setStream(v as LogStream);
-              setExpanded(new Set());
-            }}
-            options={STREAMS}
-          />
-          <div className="logs-toolbar__controls">
-            <Select
-              aria-label="Rows"
-              value={String(limit)}
-              onChange={(v) => setLimit(Number(v))}
-              options={LIMITS.map((n) => ({ value: String(n), label: `${n} rows` }))}
-            />
-            <Input
-              aria-label="Filter entries"
-              placeholder="Filter…"
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              className="logs-filter"
-            />
-            <Button
-              variant="secondary"
-              disabled={awaitingChatId}
-              onClick={() => void data.refetch()}
-            >
-              Refresh
-            </Button>
-          </div>
-        </header>
-
-        {stream === 'database' ? (
-          <div className="logs-toolbar__controls">
-            <Select
-              aria-label="Table"
-              value={table}
-              onChange={setTable}
-              options={[
-                ...(tables.data?.chat_tables ?? []),
-                ...(tables.data?.global_tables ?? []),
-              ].map((t) => ({ value: t, label: t }))}
-            />
-            <Input
-              aria-label="Chat id"
-              placeholder="chat id"
-              value={chatId}
-              onChange={(e) => setChatId(e.target.value)}
-              className="logs-chat-id"
-            />
-          </div>
-        ) : null}
-
-        {stream === 'app' ? (
-          <div className="logs-levels" role="group" aria-label="Filter by level">
-            {LOG_LEVELS.map((level) => (
-              <button
-                key={level}
-                type="button"
-                className="logs-level-chip"
-                aria-pressed={levels.has(level)}
-                onClick={() => toggleLevel(level)}
-              >
-                <Badge tone={LEVEL_TONE[level]}>{level}</Badge>
-              </button>
-            ))}
-          </div>
-        ) : null}
-
-        <div className="logs-status">
-          {awaitingChatId || data.isError || (!data.isPending && entries.length === 0)
-            ? ''
-            : data.isPending
-              ? 'Loading…'
-              : `${visible.length} of ${entries.length} entries`}
-        </div>
-
-        {awaitingChatId ? (
-          <EmptyState
-            title="Enter a chat id to load rows"
-            description="Database rows are loaded per chat."
-          />
-        ) : data.isError ? (
-          <EmptyState icon="error" title="Could not load logs" description={data.error.message} />
-        ) : !data.isPending && visible.length === 0 ? (
-          <EmptyState
-            icon="logs"
-            title={entries.length === 0 ? 'No entries yet' : 'No entries match'}
-            description={
-              entries.length === 0
-                ? 'Nothing has been recorded for this stream.'
-                : 'Try another filter or clear the level chips.'
-            }
-          />
-        ) : isTable && typeof visible[0] === 'object' ? (
-          <div className="logs-table-wrap">
-            <table className="logs-table">
-              <thead>
-                <tr>
-                  {columns.map((c) => (
-                    <th key={c} scope="col">
-                      {columnLabel(c)}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map(({ entry, key }) => {
-                  const row = (entry ?? {}) as Record<string, unknown>;
-                  const json = JSON.stringify(entry, null, 2) ?? '';
-                  const isOpen = expanded.has(key);
-                  return (
-                    <Fragment key={key}>
-                      <tr
-                        className="logs-row"
-                        aria-expanded={isOpen}
-                        onClick={() => toggleExpanded(key)}
-                      >
-                        {columns.map((c) => (
-                          <td key={c} title={String(row[c] ?? '')}>
-                            {renderCell(c, row)}
-                          </td>
-                        ))}
-                      </tr>
-                      {isOpen ? (
-                        <tr className="logs-row-detail">
-                          <td colSpan={Math.max(columns.length, 1)}>
-                            <pre className="logs-json">
-                              {json.length > MAX_CHARS ? `${json.slice(0, MAX_CHARS)}\n…` : json}
-                            </pre>
-                          </td>
-                        </tr>
-                      ) : null}
-                    </Fragment>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <ol className="logs-list">
-            {rows.map(({ entry, key }) => {
-              const text =
-                typeof entry === 'string' ? entry : (JSON.stringify(entry, null, 2) ?? '');
-              const isOpen = expanded.has(key);
-              const level = levelOf(entry);
-              const shown =
-                isOpen || text.length <= MAX_CHARS ? text : `${text.slice(0, MAX_CHARS)}\n…`;
-              return (
-                <li key={key} className="logs-entry">
-                  {level ? <Badge tone={LEVEL_TONE[level]}>{level}</Badge> : null}
-                  <pre className="logs-json">{shown}</pre>
-                  {text.length > MAX_CHARS ? (
-                    <Button variant="ghost" size="sm" onClick={() => toggleExpanded(key)}>
-                      {isOpen ? 'Collapse' : `Show all (${Math.round(text.length / 1024)} KB)`}
-                    </Button>
-                  ) : null}
-                </li>
-              );
-            })}
-          </ol>
-        )}
+      <PageTitle>Logs</PageTitle>
+      <div className="logs-tools">
+        <SegmentedControl
+          label="Which log"
+          value={stream}
+          onChange={(v) => {
+            setStream(v as LogStream);
+            setOpen(new Set());
+          }}
+          options={STREAMS}
+        />
+        <Input
+          type="search"
+          aria-label="Filter entries"
+          placeholder="Filter entries"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          className="logs-filter"
+        />
+        <Select
+          aria-label="How many to load"
+          className="logs-limit"
+          value={String(limit)}
+          onChange={(v) => setLimit(Number(v))}
+          options={LIMITS.map((n) => ({ value: String(n), label: `Last ${n}` }))}
+        />
+        <Button
+          variant="secondary"
+          disabled={awaitingChatId}
+          loading={data.isRefetching && !data.isPending}
+          onClick={() => void data.refetch()}
+        >
+          <Icon name="refresh-cw" size={16} />
+          Refresh
+        </Button>
       </div>
+
+      {stream === 'database' ? (
+        <div className="logs-tools">
+          <Select
+            aria-label="Table"
+            className="logs-table-pick"
+            value={table}
+            onChange={setTable}
+            options={[
+              ...(tables.data?.chat_tables ?? []),
+              ...(tables.data?.global_tables ?? []),
+            ].map((t) => ({ value: t, label: t }))}
+          />
+          <Input
+            aria-label="Chat id"
+            placeholder="Chat id"
+            value={chatId}
+            onChange={(e) => setChatId(e.target.value)}
+            className="logs-chat-id"
+          />
+        </div>
+      ) : null}
+
+      {stream === 'app' ? (
+        <div className="logs-levels" role="group" aria-label="Show only these levels">
+          {LOG_LEVELS.map((level) => (
+            <button
+              key={level}
+              type="button"
+              className="ui-chip logs-level"
+              aria-pressed={levels.has(level)}
+              onClick={() => setLevels((s) => toggle(s, level))}
+            >
+              {LEVEL_NAME[level]}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      {awaitingChatId ? (
+        <EmptyState
+          icon="database"
+          title="Enter a chat id"
+          description="Database rows are loaded one chat at a time."
+        />
+      ) : data.isError ? (
+        <Notice tone="bad" actionLabel="Try again" onAction={() => void data.refetch()}>
+          The log could not be loaded. {data.error.message}
+        </Notice>
+      ) : data.isPending ? (
+        <div className="loglist" role="status" aria-label="Loading the log">
+          {Array.from({ length: 6 }, (_, i) => (
+            <div key={i} className="log-row log-row--placeholder" aria-hidden="true" />
+          ))}
+        </div>
+      ) : visible.length === 0 ? (
+        <EmptyState
+          icon="list"
+          title={entries.length === 0 ? 'Nothing logged yet' : 'Nothing matches'}
+          description={
+            entries.length === 0
+              ? 'Entries show up here as they are recorded.'
+              : 'Try other words, or switch the level filters off.'
+          }
+        />
+      ) : (
+        <ol className="loglist">
+          {rows.map(({ entry, key }) => {
+            const summary = logSummary(entry);
+            const isOpen = open.has(key);
+            const text = typeof entry === 'string' ? entry : (JSON.stringify(entry, null, 2) ?? '');
+            const date = toDate(summary.when);
+            return (
+              <li key={key} className={isOpen ? 'log-row log-row--open' : 'log-row'}>
+                <button
+                  type="button"
+                  className="log-row__head"
+                  aria-expanded={isOpen}
+                  onClick={() => setOpen((s) => toggle(s, key))}
+                >
+                  <Icon name="chevron-right" size={14} className="log-row__chevron" />
+                  <span className={`led ${TONE_CLASS[summary.tone] ?? ''}`} aria-hidden="true" />
+                  {date ? (
+                    <time className="dat keep" title={fullDateTime(summary.when)}>
+                      {clockTime(date)}
+                    </time>
+                  ) : null}
+                  <span className="log-row__what">{summary.what}</span>
+                  <span className="log-row__detail">{summary.detail}</span>
+                </button>
+                {isOpen ? (
+                  <div className="log-row__body">
+                    <pre className="logs-json" tabIndex={0}>
+                      {text.length > MAX_CHARS
+                        ? `${text.slice(0, MAX_CHARS)}\n… (${Math.round(text.length / 1024)} KB in all)`
+                        : text}
+                    </pre>
+                    {summary.chatId ? (
+                      <Link
+                        className="ui-button ui-button--link"
+                        to={`/chat/${encodeURIComponent(summary.chatId)}`}
+                      >
+                        Open the chat
+                      </Link>
+                    ) : null}
+                  </div>
+                ) : null}
+              </li>
+            );
+          })}
+        </ol>
+      )}
+
+      {!awaitingChatId && !data.isError && !data.isPending && entries.length > 0 ? (
+        <p className="ui-hint logs-count" role="status">
+          {filtering
+            ? `${visible.length} of ${entries.length} entries`
+            : `${entries.length} ${entries.length === 1 ? 'entry' : 'entries'}`}
+        </p>
+      ) : null}
     </div>
   );
 }
