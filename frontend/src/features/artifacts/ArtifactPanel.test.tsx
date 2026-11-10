@@ -2,9 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { renderWithProviders } from '../../test/render';
 import { ArtifactPanel } from './ArtifactPanel';
-import { artifactsApi } from '../../api/filesystem';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { render } from '@testing-library/react';
+import { MemoryRouter } from 'react-router';
+import { artifactsApi, artifactsKey } from '../../api/filesystem';
 import { chatListInvalidated } from '../../test/invalidation';
 import { useToastStore } from '../../components/ui/toast-store';
+import { useUiStore } from '../../state/ui-store';
 
 // CodeMirror needs a real layout: a plain textarea stands in for the editor, with the same props.
 vi.mock('./CodeEditor', () => ({
@@ -62,6 +66,57 @@ describe('ArtifactPanel', () => {
     renderWithProviders(<ArtifactPanel scope={{ chatId: 'c' }} />);
     fireEvent.click(await screen.findByRole('button', { name: /app.py/ }));
     expect(await screen.findByText('print(1)')).toBeTruthy();
+  });
+
+  it('selects the file a transcript link asked for once the list is in', async () => {
+    useUiStore.setState({ requestedArtifactPath: './app.py' });
+    renderWithProviders(<ArtifactPanel scope={{ chatId: 'c' }} />);
+    expect(await screen.findByText('print(1)')).toBeTruthy();
+    expect(useUiStore.getState().requestedArtifactPath).toBeNull();
+  });
+
+  it('waits for the refetch before it says a file is missing (the drawer opens on a stale cached list)', async () => {
+    useToastStore.setState({ toasts: [] });
+    const fresh = [...list, { id: 'f3', title: 'new.md', filename: 'new.md', type: 'file', language: 'markdown' }];
+    vi.spyOn(artifactsApi, 'list').mockResolvedValue(fresh as never);
+    vi.spyOn(artifactsApi, 'get').mockResolvedValue({ id: 'f3', title: 'new.md', language: 'markdown', content: '# New file' } as never);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    client.setQueryData(artifactsKey({ chatId: 'c' }), list); // cached before the agent wrote new.md
+    useUiStore.setState({ requestedArtifactPath: 'new.md' });
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter>
+          <ArtifactPanel scope={{ chatId: 'c' }} />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    expect(await screen.findByRole('heading', { name: 'New file' })).toBeTruthy();
+    expect(useToastStore.getState().toasts.some((t) => t.message.startsWith('File not found'))).toBe(false);
+  });
+
+  it('clears a pending request and says so when the file list cannot be loaded', async () => {
+    useToastStore.setState({ toasts: [] });
+    vi.spyOn(artifactsApi, 'list').mockRejectedValue(new Error('offline'));
+    useUiStore.setState({ requestedArtifactPath: 'notes.md' });
+    renderWithProviders(<ArtifactPanel scope={{ chatId: 'c' }} />);
+    await waitFor(() => expect(useUiStore.getState().requestedArtifactPath).toBeNull());
+    expect(useToastStore.getState().toasts.some((t) => t.message === 'Could not load files')).toBe(true);
+  });
+
+  it('shows the missing-file toast once per request', async () => {
+    useToastStore.setState({ toasts: [] });
+    useUiStore.setState({ requestedArtifactPath: 'missing.md' });
+    renderWithProviders(<ArtifactPanel scope={{ chatId: 'c' }} />);
+    await waitFor(() => expect(useUiStore.getState().requestedArtifactPath).toBeNull());
+    expect(useToastStore.getState().toasts.filter((t) => t.message.startsWith('File not found'))).toHaveLength(1);
+  });
+
+  it('says so when the requested file is not in the list', async () => {
+    useToastStore.setState({ toasts: [] });
+    useUiStore.setState({ requestedArtifactPath: 'missing.md' });
+    renderWithProviders(<ArtifactPanel scope={{ chatId: 'c' }} />);
+    await waitFor(() => expect(useToastStore.getState().toasts.some((t) => t.message === 'File not found: missing.md')).toBe(true));
+    expect(useUiStore.getState().requestedArtifactPath).toBeNull();
   });
 
   it('New file creates a file with the default title', async () => {

@@ -381,8 +381,11 @@
   font-size: 0.85rem;
   color: var(--content-muted);
 }
-.ui-select__search {
+.ui-input.ui-select__search {
+  /* A full-width input plus a margin overflows the panel: size it to the panel minus both margins. */
+  width: calc(100% - 2 * var(--space-2));
   margin: var(--space-2);
+  box-sizing: border-box;
 }
 
 /* Status dot used by model options (loaded state). */
@@ -436,6 +439,10 @@
   flex-direction: column;
   gap: 6px;
   min-width: 0;
+}
+/* Forms space their fields so a hint never touches the next label. */
+form > .ui-field {
+  margin-bottom: var(--space-4);
 }
 .ui-field__label {
   font-size: 0.8rem;
@@ -625,7 +632,7 @@
   gap: var(--space-3);
   min-width: 0;
 }
-.ui-slider__input {
+input[type="range"].ui-slider__input {
   flex: 1 1 auto;
   min-width: 0;
   height: 20px;
@@ -634,7 +641,7 @@
   appearance: none;
   cursor: pointer;
 }
-.ui-slider__input::-webkit-slider-runnable-track {
+input[type="range"].ui-slider__input::-webkit-slider-runnable-track {
   height: 4px;
   border-radius: 999px;
   background: linear-gradient(
@@ -645,7 +652,7 @@
     var(--off-track) 100%
   );
 }
-.ui-slider__input::-webkit-slider-thumb {
+input[type="range"].ui-slider__input::-webkit-slider-thumb {
   -webkit-appearance: none;
   width: 16px;
   height: 16px;
@@ -654,17 +661,17 @@
   border: 2px solid var(--accent);
   background: var(--surface-elevated);
 }
-.ui-slider__input::-moz-range-track {
+input[type="range"].ui-slider__input::-moz-range-track {
   height: 4px;
   border-radius: 999px;
   background: var(--off-track);
 }
-.ui-slider__input::-moz-range-progress {
+input[type="range"].ui-slider__input::-moz-range-progress {
   height: 4px;
   border-radius: 999px;
   background: var(--accent);
 }
-.ui-slider__input::-moz-range-thumb {
+input[type="range"].ui-slider__input::-moz-range-thumb {
   width: 14px;
   height: 14px;
   border-radius: 50%;
@@ -672,11 +679,19 @@
   background: var(--surface-elevated);
 }
 .ui-slider__number {
-  flex: 0 0 64px;
-  width: 64px;
+  flex: 0 0 72px;
+  width: 72px;
   min-height: 30px;
   padding: 4px 6px;
   text-align: right;
+  font-variant-numeric: tabular-nums;
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+.ui-slider__number::-webkit-inner-spin-button,
+.ui-slider__number::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 
 /* ───────────────────────── Badge (ui-badge) ───────────────────────── */
@@ -828,6 +843,8 @@
   gap: var(--space-3);
 }
 .ui-modal__title {
+  flex: 1 1 auto; /* left-aligned with or without a back button */
+  text-align: left;
   margin: 0;
   font-size: 1.5rem;
   font-weight: 800;
@@ -981,6 +998,48 @@
   outline-offset: 2px;
   border-radius: var(--radius-sm);
 }
+.activity-running {
+  flex: 0 0 auto;
+  margin-left: auto;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--accent);
+}
+.timeline-reasoning {
+  min-width: 0;
+  font-size: 0.8rem;
+  line-height: 1.55;
+  color: var(--content-secondary);
+  overflow-wrap: anywhere;
+}
+.event-divider {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--content-muted);
+}
+.event-divider::before,
+.event-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border-subtle);
+}
+.sub-agent-item > .activity-header .activity-type {
+  color: var(--accent);
+}
+.sub-agent-entries {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.thought-full-view {
+  margin-top: 0;
+}
 @media (prefers-reduced-motion: reduce) {
   .activity-content-wrapper {
     transition: none;
@@ -1058,6 +1117,42 @@
   outline-offset: 2px;
 }
 
+/* The title pill and its rename field: one row, centred; the field looks like the pill while it is edited. */
+.chat-header-content.chat-title-row {
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  max-width: 800px;
+  position: relative;
+}
+.chat-title-display.chat-title-input {
+  width: min(32rem, 100%);
+  max-width: 100%;
+  font-family: inherit;
+  cursor: text;
+  transform: none;
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-subtle);
+}
+
+/* Links in an answer or a file preview are readable in both themes (legacy leaves the browser's blue). */
+.message-row .message-content a,
+.artifact-drawer .message-content a {
+  color: var(--accent);
+}
+
+/* The files button is dimmed (still clickable) while the open chat has no files; legacy dims it to 0.35 too. */
+.top-right-btn--empty {
+  opacity: 0.35;
+}
+
+/* In the dark theme a highlighted code block has one surface: the block's, not the highlighter's own. */
+.dark .code-block-wrapper pre code.hljs {
+  background: transparent;
+}
+
 /* ───────────────────────── Message edit box (edit-box) ───────────────────────── */
 
 .edit-box {
@@ -1072,6 +1167,7 @@
   background: var(--surface-elevated);
 }
 .edit-textarea {
+  resize: none; /* it grows with its content */
   min-height: 56px;
   max-height: 60vh;
   background: var(--bg-input);
@@ -1094,17 +1190,22 @@
 @media (max-width: 768px) {
   .mobile-topbar {
     position: fixed;
-    top: max(10px, env(safe-area-inset-top));
-    left: 10px;
+    top: max(1.25rem, env(safe-area-inset-top));
+    left: 1.25rem;
     /* Above the sticky chat title header, which shares --z-header and comes later in the DOM. */
     z-index: calc(var(--z-header) + 1);
     display: inline-flex;
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
+    width: 3.5rem;
+    height: 3.5rem;
+    border-radius: 1rem;
+    color: var(--accent);
     background: var(--surface-elevated);
     border: 1px solid var(--border-subtle);
     box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+  }
+  /* The drawer has its own collapse button and the scrim closes it, so the menu button steps aside. */
+  .mobile-topbar[hidden] {
+    display: none;
   }
   .sidebar-scrim {
     display: block;
@@ -1128,6 +1229,59 @@
 
 .composer-file-input {
   display: none;
+}
+
+/* A tall input keeps the attach, tools and send buttons on its bottom edge. */
+.input-container {
+  align-items: flex-end;
+}
+
+/* The send button keeps its blue look when the box is empty (legacy); only a click is ignored. */
+.send-btn[aria-disabled='true'] {
+  cursor: default;
+}
+
+/* The /help dialog. */
+.help-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.help-list__item {
+  display: grid;
+  grid-template-columns: minmax(6rem, auto) 1fr;
+  gap: var(--space-3);
+  align-items: baseline;
+}
+.help-list__name {
+  color: var(--accent);
+  font-weight: 600;
+}
+.help-list__desc {
+  color: var(--content-secondary);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.help-list__note {
+  margin: var(--space-4) 0 0;
+  font-size: 0.8rem;
+  color: var(--content-muted);
+}
+
+/* Shown over the composer while files are dragged onto the page area. */
+.composer-drop-hint {
+  margin: 0 auto var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border: 2px dashed var(--accent);
+  border-radius: var(--radius-xl);
+  background: var(--accent-subtle);
+  color: var(--accent);
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-align: center;
 }
 
 /* Autocomplete: a listbox portalled above the input, so the glass composer cannot blur it. */
@@ -1325,14 +1479,6 @@
   min-width: 0;
 }
 
-.bot-turn__body .thought-container {
-  margin-bottom: 0;
-}
-
-.bot-turn__body .thought-timeline-wrapper {
-  margin-bottom: 0;
-}
-
 .avatar {
   display: flex;
   align-items: center;
@@ -1375,46 +1521,137 @@
   white-space: nowrap;
 }
 
-/* Compact tool list: visible under the thought header without expanding it. */
-.tool-summary {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1) var(--space-2);
-  margin: 0;
-  padding: 0;
-  list-style: none;
+/* Header geometry of the legacy thought box: 56px tall (36px button, 10px above and below). */
+:root {
+  --thought-action-size: 2.25rem;
+  --thought-inset: 14px;
 }
 
-.tool-summary__item {
-  display: inline-flex;
+/* Thought box row, as the legacy markup: [avatar | box header] over a full-width timeline and answer. */
+.assistant-header-row {
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-4);
+  width: 100%;
+  margin-bottom: var(--space-3);
+}
+
+.assistant-avatar-column {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.thought-section-wrapper {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.thought-content-wrapper {
+  width: 100%;
+}
+
+.thought-section-wrapper .thought-container {
+  margin-bottom: 0;
+}
+
+/* The header holds two sibling buttons: the toggle (status, title, chevron) and the full view, which sits
+   over the toggle just left of its chevron, where the legacy header has it. */
+.thought-header {
+  position: relative;
+  padding: 0;
+}
+
+.thought-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-width: 0;
+  min-height: calc(var(--thought-action-size) + 20px);
+  padding: 10px var(--thought-inset);
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.thought-toggle .thought-status {
+  margin-right: calc(var(--thought-action-size) + var(--space-3));
+}
+
+.thought-toggle:focus-visible,
+.thought-full-view-btn:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.thought-actions {
+  position: absolute;
+  top: 50%;
+  right: calc(var(--thought-inset) + 24px + var(--space-2));
+  transform: translateY(-50%);
+}
+
+.thought-full-view-btn {
+  width: var(--thought-action-size);
+  height: var(--thought-action-size);
+  padding: 0;
+  border-radius: var(--radius-lg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.thought-full-view-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.thought-timeline-wrapper.full-width-reasoning {
+  width: 100%;
+  margin-bottom: 0;
+}
+
+.thought-timeline-wrapper .activity-feed {
+  margin-top: 0;
+}
+
+.message-content-wrapper {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.bot-message-footer {
+  display: flex;
+  align-items: center;
+  margin-top: var(--space-1);
+  padding: 0 var(--space-1);
+}
+
+.bot-model-label {
+  font-size: 0.65rem;
+  font-weight: 500;
+  color: var(--content-muted);
+  user-select: none;
+  opacity: 0.8;
+}
+
+/* The notice while the server asks the model to fix a reply. */
+.validation-fixing {
+  display: flex;
   align-items: center;
   gap: var(--space-2);
-  padding: 3px var(--space-2) 3px var(--space-3);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-full);
-  background: var(--surface-secondary);
-  font-size: 0.78rem;
-  color: var(--content-secondary);
-  max-width: 100%;
-}
-
-.tool-summary__name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.tool-summary__state {
-  flex: 0 0 auto;
-  margin-left: var(--space-1);
-  font-size: 0.7rem;
-  white-space: nowrap;
+  margin-bottom: var(--space-2);
+  font-size: 0.85rem;
   color: var(--content-muted);
-}
-
-.tool-summary__item--running .tool-summary__state {
-  color: var(--accent);
 }
 
 /* Tool cards: one neutral border. Legacy `.activity-item` sets `border: none !important` and a 3px
@@ -1481,7 +1718,7 @@
   gap: var(--space-3);
   max-width: 800px;
   width: 100%;
-  margin: var(--space-2) auto;
+  margin: var(--space-2) 0 0;
   padding: var(--space-3) var(--space-4);
   border: 1px solid var(--danger);
   border-radius: var(--radius-lg);
@@ -1495,8 +1732,36 @@
   overflow-wrap: anywhere;
 }
 
+.chat-error__action {
+  flex: none;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid currentColor;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
 .chat-loading {
   min-height: 40vh;
+}
+
+/* A reply that is still streaming is drawn block by block; the blocks stack like one document. */
+.streaming-blocks {
+  display: block;
+}
+
+.streaming-block {
+  display: block;
+}
+
+/* Full view of a mermaid diagram. */
+.mermaid-popout {
+  display: flex;
+  justify-content: center;
+  overflow: auto;
+  max-height: 80vh;
 }
 
 /* Empty chat: the same hero as the landing page, centred in the transcript area. */
@@ -1506,6 +1771,8 @@
 }
 
 .message-actions-container .ui-icon-button {
+  width: 26px;
+  height: 26px;
   color: var(--content-secondary);
 }
 
@@ -1529,7 +1796,14 @@
 .messages-list {
   scrollbar-width: thin;
   scrollbar-color: var(--border-subtle) transparent;
-  padding-bottom: calc(var(--composer-h, 180px) + var(--space-4));
+  padding-bottom: calc(var(--composer-h, 180px) + var(--keyboard-offset, 0px) + var(--space-4));
+}
+
+/* On phones the legacy stylesheet fixes `#messages` padding with !important; the keyboard offset must still count. */
+@media (max-width: 768px) {
+  #messages.messages-list {
+    padding-bottom: calc(var(--composer-h, 180px) + var(--keyboard-offset, 0px) + var(--space-4)) !important;
+  }
 }
 
 .messages-list::-webkit-scrollbar {
@@ -2027,6 +2301,10 @@
 /* ───────────────────────── Workspace icon picker (F-48) ───────────────────────── */
 
 .icon-picker__grid {
+  /* The grid scrolls inside the dialog; the footer stays in view. */
+  max-height: min(50vh, 360px);
+  overflow-y: auto;
+  padding: var(--space-1);
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
   gap: var(--space-2);
@@ -2062,28 +2340,25 @@
   background: var(--accent-subtle);
 }
 
-.icon-picker__footer {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: var(--space-4);
-}
-
 /* ───────────────────────── Logs page (F-49 … F-52) ───────────────────────── */
 
 /* Opaque content surface, so the particle canvas never shows through the data (F-52).
-   The left inset clears the desktop sidebar; on mobile the sidebar is a drawer. */
+   `main` is already inset by the sidebar width (`--sidebar-width`, 0 on phones), so the page only
+   centres a column of limited width inside it. */
 .logs-page {
   display: flex;
+  justify-content: center;
   height: 100vh;
-  padding-inline-start: 280px;
   box-sizing: border-box;
   background: var(--bg-primary);
 }
 
 .logs-main {
   display: flex;
-  flex: 1;
+  flex: 1 1 auto;
   flex-direction: column;
+  width: 100%;
+  max-width: 1280px;
   gap: var(--space-3);
   min-width: 0;
   padding: var(--space-4);
@@ -2151,7 +2426,9 @@
 .logs-table-wrap {
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  min-width: 0;
+  max-width: 100%;
+  overflow: auto; /* wide tables scroll here, not under the page edge */
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   background: var(--surface-secondary);
@@ -2308,6 +2585,18 @@ body {
   margin-bottom: var(--space-3);
 }
 
+.crud-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+.crud-toolbar .ui-input {
+  flex: 1 1 180px;
+  width: auto;
+}
+
 .crud-empty {
   color: var(--content-muted);
   font-size: 0.875rem;
@@ -2384,10 +2673,124 @@ body {
   margin-top: var(--space-2);
 }
 
-.crud-actions {
+/* ───────────────────────── Tool dialogs (code history, portal) ───────────────────────── */
+
+.tool-dialog__note {
+  margin: 0;
+  color: var(--content-muted);
+}
+.tool-dialog__error {
+  color: var(--danger-text);
+  font-size: 0.875rem;
+}
+.portal-frame {
+  display: block;
+  width: 100%;
+  height: 70vh;
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: var(--bg-primary);
+}
+.code-run {
+  margin-bottom: var(--space-4);
+  padding: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--surface-secondary);
+}
+.code-run__head {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-2);
+}
+.code-run__language {
+  font-weight: 600;
+  color: var(--content-primary);
+}
+.code-run__meta {
+  font-size: 0.75rem;
+  color: var(--content-muted);
+}
+.code-run__block {
+  margin: var(--space-2) 0 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  font-size: 0.75rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 260px;
+  overflow: auto;
+}
+.code-run__block--error {
+  color: var(--danger-text);
+}
+
+/* ───────────────────────── Settings sections (settings-section) ───────────────────────── */
+
+.settings-section {
+  margin-bottom: var(--space-5);
+}
+.settings-section__title {
+  margin: 0 0 var(--space-3);
+  font-size: 0.95rem;
+  color: var(--content-secondary);
+}
+.settings-status {
+  margin-top: var(--space-2);
+  font-size: 0.8125rem;
+  color: var(--content-muted);
+}
+.settings-status--info {
+  color: var(--content-muted);
+}
+.settings-status--success {
+  color: var(--success-text);
+}
+.settings-status--error {
+  color: var(--danger-text);
+}
+.settings-loading,
+.settings-version {
+  font-size: 0.75rem;
+  color: var(--content-muted);
+}
+.settings-checks {
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  border: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+}
+.settings-checks__legend {
+  padding: 0;
+  margin-bottom: var(--space-2);
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--content-primary);
+}
+.settings-check {
+  display: inline-flex;
+  align-items: center;
   gap: var(--space-2);
-  margin-top: var(--space-4);
+  font-size: 0.8125rem;
+  color: var(--content-primary);
+  cursor: pointer;
+}
+.models-run {
+  margin-top: var(--space-3);
+}
+.ui-input[type='number'] {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+.ui-input[type='number']::-webkit-inner-spin-button,
+.ui-input[type='number']::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 
 /* ───────────────────────── Agent configuration cards (agent-card) ───────────────────────── */
@@ -2396,6 +2799,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+  padding-bottom: var(--space-4); /* the last card never touches the footer border */
 }
 
 .agent-card {
@@ -2584,4 +2988,324 @@ body {
   margin: var(--space-2) var(--space-3);
   color: var(--danger-text);
   font-size: 0.85rem;
+}
+
+/* ───────────────────────── Sidebar lists (workspace folders, chat rows) ───────────────────────── */
+
+.folder-chevron-wrapper {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+.folder-chevron {
+  transition: transform 0.2s ease;
+}
+.folder-item.expanded .folder-chevron {
+  transform: rotate(90deg);
+}
+/* The icon and the count never shrink; a long name truncates instead. */
+.folder-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 1;
+  min-width: 0;
+}
+.folder-icon {
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+.folder-emoji {
+  flex-shrink: 0;
+  font-size: 11px;
+}
+.folder-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--content-primary);
+}
+.folder-count {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-secondary);
+  color: var(--content-muted);
+  font-size: 0.7rem;
+  font-weight: 500;
+}
+.chat-list-item-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.chat-list-item-text {
+  display: block;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ───────────────────────── Sidebar footer and rail details ───────────────────────── */
+
+/* Legacy dims the temporary-chat button inside a saved chat. */
+#temp-chat-btn.temp-chat-btn--dim {
+  opacity: 0.4;
+}
+/* The page that is open: the Logs entry reads as selected. */
+.sidebar-footer-btn.active,
+.sidebar-rail__link.active {
+  color: var(--accent);
+  background: var(--accent-subtle);
+}
+
+/* The expanded sidebar's width is the remembered one (set by the resize handle); legacy defaults to 16rem. */
+@media (min-width: 769px) {
+  #sidebar.sidebar-expanded {
+    width: var(--sidebar-expanded-width, 16rem);
+  }
+}
+.resize-handle:focus-visible {
+  outline: 2px solid var(--focus-ring);
+}
+
+/* ───────────────────────── Workspace page ───────────────────────── */
+
+.workspace-view {
+  width: 100%;
+  max-width: 960px;
+  min-height: 0;
+  margin: 0 auto;
+  padding: 72px var(--space-6) var(--space-6);
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+/* The header wraps: title and actions stack on a narrow screen instead of running off it. */
+.workspace-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-5);
+}
+.workspace-header__title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: 1 1 16rem;
+  min-width: 0;
+}
+.workspace-header__text {
+  min-width: 0;
+}
+.workspace-header__name {
+  margin: 0;
+  font-size: 1.5rem;
+  overflow-wrap: anywhere;
+}
+.workspace-header__stats {
+  margin: 0;
+  color: var(--content-muted);
+  font-size: 0.8rem;
+}
+.workspace-header__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.workspace-rename {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.workspace-rename .ui-input {
+  flex: 1 1 10rem;
+  min-width: 0;
+}
+.workspace-empty {
+  color: var(--content-muted);
+}
+/* Chat cards sit on a surface of their own. */
+.workspace-chat-card {
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-secondary);
+}
+.workspace-view .artifact-inline {
+  margin-top: var(--space-6);
+}
+
+/* Collapsed rail: the logo, the toggle and the buttons below share one centred column (nothing clipped). */
+#sidebar.sidebar-collapsed .sidebar-header {
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) 0;
+}
+#sidebar.sidebar-collapsed .sidebar-brand {
+  justify-content: center;
+  width: 100%;
+}
+#sidebar.sidebar-collapsed .sidebar-header .sidebar-icon-btn {
+  margin: 0;
+}
+
+/* The phone drawer has a fixed width: no resize handle. While dragging on a desktop, text is not selected. */
+@media (max-width: 768px) {
+  .resize-handle {
+    display: none;
+  }
+}
+#app-root:has(#sidebar.resizing) {
+  user-select: none;
+}
+
+/* ───────────────────────── Clarification prompt (clarify) ───────────────────────── */
+
+/* The question a waiting turn asks, in the bubble column under the live reply. */
+.clarify {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: 100%;
+  margin-top: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-xl);
+  background: var(--surface-elevated);
+}
+.clarify__question {
+  min-width: 0;
+}
+.clarify__custom {
+  width: 100%;
+  background: var(--bg-input);
+}
+.clarify__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+/* ───────────────────────── Phone layout (768px and below) ───────────────────────── */
+
+/* The top band on phones: tall enough for the 3.5rem buttons at 1.25rem from the top, plus 0.25rem. Side inset clears a button. */
+:root {
+  --phone-topbar-h: 5rem;
+  --phone-topbar-inset: 5rem;
+}
+
+@media (max-width: 768px) {
+  /* One opaque band at the top: the menu button and the files button sit in it, and the chat title between
+     them. Messages scroll under it and never show beside or behind either button. */
+  main::before {
+    content: '';
+    position: fixed;
+    inset: 0 0 auto 0;
+    height: var(--phone-topbar-h);
+    background: var(--bg-primary);
+    z-index: calc(var(--z-header) - 1);
+    pointer-events: none;
+  }
+  .chat-title-header {
+    height: var(--phone-topbar-h);
+    padding-inline: var(--phone-topbar-inset);
+    background: var(--bg-primary);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .chat-header-content {
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  /* A reply without a thought box stacks like the legacy row: avatar on top, answer at the full column width. */
+  .bot-turn {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: var(--space-3);
+  }
+  .bot-turn__avatar,
+  .bot-turn__body {
+    grid-column: 1;
+  }
+
+  /* The files button is shown on every page that has a composer; on the home page it is dimmed (nothing to show yet). */
+  .top-right-btn:disabled {
+    opacity: 0.35;
+    cursor: default;
+    pointer-events: none;
+  }
+
+  /* The drawer: opaque, with all three actions. New Chat shrinks (the label stays) and wraps when it must. */
+  #sidebar {
+    background: var(--bg-primary);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  #sidebar .sidebar-actions {
+    flex-wrap: wrap;
+  }
+  #sidebar #new-chat-btn {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+  #sidebar #temp-chat-btn,
+  #sidebar #new-folder-btn {
+    flex: 1 1 0;
+    width: auto;
+  }
+
+  /* Toasts sit above the composer, not on it (the composer publishes its height). */
+  .ui-toast-viewport {
+    bottom: calc(var(--composer-h, 0px) + max(var(--space-4), env(safe-area-inset-bottom)));
+  }
+
+  /* Dialogs use the screen: full width less a margin, as tall as the screen less a margin. */
+  .modal-content {
+    width: calc(100% - var(--space-4));
+    max-height: calc(100dvh - var(--space-4));
+  }
+  .modal-body {
+    padding: 0 var(--space-4) var(--space-4);
+  }
+  .model-row {
+    flex-wrap: wrap;
+  }
+  .model-row__name {
+    flex: 1 1 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .edit-box {
+    max-width: 100%;
+  }
+  .edit-box__actions {
+    flex-wrap: nowrap;
+  }
+  .edit-box__actions .ui-button {
+    padding-inline: var(--space-2);
+  }
+
+  /* The logs page has no title header: its content starts below the band. */
+  .logs-main {
+    padding: calc(var(--phone-topbar-h) + var(--space-3)) var(--space-3) var(--space-3);
+  }
 }

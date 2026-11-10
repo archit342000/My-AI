@@ -1,0 +1,14 @@
+data: {"choices": [{"delta": {"reasoning_content": "Need to list files."}}], "model": "Gemma4-26B-A4B-it-GGUF"}
+
+data: {"choices": [{"delta": {"content": "Checking."}}], "model": "Gemma4-26B-A4B-it-GGUF"}
+
+data: {"choices": [{"delta": {"tool_calls": [{"id": "call_1", "index": 0, "function": {"name": "list_files", "arguments": "{}"}}]}}], "model": "Gemma4-26B-A4B-it-GGUF"}
+
+data: {"choices": [{"delta": {"tool_result": {"tool_call_id": "call_1", "content": "3 files"}}}], "model": "Gemma4-26B-A4B-it-GGUF"}
+
+data: {"choices": [{"delta": {"reasoning_content": "Now answer."}}], "model": "Gemma4-26B-A4B-it-GGUF"}
+
+data: {"choices": [{"delta": {"content": "There are 3 files."}}], "model": "Gemma4-26B-A4B-it-GGUF"}
+
+data: [DONE]
+

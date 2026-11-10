@@ -13,7 +13,6 @@ import { listFiles, readSrc, SRC_DIR } from './source-scan';
 const BASELINE: Record<string, number> = {
   'app/Sidebar.tsx': 0,
   'components/ui/ContextMenu.tsx': 1,
-  'features/chat/ChatPage.tsx': 1,
   'features/settings/AgentConfigDialog.tsx': 0,
   'features/settings/ChatSettingsModal.tsx': 0,
   'features/settings/CrudList.tsx': 0,
@@ -22,12 +21,10 @@ const BASELINE: Record<string, number> = {
   'features/settings/PreferencesDialog.tsx': 0,
   'features/settings/SkillsDialog.tsx': 0,
   'features/settings/StealthDialog.tsx': 0,
-  'features/settings/SystemSettingsModal.tsx': 6,
-  'features/settings/forms.tsx': 6,
-  'features/sidebar/RecentChats.tsx': 10,
-  'features/tools/CodeHistoryDialog.tsx': 4,
-  'features/tools/PortalDialog.tsx': 3,
-  'features/workspace/WorkspacePage.tsx': 7,
+  'features/settings/SystemSettingsModal.tsx': 0,
+  'features/settings/forms.tsx': 0,
+  'features/tools/CodeHistoryDialog.tsx': 0,
+  'features/tools/PortalDialog.tsx': 0,
 };
 
 function inlineStyleCounts(): Map<string, number> {

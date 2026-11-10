@@ -1,3 +1,4 @@
+import type { ModelConfig } from '../api/settings';
 import type { SelectOption } from '../components/ui/Select';
 
 /** Minimal shape of a model from `/api/models/` (see api/settings.ts LoadedModel). */
@@ -43,4 +44,34 @@ export function modelSelectOptions(models: ModelLike[]): SelectOption[] {
     dot: dotFor(statusOf(m)),
     hint: statusOf(m) === 'loaded' ? 'Loaded' : statusOf(m) === 'loading' ? 'Loading' : undefined,
   }));
+}
+
+const ROLE_NAMES: Record<string, string> = {
+  main: 'Research Main',
+  text: 'General Text',
+  vision: 'General Vision',
+  vision2: 'General Vision (High)',
+  coder: 'General Coder',
+};
+
+/**
+ * Display names by model id, as the legacy model picker builds them from `/api/models/config`:
+ * `<role name> (<last path segment of the id>)`. A model listed in two roles keeps the later one
+ * (research roles are read first, then general), as the legacy map does.
+ */
+export function modelDisplayNames(config: ModelConfig): Map<string, string> {
+  const names = new Map<string, string>();
+  for (const group of [config.research, config.general]) {
+    for (const [role, id] of Object.entries(group ?? {})) {
+      if (typeof id !== 'string') continue;
+      const base = ROLE_NAMES[role] ?? role.charAt(0).toUpperCase() + role.slice(1);
+      names.set(id, `${base} (${id.split('/').pop() || id})`);
+    }
+  }
+  return names;
+}
+
+/** The display name of a model id, or the id itself when the config does not name it. */
+export function displayModelName(id: string, names: Map<string, string>): string {
+  return names.get(id) ?? id;
 }

@@ -51,3 +51,44 @@ export function columnLabel(key: string): string {
     })
     .join(' ');
 }
+
+/** Cheap string hash (djb2) used to tell rows apart; not for security. */
+function hash(text: string): string {
+  let h = 5381;
+  for (let i = 0; i < text.length; i++) h = ((h << 5) + h + text.charCodeAt(i)) | 0;
+  return (h >>> 0).toString(36);
+}
+
+/**
+ * Stable identity of a log row, so an expanded row stays the same row when the list refreshes and
+ * rows are added at the top: its `id` when it has one, else its timestamp and log file, plus a hash
+ * of the row's content.
+ */
+export function rowKey(entry: unknown): string {
+  const json = typeof entry === 'string' ? entry : (JSON.stringify(entry) ?? '');
+  if (entry && typeof entry === 'object' && !Array.isArray(entry)) {
+    const row = entry as Record<string, unknown>;
+    if (typeof row.id === 'string' || typeof row.id === 'number') return `id:${String(row.id)}`;
+    const when = row.timestamp ?? row.time ?? row.ts ?? row.created_at;
+    const file = row.log_file ?? row.file;
+    if (when !== undefined) return `t:${String(when)}|${String(file ?? '')}|${hash(json)}`;
+  }
+  return `h:${hash(json)}`;
+}
+
+/**
+ * Pairs each row with its key. Identical rows are told apart by their order counted from the end of
+ * the list, so rows arriving in front of them (newest first) never move their keys. Known limit: when
+ * the oldest of several identical id-less rows falls off the end of the row limit, the rest shift.
+ */
+export function rowKeys<T>(entries: T[]): Array<{ entry: T; key: string }> {
+  const seen = new Map<string, number>();
+  const keys = new Array<string>(entries.length);
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const base = rowKey(entries[i]);
+    const n = seen.get(base) ?? 0;
+    seen.set(base, n + 1);
+    keys[i] = n === 0 ? base : `${base}#${n}`;
+  }
+  return entries.map((entry, i) => ({ entry, key: keys[i] ?? '' }));
+}
