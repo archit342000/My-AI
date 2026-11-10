@@ -95,3 +95,62 @@ body {
 .led.busy {
   animation: led 1s ease-in-out infinite;
 }
+
+/* ── Background: night stars and the dot sphere (rule book Part 3) ── */
+
+#ambient-bg {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--z-background) - 1);
+  pointer-events: none;
+  overflow: hidden;
+}
+#bg-night,
+#bg-stars {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  transition: opacity 1.2s ease;
+  touch-action: none;
+}
+/* Reading strength is the default; an open screen (home, sign-in, a dead end) asks for full strength. */
+#bg-night {
+  opacity: calc(var(--stars) * 0.4);
+}
+#bg-stars {
+  opacity: var(--sphere-read);
+}
+:root[data-dim='open'] #bg-night {
+  opacity: var(--stars);
+}
+:root[data-dim='open'] #bg-stars {
+  opacity: var(--sphere-open);
+}
+@media (max-width: 599px) {
+  #bg-stars {
+    opacity: calc(var(--sphere-read) * var(--sphere-phone));
+  }
+  :root[data-dim='open'] #bg-stars {
+    opacity: calc(var(--sphere-open) * var(--sphere-phone));
+  }
+}
+
+/* Words on the sphere (3.3): a soft patch behind each line and button, nothing behind the gaps. */
+.on-sphere {
+  position: relative;
+  isolation: isolate;
+}
+.fade-layer {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  filter: blur(var(--fade-blur));
+  opacity: var(--fade);
+}
+.fade-layer i {
+  position: absolute;
+  background: var(--bg);
+  border-radius: var(--r-ctl);
+}

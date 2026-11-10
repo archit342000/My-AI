@@ -22,16 +22,12 @@ import { saveTemporaryChat } from '../chat/temporary-chat';
 import { useUiStore } from '../../state/ui-store';
 import { useStreamStore } from '../../state/stream-store';
 import { sendTurn, stopTurn } from '../chat/send-turn';
+import { rippleSphere } from '../../lib/sphere-signal';
 import { useChatDetail } from '../chat/useChatQueries';
 import { useKeyboardOffset } from '../../hooks/useKeyboardOffset';
 import { rovingTarget } from '../../lib/roving';
 import { matchSlashCommands, slashCommandsFor, type SlashCommand } from './slash';
-import {
-  allReady,
-  nextToUpload,
-  toUploadedFiles,
-  type Attachment,
-} from './attachments';
+import { allReady, nextToUpload, toUploadedFiles, type Attachment } from './attachments';
 import { AttachmentChip } from './AttachmentChip';
 import { HelpDialog } from './HelpDialog';
 import { filesIn, useFileDrop } from './useFileDrop';
@@ -86,7 +82,7 @@ export function Composer() {
       : modelConfig.data.general?.text;
     const pick = models.data.find((m) => m.id === preferred) ?? models.data[0];
     if (pick) setModel(pick.id, pick.id);
-  // `chatScoped` stays a dependency so the effect runs again when chat settings end.
+    // `chatScoped` stays a dependency so the effect runs again when chat settings end.
   }, [models.data, modelConfig.data, selectedModel, chatScoped, researchMode, setModel]);
   const keyboard = useKeyboardOffset(window.matchMedia('(pointer: coarse)').matches);
   const temporaryChatId = useUiStore((s) => s.temporaryChatId);
@@ -218,24 +214,27 @@ export function Composer() {
   }
 
   /** Stages files for the open chat (picked, dropped or pasted); every file gets its chip at once and the queue uploads them two at a time. */
-  const addFiles = useCallback((files: File[]) => {
-    if (files.length === 0) return;
-    useAttachmentStore.getState().add(
-      key,
-      files.map<Attachment>((file) => ({
-        key: `${file.name}-${Date.now()}-${Math.random()}`,
-        name: file.name,
-        size: file.size,
-        mimeType: file.type,
-        file,
-        chatId: key,
-        status: 'queued',
-        progress: 0,
-        uploaded: null,
-        error: null,
-      })),
-    );
-  }, [key]);
+  const addFiles = useCallback(
+    (files: File[]) => {
+      if (files.length === 0) return;
+      useAttachmentStore.getState().add(
+        key,
+        files.map<Attachment>((file) => ({
+          key: `${file.name}-${Date.now()}-${Math.random()}`,
+          name: file.name,
+          size: file.size,
+          mimeType: file.type,
+          file,
+          chatId: key,
+          status: 'queued',
+          progress: 0,
+          uploaded: null,
+          error: null,
+        })),
+      );
+    },
+    [key],
+  );
 
   const { dragging } = useFileDrop(inputArea, addFiles);
 
@@ -291,6 +290,8 @@ export function Composer() {
       isNewChat: isNew,
       temporary,
       onAccepted: () => {
+        // Something was sent: a wave runs through the sphere.
+        rippleSphere();
         setText('');
         useAttachmentStore.getState().clear(key);
         // The files now belong to the chat just started: the next new chat gets a fresh draft id.

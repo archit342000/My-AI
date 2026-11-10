@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { setSphereBusy } from '../lib/sphere-signal';
 import type { LiveTurn } from '../features/chat/stream-reducer';
 import type { UploadedFile } from '../api/completions';
 
@@ -50,10 +51,15 @@ export const useStreamStore = create<StreamState>((set) => ({
   controller: null,
   stopping: false,
   setStopping: (stopping) => set({ stopping }),
-  start: (chatId, pending, controller) =>
-    set({ chatId, pending, controller, interrupted: null, live: null, stopping: false }),
+  start: (chatId, pending, controller) => {
+    setSphereBusy(true);
+    set({ chatId, pending, controller, interrupted: null, live: null, stopping: false });
+  },
   update: (live) => set({ live }),
   interrupt: (turn) => set({ interrupted: turn }),
   dismissInterrupted: () => set({ interrupted: null }),
-  finish: () => set({ chatId: null, live: null, pending: null, controller: null, stopping: false }),
+  finish: () => {
+    setSphereBusy(false);
+    set({ chatId: null, live: null, pending: null, controller: null, stopping: false });
+  },
 }));

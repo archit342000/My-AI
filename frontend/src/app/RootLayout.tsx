@@ -83,8 +83,7 @@ export function RootLayout() {
           </button>
         </div>
       ) : null}
-      {/* The logs page has an opaque surface; the particle canvas would only compete with the data (F-52). */}
-      {onLogs ? null : <AmbientBackground />}
+      <AmbientBackground />
       <div id="app-root">
         <IconButton
           className="mobile-topbar"
