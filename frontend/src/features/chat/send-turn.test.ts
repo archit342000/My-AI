@@ -11,7 +11,9 @@ import {
   toolCallChunk,
   toolResultChunk,
 } from '../../test/fixtures/sse';
-import { resumeTurn, sendTurn, stopTurn } from './send-turn';
+import { historyFromCache, resumeTurn, sendTurn, stopTurn } from './send-turn';
+import { turnText, turnTools } from '../../lib/chat-model';
+import { threeToolReply } from '../../test/fixtures/chat-detail';
 import { useToastStore } from '../../components/ui/toast-store';
 import { queryKeys } from '../../api/chats';
 
@@ -70,7 +72,7 @@ describe('sendTurn with a stream error (F-14)', () => {
       chatId: 'chat-1',
       kind: 'error',
       message: 'Upstream timed out',
-      live: { content: 'Partial ' },
+      live: { steps: [{ kind: 'text', text: 'Partial ', agent: null }] },
     });
     expect(useToastStore.getState().toasts.some((t) => t.message === 'Upstream timed out')).toBe(true);
   });
@@ -82,14 +84,14 @@ describe('stop (F-15)', () => {
     mockCompletion((signal) => abortableSseResponse(chunks, signal));
     const sent = sendTurn(args());
     // Abort once the first chunk has been applied.
-    await vi.waitFor(() => expect(useStreamStore.getState().live?.content).toBe('Half of '));
+    await vi.waitFor(() => expect(turnText(useStreamStore.getState().live?.steps ?? [])).toBe('Half of '));
     await stopTurn();
     await sent;
     expect(useStreamStore.getState().chatId).toBeNull();
     expect(useStreamStore.getState().interrupted).toMatchObject({
       chatId: 'chat-1',
       kind: 'stopped',
-      live: { content: 'Half of ' },
+      live: { steps: [{ kind: 'text', text: 'Half of ', agent: null }] },
     });
   });
 });
@@ -153,7 +155,8 @@ describe('tool activity in a stream', () => {
     );
     const snapshots: Array<Array<{ result: string | null }>> = [];
     const unsubscribe = useStreamStore.subscribe((s) => {
-      if (s.live && s.live.tools.length > 0) snapshots.push(s.live.tools);
+      const tools = s.live ? turnTools(s.live.steps) : [];
+      if (tools.length > 0) snapshots.push(tools);
     });
     await sendTurn(args());
     unsubscribe();
@@ -312,14 +315,62 @@ describe('sidebar chat list during a turn', () => {
     const original = a.queryClient.invalidateQueries.bind(a.queryClient);
     vi.spyOn(a.queryClient, 'invalidateQueries').mockImplementation((filters) => {
       if (JSON.stringify(filters?.queryKey) === JSON.stringify(queryKeys.chats)) {
-        seen.push(useStreamStore.getState().live?.content);
+        seen.push(turnText(useStreamStore.getState().live?.steps ?? []));
       }
       return original(filters);
     });
     await sendTurn(a);
-    // The first refresh happens before the reply has been applied, the last one after it all arrived.
+    // The first refresh happens before the reply has been applied, the last one after finish()
+    // has cleared the live turn.
     expect(seen.length).toBeGreaterThanOrEqual(2);
     expect(seen[0]).not.toBe('AB');
-    expect(seen[seen.length - 1]).toBe('AB');
+    expect(seen[seen.length - 1]).toBe('');
+  });
+
+  it('keeps the turn open until the chat refetch has resolved, then ends it', async () => {
+    mockCompletion(() => sseResponse(sseText([contentChunk('A')], false)));
+    const a = args();
+    const original = a.queryClient.invalidateQueries.bind(a.queryClient);
+    const afterChatRefetch: boolean[] = [];
+    vi.spyOn(a.queryClient, 'invalidateQueries').mockImplementation(async (filters) => {
+      const result = await original(filters);
+      if (JSON.stringify(filters?.queryKey) === JSON.stringify(queryKeys.chat('chat-1'))) {
+        // Checked right after the refetch resolved: finish() has not run yet.
+        afterChatRefetch.push(useStreamStore.getState().chatId !== null);
+      }
+      return result;
+    });
+    await sendTurn(a);
+    expect(afterChatRefetch.at(-1)).toBe(true);
+    expect(useStreamStore.getState().chatId).toBeNull();
+  });
+
+  it('ends the turn as soon as the chat is refetched, before the sidebar list refresh', async () => {
+    mockCompletion(() => sseResponse(sseText([contentChunk('A')], false)));
+    const a = args();
+    const original = a.queryClient.invalidateQueries.bind(a.queryClient);
+    const streamingAtListRefresh: boolean[] = [];
+    vi.spyOn(a.queryClient, 'invalidateQueries').mockImplementation((filters) => {
+      if (JSON.stringify(filters?.queryKey) === JSON.stringify(queryKeys.chats)) {
+        streamingAtListRefresh.push(useStreamStore.getState().chatId !== null);
+      }
+      return original(filters);
+    });
+    await sendTurn(a);
+    // The first refresh is the accepted-send one (still streaming); the last is after finish().
+    expect(streamingAtListRefresh.at(-1)).toBe(false);
+  });
+});
+
+describe('historyFromCache', () => {
+  it('returns one assistant entry per turn, built from its text steps', () => {
+    const queryClient = new QueryClient();
+    queryClient.setQueryData(queryKeys.chat('c1'), { id: 'c1', messages: threeToolReply });
+    expect(historyFromCache(queryClient, 'c1')).toEqual([
+      { role: 'user', content: 'dig' },
+      { role: 'assistant', content: 'Done digging.' },
+      { role: 'user', content: 'thanks' },
+      { role: 'assistant', content: 'Welcome.' },
+    ]);
   });
 });

@@ -3,6 +3,8 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { renderWithProviders } from '../../test/render';
 import { MessageList } from './MessageList';
 import { toTurns } from '../../lib/chat-model';
+import { applyChunk, emptyLiveTurn } from './stream-reducer';
+import { oneToolReply, threeToolReply } from '../../test/fixtures/chat-detail';
 import { chatsApi } from '../../api/chats';
 import { chatListInvalidated } from '../../test/invalidation';
 import { useStreamStore } from '../../state/stream-store';
@@ -32,7 +34,7 @@ describe('MessageList', () => {
   });
 
   it('shows the live assistant turn while streaming for this chat only', () => {
-    useStreamStore.setState({ chatId: 'c1', live: { content: 'streaming…', reasoning: '', tools: [], model: 'M', redactNotice: null, events: [] } as never, pending: { text: 'new q', images: [], files: [] }, interrupted: null, controller: null });
+    useStreamStore.setState({ chatId: 'c1', live: { steps: [{ kind: 'text', text: 'streaming…', agent: null }], model: 'M', redactNotice: null, snapshot: [] } as never, pending: { text: 'new q', images: [], files: [] }, interrupted: null, controller: null });
     const { container } = renderWithProviders(<MessageList turns={[]} chatId="c1" onChanged={() => undefined} />);
     expect(container.querySelector('[data-live="true"]')).not.toBeNull();
     expect(screen.getByText('streaming…')).toBeTruthy();
@@ -40,13 +42,13 @@ describe('MessageList', () => {
   });
 
   it('does not show another chat\'s live stream', () => {
-    useStreamStore.setState({ chatId: 'other', live: { content: 'leak', reasoning: '', tools: [], model: null, redactNotice: null, events: [] } as never, pending: null, interrupted: null, controller: null });
+    useStreamStore.setState({ chatId: 'other', live: { steps: [{ kind: 'text', text: 'leak', agent: null }], model: null, redactNotice: null, snapshot: [] } as never, pending: null, interrupted: null, controller: null });
     renderWithProviders(<MessageList turns={[]} chatId="c1" onChanged={() => undefined} />);
     expect(screen.queryByText('leak')).toBeNull();
   });
 
   it('shows the stream error for this chat', () => {
-    useStreamStore.setState({ chatId: 'c1', live: null, pending: null, interrupted: { chatId: 'c1', live: { content: '', reasoning: '', tools: [], model: null, redactNotice: null, events: [] } as never, kind: 'error', message: 'upstream down' }, controller: null });
+    useStreamStore.setState({ chatId: 'c1', live: null, pending: null, interrupted: { chatId: 'c1', live: { steps: [], model: null, redactNotice: null, snapshot: [] } as never, kind: 'error', message: 'upstream down' }, controller: null });
     renderWithProviders(<MessageList turns={[]} chatId="c1" onChanged={() => undefined} />);
     expect(screen.getByRole('alert')).toHaveTextContent('upstream down');
   });
@@ -250,4 +252,119 @@ describe('MessageList', () => {
     expect(container.querySelectorAll('.message-file-chip')).toHaveLength(1);
   });
 
+});
+
+describe('MessageList with a tool reply in the real API shape', () => {
+  beforeEach(() => {
+    useStreamStore.setState({ chatId: null, live: null, pending: null, interrupted: null, controller: null });
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it('renders one assistant row for three tool rounds, with its tools', () => {
+    const { container } = renderWithProviders(
+      <MessageList turns={toTurns(threeToolReply)} chatId="c1" onChanged={() => undefined} />,
+    );
+    // Two user messages, two replies: the three tool rounds are not three extra rows.
+    expect(container.querySelectorAll('.bot-message')).toHaveLength(2);
+    const first = container.querySelector('[data-message-id="2"]') as HTMLElement;
+    expect(first.textContent).toContain('Done digging.');
+    expect(container.querySelector('[data-message-id="4"]')).toBeNull();
+  });
+
+  it('shows the live row instead of the persisted reply while this chat streams', () => {
+    useStreamStore.setState({
+      chatId: 'c1',
+      live: { steps: [{ kind: 'text', text: 'live text', agent: null }], model: 'M', redactNotice: null, snapshot: [] } as never,
+      pending: null,
+      interrupted: null,
+      controller: null,
+    });
+    const { container } = renderWithProviders(
+      <MessageList turns={toTurns(oneToolReply)} chatId="c1" onChanged={() => undefined} />,
+    );
+    expect(container.querySelectorAll('.bot-message')).toHaveLength(1);
+    expect(container.querySelector('[data-live="true"]')).not.toBeNull();
+    expect(screen.queryByText('One file: a.txt.')).toBeNull();
+  });
+
+  it('keeps earlier replies visible while a later turn streams, and ignores another chat\'s stream', () => {
+    useStreamStore.setState({ chatId: 'c1', live: null, pending: null, interrupted: null, controller: null });
+    const { container, unmount } = renderWithProviders(
+      <MessageList turns={toTurns(threeToolReply)} chatId="c1" onChanged={() => undefined} />,
+    );
+    // Reply to the first question stays; the reply after the last user message is replaced by the live row.
+    expect(container.querySelector('[data-message-id="2"]')).not.toBeNull();
+    expect(container.querySelector('[data-message-id="10"]')).toBeNull();
+    unmount();
+    useStreamStore.setState({ chatId: 'other', live: null, pending: null, interrupted: null, controller: null });
+    const other = renderWithProviders(
+      <MessageList turns={toTurns(threeToolReply)} chatId="c1" onChanged={() => undefined} />,
+    );
+    expect(other.container.querySelector('[data-message-id="10"]')).not.toBeNull();
+  });
+
+  it('draws one assistant row while three live tool rounds stream, and one saved row after', () => {
+    let live = emptyLiveTurn();
+    for (let i = 1; i <= 3; i++) {
+      live = applyChunk(live, { choices: [{ delta: { reasoning_content: `r${i}` } }] });
+      live = applyChunk(live, { choices: [{ delta: { content: `note ${i}` } }] });
+      live = applyChunk(live, {
+        choices: [{ delta: { tool_calls: [{ id: `t${i}`, function: { name: 'a', arguments: '{}' } }] } }],
+      });
+      live = applyChunk(live, { choices: [{ delta: { tool_result: { tool_call_id: `t${i}`, content: 'ok' } } }] });
+    }
+    useStreamStore.setState({ chatId: 'c1', live, pending: null, interrupted: null, controller: null });
+    const streaming = renderWithProviders(
+      <MessageList turns={toTurns(threeToolReply.slice(0, 1))} chatId="c1" onChanged={() => undefined} />,
+    );
+    expect(streaming.container.querySelectorAll('.bot-message')).toHaveLength(1);
+    expect(streaming.container.querySelector('[data-live="true"]')).not.toBeNull();
+    streaming.unmount();
+    useStreamStore.setState({ chatId: null, live: null, pending: null, interrupted: null, controller: null });
+    const saved = renderWithProviders(
+      <MessageList turns={toTurns(threeToolReply.slice(0, 8))} chatId="c1" onChanged={() => undefined} />,
+    );
+    expect(saved.container.querySelectorAll('.bot-message')).toHaveLength(1);
+    expect(saved.container.querySelector('[data-live="true"]')).toBeNull();
+  });
+
+  it('keeps the previous reply visible while a new message is sent (pending user row)', () => {
+    useStreamStore.setState({
+      chatId: 'c1',
+      live: null,
+      pending: { text: 'next question', images: [], files: [] },
+      interrupted: null,
+      controller: null,
+    });
+    const { container } = renderWithProviders(
+      <MessageList turns={toTurns(oneToolReply)} chatId="c1" onChanged={() => undefined} />,
+    );
+    expect(screen.getByText('One file: a.txt.')).toBeTruthy();
+    expect(container.querySelector('[data-pending="true"]')).not.toBeNull();
+  });
+
+  it('Retry deletes the first stored message of the turn once, then resumes', async () => {
+    const del = vi.spyOn(chatsApi, 'deleteMessage').mockResolvedValue(new Response(null, { status: 200 }));
+    const resume = vi.spyOn(sendTurnModule, 'resumeTurn').mockResolvedValue(undefined);
+    const { container } = renderWithProviders(
+      <MessageList turns={toTurns(oneToolReply)} chatId="c1" onChanged={() => undefined} />,
+    );
+    const row = container.querySelector('[data-message-id="2"]') as HTMLElement;
+    fireEvent.click(within(row).getByRole('button', { name: 'Retry response' }));
+    await waitFor(() => expect(resume).toHaveBeenCalledTimes(1));
+    expect(del).toHaveBeenCalledTimes(1);
+    expect(del).toHaveBeenCalledWith('c1', '2');
+  });
+
+  it('Delete removes the whole turn through its first stored message', async () => {
+    const del = vi.spyOn(chatsApi, 'deleteMessage').mockResolvedValue(new Response(null, { status: 200 }));
+    const { container } = renderWithProviders(
+      <MessageList turns={toTurns(threeToolReply)} chatId="c1" onChanged={() => undefined} />,
+    );
+    const row = container.querySelector('[data-message-id="2"]') as HTMLElement;
+    fireEvent.click(within(row).getByRole('button', { name: 'Delete message' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    await waitFor(() => expect(del).toHaveBeenCalledWith('c1', '2'));
+    expect(del).toHaveBeenCalledTimes(1);
+  });
 });

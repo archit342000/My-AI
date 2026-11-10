@@ -13,7 +13,7 @@ import {
   type HistoryMessage,
   type UploadedFile,
 } from '../../api/completions';
-import { toTurns } from '../../lib/chat-model';
+import { toTurns, turnText } from '../../lib/chat-model';
 import { showToast } from '../../components/ui/toast-store';
 import { useSettingsStore } from '../../state/settings-store';
 import { useStreamStore, type PendingUser } from '../../state/stream-store';
@@ -32,13 +32,11 @@ export function historyFromCache(queryClient: QueryClient, chatId: string): Hist
   if (!detail) return [];
   // The server builds the model's context from its own stored messages and reads only the last
   // posted message, so this history (with the attachment note stripped for display) is not sent on.
-  return toTurns(detail.messages).flatMap<HistoryMessage>((t) =>
-    t.kind === 'user'
-      ? [{ role: 'user', content: t.text }]
-      : t.text
-        ? [{ role: 'assistant', content: t.text }]
-        : [],
-  );
+  return toTurns(detail.messages).flatMap<HistoryMessage>((t) => {
+    if (t.kind === 'user') return [{ role: 'user', content: t.text }];
+    const text = turnText(t.steps);
+    return text ? [{ role: 'assistant', content: text }] : [];
+  });
 }
 
 /**
@@ -92,8 +90,10 @@ async function consume(
     }
   } finally {
     await queryClient.invalidateQueries({ queryKey: queryKeys.chat(chatId) });
-    await queryClient.invalidateQueries({ queryKey: queryKeys.chats });
+    // End the turn as soon as the saved chat is in: the live and pending rows then give way to the
+    // saved ones in one render, with no moment where both are drawn.
     useStreamStore.getState().finish();
+    await queryClient.invalidateQueries({ queryKey: queryKeys.chats });
   }
 }
 

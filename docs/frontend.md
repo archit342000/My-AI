@@ -61,12 +61,19 @@ A React build missing from `dist/` returns 503 with the build command.
 
 `features/chat/stream-reducer.ts` mirrors the legacy read loop in `static/script.js`:
 content and reasoning deltas, tool-call fragments merged by id, tool results attached to calls,
-`event` deltas (activity labels, not answer text), sub-agent deltas (counted, not shown yet),
-and `__redact__` rolling back to the last snapshot. Recorded fixtures live in `src/test/fixtures/stream/`.
+`event` deltas (activity labels, not answer text) and `__redact__` rolling back to the last snapshot.
+Recorded fixtures live in `src/test/fixtures/stream/`.
+
+A reply is one assistant turn: everything between two user messages is an ordered list of steps
+(reasoning, text, tool call with its result, event; `Step` in `src/lib/chat-model.ts`). The live reducer and
+`toTurns` (stored messages) build the same list, so the live row and the saved row have the same structure.
+Sub-agent steps carry the agent name and sit after the tool call that started them. While a chat streams,
+the live row replaces the persisted rows of the turn being generated. Retry and Delete act on the whole turn
+(they delete its first stored message; the server removes the rest). Text steps are joined with a blank line.
 
 ## Known gaps
 
-- Sub-agent activity feeds are not rendered (their messages are hidden from the transcript).
+- Sub-agent reasoning and tool calls are in the thought box's lists without an agent label, and the newest event shows as the live status line; sub-agent text is kept in the steps but not drawn. The legacy per-agent renderers are not ported.
 - The code-execution WebSocket (live runs) is not wired; history is read-only.
 - Mermaid pop-out and file-link navigation are not implemented.
 - The file tree shows one level; nested folders are listed but not expandable.
