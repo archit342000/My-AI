@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Modal } from '../../components/ui/Modal';
 import { showToast } from '../../components/ui/toast-store';
@@ -25,9 +25,28 @@ export function AgentConfigDialog({ open, onClose, onBack }: { open: boolean; on
   const agents = useQuery({ queryKey: settingsKeys.agents, queryFn: settingsApi.getAgents, enabled: open });
   const [draft, setDraft] = useState<Record<string, AgentConfig>>({});
 
+  // The draft starts from the saved values each time the dialog opens and follows newer saved values
+  // (a refetch after opening) while the user has not typed anything; once edited, a refetch never
+  // overwrites it. Closing (Cancel, Escape, X) drops unsaved edits.
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  const seededFrom = useRef<Record<string, AgentConfig> | null>(null);
   useEffect(() => {
-    if (agents.data) setDraft(agents.data);
-  }, [agents.data]);
+    if (!open) {
+      seededFrom.current = null;
+      setDraft({});
+      return;
+    }
+    const data = agents.data;
+    if (!data) return;
+    const base = seededFrom.current;
+    const untouched =
+      base === null || Object.keys(draftRef.current).every((name) => !isDirty(draftRef.current[name], base[name]));
+    if (untouched) {
+      seededFrom.current = data;
+      setDraft(data);
+    }
+  }, [open, agents.data]);
 
   const dirtyNames = Object.keys(draft).filter((name) => isDirty(draft[name], agents.data?.[name]));
 
@@ -45,9 +64,14 @@ export function AgentConfigDialog({ open, onClose, onBack }: { open: boolean; on
   });
 
   const footer = (
-    <Button variant="primary" disabled={dirtyNames.length === 0 || save.isPending} onClick={() => save.mutate()}>
-      Save changes
-    </Button>
+    <>
+      <Button variant="secondary" onClick={onClose}>
+        Cancel
+      </Button>
+      <Button variant="primary" disabled={dirtyNames.length === 0 || save.isPending} onClick={() => save.mutate()}>
+        Save changes
+      </Button>
+    </>
   );
 
   return (

@@ -1,5 +1,6 @@
 /** Settings, preferences, skills, personas, agents, browser and model endpoints (phase 5). */
 import { apiJson, apiRequest } from './client';
+import { readSse } from './sse';
 
 export interface CodeRunnerSettings {
   code_runner_timeout: number;
@@ -38,7 +39,6 @@ export interface Persona {
   research_mode: number | boolean;
   file_system_mode: number | boolean;
   browsing_mode: number | boolean;
-  git_mode: number | boolean;
 }
 
 /** Settings rarely change while the dialog is open; reopening within this window reuses cached data (F-54). */
@@ -49,11 +49,24 @@ export interface LoadedModel {
   status: { value: string };
 }
 
+/** What `GET /api/tools/config/settings` returns for the admin (the GitHub token itself never is). */
+export type SystemSettings = CodeRunnerSettings & {
+  code_runner_max_timeout?: number;
+  github_pat_configured?: boolean;
+  git_allowed_commands?: string[];
+  git_known_commands?: string[];
+} & Record<string, unknown>;
+
 export const settingsApi = {
-  getSystem: () =>
-    apiJson<CodeRunnerSettings & { code_runner_max_timeout?: number } & Record<string, unknown>>(
-      '/api/tools/config/settings',
-    ),
+  getSystem: () => apiJson<SystemSettings>('/api/tools/config/settings'),
+  /** Sends the GitHub token once; the server never returns it. */
+  saveGitToken: (token: string) =>
+    apiRequest('/api/tools/config/settings', { method: 'POST', json: { github_pat: token } }),
+  saveGitAllowedCommands: (commands: string[]) =>
+    apiRequest('/api/tools/config/settings', {
+      method: 'POST',
+      json: { git_allowed_commands: commands },
+    }),
   saveCodeRunner: (body: CodeRunnerSettings) =>
     apiRequest('/api/tools/config/settings', { method: 'POST', json: body }),
   getAgents: () => apiJson<Record<string, AgentConfig>>('/api/tools/config/agents'),
@@ -98,9 +111,10 @@ export const personasApi = {
     apiRequest(`/api/personas/${encodeURIComponent(id)}`, { method: 'DELETE' }),
 };
 
+/** `GET /api/models/config`: model ids by role (`general.text`, `research.main`, `vision`, `coder` ...). */
 export interface ModelConfig {
-  general?: { text?: string };
-  research?: { main?: string };
+  general?: Record<string, string>;
+  research?: Record<string, string>;
 }
 
 export const modelsApi = {
@@ -108,12 +122,25 @@ export const modelsApi = {
   list: () => apiJson<{ data: LoadedModel[] }>('/api/models/').then((r) => r.data),
   load: (model: string) => apiRequest('/api/models/load', { method: 'POST', json: { model } }),
   unload: (model: string) => apiRequest('/api/models/unload', { method: 'POST', json: { model } }),
-  testSpeed: (model: string, targetContextThreshold: number) =>
-    apiJson<Record<string, unknown>>('/api/models/test-speed', {
-      method: 'POST',
-      json: { model, target_context_threshold: targetContextThreshold },
-    }),
 };
+
+/**
+ * Runs the model speed test and yields its events (status lines, token deltas, timings, usage).
+ * The server unloads every loaded model first. Throws on HTTP errors; aborting `signal` stops it.
+ */
+export async function* testSpeedStream(
+  model: string,
+  targetContextThreshold: number,
+  signal: AbortSignal,
+): AsyncGenerator<unknown> {
+  const response = await apiRequest('/api/models/test-speed', {
+    method: 'POST',
+    json: { model, target_context_threshold: targetContextThreshold },
+    signal,
+  });
+  if (!response.body) throw new Error('Empty response from server');
+  yield* readSse(response.body);
+}
 
 export const settingsKeys = {
   system: ['settings', 'system'] as const,
@@ -123,5 +150,13 @@ export const settingsKeys = {
   skills: ['skills'] as const,
   personas: ['personas'] as const,
   models: ['models'] as const,
+  modelConfig: ['models', 'config'] as const,
   version: ['version'] as const,
+};
+
+/** The model config query: one definition so every observer of it shares the same options. */
+export const modelConfigQuery = {
+  queryKey: settingsKeys.modelConfig,
+  queryFn: () => modelsApi.config(),
+  staleTime: 300_000,
 };

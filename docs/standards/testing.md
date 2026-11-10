@@ -44,6 +44,7 @@ The local README of each component lists its own tests. Read it before running t
 | `scripts/` | experiment scripts; some need external services | no |
 | Frontend | in `frontend/`: `npm run typecheck`, `lint`, `test`, `build` | yes |
 | End to end | `npm run e2e` (needs running stack and Chrome) | no |
+| Full stack | in `frontend/`: `npm run e2e:stack` (starts the real backend with a scripted model, see below) | no |
 
 Run each suite in its own pytest process; combining them causes duplicate-module collection errors.
 All commands above use the env vars and `venv/bin/python` described under "Running tests".
@@ -54,3 +55,12 @@ Enable the optional pre-push hook with `git config core.hooksPath scripts/hooks`
 
 Run from `frontend/`: `npm run typecheck`, `npm run lint`, `npm run test`. End-to-end specs
 (`npm run e2e`) need the dev server on :5173 and the backend on :5000. See `docs/frontend.md`.
+
+`npm run e2e:stack` starts the real Flask backend on a throwaway data directory with a scripted model
+(`frontend/e2e/stack/`) and drives the built UI: send, multi-round tool turns, stop and retry,
+temporary chat, and the legacy-UI geometry of the chat page (`geometry.json`). It is not part of
+`scripts/check.sh`. It needs the repo `venv` Python (or `E2E_PYTHON`), a cached tokenizer
+(`E2E_TOKENIZER`, default `Qwen/Qwen3.6-35B-A3B`) and a built `dist/`. A spec for a known bug can be
+marked `test.fail()` (and a unit test `it.fails`) so the suite stays green; the change that fixes the bug removes the
+marker, because Playwright and Vitest report an unexpected pass. Fixtures in
+`src/test/fixtures/api/` are recorded with `node e2e/stack/record-fixtures.mjs` against a running stack.

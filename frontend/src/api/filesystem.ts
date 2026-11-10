@@ -25,6 +25,12 @@ export interface ScopeRef {
   workspaceId?: string;
 }
 
+/** Query-key part that identifies a chat or workspace scope. */
+export const scopeKey = (s: ScopeRef) => `${s.chatId ?? ''}|${s.workspaceId ?? ''}`;
+
+/** Query key of a scope's file list; invalidate it to refresh the files panel. */
+export const artifactsKey = (s: ScopeRef) => ['artifacts', scopeKey(s)] as const;
+
 function scopeQuery(scope: ScopeRef): string {
   const q = new URLSearchParams();
   if (scope.chatId) q.set('chat_id', scope.chatId);
@@ -37,6 +43,18 @@ function scopeBody(scope: ScopeRef): Record<string, string> {
   if (scope.chatId) body.chat_id = scope.chatId;
   if (scope.workspaceId) body.workspace_id = scope.workspaceId;
   return body;
+}
+
+/** The server's comparison of two versions: the lines only in each, by position (`backend/file_system/manager.py`). */
+export interface VersionDiff {
+  added_lines: string[];
+  removed_lines: string[];
+  stats: { lines_added: number; lines_removed: number };
+}
+
+/** Scope as the version endpoints read it: `chat_id` in the body, `workspace_id` in the query only. */
+function workspaceQuery(scope: ScopeRef): string {
+  return scope.workspaceId ? `?workspace_id=${encodeURIComponent(scope.workspaceId)}` : '';
 }
 
 export const artifactsApi = {
@@ -55,7 +73,25 @@ export const artifactsApi = {
   version: (id: string, n: number, scope: ScopeRef) =>
     apiJson<{ content: string }>(`/api/file_systems/${encodeURIComponent(id)}/versions/${n}?${scopeQuery(scope)}`),
   restore: (id: string, n: number, scope: ScopeRef) =>
-    apiRequest(`/api/file_systems/${encodeURIComponent(id)}/versions/${n}/restore`, { method: 'POST', json: scopeBody(scope) }),
+    apiRequest(`/api/file_systems/${encodeURIComponent(id)}/versions/${n}/restore${workspaceQuery(scope)}`, {
+      method: 'POST',
+      json: scope.chatId ? { chat_id: scope.chatId } : {},
+    }),
+  /** Version numbers differ in content: the lines only in `from` (removed) and only in `to` (added). */
+  diff: (id: string, from: number, to: number, scope: ScopeRef) =>
+    apiJson<VersionDiff>(`/api/file_systems/${encodeURIComponent(id)}/diff${workspaceQuery(scope)}`, {
+      method: 'POST',
+      json: { ...(scope.chatId ? { chat_id: scope.chatId } : {}), version1: from, version2: to },
+    }),
+  currentVersion: (id: string, scope: ScopeRef) =>
+    apiJson<{ current_version: number | null }>(
+      `/api/file_systems/${encodeURIComponent(id)}/current-version?${scopeQuery(scope)}`,
+    ).then((r) => r.current_version),
+  createDirectory: (scope: ScopeRef, path: string) =>
+    apiJson<unknown>('/api/file_systems/directory', { method: 'POST', json: { ...scopeBody(scope), path } }),
+  /** Removes an empty directory; the server refuses a non-empty one with its own message. */
+  deleteDirectory: (scope: ScopeRef, path: string) =>
+    apiRequest(`/api/file_systems/directory?${scopeQuery(scope)}&path=${encodeURIComponent(path)}`, { method: 'DELETE' }),
   exportUrl: (id: string, format: 'html' | 'markdown' | 'pdf', scope: ScopeRef) =>
     `/api/file_systems/${encodeURIComponent(id)}/export/${format}?${scopeQuery(scope)}`,
   rawUrl: (id: string, scope: ScopeRef) => `/api/file_systems/${encodeURIComponent(id)}/raw?${scopeQuery(scope)}`,
@@ -63,8 +99,24 @@ export const artifactsApi = {
     apiJson<{ folders: string[] }>(`/api/file_systems/chat/${encodeURIComponent(chatId)}/folders`).then((r) => r.folders),
 };
 
+/** The fields the history view reads from a `code_execution_history` row (backend/database/init_db.py), newest first. */
+export interface CodeRun {
+  id: string;
+  chat_id: string;
+  language: string;
+  code: string;
+  stdin: string | null;
+  stdout: string | null;
+  stderr: string | null;
+  exit_code: number | null;
+  execution_time_ms: number | null;
+  timed_out: number | null;
+  created_at: string | null;
+}
+
 export const codeExecApi = {
-  history: (chatId: string) => apiJson<unknown[]>(`/api/tools/code-execution/history/${encodeURIComponent(chatId)}`),
+  history: (chatId: string) =>
+    apiJson<CodeRun[]>(`/api/tools/code-execution/history/${encodeURIComponent(chatId)}`),
 };
 
 export const portalApi = {
