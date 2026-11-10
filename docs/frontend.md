@@ -64,6 +64,16 @@ content and reasoning deltas, tool-call fragments merged by id, tool results att
 `event` deltas (activity labels, not answer text), sub-agent deltas (counted, not shown yet),
 and `__redact__` rolling back to the last snapshot. Recorded fixtures live in `src/test/fixtures/stream/`.
 
+## Mobile
+
+The viewport meta (`index.html`) is the legacy one: `interactive-widget=resizes-content` (the layout resizes with the on-screen keyboard
+where the browser supports it), `maximum-scale=1.0, user-scalable=no` and `viewport-fit=cover`. Where the keyboard only overlays the page
+(iOS Safari), `useKeyboardOffset` raises the composer by the covered height and publishes it as `--keyboard-offset` on `<html>`; the
+transcript pads its bottom by it and `useAutoFollow` scrolls a pinned reader to the end again when the window or visual viewport
+resizes. `usePlatformClass` (called by `RootLayout`) adds `is-ios` to `<html>` on iOS and iPadOS, which the legacy stylesheet keys on, and blocks
+touches that start outside a scroll area (`SCROLL_AREAS` in `lib/scroll-lock.ts`) so the page cannot rubber-band. The phone Playwright
+project simulates the keyboard by shrinking `visualViewport.height` (`e2e/mobile-keyboard.spec.ts`).
+
 ## Known gaps
 
 - Sub-agent activity feeds are not rendered (their messages are hidden from the transcript).

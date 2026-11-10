@@ -7,6 +7,7 @@ import { discardTemporaryChat, shouldDiscardTemporaryChat } from '../features/ch
 import { Outlet, useLocation } from 'react-router';
 import { AmbientBackground } from '../components/background/AmbientBackground';
 import { ToastViewport } from '../components/ui/Toast';
+import { usePlatformClass } from '../hooks/usePlatformClass';
 import { useThemeSync } from '../hooks/useThemeSync';
 import { useUiStore } from '../state/ui-store';
 import { useUserStore } from '../state/user-store';
@@ -17,6 +18,7 @@ import { DialogHost } from '../features/settings/DialogHost';
 export function RootLayout() {
   const themeMode = useUiStore((s) => s.themeMode);
   useThemeSync(themeMode);
+  usePlatformClass();
   const toggleArtifacts = useUiStore((s) => s.toggleArtifacts);
   const queryClient = useQueryClient();
   const path = useLocation().pathname;

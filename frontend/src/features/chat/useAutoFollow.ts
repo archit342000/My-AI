@@ -6,6 +6,7 @@ import { createFollowController } from '../../lib/scroll';
  *
  * - Pinned is re-measured on scroll events only, so growth never unpins the reader.
  * - A ResizeObserver on every direct child follows growth while pinned.
+ * - A window or visual-viewport resize (keyboard) re-scrolls to the end while pinned.
  * - `chatId` change and a new `forceKey` (a sent message) re-pin and scroll to the end.
  * - `pinned` lets the caller show a "Jump to latest" control while the reader is away.
  */
@@ -30,6 +31,33 @@ export function useAutoFollow(
     const onScroll = () => setPinned(follow.current.observeScroll(el));
     el.addEventListener('scroll', onScroll, { passive: true });
     return () => el.removeEventListener('scroll', onScroll);
+  }, [ref]);
+
+  // The window or the visual viewport changes size (the on-screen keyboard opens or closes, the phone rotates): a
+  // reader who was at the bottom stays there. The scroll waits two frames so the transcript's new bottom padding
+  // (`--keyboard-offset`) has been applied and laid out when the scroll height is read.
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return undefined;
+    let frames: number[] = [];
+    const onResize = () => {
+      if (!follow.current.isPinned()) return;
+      frames.forEach(cancelAnimationFrame);
+      const first = requestAnimationFrame(() => {
+        frames.push(
+          requestAnimationFrame(() => el.scrollTo({ top: el.scrollHeight, behavior: 'instant' })),
+        );
+      });
+      frames = [first];
+    };
+    const visual = window.visualViewport;
+    window.addEventListener('resize', onResize);
+    visual?.addEventListener('resize', onResize);
+    return () => {
+      window.removeEventListener('resize', onResize);
+      visual?.removeEventListener('resize', onResize);
+      frames.forEach(cancelAnimationFrame);
+    };
   }, [ref]);
 
   // Children change identity during streaming, so re-attach on every render (cheap: a few nodes).

@@ -12,5 +12,17 @@ export default defineConfig({
     trace: 'off',
     launchOptions: { executablePath: '/opt/google/chrome/chrome', args: ['--no-sandbox'] },
   },
-  projects: [{ name: 'desktop', use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } } }],
+  projects: [
+    {
+      name: 'desktop',
+      use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } },
+      testIgnore: /mobile-keyboard\.spec\.ts/,
+    },
+    {
+      // A phone: touch, mobile viewport and user agent. The on-screen keyboard is simulated in the spec.
+      name: 'phone',
+      use: { ...devices['Pixel 7'] },
+      testMatch: /mobile-keyboard\.spec\.ts/,
+    },
+  ],
 });

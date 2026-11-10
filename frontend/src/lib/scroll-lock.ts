@@ -43,3 +43,28 @@ export function unlockScroll(): void {
 export function scrollLockDepth(): number {
   return lockCount;
 }
+
+/**
+ * The areas that may scroll on iOS. A touch that starts anywhere else is prevented, so the page itself cannot
+ * rubber-band (legacy `initScrollManager`). These are the legacy entries that exist in the React app, plus the
+ * React scroll areas that legacy had under other names or not at all (files panel, popover lists, logs).
+ */
+export const SCROLL_AREAS = [
+  '#messages',
+  '.modal-body',
+  '.cm-scroller',
+  '.sidebar-content',
+  '.thought-body-inner',
+  '.composer-chips',
+  '#chat-textarea',
+  '.workspace-view',
+  '.artifact-panel',
+  '.artifact-drawer',
+  '.ui-popover',
+  '.logs-main',
+].join(', ');
+
+/** True when a touch on `target` is inside a scroll area (so it must not be prevented). */
+export function isScrollAreaTarget(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest(SCROLL_AREAS) !== null;
+}

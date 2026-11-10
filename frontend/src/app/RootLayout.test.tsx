@@ -36,6 +36,19 @@ describe('RootLayout', () => {
     expect(screen.queryByRole('button', { name: 'View files and artifacts' })).toBeNull();
   });
 
+  it('marks the page is-ios on an iPhone and not on a desktop', () => {
+    vi.spyOn(chatsApi, 'list').mockResolvedValue([]);
+    vi.spyOn(chatsApi, 'listWorkspaces').mockResolvedValue([]);
+    vi.stubGlobal('navigator', { userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)', maxTouchPoints: 5 });
+    const phone = renderWithProviders(<RootLayout />);
+    expect(document.documentElement.classList.contains('is-ios')).toBe(true);
+    phone.unmount();
+    expect(document.documentElement.classList.contains('is-ios')).toBe(false);
+    vi.unstubAllGlobals();
+    renderWithProviders(<RootLayout />);
+    expect(document.documentElement.classList.contains('is-ios')).toBe(false);
+  });
+
   it('shows a reload banner once the session has expired, and not before', () => {
     vi.spyOn(chatsApi, 'list').mockResolvedValue([]);
     vi.spyOn(chatsApi, 'listWorkspaces').mockResolvedValue([]);

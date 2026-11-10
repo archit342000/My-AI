@@ -9,10 +9,16 @@ export function isNearBottom(el: HTMLElement, threshold = NEAR_BOTTOM_PX): boole
 
 /**
  * Keyboard offset for the chat input on touch devices: how far the on-screen keyboard covers the
- * layout viewport. Offsets under 10px are ignored to avoid jitter.
+ * layout viewport. `offsetTop` is how far the browser scrolled the visual viewport down (a page it
+ * panned to keep the focused field visible), which is not keyboard. Offsets under 10px are ignored
+ * to avoid jitter.
  */
-export function computeKeyboardOffset(innerHeight: number, visualHeight: number): number {
-  const offset = innerHeight - visualHeight;
+export function computeKeyboardOffset(
+  innerHeight: number,
+  visualHeight: number,
+  offsetTop = 0,
+): number {
+  const offset = innerHeight - visualHeight - offsetTop;
   return offset > 10 ? offset : 0;
 }
 
