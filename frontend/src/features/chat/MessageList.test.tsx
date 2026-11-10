@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { MemoryRouter } from 'react-router';
 import { renderWithProviders } from '../../test/render';
 import { MessageList } from './MessageList';
 import { toTurns } from '../../lib/chat-model';
@@ -8,6 +10,7 @@ import { oneToolReply, threeToolReply } from '../../test/fixtures/chat-detail';
 import { chatsApi } from '../../api/chats';
 import { chatListInvalidated } from '../../test/invalidation';
 import { useStreamStore } from '../../state/stream-store';
+import { useThoughtStore } from '../../state/thought-store';
 import { useToastStore } from '../../components/ui/toast-store';
 import * as sendTurnModule from './send-turn';
 
@@ -34,7 +37,7 @@ describe('MessageList', () => {
   });
 
   it('shows the live assistant turn while streaming for this chat only', () => {
-    useStreamStore.setState({ chatId: 'c1', live: { steps: [{ kind: 'text', text: 'streaming…', agent: null }], model: 'M', redactNotice: null, snapshot: [] } as never, pending: { text: 'new q', images: [], files: [] }, interrupted: null, controller: null });
+    useStreamStore.setState({ chatId: 'c1', live: { steps: [{ kind: 'text', text: 'streaming…', agent: null }], model: 'M', redactNotice: null, snapshot: [] } as never, pending: { text: 'new q', images: [], files: [], ordinal: 1 }, interrupted: null, controller: null });
     const { container } = renderWithProviders(<MessageList turns={[]} chatId="c1" onChanged={() => undefined} />);
     expect(container.querySelector('[data-live="true"]')).not.toBeNull();
     expect(screen.getByText('streaming…')).toBeTruthy();
@@ -332,7 +335,7 @@ describe('MessageList with a tool reply in the real API shape', () => {
     useStreamStore.setState({
       chatId: 'c1',
       live: null,
-      pending: { text: 'next question', images: [], files: [] },
+      pending: { text: 'next question', images: [], files: [], ordinal: 1 },
       interrupted: null,
       controller: null,
     });
@@ -366,6 +369,130 @@ describe('MessageList with a tool reply in the real API shape', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
     await waitFor(() => expect(del).toHaveBeenCalledWith('c1', '2'));
     expect(del).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('MessageList thought box', () => {
+  const live = (steps: unknown[], extra: Record<string, unknown> = {}) =>
+    ({ steps, model: 'M', redactNotice: null, snapshot: [], ...extra }) as never;
+  const reset = () => {
+    useStreamStore.setState({ chatId: null, live: null, pending: null, interrupted: null, controller: null });
+    useThoughtStore.setState({ expanded: {} });
+  };
+  beforeEach(reset);
+  afterEach(() => {
+    reset();
+    vi.restoreAllMocks();
+  });
+
+  it('keeps saying Thinking... while the turn streams, even once the answer text has started', () => {
+    useStreamStore.setState({
+      chatId: 'c1',
+      live: live([{ kind: 'text', text: 'answer so far', agent: null }]),
+      pending: { text: 'q', images: [], files: [], ordinal: 1 },
+      interrupted: null,
+      controller: null,
+    });
+    renderWithProviders(<MessageList turns={[]} chatId="c1" onChanged={() => undefined} />);
+    expect(screen.getByText(/Thinking\.\.\./)).toBeTruthy();
+    expect(screen.queryByText('Thought Process')).toBeNull();
+  });
+
+  it('shows the model label only once the turn has text', () => {
+    useStreamStore.setState({
+      chatId: 'c1',
+      live: live([{ kind: 'reasoning', text: 'hmm', agent: null }]),
+      pending: { text: 'q', images: [], files: [], ordinal: 1 },
+      interrupted: null,
+      controller: null,
+    });
+    const { container } = renderWithProviders(<MessageList turns={[]} chatId="c1" onChanged={() => undefined} />);
+    expect(container.querySelector('.bot-model-label')).toBeNull();
+  });
+
+  it('puts tool activity inside the box: no tool list outside it', () => {
+    const { container } = renderWithProviders(
+      <MessageList turns={toTurns(oneToolReply)} chatId="c1" onChanged={() => undefined} />,
+    );
+    expect(container.querySelector('.tool-summary')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /Thought Process/ }));
+    expect(container.querySelector('.thought-timeline-wrapper')?.textContent).toContain('Call: List Files');
+    expect(container.querySelector('.thought-timeline-wrapper')?.textContent).toContain('Tool Result: List Files');
+  });
+
+  it('a box expanded on the live row is still expanded on the saved row after the stream ends', () => {
+    useStreamStore.setState({
+      chatId: 'c1',
+      live: live([{ kind: 'reasoning', text: 'need files', agent: null }]),
+      pending: { text: 'list', images: [], files: [], ordinal: 1 },
+      interrupted: null,
+      controller: null,
+    });
+    const { container, rerender, client } = renderWithProviders(
+      <MessageList turns={[]} chatId="c1" onChanged={() => undefined} />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Thinking/ }));
+    expect(container.querySelector('.thought-container.expanded')).toBeTruthy();
+    // The server has saved the turn and the store has been reset.
+    act(() => useStreamStore.setState({ chatId: null, live: null, pending: null }));
+    rerender(
+      <QueryClientProvider client={client}>
+        <MemoryRouter>
+          <MessageList turns={toTurns(oneToolReply)} chatId="c1" onChanged={() => undefined} />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    expect(container.querySelector('[data-live="true"]')).toBeNull();
+    expect(container.querySelector('.thought-container.expanded')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Thought Process/ }).getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('a Retry that replays the last reply uses the same box as the saved reply', () => {
+    act(() => useThoughtStore.getState().toggle('c1:1'));
+    useStreamStore.setState({
+      chatId: 'c1',
+      live: live([{ kind: 'reasoning', text: 'again', agent: null }]),
+      pending: null,
+      interrupted: null,
+      controller: null,
+    });
+    const { container } = renderWithProviders(
+      <MessageList turns={toTurns(oneToolReply)} chatId="c1" onChanged={() => undefined} />,
+    );
+    expect(container.querySelector('[data-live="true"] .thought-container.expanded')).toBeTruthy();
+  });
+
+  it('shows the fixed retry notice with a spinner, not the server\'s text', () => {
+    useStreamStore.setState({
+      chatId: 'c1',
+      live: live([], { redactNotice: 'SERVER SAYS: redacting 3 tokens' }),
+      pending: { text: 'q', images: [], files: [], ordinal: 1 },
+      interrupted: null,
+      controller: null,
+    });
+    const { container } = renderWithProviders(<MessageList turns={[]} chatId="c1" onChanged={() => undefined} />);
+    const notice = container.querySelector('.validation-fixing');
+    expect(notice?.textContent).toContain('Fixing the reply');
+    expect(notice?.textContent).not.toContain('SERVER SAYS');
+    expect(notice?.querySelector('.ui-spinner')).toBeTruthy();
+  });
+
+  it('a turn with nothing to show has no box and the avatar sits beside the answer', () => {
+    const { container } = renderWithProviders(
+      <MessageList turns={toTurns([...msgs] as never)} chatId="c1" onChanged={() => undefined} />,
+    );
+    expect(container.querySelector('.thought-container')).toBeNull();
+    expect(container.querySelector('.bot-turn .bot-turn__avatar')).toBeTruthy();
+  });
+
+  it('deleting a turn forgets the open boxes of the chat', async () => {
+    vi.spyOn(chatsApi, 'deleteMessage').mockResolvedValue(new Response(null));
+    act(() => useThoughtStore.getState().toggle('c1:1'));
+    renderWithProviders(<MessageList turns={toTurns(oneToolReply)} chatId="c1" onChanged={() => undefined} />);
+    const row = document.querySelector('[data-message-id="2"]') as HTMLElement;
+    fireEvent.click(within(row).getByRole('button', { name: 'Delete message' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    await waitFor(() => expect(useThoughtStore.getState().expanded).toEqual({}));
   });
 });
 

@@ -150,6 +150,26 @@ describe('retry does not duplicate the user row (F-16)', () => {
     await sendTurn(args());
     expect(seen.pending).toMatchObject({ text: 'hello' });
   });
+
+  it('numbers the pending user turn, which is the key of its reply\'s thought box', async () => {
+    const seen: { pending?: unknown } = {};
+    mockCompletion(() => sseResponse(sseText([contentChunk('Hi')])), seen);
+    await sendTurn(args()); // a new chat: the first user turn
+    expect(seen.pending).toMatchObject({ ordinal: 1 });
+    const later: { pending?: unknown } = {};
+    mockCompletion(() => sseResponse(sseText([contentChunk('Hi')])), later);
+    await sendTurn(
+      args({
+        history: [
+          { role: 'user', content: 'q1' },
+          { role: 'assistant', content: 'a1' },
+          { role: 'user', content: 'q2' },
+          { role: 'assistant', content: 'a2' },
+        ],
+      }),
+    );
+    expect(later.pending).toMatchObject({ ordinal: 3 });
+  });
 });
 
 describe('tool activity in a stream', () => {

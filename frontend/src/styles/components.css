@@ -995,6 +995,48 @@ input[type="range"].ui-slider__input::-moz-range-thumb {
   outline-offset: 2px;
   border-radius: var(--radius-sm);
 }
+.activity-running {
+  flex: 0 0 auto;
+  margin-left: auto;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--accent);
+}
+.timeline-reasoning {
+  min-width: 0;
+  font-size: 0.8rem;
+  line-height: 1.55;
+  color: var(--content-secondary);
+  overflow-wrap: anywhere;
+}
+.event-divider {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--content-muted);
+}
+.event-divider::before,
+.event-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border-subtle);
+}
+.sub-agent-item > .activity-header .activity-type {
+  color: var(--accent);
+}
+.sub-agent-entries {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.thought-full-view {
+  margin-top: 0;
+}
 @media (prefers-reduced-motion: reduce) {
   .activity-content-wrapper {
     transition: none;
@@ -1339,14 +1381,6 @@ input[type="range"].ui-slider__input::-moz-range-thumb {
   min-width: 0;
 }
 
-.bot-turn__body .thought-container {
-  margin-bottom: 0;
-}
-
-.bot-turn__body .thought-timeline-wrapper {
-  margin-bottom: 0;
-}
-
 .avatar {
   display: flex;
   align-items: center;
@@ -1389,46 +1423,137 @@ input[type="range"].ui-slider__input::-moz-range-thumb {
   white-space: nowrap;
 }
 
-/* Compact tool list: visible under the thought header without expanding it. */
-.tool-summary {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1) var(--space-2);
-  margin: 0;
-  padding: 0;
-  list-style: none;
+/* Header geometry of the legacy thought box: 56px tall (36px button, 10px above and below). */
+:root {
+  --thought-action-size: 2.25rem;
+  --thought-inset: 14px;
 }
 
-.tool-summary__item {
-  display: inline-flex;
+/* Thought box row, as the legacy markup: [avatar | box header] over a full-width timeline and answer. */
+.assistant-header-row {
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-4);
+  width: 100%;
+  margin-bottom: var(--space-3);
+}
+
+.assistant-avatar-column {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.thought-section-wrapper {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.thought-content-wrapper {
+  width: 100%;
+}
+
+.thought-section-wrapper .thought-container {
+  margin-bottom: 0;
+}
+
+/* The header holds two sibling buttons: the toggle (status, title, chevron) and the full view, which sits
+   over the toggle just left of its chevron, where the legacy header has it. */
+.thought-header {
+  position: relative;
+  padding: 0;
+}
+
+.thought-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-width: 0;
+  min-height: calc(var(--thought-action-size) + 20px);
+  padding: 10px var(--thought-inset);
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.thought-toggle .thought-status {
+  margin-right: calc(var(--thought-action-size) + var(--space-3));
+}
+
+.thought-toggle:focus-visible,
+.thought-full-view-btn:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.thought-actions {
+  position: absolute;
+  top: 50%;
+  right: calc(var(--thought-inset) + 24px + var(--space-2));
+  transform: translateY(-50%);
+}
+
+.thought-full-view-btn {
+  width: var(--thought-action-size);
+  height: var(--thought-action-size);
+  padding: 0;
+  border-radius: var(--radius-lg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.thought-full-view-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.thought-timeline-wrapper.full-width-reasoning {
+  width: 100%;
+  margin-bottom: 0;
+}
+
+.thought-timeline-wrapper .activity-feed {
+  margin-top: 0;
+}
+
+.message-content-wrapper {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.bot-message-footer {
+  display: flex;
+  align-items: center;
+  margin-top: var(--space-1);
+  padding: 0 var(--space-1);
+}
+
+.bot-model-label {
+  font-size: 0.65rem;
+  font-weight: 500;
+  color: var(--content-muted);
+  user-select: none;
+  opacity: 0.8;
+}
+
+/* The notice while the server asks the model to fix a reply. */
+.validation-fixing {
+  display: flex;
   align-items: center;
   gap: var(--space-2);
-  padding: 3px var(--space-2) 3px var(--space-3);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-full);
-  background: var(--surface-secondary);
-  font-size: 0.78rem;
-  color: var(--content-secondary);
-  max-width: 100%;
-}
-
-.tool-summary__name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.tool-summary__state {
-  flex: 0 0 auto;
-  margin-left: var(--space-1);
-  font-size: 0.7rem;
-  white-space: nowrap;
+  margin-bottom: var(--space-2);
+  font-size: 0.85rem;
   color: var(--content-muted);
-}
-
-.tool-summary__item--running .tool-summary__state {
-  color: var(--accent);
 }
 
 /* Tool cards: one neutral border. Legacy `.activity-item` sets `border: none !important` and a 3px

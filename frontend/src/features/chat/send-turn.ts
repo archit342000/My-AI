@@ -394,13 +394,6 @@ export async function sendTurn({
     return false;
   }
 
-  const pending: PendingUser | null = userTurnExists
-    ? null
-    : {
-        text,
-        images: [],
-        files,
-      };
   if (
     !historyOverride &&
     !isNewChat &&
@@ -414,6 +407,14 @@ export async function sendTurn({
   }
   const controller = new AbortController();
   const history = historyOverride ?? historyFromCache(queryClient, chatId);
+  const pending: PendingUser | null = userTurnExists
+    ? null
+    : {
+        text,
+        images: [],
+        files,
+        ordinal: history.filter((m) => m.role === 'user').length + 1,
+      };
   const messages: HistoryMessage[] = [
     ...history,
     { role: 'user', content: text, uploadedFiles: files.length ? files : undefined },

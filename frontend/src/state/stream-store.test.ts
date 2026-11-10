@@ -20,7 +20,7 @@ describe('stream store', () => {
       stopping: true,
     });
     const controller = new AbortController();
-    useStreamStore.getState().start('c1', { text: 'hi', images: [], files: [] }, controller);
+    useStreamStore.getState().start('c1', { text: 'hi', images: [], files: [], ordinal: 1 }, controller);
     expect(useStreamStore.getState()).toMatchObject({
       chatId: 'c1',
       pending: { text: 'hi' },
