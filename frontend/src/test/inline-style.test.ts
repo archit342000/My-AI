@@ -24,10 +24,8 @@ const BASELINE: Record<string, number> = {
   'features/settings/StealthDialog.tsx': 0,
   'features/settings/SystemSettingsModal.tsx': 0,
   'features/settings/forms.tsx': 0,
-  'features/sidebar/RecentChats.tsx': 10,
   'features/tools/CodeHistoryDialog.tsx': 0,
   'features/tools/PortalDialog.tsx': 0,
-  'features/workspace/WorkspacePage.tsx': 7,
 };
 
 function inlineStyleCounts(): Map<string, number> {

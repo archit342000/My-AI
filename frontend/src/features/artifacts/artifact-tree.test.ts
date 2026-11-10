@@ -47,3 +47,24 @@ describe('buildTree', () => {
     expect(shape(tree)).toEqual([{ 'workspace/': [] }]);
   });
 });
+
+describe('buildTree placeholder option', () => {
+  const dir = (name: string) => ({ id: '', type: 'directory', filename: name, title: name }) as never;
+  const file = (path: string) =>
+    ({ id: path, type: 'file', filename: path, title: path, language: 'text' }) as never;
+
+  it('hides a lone root `workspace` directory entry when asked', () => {
+    expect(buildTree([dir('workspace')], { hidePlaceholder: true })).toEqual([]);
+  });
+
+  it('keeps it when a file is under it, and keeps other empty folders', () => {
+    const withFile = buildTree([dir('workspace'), file('workspace/a.txt')], { hidePlaceholder: true });
+    expect(withFile.map((n) => n.name)).toEqual(['workspace']);
+    const other = buildTree([dir('workspace'), dir('notes')], { hidePlaceholder: true });
+    expect(other.map((n) => n.name)).toEqual(['notes']);
+  });
+
+  it('without the option nothing is dropped', () => {
+    expect(buildTree([dir('workspace')]).map((n) => n.name)).toEqual(['workspace']);
+  });
+});

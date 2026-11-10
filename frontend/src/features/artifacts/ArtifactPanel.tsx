@@ -93,7 +93,10 @@ export function ArtifactPanel({ scope, onClose }: ArtifactPanelProps) {
   }, [requestedPath, list.data, list.isFetching, list.isError]);
 
   const needle = filter.trim().toLowerCase();
-  const tree = useMemo(() => buildTree(list.data ?? []), [list.data]);
+  const tree = useMemo(
+    () => buildTree(list.data ?? [], { hidePlaceholder: Boolean(scope.workspaceId) }),
+    [list.data, scope.workspaceId],
+  );
   const matches = useMemo(
     () =>
       (list.data ?? []).filter(

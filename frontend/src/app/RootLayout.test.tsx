@@ -64,6 +64,13 @@ describe('RootLayout', () => {
     expect(screen.queryByRole('button', { name: 'View files and artifacts' })).toBeNull();
   });
 
+  it('has no files button on a workspace page (its page always shows the files)', () => {
+    vi.spyOn(chatsApi, 'list').mockResolvedValue([]);
+    vi.spyOn(chatsApi, 'listWorkspaces').mockResolvedValue([]);
+    renderWithProviders(<RootLayout />, { route: '/workspace/w1', path: '/workspace/:workspaceId' });
+    expect(screen.queryByRole('button', { name: 'View files and artifacts' })).toBeNull();
+  });
+
   it('marks the page is-ios on an iPhone and not on a desktop', () => {
     vi.spyOn(chatsApi, 'list').mockResolvedValue([]);
     vi.spyOn(chatsApi, 'listWorkspaces').mockResolvedValue([]);

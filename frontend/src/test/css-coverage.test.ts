@@ -22,13 +22,11 @@ const TODO_UNSTYLED = new Set<string>([
   'copy-msg-btn',
   'delete-msg-btn',
   'edit-msg-btn',
-  'folder-chevron-wrapper',
   'message-text-wrapper',
   'raw-text-content',
   'retry-msg-btn',
   'sidebar-context-menu-header',
   'title-text',
-  'workspace-view',
 ]);
 
 function cssSelectors(): Set<string> {
