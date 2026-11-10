@@ -11,7 +11,7 @@ import {
   toolCallChunk,
   toolResultChunk,
 } from '../../test/fixtures/sse';
-import { historyFromCache, resumeTurn, sendTurn, stopTurn } from './send-turn';
+import { BUSY_TOAST, historyFromCache, resumeTurn, sendTurn, stopTurn } from './send-turn';
 import { turnText, turnTools } from '../../lib/chat-model';
 import { threeToolReply } from '../../test/fixtures/chat-detail';
 import { useToastStore } from '../../components/ui/toast-store';
@@ -372,5 +372,99 @@ describe('historyFromCache', () => {
       { role: 'user', content: 'thanks' },
       { role: 'assistant', content: 'Welcome.' },
     ]);
+  });
+});
+
+describe('starting a new chat', () => {
+  const newArgs = (over: Partial<Parameters<typeof sendTurn>[0]> = {}) => {
+    const queryClient = new QueryClient();
+    queryClient.setQueryData(queryKeys.chats, [{ id: 'old', title: 'Old', timestamp: 1, workspace_id: null }]);
+    return { queryClient, chatId: 'new-1', text: 'first message', files: [], isNewChat: true, ...over };
+  };
+
+  it('puts the chat in the detail and list caches before it navigates and before the create call returns', async () => {
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((r) => (release = r));
+    const fetchMock = vi.fn(async (path: string, init?: RequestInit) => {
+      if (path === '/api/chats/new-1' && init?.method === 'PATCH') await gate;
+      if (path === '/v1/chat/completions') return sseResponse(sseText([contentChunk('Hi')]));
+      return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const a = newArgs();
+    const seenAtNavigate: Array<{ detail: unknown; listed: boolean }> = [];
+    const done = sendTurn({
+      ...a,
+      navigate: () =>
+        seenAtNavigate.push({
+          detail: a.queryClient.getQueryData(queryKeys.chat('new-1')),
+          listed: (a.queryClient.getQueryData<Array<{ id: string }>>(queryKeys.chats) ?? [])[0]?.id === 'new-1',
+        }),
+    });
+    await vi.waitFor(() => expect(seenAtNavigate).toHaveLength(1));
+    expect(seenAtNavigate[0]).toMatchObject({ detail: { id: 'new-1', messages: [] }, listed: true });
+    release();
+    expect(await done).toBe(true);
+  });
+
+  it('does not throw when the chat list is not loaded', async () => {
+    mockCompletion(() => sseResponse(sseText([contentChunk('Hi')])));
+    const queryClient = new QueryClient();
+    const ok = await sendTurn({ queryClient, chatId: 'new-2', text: 'x', files: [], isNewChat: true });
+    expect(ok).toBe(true);
+    expect(queryClient.getQueryData(queryKeys.chats)).toBeUndefined();
+  });
+
+  it('removes the seeded entries when creating the chat fails', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (path: string, init?: RequestInit) =>
+        path === '/api/chats/new-1' && init?.method === 'PATCH'
+          ? new Response(JSON.stringify({ error: 'nope' }), { status: 500, headers: { 'Content-Type': 'application/json' } })
+          : new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } }),
+      ),
+    );
+    const a = newArgs();
+    await sendTurn(a);
+    expect(a.queryClient.getQueryData(queryKeys.chat('new-1'))).toBeUndefined();
+    expect((a.queryClient.getQueryData<Array<{ id: string }>>(queryKeys.chats) ?? []).map((c) => c.id)).toEqual(['old']);
+  });
+
+  it('sends a temporary chat that has no cached detail', async () => {
+    const fetchMock = mockCompletion(() => sseResponse(sseText([contentChunk('Hi')])));
+    const ok = await sendTurn({ queryClient: new QueryClient(), chatId: 'temp-1', text: 'hi', files: [], isNewChat: false, temporary: true });
+    expect(ok).toBe(true);
+    expect(fetchMock.mock.calls.some(([p]) => p === '/v1/chat/completions')).toBe(true);
+  });
+});
+
+describe('a send while another chat generates', () => {
+  it('posts nothing, says why, keeps the composer untouched and does not navigate', async () => {
+    useStreamStore.setState({ chatId: 'other', live: null, pending: null, interrupted: null, controller: new AbortController() });
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const navigate = vi.fn();
+    const onAccepted = vi.fn();
+    const a = args({ navigate, onAccepted });
+    const ok = await sendTurn(a);
+    expect(ok).toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(navigate).not.toHaveBeenCalled();
+    expect(onAccepted).not.toHaveBeenCalled();
+    expect(useToastStore.getState().toasts.some((t) => t.message === BUSY_TOAST)).toBe(true);
+  });
+
+  it('does not blame another chat when the same chat is submitted twice', async () => {
+    useStreamStore.setState({ chatId: 'chat-1', live: null, pending: null, interrupted: null, controller: new AbortController() });
+    vi.stubGlobal('fetch', vi.fn());
+    const ok = await sendTurn(args());
+    expect(ok).toBe(false);
+    expect(useToastStore.getState().toasts).toHaveLength(0);
+  });
+
+  it('Retry shows the same explanation', async () => {
+    useStreamStore.setState({ chatId: 'other', live: null, pending: null, interrupted: null, controller: new AbortController() });
+    await resumeTurn(new QueryClient(), 'chat-1');
+    expect(useToastStore.getState().toasts.some((t) => t.message === BUSY_TOAST)).toBe(true);
   });
 });

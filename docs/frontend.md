@@ -23,7 +23,7 @@ A React build missing from `dist/` returns 503 with the build command.
 | Path | Contents |
 |------|----------|
 | `src/api/` | Typed `fetch` client, SSE reader, endpoint modules per area |
-| `src/app/` | User gate, router, root layout, sidebar |
+| `src/app/` | User gate, router, root layout (holds the one composer for `/` and `/chat/:chatId`), sidebar |
 | `src/components/` | Shared UI: `ui/` (Modal, Toast, ContextMenu, ConfirmDialog), `icons/`, `markdown/`, `background/` |
 | `src/features/` | `chat/`, `composer/`, `sidebar/`, `artifacts/`, `workspace/`, `settings/`, `tools/`, `logs/`, `home/`, `dev/` |
 | `src/lib/` | Pure logic with unit tests: markdown pipeline, chat model, scroll, particles, theme |
@@ -70,6 +70,14 @@ A reply is one assistant turn: everything between two user messages is an ordere
 Sub-agent steps carry the agent name and sit after the tool call that started them. While a chat streams,
 the live row replaces the persisted rows of the turn being generated. Retry and Delete act on the whole turn
 (they delete its first stored message; the server removes the rest). Text steps are joined with a blank line.
+
+Starting a chat: `sendTurn` puts the new chat in the detail and list caches, starts the stream store and only then
+calls the `navigate` callback, so the chat page mounts with data (no loading, error or not-found state) and the
+sidebar lists the chat at once. The composer clears its text and files only when `sendTurn` accepts the turn
+(`onAccepted`). One turn runs at a time: Stop shows only in the chat that is generating, and a send or Retry in
+another chat is refused with a toast that says why. A chat page shows not-found for a 404 unless its own turn is
+starting (the server creates the chat a moment after the page opens); other load errors show only when the chat
+has no data. If creating a new chat fails, the typed text is lost and the page shows not-found with a way back.
 
 ## Known gaps
 

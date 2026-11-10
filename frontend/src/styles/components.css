@@ -1495,6 +1495,17 @@
   overflow-wrap: anywhere;
 }
 
+.chat-error__action {
+  flex: none;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid currentColor;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
 .chat-loading {
   min-height: 40vh;
 }
