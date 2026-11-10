@@ -2246,9 +2246,9 @@
 
 /* The ambient particle canvas used to be the only dark surface behind the translucent sidebar.
    Routes without it (e.g. /logs) showed the browser's white through the glass, so paint the
-   page itself. */
-html,
-body {
+   page itself, on `html` only: a `body` background is painted above the fixed canvas (z-index -1)
+   and hid the particles in the light theme. `body` stays transparent, as legacy.css sets it. */
+html {
   background-color: var(--bg-primary);
 }
 
