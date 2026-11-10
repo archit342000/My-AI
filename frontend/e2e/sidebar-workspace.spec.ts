@@ -99,9 +99,7 @@ test('the workspace page wraps its header at 390px and has one Files section', a
   await expect(page.getByRole('heading', { name: 'Research' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Files' })).toHaveCount(1);
   await expect(page.getByText('1 chat', { exact: true })).toBeVisible();
-  const button = await page
-    .getByRole('button', { name: 'New chat in this workspace' })
-    .boundingBox();
+  const button = await page.getByRole('button', { name: 'New chat here' }).boundingBox();
   expect((button?.x ?? 0) + (button?.width ?? 0)).toBeLessThanOrEqual(390);
   const overflow = await page.evaluate(
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth,

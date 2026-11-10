@@ -9,7 +9,7 @@ import { PromptDialog } from '../../components/ui/PromptDialog';
 import { useUiStore } from '../../state/ui-store';
 import { showToast } from '../../components/ui/toast-store';
 import { Icon } from '../../components/icons/Icon';
-import { iconPaths, type IconName } from '../../components/icons/icon-paths';
+import { workspaceEmoji, workspaceIconName } from '../../lib/workspace-icon';
 import { isWorkspaceExpanded, setWorkspaceExpanded } from '../../lib/workspace-prefs';
 import type { ChatSummary, Workspace } from '../../api/types';
 import { useChatList, useWorkspaceList } from '../chat/useChatQueries';
@@ -61,7 +61,7 @@ export function SidebarChats() {
           id: `move-${w.id}`,
           type: 'item' as const,
           label: w.name,
-          icon: workspaceIconName(w),
+          icon: workspaceIconName(w.icon),
           onSelect: () =>
             void run(
               () => chatsApi.patch(chat.id, { workspace_id: w.id }),
@@ -337,12 +337,6 @@ function useLongPress(open: (x: number, y: number) => void) {
 }
 
 /** The workspace's own icon when it names a known one, else the generic grid. */
-function workspaceIconName(workspace: Workspace): IconName {
-  return workspace.icon && iconPaths(workspace.icon as IconName)
-    ? (workspace.icon as IconName)
-    : 'grid';
-}
-
 function WorkspaceFolder({ workspace, chats }: { workspace: Workspace; chats: ChatSummary[] }) {
   const openMenu = useContext(MenuCtx);
   const queryClient = useQueryClient();
@@ -353,7 +347,7 @@ function WorkspaceFolder({ workspace, chats }: { workspace: Workspace; chats: Ch
     openMenu({ kind: 'workspace', workspace }, x, y, header.current),
   );
   const [expanded, setExpanded] = useState(() => isWorkspaceExpanded(workspace.name));
-  const iconName = workspaceIconName(workspace);
+  const iconName = workspaceIconName(workspace.icon);
 
   function toggle() {
     const next = !expanded;
@@ -420,8 +414,8 @@ function WorkspaceFolder({ workspace, chats }: { workspace: Workspace; chats: Ch
           <Icon name="chevron-right" size={12} strokeWidth={2.5} className="folder-chevron" />
         </span>
         <div className="folder-title">
-          {workspace.icon && !iconPaths(workspace.icon as IconName) ? (
-            <span className="folder-emoji">{workspace.icon}</span>
+          {workspaceEmoji(workspace.icon) ? (
+            <span className="folder-emoji">{workspaceEmoji(workspace.icon)}</span>
           ) : (
             <Icon name={iconName} size={14} strokeWidth={2.5} className="folder-icon" />
           )}

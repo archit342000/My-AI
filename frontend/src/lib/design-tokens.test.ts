@@ -13,14 +13,7 @@ const SET_FROM_SCRIPT = new Set([
 ]);
 
 /** Legacy names read by a rule but defined nowhere (they fall back to the property's default). */
-const KNOWN_UNDEFINED = [
-  '--bg-card',
-  '--color-primary-light',
-  '--color-sky-500',
-  '--shadow-sm',
-  '--surface-primary',
-  '--text-main',
-];
+const KNOWN_UNDEFINED = ['--bg-card', '--color-sky-500', '--surface-primary', '--text-main'];
 
 // Guards the rule that colours come only from the shared values (src/styles/tokens.css).
 
