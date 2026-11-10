@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { chatsApi, queryKeys } from '../../api/chats';
 import { Markdown } from '../../components/markdown/Markdown';
+import { StreamingMarkdown } from '../../components/markdown/StreamingMarkdown';
 import { showToast } from '../../components/ui/toast-store';
 import { useAutoFollow } from './useAutoFollow';
 import { Badge } from '../../components/ui/Badge';
@@ -17,6 +18,7 @@ import { friendlyToolName } from './tool-names';
 import { useModelDisplayName } from './useModelDisplayName';
 import { thoughtKey, useThoughtStore } from '../../state/thought-store';
 import { MessageActions } from './MessageActions';
+import { ResumeBanner } from './ResumeBanner';
 import { resumeTurn } from './send-turn';
 
 const USER_AVATAR = (
@@ -313,7 +315,7 @@ function LiveAssistant({ live, turnKey }: { live: LiveTurn; turnKey: string }) {
             <span className="ui-spinner" aria-hidden="true" /> Fixing the reply…
           </div>
         ) : null}
-        {content ? <Markdown text={content} className="message-content raw-text-content" /> : null}
+        {content ? <StreamingMarkdown text={content} /> : null}
       </BotBody>
     </div>
   );
@@ -324,10 +326,13 @@ function InterruptedAssistant({
   interrupted,
   turnKey,
   onRetry,
+  busy,
 }: {
   interrupted: InterruptedTurn;
   turnKey: string;
   onRetry: () => void;
+  /** The server is still stopping or generating: Retry waits until the store is idle. */
+  busy: boolean;
 }) {
   const { live } = interrupted;
   const content = turnText(live.steps);
@@ -336,14 +341,15 @@ function InterruptedAssistant({
     interrupted.kind === 'error' ? (
       <div className="chat-error" role="alert">
         <span className="chat-error__message">{interrupted.message ?? 'The reply failed.'}</span>
-        <Button variant="secondary" size="sm" onClick={onRetry}>
+        <Button variant="secondary" size="sm" disabled={busy} onClick={onRetry}>
           Retry
         </Button>
       </div>
     ) : (
       <div className="turn-notice" role="status">
         <Badge>Stopped</Badge>
-        <Button variant="secondary" size="sm" onClick={onRetry}>
+        <span>This partial reply is not saved.</span>
+        <Button variant="secondary" size="sm" disabled={busy} onClick={onRetry}>
           Retry
         </Button>
       </div>
@@ -382,10 +388,13 @@ export function MessageList({
   turns,
   chatId,
   onChanged,
+  resumeNeeded = false,
 }: {
   turns: Turn[];
   chatId: string;
   onChanged: () => void;
+  /** The server says the last turn was interrupted and can be continued. */
+  resumeNeeded?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
@@ -396,6 +405,7 @@ export function MessageList({
     s.interrupted?.chatId === chatId ? s.interrupted : null,
   );
   const dismissInterrupted = useStreamStore((s) => s.dismissInterrupted);
+  const storeBusy = useStreamStore((s) => s.chatId !== null);
   const lastUserIdx = findLast(turns, (t) => t.kind === 'user');
   // The reply to the Nth user turn is box N, live or saved.
   // The pending row knows its own number: the saved copy of the same message may already be in `turns`.
@@ -424,10 +434,15 @@ export function MessageList({
   const replyPersisted = turns.at(-1)?.kind === 'assistant';
   const showInterrupted = interrupted !== null && !replyPersisted;
   const lastHasReply = lastUserIdx >= 0 && turns.slice(lastUserIdx + 1).some((t) => t.kind === 'assistant');
-  const showUserRetry = !streaming && !showInterrupted && lastUserIdx >= 0 && !lastHasReply;
+  // The server decides (research interruptions can need a resume even after a reply).
+  const showBanner = resumeNeeded && !streaming && !showInterrupted && lastUserIdx >= 0;
+  // One control: the banner replaces the Retry button under the last user turn.
+  const showUserRetry =
+    !streaming && !showInterrupted && !showBanner && lastUserIdx >= 0 && !lastHasReply;
 
   /** Retry regenerates from the stored user message, so attachments are reused as sent. */
   function retryLast() {
+    if (storeBusy) return;
     void resumeTurn(queryClient, chatId);
   }
 
@@ -477,10 +492,19 @@ export function MessageList({
         />
       ) : null}
       {pending ? <LiveUser pending={pending} /> : null}
-      {streaming ? <LiveAssistant live={live ?? emptyLiveTurn()} turnKey={liveKey} /> : null}
-      {showInterrupted && interrupted ? (
-        <InterruptedAssistant interrupted={interrupted} turnKey={liveKey} onRetry={retryLast} />
+      {/* A stopped or failed turn has its own row: the live row never shows next to it. */}
+      {streaming && !interrupted ? (
+        <LiveAssistant live={live ?? emptyLiveTurn()} turnKey={liveKey} />
       ) : null}
+      {showInterrupted && interrupted ? (
+        <InterruptedAssistant
+          interrupted={interrupted}
+          turnKey={liveKey}
+          onRetry={retryLast}
+          busy={storeBusy}
+        />
+      ) : null}
+      {showBanner ? <ResumeBanner chatId={chatId} /> : null}
       {streaming && !follow.pinned ? (
         <button type="button" className="chat-jump-latest" onClick={follow.jumpToLatest}>
           Jump to latest

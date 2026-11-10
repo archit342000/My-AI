@@ -1,7 +1,12 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '../../api/chats';
-import { artifactsApi, artifactsKey, type Artifact, type ScopeRef } from '../../api/filesystem';
+import {
+  artifactsApi,
+  artifactsKey,
+  type Artifact,
+  type ScopeRef,
+} from '../../api/filesystem';
 import { Icon } from '../../components/icons/Icon';
 import { Button, IconButton } from '../../components/ui/Button';
 import { EmptyState } from '../../components/ui/EmptyState';
@@ -60,6 +65,32 @@ export function ArtifactPanel({ scope, onClose }: ArtifactPanelProps) {
   useEffect(() => {
     setDraft(null);
   }, [selected]);
+
+  // A file link in the transcript asks for a file: select it once the list is in.
+  const requestedPath = useUiStore((s) => s.requestedArtifactPath);
+  useEffect(() => {
+    // Read the store, not the closure: a second run of this effect (StrictMode) must not answer the
+    // same request again.
+    if (!requestedPath || useUiStore.getState().requestedArtifactPath === null) return;
+    if (list.isError && !list.data) {
+      useUiStore.getState().clearRequestedArtifact();
+      showToast('Could not load files', 'error');
+      return;
+    }
+    // Wait while the list is refetching: a drawer opened on a cached list may not have the new file yet.
+    if (!list.data || list.isFetching) return;
+    const wanted = requestedPath.replace(/^\.?\//, '');
+    const hit = list.data.find(
+      (a) =>
+        a.title === wanted ||
+        a.filename === wanted ||
+        (a.folder ? `${a.folder}/${a.filename}` === wanted : false),
+    );
+    // Clear first: the check above then stops any second run from answering the request again.
+    useUiStore.getState().clearRequestedArtifact();
+    if (hit) setSelected(hit.id);
+    else showToast(`File not found: ${requestedPath}`, 'error');
+  }, [requestedPath, list.data, list.isFetching, list.isError]);
 
   const needle = filter.trim().toLowerCase();
   const tree = useMemo(() => buildTree(list.data ?? []), [list.data]);

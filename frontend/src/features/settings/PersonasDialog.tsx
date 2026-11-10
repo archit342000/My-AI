@@ -1,14 +1,13 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { personasApi, settingsKeys, type Persona } from '../../api/settings';
-import { CrudDialog } from './CrudList';
+import { CrudDialog, type FormFooter } from './CrudList';
 import { Field } from '../../components/ui/Field';
 import { Toggle } from '../../components/ui/Toggle';
-import { Button } from '../../components/ui/Button';
 import { firstSentencePreview } from '../../lib/preview-text';
 
 type PersonaBody = Omit<Persona, 'id'>;
-type FlagKey = 'is_default' | 'research_mode' | 'file_system_mode' | 'browsing_mode' | 'git_mode';
+type FlagKey = 'is_default' | 'research_mode' | 'file_system_mode' | 'browsing_mode';
 
 const EMPTY: PersonaBody = {
   name: '',
@@ -17,15 +16,17 @@ const EMPTY: PersonaBody = {
   research_mode: 0,
   file_system_mode: 0,
   browsing_mode: 0,
-  git_mode: 0,
 };
 
+/**
+ * Only the flags the persona API stores. It ignores git and code-execution mode on input, and an
+ * edit resets those two server-side values to their defaults (a backend follow-up).
+ */
 const FLAGS: Array<{ key: FlagKey; label: string; description: string }> = [
   { key: 'is_default', label: 'Default persona', description: 'Used for new chats unless another persona is chosen.' },
   { key: 'research_mode', label: 'Research mode', description: 'Encourages multi-source research before answering.' },
   { key: 'file_system_mode', label: 'File system mode', description: 'Allows reading and writing workspace files.' },
   { key: 'browsing_mode', label: 'Browsing mode', description: 'Allows opening web pages with the browser tool.' },
-  { key: 'git_mode', label: 'Git mode', description: 'Allows git commands in the workspace.' },
 ];
 
 export function PersonasDialog({ open, onClose, onBack }: { open: boolean; onClose: () => void; onBack?: () => void }) {
@@ -47,13 +48,25 @@ export function PersonasDialog({ open, onClose, onBack }: { open: boolean; onClo
         subtitle: firstSentencePreview(p.content),
         fullText: p.content,
       })}
-      renderForm={(initial, onDone) => <PersonaForm initial={initial} onDone={onDone} onSaved={refresh} />}
+      renderForm={(initial, onDone, footer) => <PersonaForm initial={initial} onDone={onDone} onSaved={refresh} footer={footer} />}
       onDelete={async (item) => {
         await personasApi.remove(item.id);
         await refresh();
       }}
     />
   );
+}
+
+/** The fields the persona API stores, taken from a persona row. */
+function storedFields(row: Persona): PersonaBody {
+  return {
+    name: row.name,
+    content: row.content,
+    is_default: row.is_default,
+    research_mode: row.research_mode,
+    file_system_mode: row.file_system_mode,
+    browsing_mode: row.browsing_mode,
+  };
 }
 
 /** Validation rules for a persona; returns one message per invalid field. */
@@ -64,8 +77,19 @@ function validatePersona(form: PersonaBody): { name?: string; content?: string }
   return errors;
 }
 
-function PersonaForm({ initial, onDone, onSaved }: { initial: Persona | null; onDone: () => void; onSaved: () => Promise<unknown> }) {
-  const [form, setForm] = useState<PersonaBody>(initial ? { ...EMPTY, ...initial } : EMPTY);
+function PersonaForm({
+  initial,
+  onDone,
+  onSaved,
+  footer,
+}: {
+  initial: Persona | null;
+  onDone: () => void;
+  onSaved: () => Promise<unknown>;
+  footer: FormFooter;
+}) {
+  // Only the stored fields go into the form, so nothing else the row carries is sent back.
+  const [form, setForm] = useState<PersonaBody>(initial ? storedFields(initial) : EMPTY);
   const [touched, setTouched] = useState<{ name?: boolean; content?: boolean }>({});
   const [error, setError] = useState<string | null>(null);
   const nameRef = useRef<HTMLInputElement>(null);
@@ -73,9 +97,12 @@ function PersonaForm({ initial, onDone, onSaved }: { initial: Persona | null; on
   const errors = validatePersona(form);
   const valid = Object.keys(errors).length === 0;
   const set = <K extends keyof PersonaBody>(key: K, value: PersonaBody[K]) => setForm((f) => ({ ...f, [key]: value }));
+  const { setCanSave } = footer;
+  useEffect(() => setCanSave(valid), [valid, setCanSave]);
 
   return (
     <form
+      id={footer.formId}
       noValidate
       onSubmit={async (e) => {
         e.preventDefault();
@@ -147,14 +174,6 @@ function PersonaForm({ initial, onDone, onSaved }: { initial: Persona | null; on
           {error}
         </div>
       ) : null}
-      <div className="crud-actions">
-        <Button variant="primary" type="submit" disabled={!valid}>
-          Save
-        </Button>
-        <Button variant="secondary" onClick={onDone}>
-          Cancel
-        </Button>
-      </div>
     </form>
   );
 }

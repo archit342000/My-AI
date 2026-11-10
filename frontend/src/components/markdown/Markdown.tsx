@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { renderMarkdown } from '../../lib/markdown/renderer';
+import { showToast } from '../ui/toast-store';
+import { useUiStore } from '../../state/ui-store';
 import { ImageLightbox } from './ImageLightbox';
+import { MermaidDialog } from './MermaidDialog';
 
 /**
  * Renders markdown as sanitised HTML and attaches the interactive pieces the legacy UI had:
@@ -10,6 +13,7 @@ export function Markdown({ text, className = 'message-content raw-text-content' 
   const html = useMemo(() => renderMarkdown(text), [text]);
   const ref = useRef<HTMLDivElement>(null);
   const [lightbox, setLightbox] = useState<string | null>(null);
+  const [diagram, setDiagram] = useState<SVGElement | null>(null);
 
   useEffect(() => {
     const root = ref.current;
@@ -43,11 +47,25 @@ export function Markdown({ text, className = 'message-content raw-text-content' 
       }
       return;
     }
+    const fileLink = target.closest<HTMLAnchorElement>('a.file-link');
+    if (fileLink) {
+      event.preventDefault();
+      const path = fileLink.dataset.path ?? '';
+      if (useUiStore.getState().filesAvailable) useUiStore.getState().openArtifact(path);
+      else showToast('Open the chat to view its files', 'info');
+      return;
+    }
     const zoom = target.closest<HTMLElement>('.mermaid-ctrl-btn');
     if (zoom) {
       const container = zoom.closest<HTMLElement>('.mermaid-wrapper-container');
       const pre = container?.querySelector<HTMLElement>('pre.mermaid');
-      if (pre) applyZoom(pre, zoom);
+      if (zoom.classList.contains('zoom-popout-btn')) {
+        const svg = pre?.querySelector('svg');
+        if (svg) setDiagram(svg);
+        else showToast('The diagram is still rendering', 'info');
+      } else if (pre) {
+        applyZoom(pre, zoom);
+      }
       return;
     }
     const img = target.closest<HTMLImageElement>('img.lightbox-img');
@@ -58,6 +76,7 @@ export function Markdown({ text, className = 'message-content raw-text-content' 
     <>
       <div ref={ref} className={className} onClick={onClick} dangerouslySetInnerHTML={{ __html: html }} />
       {lightbox ? <ImageLightbox src={lightbox} onClose={() => setLightbox(null)} /> : null}
+      {diagram ? <MermaidDialog diagram={diagram} onClose={() => setDiagram(null)} /> : null}
     </>
   );
 }
@@ -69,7 +88,7 @@ function applyZoom(pre: HTMLElement, control: HTMLElement) {
   if (control.classList.contains('zoom-in-btn')) next = Math.min(current + 0.15, 4);
   else if (control.classList.contains('zoom-out-btn')) next = Math.max(current - 0.15, 0.1);
   else if (control.classList.contains('zoom-reset-btn')) next = 1;
-  else return; // pop-out is not implemented yet (see plans/frontend-migration-notes.md)
+  else return;
   pre.dataset.scale = String(next);
   pre.style.transform = `scale(${next})`;
 }

@@ -38,7 +38,6 @@ export interface Persona {
   research_mode: number | boolean;
   file_system_mode: number | boolean;
   browsing_mode: number | boolean;
-  git_mode: number | boolean;
 }
 
 /** Settings rarely change while the dialog is open; reopening within this window reuses cached data (F-54). */
@@ -49,11 +48,24 @@ export interface LoadedModel {
   status: { value: string };
 }
 
+/** What `GET /api/tools/config/settings` returns for the admin (the GitHub token itself never is). */
+export type SystemSettings = CodeRunnerSettings & {
+  code_runner_max_timeout?: number;
+  github_pat_configured?: boolean;
+  git_allowed_commands?: string[];
+  git_known_commands?: string[];
+} & Record<string, unknown>;
+
 export const settingsApi = {
-  getSystem: () =>
-    apiJson<CodeRunnerSettings & { code_runner_max_timeout?: number } & Record<string, unknown>>(
-      '/api/tools/config/settings',
-    ),
+  getSystem: () => apiJson<SystemSettings>('/api/tools/config/settings'),
+  /** Sends the GitHub token once; the server never returns it. */
+  saveGitToken: (token: string) =>
+    apiRequest('/api/tools/config/settings', { method: 'POST', json: { github_pat: token } }),
+  saveGitAllowedCommands: (commands: string[]) =>
+    apiRequest('/api/tools/config/settings', {
+      method: 'POST',
+      json: { git_allowed_commands: commands },
+    }),
   saveCodeRunner: (body: CodeRunnerSettings) =>
     apiRequest('/api/tools/config/settings', { method: 'POST', json: body }),
   getAgents: () => apiJson<Record<string, AgentConfig>>('/api/tools/config/agents'),
