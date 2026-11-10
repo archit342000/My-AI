@@ -76,3 +76,20 @@ function sortNodes(nodes: TreeNode[]): void {
   });
   for (const node of nodes) if (node.kind === 'folder') sortNodes(node.children);
 }
+
+/** Every folder path in a tree, parents before their children (for the move destination list). */
+export function folderPaths(nodes: TreeNode[]): string[] {
+  const out: string[] = [];
+  for (const node of nodes) {
+    if (node.kind !== 'folder') continue;
+    out.push(node.path);
+    out.push(...folderPaths(node.children));
+  }
+  return out;
+}
+
+/** The folder a path is in ('' for the top level). */
+export function parentFolder(path: string): string {
+  const at = path.lastIndexOf('/');
+  return at === -1 ? '' : path.slice(0, at);
+}

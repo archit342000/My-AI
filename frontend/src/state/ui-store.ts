@@ -5,6 +5,9 @@ export type ThemeMode = 'light' | 'dark' | 'system';
 interface UiState {
   sidebarCollapsed: boolean;
   artifactsOpen: boolean;
+  /** The open files panel holds edits that are not saved (set by the panel; read by whatever closes it). */
+  artifactsDirty: boolean;
+  setArtifactsDirty: (dirty: boolean) => void;
   themeMode: ThemeMode;
   /** Id of the active temporary chat (not listed, deleted when abandoned), or null. */
   temporaryChatId: string | null;
@@ -30,6 +33,8 @@ export const useUiStore = create<UiState>((set) => ({
   // Legacy: the sidebar starts closed on phones (<= 768px).
   sidebarCollapsed: typeof window !== 'undefined' && window.innerWidth <= 768,
   artifactsOpen: false,
+  artifactsDirty: false,
+  setArtifactsDirty: (dirty) => set({ artifactsDirty: dirty }),
   themeMode: readTheme(),
   temporaryChatId: null,
   setTemporaryChatId: (id) => set({ temporaryChatId: id }),

@@ -39,6 +39,18 @@ function scopeBody(scope: ScopeRef): Record<string, string> {
   return body;
 }
 
+/** The server's comparison of two versions: the lines only in each, by position (`backend/file_system/manager.py`). */
+export interface VersionDiff {
+  added_lines: string[];
+  removed_lines: string[];
+  stats: { lines_added: number; lines_removed: number };
+}
+
+/** Scope as the version endpoints read it: `chat_id` in the body, `workspace_id` in the query only. */
+function workspaceQuery(scope: ScopeRef): string {
+  return scope.workspaceId ? `?workspace_id=${encodeURIComponent(scope.workspaceId)}` : '';
+}
+
 export const artifactsApi = {
   list: (scope: ScopeRef) =>
     apiJson<{ file_systems: Artifact[] }>(`/api/file_systems?${scopeQuery(scope)}`).then((r) => r.file_systems),
@@ -55,7 +67,25 @@ export const artifactsApi = {
   version: (id: string, n: number, scope: ScopeRef) =>
     apiJson<{ content: string }>(`/api/file_systems/${encodeURIComponent(id)}/versions/${n}?${scopeQuery(scope)}`),
   restore: (id: string, n: number, scope: ScopeRef) =>
-    apiRequest(`/api/file_systems/${encodeURIComponent(id)}/versions/${n}/restore`, { method: 'POST', json: scopeBody(scope) }),
+    apiRequest(`/api/file_systems/${encodeURIComponent(id)}/versions/${n}/restore${workspaceQuery(scope)}`, {
+      method: 'POST',
+      json: scope.chatId ? { chat_id: scope.chatId } : {},
+    }),
+  /** Version numbers differ in content: the lines only in `from` (removed) and only in `to` (added). */
+  diff: (id: string, from: number, to: number, scope: ScopeRef) =>
+    apiJson<VersionDiff>(`/api/file_systems/${encodeURIComponent(id)}/diff${workspaceQuery(scope)}`, {
+      method: 'POST',
+      json: { ...(scope.chatId ? { chat_id: scope.chatId } : {}), version1: from, version2: to },
+    }),
+  currentVersion: (id: string, scope: ScopeRef) =>
+    apiJson<{ current_version: number | null }>(
+      `/api/file_systems/${encodeURIComponent(id)}/current-version?${scopeQuery(scope)}`,
+    ).then((r) => r.current_version),
+  createDirectory: (scope: ScopeRef, path: string) =>
+    apiJson<unknown>('/api/file_systems/directory', { method: 'POST', json: { ...scopeBody(scope), path } }),
+  /** Removes an empty directory; the server refuses a non-empty one with its own message. */
+  deleteDirectory: (scope: ScopeRef, path: string) =>
+    apiRequest(`/api/file_systems/directory?${scopeQuery(scope)}&path=${encodeURIComponent(path)}`, { method: 'DELETE' }),
   exportUrl: (id: string, format: 'html' | 'markdown' | 'pdf', scope: ScopeRef) =>
     `/api/file_systems/${encodeURIComponent(id)}/export/${format}?${scopeQuery(scope)}`,
   rawUrl: (id: string, scope: ScopeRef) => `/api/file_systems/${encodeURIComponent(id)}/raw?${scopeQuery(scope)}`,

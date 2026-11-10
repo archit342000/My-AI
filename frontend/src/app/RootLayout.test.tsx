@@ -36,6 +36,18 @@ describe('RootLayout', () => {
     expect(screen.queryByRole('button', { name: 'View files and artifacts' })).toBeNull();
   });
 
+  it('the header files button asks before closing a panel with unsaved edits', () => {
+    vi.spyOn(chatsApi, 'list').mockResolvedValue([]);
+    vi.spyOn(chatsApi, 'listWorkspaces').mockResolvedValue([]);
+    useUiStore.setState({ artifactsOpen: true, artifactsDirty: true });
+    renderWithProviders(<RootLayout />, { route: '/chat/c1', path: '/chat/:chatId' });
+    fireEvent.click(screen.getByRole('button', { name: 'View files and artifacts' }));
+    expect(useUiStore.getState().artifactsOpen).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    expect(useUiStore.getState().artifactsOpen).toBe(false);
+    useUiStore.setState({ artifactsDirty: false });
+  });
+
   it('shows a reload banner once the session has expired, and not before', () => {
     vi.spyOn(chatsApi, 'list').mockResolvedValue([]);
     vi.spyOn(chatsApi, 'listWorkspaces').mockResolvedValue([]);

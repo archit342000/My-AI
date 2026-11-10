@@ -13,7 +13,6 @@ import { listFiles, readSrc, SRC_DIR } from './source-scan';
 const BASELINE: Record<string, number> = {
   'app/Sidebar.tsx': 0,
   'components/ui/ContextMenu.tsx': 1,
-  'features/artifacts/VersionsDialog.tsx': 6,
   'features/chat/ChatPage.tsx': 1,
   'features/settings/AgentConfigDialog.tsx': 0,
   'features/settings/ChatSettingsModal.tsx': 0,
