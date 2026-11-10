@@ -411,3 +411,43 @@ describe('resume banner and Stop notice', () => {
     expect(screen.getByText('This partial reply is not saved.')).toBeTruthy();
   });
 });
+
+describe('a stopped or failed turn while the server is still busy', () => {
+  const partial = { steps: [{ kind: 'text', text: 'half a reply', agent: null }], model: 'M', redactNotice: null, snapshot: [] } as never;
+  const unanswered = toTurns([msgs[0]] as never); // one user turn, no reply yet
+  afterEach(() => {
+    vi.restoreAllMocks();
+    useStreamStore.setState({ chatId: null, live: null, pending: null, interrupted: null, controller: null, stopping: false });
+  });
+
+  it.each(['stopped', 'error'] as const)('shows one bot row (never the live row too) with Retry disabled while busy (%s)', (kind) => {
+    useStreamStore.setState({
+      chatId: 'c1',
+      live: partial,
+      pending: null,
+      interrupted: { chatId: 'c1', live: partial, kind, message: kind === 'error' ? 'boom' : null },
+      controller: null,
+      stopping: true,
+    });
+    const { container } = renderWithProviders(<MessageList turns={unanswered} chatId="c1" onChanged={() => undefined} />);
+    expect(container.querySelectorAll('.bot-message')).toHaveLength(1);
+    expect(container.querySelector('[data-live="true"]')).toBeNull();
+    expect((screen.getByRole('button', { name: 'Retry' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('enables Retry once the store is idle and Retry starts the turn', () => {
+    const resume = vi.spyOn(sendTurnModule, 'resumeTurn').mockResolvedValue(undefined);
+    useStreamStore.setState({
+      chatId: null,
+      live: null,
+      pending: null,
+      interrupted: { chatId: 'c1', live: partial, kind: 'stopped', message: null },
+      controller: null,
+    });
+    renderWithProviders(<MessageList turns={unanswered} chatId="c1" onChanged={() => undefined} />);
+    const retry = screen.getByRole('button', { name: 'Retry' }) as HTMLButtonElement;
+    expect(retry.disabled).toBe(false);
+    fireEvent.click(retry);
+    expect(resume).toHaveBeenCalledTimes(1);
+  });
+});

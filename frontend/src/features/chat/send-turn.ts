@@ -19,7 +19,7 @@ import { finishedFileChanges } from '../../lib/fs-tools';
 import type { ChatDetail, ChatSummary } from '../../api/types';
 import { showToast } from '../../components/ui/toast-store';
 import { useSettingsStore } from '../../state/settings-store';
-import { useStreamStore, type PendingUser } from '../../state/stream-store';
+import { useStreamStore, type InterruptedTurn, type PendingUser } from '../../state/stream-store';
 import { useUiStore } from '../../state/ui-store';
 import { applyChunk, emptyLiveTurn, StreamError, type StreamChunk } from './stream-reducer';
 
@@ -49,12 +49,122 @@ export function historyFromCache(queryClient: QueryClient, chatId: string): Hist
  */
 const TURN_IN_PROGRESS = 'a response is already in progress';
 
+/**
+ * The stop request that is in flight, or null. `consume` waits for it before it refetches the chat.
+ */
+let stopRequest: Promise<void> | null = null;
+/** The chat last stopped and when the server answered the stop. */
+let lastStop: { chatId: string; answeredAt: number } | null = null;
+/** The chat the stop request in flight is for. */
+let stopChat: string | null = null;
+/** Chats with a reattach request in flight (one at a time per chat). */
+const reattaching = new Set<string>();
+
+/**
+ * Tells the user a stop request failed. A 404 is not a failure: the chat does not exist on the
+ * server (yet, or any more), so nothing was running.
+ */
+function reportStopFailure(err: unknown): void {
+  if (err instanceof ApiError && err.status === 404) return;
+  showToast(
+    err instanceof Error
+      ? `The server did not confirm the stop: ${err.message}`
+      : 'The server did not confirm the stop.',
+    'error',
+  );
+}
+
+/** After a stop of a turn this tab does not hold: waits (bounded) until the chat is no longer running. */
+async function waitUntilStopped(chatId: string): Promise<void> {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try {
+      const chat = await chatsApi.get(chatId);
+      if (!chat.is_running) return;
+    } catch {
+      return; // the chat is gone or unreadable: there is nothing left to wait for
+    }
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  }
+}
+
+/** Waits `ms`, or less if the signal aborts first. */
+function pause(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    const done = () => {
+      clearTimeout(timer);
+      signal.removeEventListener('abort', done);
+      resolve();
+    };
+    const timer = setTimeout(done, ms);
+    signal.addEventListener('abort', done, { once: true });
+  });
+}
+
+/** True when the server answered a stop for this chat within the retry window. */
+function stoppedRecently(chatId: string): boolean {
+  return (
+    lastStop !== null &&
+    lastStop.chatId === chatId &&
+    Date.now() - lastStop.answeredAt <= STOP_RETRY.windowMs
+  );
+}
+
+/** Forgets the stop bookkeeping. @internal For tests, which share this module's state. */
+export function resetStopState(): void {
+  stopRequest = null;
+  stopChat = null;
+  lastStop = null;
+  reattaching.clear();
+}
+
+/**
+ * After a stop answers, the server may still count the old worker as running for a moment (it only
+ * signals it). A send or Retry for that chat refused as "in progress" within this window is repeated.
+ */
+const STOP_RETRY = { windowMs: 3000, attempts: 5, delayMs: 400 };
+
+/** Opens a request, repeating it while the server still counts a just-stopped turn as running. */
+async function* openAfterStop(
+  chatId: string,
+  open: () => AsyncGenerator<unknown>,
+  signal: AbortSignal,
+): AsyncGenerator<unknown> {
+  for (let attempt = 1; ; attempt++) {
+    let yielded = false;
+    try {
+      for await (const chunk of open()) {
+        yielded = true;
+        yield chunk;
+      }
+      return;
+    } catch (err) {
+      const recentlyStopped = stoppedRecently(chatId);
+      const stillBusy =
+        err instanceof ApiError && err.status === 400 && err.message === TURN_IN_PROGRESS;
+      // Only a refusal of the request itself is repeated, never an error in the middle of a stream.
+      const repeat =
+        !yielded &&
+        stillBusy &&
+        recentlyStopped &&
+        attempt < STOP_RETRY.attempts &&
+        !signal.aborted;
+      if (!repeat) throw err;
+      await pause(STOP_RETRY.delayMs, signal);
+      // Stop pressed while waiting: the request never went through, so it ends as the refusal it was
+      // (the stopped row and the typed text come back) instead of as an empty stopped turn.
+      if (signal.aborted) throw err;
+    }
+  }
+}
+
 async function consume(
   queryClient: QueryClient,
   chatId: string,
   source: AsyncGenerator<unknown>,
   /** A 400 means the server refused the request before storing or starting anything (a send). */
   refusalIsToastOnly = false,
+  /** What to put back when the server refuses the request. */
+  onRefusal: { restore?: InterruptedTurn | null; onRefused?: () => void } = {},
 ): Promise<void> {
   const store = useStreamStore.getState();
   let live = emptyLiveTurn();
@@ -93,8 +203,25 @@ async function consume(
     ) {
       // A send refused before anything was stored or started, or any request refused because a
       // turn is already in progress or the user is over their turn limit (also a Retry/resume):
-      // toast only, no partial reply to keep.
+      // toast only. Nothing is lost: the stopped partial reply goes back on screen and the caller
+      // can put the typed text back.
       showToast(err.message, 'error');
+      // Put the stopped row back only if the chat is still on screen (leaving it dismissed the row).
+      if (onRefusal.restore && onRefusal.restore.chatId === chatId && chatIsShown(chatId)) {
+        store.interrupt(onRefusal.restore);
+      }
+      onRefusal.onRefused?.();
+    } else if (
+      err instanceof ApiError &&
+      err.status === 400 &&
+      live.steps.length === 0 &&
+      onRefusal.restore?.chatId === chatId
+    ) {
+      // A Retry the server refused before it started anything, with a stopped partial reply waiting:
+      // the row stays (if the chat is still on screen) instead of giving way to an empty error row.
+      showToast(err.message, 'error');
+      if (chatIsShown(chatId)) store.interrupt(onRefusal.restore);
+      onRefusal.onRefused?.();
     } else {
       const message = err instanceof Error ? err.message : 'Stream failed';
       // Keep the partial reply under an inline error with Retry (F-14).
@@ -104,6 +231,9 @@ async function consume(
     }
   } finally {
     if (fileChanges > 0) void queryClient.invalidateQueries({ queryKey: artifactsKey({ chatId }) });
+    // After Stop the server rolls the chat back when it answers the stop request: read the chat only
+    // after that, or the screen would show replies the server has since taken away.
+    if (stopRequest) await stopRequest;
     await queryClient.invalidateQueries({ queryKey: queryKeys.chat(chatId) });
     // End the turn as soon as the saved chat is in: the live and pending rows then give way to the
     // saved ones in one render, with no moment where both are drawn.
@@ -132,6 +262,12 @@ function rememberModel(queryClient: QueryClient, chatId: string, model: string):
 /** Whether this chat is the one on screen (the user may have moved to another while it runs). */
 function chatIsOpen(chatId: string): boolean {
   return window.location.pathname === `/chat/${encodeURIComponent(chatId)}`;
+}
+
+/** Whether the chat is what the screen shows: its page, or the landing page for a temporary chat. */
+function chatIsShown(chatId: string): boolean {
+  if (window.location.pathname === '/') return useUiStore.getState().temporaryChatId === chatId;
+  return chatIsOpen(chatId);
 }
 
 /** Whether the chat works on files: its saved flag, or the toggle for a chat not saved yet. */
@@ -224,6 +360,8 @@ export interface SendArgs {
   navigate?: () => void;
   /** Called once the turn is accepted (the stream store has started), to clear the composer. */
   onAccepted?: () => void;
+  /** Called when the server refuses the send after it was accepted here, to put the text back. */
+  onRefused?: () => void;
   /**
    * The user turn already exists in the transcript (retry, or regenerate after an edit), so no
    * optimistic "pending" user row is shown; otherwise the message would appear twice (F-16).
@@ -242,6 +380,7 @@ export async function sendTurn({
   userTurnExists = false,
   navigate,
   onAccepted,
+  onRefused,
 }: SendArgs): Promise<boolean> {
   const settings = useSettingsStore.getState();
   if (!settings.model) {
@@ -280,6 +419,8 @@ export async function sendTurn({
     { role: 'user', content: text, uploadedFiles: files.length ? files : undefined },
   ];
 
+  // A stopped partial reply is cleared by start(); keep it to put back if the server refuses this send.
+  const interrupted = useStreamStore.getState().interrupted;
   useStreamStore.getState().start(chatId, pending, controller);
   const unseed = isNewChat
     ? seedNewChat(queryClient, chatId, text.substring(0, 50) || 'New Conversation')
@@ -316,7 +457,13 @@ export async function sendTurn({
 
   const body = completionBody(settings, settings.model, chatId, messages, { userPreferences: temporary ? false : settings.userPreferences, files });
 
-  await consume(queryClient, chatId, streamCompletion(body, controller.signal), true);
+  await consume(
+    queryClient,
+    chatId,
+    openAfterStop(chatId, () => streamCompletion(body, controller.signal), controller.signal),
+    true,
+    { restore: interrupted, onRefused },
+  );
   return true;
 }
 
@@ -338,39 +485,109 @@ export async function resumeTurn(queryClient: QueryClient, chatId: string): Prom
   }
 
   const controller = new AbortController();
+  const interrupted = useStreamStore.getState().interrupted;
   useStreamStore.getState().start(chatId, null, controller);
   const body = completionBody(settings, settings.model, chatId, [], { userPreferences: settings.userPreferences });
-  await consume(queryClient, chatId, resumeStream(chatId, body, controller.signal));
+  await consume(
+    queryClient,
+    chatId,
+    openAfterStop(chatId, () => resumeStream(chatId, body, controller.signal), controller.signal),
+    false,
+    { restore: interrupted },
+  );
 }
 
-/** Stops the in-flight turn on the client and asks the server to stop generating. */
-export async function stopTurn(): Promise<void> {
+/**
+ * Stops the in-flight turn. The chat stays busy ("stopping") until the server has answered the stop
+ * request; `consume` waits for it before it refetches the chat, so the screen never shows replies
+ * the server has since rolled back, and Retry or a new message is only possible afterwards.
+ */
+export function stopTurn(): Promise<void> {
   const { chatId, controller } = useStreamStore.getState();
-  controller?.abort();
-  if (chatId) {
+  if (!chatId) return Promise.resolve();
+  if (stopRequest && stopChat === chatId) return stopRequest; // already stopping this chat
+  useStreamStore.getState().setStopping(true);
+  const request = (async () => {
     try {
       await chatsApi.stop(chatId);
-    } catch {
-      /* the stream is already aborted; the server will finish on its own */
+    } catch (err) {
+      reportStopFailure(err);
+    } finally {
+      lastStop = { chatId, answeredAt: Date.now() };
+      stopRequest = null;
     }
-  }
+  })();
+  stopRequest = request;
+  stopChat = chatId;
+  controller?.abort();
+  return request;
 }
 
-/** Reconnects to a turn that the server is still generating (after reload or navigation). */
+/**
+ * Stops the turn of `chatId` if it is the one in flight, and resolves once that turn has ended.
+ * `runningOnServer` (from the chat list) also stops a turn this tab is not attached to.
+ */
+export async function stopIfStreaming(chatId: string, runningOnServer = false): Promise<void> {
+  if (useStreamStore.getState().chatId !== chatId) {
+    // A turn this tab does not hold (another tab, or not attached yet): ask the server to stop it.
+    if (runningOnServer) {
+      try {
+        await chatsApi.stop(chatId);
+      } catch (err) {
+        reportStopFailure(err);
+        return; // the stop was not accepted: there is nothing to wait for
+      }
+      await waitUntilStopped(chatId);
+    }
+    return;
+  }
+  await stopTurn();
+  await new Promise<void>((resolve) => {
+    if (useStreamStore.getState().chatId !== chatId) {
+      resolve();
+      return;
+    }
+    const unsubscribe = useStreamStore.subscribe((state) => {
+      if (state.chatId !== chatId) {
+        unsubscribe();
+        resolve();
+      }
+    });
+  });
+}
+
+/**
+ * Reconnects to a turn that the server is still generating (after reload or navigation). The store
+ * only starts once a stream came back, so a chat with nothing to attach to never flashes Stop and
+ * keeps its stopped partial reply.
+ */
 export async function reattachTurn(queryClient: QueryClient, chatId: string): Promise<void> {
   if (useStreamStore.getState().chatId) return;
+  // The chat refetched after a Stop can still say is_running while the old worker winds down: do not
+  // attach to it and wipe the stopped partial reply.
+  if (useStreamStore.getState().interrupted?.chatId === chatId || stoppedRecently(chatId)) return;
+  if (reattaching.has(chatId)) return;
+  reattaching.add(chatId);
   const controller = new AbortController();
-  useStreamStore.getState().start(chatId, null, controller);
+  let started = false;
   try {
     const source = await reattachStream(chatId, controller.signal);
     if (!source) {
-      useStreamStore.getState().finish();
       await queryClient.invalidateQueries({ queryKey: queryKeys.chat(chatId) });
       return;
     }
+    // A send may have started while the request was out: that turn owns the store.
+    if (useStreamStore.getState().chatId) {
+      controller.abort(); // closes the attach connection that is no longer wanted
+      return;
+    }
+    started = true;
+    useStreamStore.getState().start(chatId, null, controller);
     await consume(queryClient, chatId, source);
   } catch (err) {
-    useStreamStore.getState().finish();
+    if (started) useStreamStore.getState().finish();
     console.error('Reattach failed', err);
+  } finally {
+    reattaching.delete(chatId);
   }
 }

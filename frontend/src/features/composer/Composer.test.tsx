@@ -277,6 +277,60 @@ describe('Composer', () => {
     await waitFor(() => expect(useSettingsStore.getState().model).toBe('m1'));
   });
 
+  it('while the server is stopping, the button is disabled and says Stopping', () => {
+    useStreamStore.setState({ chatId: 'c1', live: null, pending: null, interrupted: null, controller: null, stopping: true });
+    renderWithProviders(<Composer />, { route: '/chat/c1', path: '/chat/:chatId' });
+    const button = screen.getByRole('button', { name: 'Stopping' }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    useStreamStore.setState({ chatId: null, stopping: false });
+  });
+
+  it('puts the sent text back after the server refuses it, but not over text typed meanwhile', async () => {
+    let refuse: () => void = () => undefined;
+    vi.spyOn(sendTurnModule, 'sendTurn').mockImplementation(async (a) => {
+      a.onAccepted?.();
+      refuse = () => a.onRefused?.();
+      return true;
+    });
+    renderWithProviders(<Composer />, { route: '/chat/c1', path: '/chat/:chatId' });
+    fireEvent.change(textarea(), { target: { value: 'my question' } });
+    fireEvent.keyDown(textarea(), { key: 'Enter' });
+    await waitFor(() => expect(textarea().value).toBe(''));
+    act(() => refuse());
+    expect(textarea().value).toBe('my question');
+    // a second refusal after the user typed something else leaves their new text alone
+    fireEvent.keyDown(textarea(), { key: 'Enter' });
+    await waitFor(() => expect(textarea().value).toBe(''));
+    fireEvent.change(textarea(), { target: { value: 'something else' } });
+    act(() => refuse());
+    expect(textarea().value).toBe('something else');
+  });
+
+  it('does not put a refused send\'s text into another chat the user moved to meanwhile', async () => {
+    vi.spyOn(chatsApi, 'get').mockResolvedValue({ id: 'x', title: 't', messages: [] } as never);
+    let refuse: () => void = () => undefined;
+    vi.spyOn(sendTurnModule, 'sendTurn').mockImplementation(async (a) => {
+      a.onAccepted?.();
+      refuse = () => a.onRefused?.();
+      return true;
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter initialEntries={['/chat/c1']}>
+          <Composer />
+          <Link to="/chat/c2">other chat</Link>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    fireEvent.change(textarea(), { target: { value: 'for chat one' } });
+    fireEvent.keyDown(textarea(), { key: 'Enter' });
+    await waitFor(() => expect(textarea().value).toBe(''));
+    fireEvent.click(screen.getByText('other chat'));
+    act(() => refuse());
+    expect(textarea().value).toBe('');
+  });
+
   it('keeps the text and files when the send is refused', async () => {
     const send = vi.spyOn(sendTurnModule, 'sendTurn').mockResolvedValue(false);
     renderWithProviders(<Composer />, { route: '/chat/c1', path: '/chat/:chatId' });

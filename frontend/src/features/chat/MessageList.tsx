@@ -305,9 +305,12 @@ function LiveAssistant({ live }: { live: LiveTurn }) {
 function InterruptedAssistant({
   interrupted,
   onRetry,
+  busy,
 }: {
   interrupted: InterruptedTurn;
   onRetry: () => void;
+  /** The server is still stopping or generating: Retry waits until the store is idle. */
+  busy: boolean;
 }) {
   const { live } = interrupted;
   const content = turnText(live.steps);
@@ -319,7 +322,7 @@ function InterruptedAssistant({
       {interrupted.kind === 'error' ? (
         <div className="chat-error" role="alert">
           <span className="chat-error__message">{interrupted.message ?? 'The reply failed.'}</span>
-          <Button variant="secondary" size="sm" onClick={onRetry}>
+          <Button variant="secondary" size="sm" disabled={busy} onClick={onRetry}>
             Retry
           </Button>
         </div>
@@ -327,7 +330,7 @@ function InterruptedAssistant({
         <div className="turn-notice" role="status">
           <Badge>Stopped</Badge>
           <span>This partial reply is not saved.</span>
-          <Button variant="secondary" size="sm" onClick={onRetry}>
+          <Button variant="secondary" size="sm" disabled={busy} onClick={onRetry}>
             Retry
           </Button>
         </div>
@@ -378,6 +381,7 @@ export function MessageList({
     s.interrupted?.chatId === chatId ? s.interrupted : null,
   );
   const dismissInterrupted = useStreamStore((s) => s.dismissInterrupted);
+  const storeBusy = useStreamStore((s) => s.chatId !== null);
   const lastUserIdx = findLast(turns, (t) => t.kind === 'user');
   const follow = useAutoFollow(ref, chatId, pending);
   /**
@@ -408,6 +412,7 @@ export function MessageList({
 
   /** Retry regenerates from the stored user message, so attachments are reused as sent. */
   function retryLast() {
+    if (storeBusy) return;
     void resumeTurn(queryClient, chatId);
   }
 
@@ -456,9 +461,10 @@ export function MessageList({
         />
       ) : null}
       {pending ? <LiveUser pending={pending} /> : null}
-      {streaming ? <LiveAssistant live={live ?? emptyLiveTurn()} /> : null}
+      {/* A stopped or failed turn has its own row: the live row never shows next to it. */}
+      {streaming && !interrupted ? <LiveAssistant live={live ?? emptyLiveTurn()} /> : null}
       {showInterrupted && interrupted ? (
-        <InterruptedAssistant interrupted={interrupted} onRetry={retryLast} />
+        <InterruptedAssistant interrupted={interrupted} onRetry={retryLast} busy={storeBusy} />
       ) : null}
       {showBanner ? <ResumeBanner chatId={chatId} /> : null}
       {streaming && !follow.pinned ? (
