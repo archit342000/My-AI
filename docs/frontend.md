@@ -40,6 +40,15 @@ A React build missing from `dist/` returns 503 with the build command.
   through `nsKey()` (`lib/user-storage.ts`), which keeps these exact names for the admin (who owns all existing
   browser data) and uses `<key>:<userId>` for any other user. The theme and artifact-drawer width stay global (device
   preferences).
+- **Per-chat settings:** `state/settings-store.ts` holds the active values (what the next send uses) and a `defaults` snapshot
+  (what a new chat starts from, mirrored in storage). Opening a chat (`features/chat/useChatSettings.ts`, once per chat when the
+  chat has loaded and the model list has loaded or failed) copies the chat's saved model, modes, persona, preferences and sampling values over the
+  active ones (`applyChat`); leaving the chat puts the defaults back (`resetToDefaults`). While a chat's values are active the
+  setters change the active values only, so one chat's settings never become the defaults; a toggle changed in an open chat is
+  sent with the next message and lasts for that visit. The file-system, browsing and code-execution toggles persist in
+  `my_ai_modes`, user preferences in the `userPreferences` field of `my_ai_chat_defaults`. `enable_thinking` always follows the
+  thinking profile (`lib/thinking.ts`: "none" is off). "Reset to model default" on temperature or top p lasts for the visit: the server keeps the
+  saved value when a request omits it, so reopening the chat brings it back.
 - **Current user:** `app/UserGate.tsx` loads `GET /api/me` before anything user-dependent renders (no retry on 401), records
   the user in `state/user-store.ts`, calls `initUserStorage` and `settings-store.hydrate()` (the only place that reads
   storage), then renders the app. A 401 shows "Your session has expired." with a Reload button (full page from the gate,

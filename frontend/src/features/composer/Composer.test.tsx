@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { Link, MemoryRouter } from 'react-router';
 import { chatsApi } from '../../api/chats';
+import { modelsApi } from '../../api/settings';
 import { ApiError } from '../../api/client';
 import { renderWithProviders } from '../../test/render';
 import { Composer } from './Composer';
@@ -251,6 +252,29 @@ describe('Composer', () => {
     renderWithProviders(<Composer />, { route: '/chat/gone', path: '/chat/:chatId' });
     await waitFor(() => expect(chatsApi.get).toHaveBeenCalled());
     await waitFor(() => expect(screen.queryByPlaceholderText('Type a message…')).toBeNull());
+  });
+
+  it('does not replace an opened chat\'s model with the default pick while chat settings are active', async () => {
+    vi.spyOn(modelsApi, 'list').mockResolvedValue([{ id: 'm1' }, { id: 'm2' }] as never);
+    vi.spyOn(modelsApi, 'config').mockResolvedValue({ general: { text: 'm1' } } as never);
+    useSettingsStore.setState({ model: null, modelName: null, chatScoped: true });
+    renderWithProviders(<Composer />, { route: '/chat/c1', path: '/chat/:chatId' });
+    await waitFor(() => expect(modelsApi.config).toHaveBeenCalled());
+    await new Promise((r) => setTimeout(r, 50));
+    expect(useSettingsStore.getState().model).toBeNull();
+    useSettingsStore.setState({ chatScoped: false });
+  });
+
+  it('picks the default model once chat settings are left, if no model was applied', async () => {
+    vi.spyOn(modelsApi, 'list').mockResolvedValue([{ id: 'm1' }, { id: 'm2' }] as never);
+    vi.spyOn(modelsApi, 'config').mockResolvedValue({ general: { text: 'm1' } } as never);
+    useSettingsStore.setState({ model: null, modelName: null, chatScoped: true });
+    renderWithProviders(<Composer />, { route: '/chat/c1', path: '/chat/:chatId' });
+    await waitFor(() => expect(modelsApi.config).toHaveBeenCalled());
+    await new Promise((r) => setTimeout(r, 50));
+    expect(useSettingsStore.getState().model).toBeNull();
+    act(() => useSettingsStore.setState({ chatScoped: false })); // the chat page was left
+    await waitFor(() => expect(useSettingsStore.getState().model).toBe('m1'));
   });
 
   it('keeps the text and files when the send is refused', async () => {

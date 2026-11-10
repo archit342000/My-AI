@@ -616,3 +616,26 @@ describe('the chat remembers its model', () => {
     expect(useToastStore.getState().toasts).toHaveLength(0);
   });
 });
+
+describe('the completion request carries the active settings', () => {
+  const lastCompletionBody = (fetchMock: ReturnType<typeof mockCompletion>) => {
+    const call = fetchMock.mock.calls.find(([p]) => p === '/v1/chat/completions');
+    return JSON.parse(String(call?.[1]?.body)) as Record<string, unknown>;
+  };
+
+  it('sends enable_thinking false when the thinking profile is none', async () => {
+    const fetchMock = mockCompletion(() => sseResponse(sseText([contentChunk('Hi')])));
+    useSettingsStore.getState().setSampling({ thinking_profile: 'none' });
+    await sendTurn(args());
+    expect(lastCompletionBody(fetchMock)).toMatchObject({ enable_thinking: false, thinking_profile: 'none' });
+    useSettingsStore.getState().setSampling({ thinking_profile: 'general' });
+  });
+
+  it('sends the modes of an opened chat', async () => {
+    const fetchMock = mockCompletion(() => sseResponse(sseText([contentChunk('Hi')])));
+    useSettingsStore.getState().applyChat({ id: 'chat-1', title: 't', messages: [], file_system_mode: 1 } as never, []);
+    await sendTurn(args());
+    expect(lastCompletionBody(fetchMock)).toMatchObject({ fileSystemMode: true });
+    useSettingsStore.getState().resetToDefaults();
+  });
+});

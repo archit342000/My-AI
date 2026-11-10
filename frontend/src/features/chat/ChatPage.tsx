@@ -11,6 +11,7 @@ import { ArtifactDrawer } from '../artifacts/ArtifactDrawer';
 import { MessageList } from './MessageList';
 import { reattachTurn } from './send-turn';
 import { useChatDetail } from './useChatQueries';
+import { useChatSettings } from './useChatSettings';
 
 /** Header pill with click-to-rename (legacy `#chat-title-display`). */
 function ChatTitle({ chatId, title }: { chatId: string; title: string }) {
@@ -101,6 +102,7 @@ export function ChatPage() {
   const { chatId } = useParams();
   const navigate = useNavigate();
   const { data, error, isPending, refetch } = useChatDetail(chatId);
+  useChatSettings(chatId);
   const queryClient = useQueryClient();
   const streaming = useStreamStore((s) => s.chatId);
   const artifactsOpen = useUiStore((s) => s.artifactsOpen);

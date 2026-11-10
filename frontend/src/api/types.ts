@@ -62,6 +62,19 @@ export interface ChatDetail extends ChatSummary {
   /** True when a turn was interrupted and can be continued (false while one runs or after a stop). */
   resume_needed?: boolean;
   file_system_mode?: number;
+  /** The chat's own settings, as the server stores them (numbers 0/1 for flags; "None" for unset). */
+  persona_id?: Nullable<string>;
+  research_mode?: Nullable<number | boolean>;
+  browsing_mode?: Nullable<number | boolean>;
+  git_mode?: Nullable<number | boolean>;
+  code_execution_mode?: Nullable<number | boolean>;
+  user_preferences?: Nullable<number | boolean>;
+  max_tokens?: Nullable<number | string>;
+  thinking_budget_tokens?: Nullable<number | string>;
+  thinking_profile?: Nullable<string>;
+  enable_thinking?: Nullable<number | boolean>;
+  temperature?: Nullable<number | string>;
+  top_p?: Nullable<number | string>;
 }
 
 export interface Workspace {

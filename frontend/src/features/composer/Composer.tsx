@@ -55,6 +55,7 @@ export function Composer() {
   const inputArea = useRef<HTMLDivElement>(null);
   const hasModel = useSettingsStore((s) => Boolean(s.model));
   const selectedModel = useSettingsStore((s) => s.model);
+  const chatScoped = useSettingsStore((s) => s.chatScoped);
   const researchMode = useSettingsStore((s) => s.modes.researchMode);
   const setModel = useSettingsStore((s) => s.setModel);
   const models = useQuery({
@@ -76,13 +77,18 @@ export function Composer() {
   // Legacy parity: with no stored (or a stale) selection, default to the configured model for the current mode.
   useEffect(() => {
     if (!models.data || !modelConfig.data) return;
-    if (selectedModel && models.data.some((m) => m.id === selectedModel)) return;
+    // An opened chat's own model (applied by `useChatSettings` in the same commit) must stay; read
+    // the store now, because the render-time value may be older than what the chat just applied.
+    const { chatScoped: inChat, model: currentModel } = useSettingsStore.getState();
+    if (inChat) return;
+    if (currentModel && models.data.some((m) => m.id === currentModel)) return;
     const preferred = researchMode
       ? modelConfig.data.research?.main
       : modelConfig.data.general?.text;
     const pick = models.data.find((m) => m.id === preferred) ?? models.data[0];
     if (pick) setModel(pick.id, pick.id);
-  }, [models.data, modelConfig.data, selectedModel, researchMode, setModel]);
+  // `chatScoped` stays a dependency so the effect runs again when chat settings end.
+  }, [models.data, modelConfig.data, selectedModel, chatScoped, researchMode, setModel]);
   const keyboard = useKeyboardOffset(window.matchMedia('(pointer: coarse)').matches);
   const temporaryChatId = useUiStore((s) => s.temporaryChatId);
   const temporary = !routeChatId && temporaryChatId !== null;
