@@ -25,6 +25,11 @@ export interface ScopeRef {
   workspaceId?: string;
 }
 
+/** The query key of a scope's artifact list: shared by the panel and the files button. */
+export function artifactsKey(scope: ScopeRef): readonly ['artifacts', string] {
+  return ['artifacts', `${scope.chatId ?? ''}|${scope.workspaceId ?? ''}`];
+}
+
 function scopeQuery(scope: ScopeRef): string {
   const q = new URLSearchParams();
   if (scope.chatId) q.set('chat_id', scope.chatId);

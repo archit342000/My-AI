@@ -5,6 +5,7 @@
 import type { QueryClient } from '@tanstack/react-query';
 import { chatsApi, queryKeys } from '../../api/chats';
 import { ApiError } from '../../api/client';
+import { artifactsKey } from '../../api/filesystem';
 import {
   buildCompletionBody,
   reattachStream,
@@ -90,6 +91,8 @@ async function consume(
     }
   } finally {
     await queryClient.invalidateQueries({ queryKey: queryKeys.chat(chatId) });
+    // A reply may have created files: the files button reads this list.
+    void queryClient.invalidateQueries({ queryKey: artifactsKey({ chatId }) });
     // End the turn as soon as the saved chat is in: the live and pending rows then give way to the
     // saved ones in one render, with no moment where both are drawn.
     useStreamStore.getState().finish();

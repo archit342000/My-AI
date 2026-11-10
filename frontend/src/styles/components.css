@@ -1100,6 +1100,42 @@
   outline-offset: 2px;
 }
 
+/* The title pill and its rename field: one row, centred; the field looks like the pill while it is edited. */
+.chat-header-content.chat-title-row {
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  max-width: 800px;
+  position: relative;
+}
+.chat-title-display.chat-title-input {
+  width: min(32rem, 100%);
+  max-width: 100%;
+  font-family: inherit;
+  cursor: text;
+  transform: none;
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-subtle);
+}
+
+/* Links in an answer or a file preview are readable in both themes (legacy leaves the browser's blue). */
+.message-row .message-content a,
+.artifact-drawer .message-content a {
+  color: var(--accent);
+}
+
+/* The files button is dimmed (still clickable) while the open chat has no files; legacy dims it to 0.35 too. */
+.top-right-btn--empty {
+  opacity: 0.35;
+}
+
+/* In the dark theme a highlighted code block has one surface: the block's, not the highlighter's own. */
+.dark .code-block-wrapper pre code.hljs {
+  background: transparent;
+}
+
 /* ───────────────────────── Message edit box (edit-box) ───────────────────────── */
 
 .edit-box {
@@ -1114,6 +1150,7 @@
   background: var(--surface-elevated);
 }
 .edit-textarea {
+  resize: none; /* it grows with its content */
   min-height: 56px;
   max-height: 60vh;
   background: var(--bg-input);
@@ -1606,7 +1643,7 @@
   gap: var(--space-3);
   max-width: 800px;
   width: 100%;
-  margin: var(--space-2) auto;
+  margin: var(--space-2) 0 0;
   padding: var(--space-3) var(--space-4);
   border: 1px solid var(--danger);
   border-radius: var(--radius-lg);
@@ -1631,6 +1668,8 @@
 }
 
 .message-actions-container .ui-icon-button {
+  width: 26px;
+  height: 26px;
   color: var(--content-secondary);
 }
 

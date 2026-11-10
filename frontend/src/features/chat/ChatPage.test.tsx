@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { renderWithProviders } from '../../test/render';
 import { ChatPage } from './ChatPage';
 import { chatsApi } from '../../api/chats';
@@ -36,6 +36,15 @@ describe('ChatPage', () => {
     vi.spyOn(chatsApi, 'get').mockResolvedValue(detail({ title: '' }) as never);
     renderWithProviders(<ChatPage />, { route: '/chat/c1', path: '/chat/:chatId' });
     expect(await screen.findByText('Untitled chat')).toBeTruthy();
+  });
+
+  it('the rename field is a pill-styled input and the header row carries no inline style', async () => {
+    const { container } = renderWithProviders(<ChatPage />, { route: '/chat/c1', path: '/chat/:chatId' });
+    fireEvent.click(await screen.findByText('My chat'));
+    const field = screen.getByLabelText('Chat title');
+    expect(field).toHaveClass('chat-title-display', 'chat-title-input');
+    expect(field).toHaveFocus();
+    expect(container.querySelector('.chat-title-row')?.hasAttribute('style')).toBe(false);
   });
 
   it('shows a not-found message for a 404', async () => {

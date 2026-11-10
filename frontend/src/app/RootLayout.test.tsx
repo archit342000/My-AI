@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, screen } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { renderWithProviders } from '../test/render';
 import { RootLayout } from './RootLayout';
 import { useUiStore } from '../state/ui-store';
 import { chatsApi } from '../api/chats';
+import { artifactsApi } from '../api/filesystem';
 import { useUserStore } from '../state/user-store';
 
 describe('RootLayout', () => {
@@ -34,6 +35,28 @@ describe('RootLayout', () => {
     vi.spyOn(chatsApi, 'listWorkspaces').mockResolvedValue([]);
     renderWithProviders(<RootLayout />);
     expect(screen.queryByRole('button', { name: 'View files and artifacts' })).toBeNull();
+  });
+
+  it('dims the files button while the open chat has no files, but keeps it enabled', async () => {
+    vi.spyOn(chatsApi, 'list').mockResolvedValue([]);
+    vi.spyOn(chatsApi, 'listWorkspaces').mockResolvedValue([]);
+    vi.spyOn(artifactsApi, 'list').mockResolvedValue([]);
+    renderWithProviders(<RootLayout />, { route: '/chat/c1', path: '/chat/:chatId' });
+    const button = screen.getByRole('button', { name: 'View files and artifacts' });
+    await waitFor(() => expect(button).toHaveClass('top-right-btn--empty'));
+    expect(button).toBeEnabled();
+  });
+
+  it('does not dim the files button for a chat with files, and un-dims it when a file appears', async () => {
+    vi.spyOn(chatsApi, 'list').mockResolvedValue([]);
+    vi.spyOn(chatsApi, 'listWorkspaces').mockResolvedValue([]);
+    const list = vi.spyOn(artifactsApi, 'list').mockResolvedValue([]);
+    const { client } = renderWithProviders(<RootLayout />, { route: '/chat/c1', path: '/chat/:chatId' });
+    const button = screen.getByRole('button', { name: 'View files and artifacts' });
+    await waitFor(() => expect(button).toHaveClass('top-right-btn--empty')); // positive control
+    list.mockResolvedValue([{ id: 'a', type: 'file' }] as never);
+    await act(() => client.invalidateQueries({ queryKey: ['artifacts', 'c1|'] }));
+    await waitFor(() => expect(button).not.toHaveClass('top-right-btn--empty'));
   });
 
   it('shows a reload banner once the session has expired, and not before', () => {

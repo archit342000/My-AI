@@ -33,7 +33,7 @@ A React build missing from `dist/` returns 503 with the build command.
 
 ## State
 
-- **Server state:** TanStack Query. Query keys live in `api/chats.ts` and `api/settings.ts`.
+- **Server state:** TanStack Query. Query keys live in `api/chats.ts`, `api/settings.ts` and `api/filesystem.ts`.
 - **UI state:** Zustand. Stream state (`state/stream-store.ts`) holds the in-flight turn.
 - **Browser state:** `localStorage` keys keep the legacy names and formats (`my_ai_selected_model`,
   `my_ai_sampling_params`, `chatWorkspaces`, ...). Do not rename them. They are per user: every read and write goes
@@ -54,6 +54,10 @@ A React build missing from `dist/` returns 503 with the build command.
 - Every model's HTML goes through `renderMarkdown` (DOMPurify). Do not inject unsanitised HTML.
 - The attachment `[System Note: ...]` the router appends to a user message is for the model: `src/lib/chat-model.ts` strips it from
   user bubbles and the edit box and shows its files as chips. The stored message keeps it.
+- A reply's model label shows the legacy display name (`General Text (<model>)`, built from `/api/models/config` by
+  `lib/model-options.ts`; the raw id until the config is loaded). Action rows, the Stopped notice and inline errors render inside the
+  answer column. The files button is dimmed (still clickable) while the open chat has no files; links in answers use the accent
+  colour in both themes. These last two differ from the legacy UI on purpose.
 - Dialogs use `Modal`, which handles Escape (top of stack only), focus trap, focus restore and scroll lock.
 - Generated files (`*.generated.ts`) come from `scripts/`. Do not edit them by hand.
 

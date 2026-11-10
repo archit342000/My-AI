@@ -14,6 +14,7 @@ import { emptyLiveTurn, type LiveTurn } from './stream-reducer';
 import { useStreamStore, type InterruptedTurn, type PendingUser } from '../../state/stream-store';
 import { ThoughtBox } from './ThoughtBox';
 import { friendlyToolName } from './tool-names';
+import { useModelDisplayName } from './useModelDisplayName';
 import { thoughtKey, useThoughtStore } from '../../state/thought-store';
 import { MessageActions } from './MessageActions';
 import { resumeTurn } from './send-turn';
@@ -68,6 +69,7 @@ function UserTurn({
   onRetry: () => void;
 }) {
   const [editing, setEditing] = useState(false);
+  const caretPlaced = useRef(false);
   const [draft, setDraft] = useState(turn.text);
   const queryClient = useQueryClient();
 
@@ -102,6 +104,14 @@ function UserTurn({
           <Textarea
             className="edit-textarea"
             autoGrow
+            autoFocus
+            onFocus={(e) => {
+              // The caret goes to the end once, when the editor opens; tabbing back in keeps where it was.
+              if (caretPlaced.current) return;
+              caretPlaced.current = true;
+              const end = e.currentTarget.value.length;
+              e.currentTarget.setSelectionRange(end, end);
+            }}
             value={draft}
             rows={2}
             aria-label="Edit message"
@@ -160,7 +170,14 @@ function UserTurn({
           text={turn.text}
           role="user"
           canRetry={false}
-          onEdit={canEdit ? () => setEditing(true) : undefined}
+          onEdit={
+            canEdit
+              ? () => {
+                  caretPlaced.current = false;
+                  setEditing(true);
+                }
+              : undefined
+          }
           onDelete={() => void remove(chatId, turn.id, queryClient, onChanged)}
         />
       ) : null}
@@ -210,13 +227,14 @@ function BotBody({
   footer?: ReactNode;
 }) {
   const items = useMemo(() => timelineOf(steps), [steps]);
+  const displayName = useModelDisplayName();
   const hasBox = active || items.length > 0;
   const content = (
     <div className="message-content-wrapper">
       {children}
       {model && turnText(steps) ? (
         <div className="bot-message-footer">
-          <span className="bot-model-label">{model}</span>
+          <span className="bot-model-label">{displayName(model)}</span>
         </div>
       ) : null}
       {footer}
@@ -264,16 +282,23 @@ function AssistantTurn({
   const text = turnText(turn.steps);
   return (
     <div className="message-row chat-row bot-message bot" data-message-id={turn.id}>
-      <BotBody model={turn.model} steps={turn.steps} active={false} turnKey={thoughtKey(chatId, ordinal)}>
+      <BotBody
+        model={turn.model}
+        steps={turn.steps}
+        active={false}
+        turnKey={thoughtKey(chatId, ordinal)}
+        footer={
+          <MessageActions
+            text={text}
+            role="assistant"
+            canRetry={isLast}
+            onRetry={onRetry}
+            onDelete={() => void remove(chatId, firstMessageId(turn), queryClient, onDelete)}
+          />
+        }
+      >
         <Markdown text={text} className="message-content raw-text-content" />
       </BotBody>
-      <MessageActions
-        text={text}
-        role="assistant"
-        canRetry={isLast}
-        onRetry={onRetry}
-        onDelete={() => void remove(chatId, firstMessageId(turn), queryClient, onDelete)}
-      />
     </div>
   );
 }
@@ -306,26 +331,28 @@ function InterruptedAssistant({
 }) {
   const { live } = interrupted;
   const content = turnText(live.steps);
+  // The notice sits in the bubble column, under the answer, like the action row of a finished reply.
+  const notice =
+    interrupted.kind === 'error' ? (
+      <div className="chat-error" role="alert">
+        <span className="chat-error__message">{interrupted.message ?? 'The reply failed.'}</span>
+        <Button variant="secondary" size="sm" onClick={onRetry}>
+          Retry
+        </Button>
+      </div>
+    ) : (
+      <div className="turn-notice" role="status">
+        <Badge>Stopped</Badge>
+        <Button variant="secondary" size="sm" onClick={onRetry}>
+          Retry
+        </Button>
+      </div>
+    );
   return (
     <div className="message-row chat-row bot-message bot" data-interrupted={interrupted.kind}>
-      <BotBody model={live.model} steps={live.steps} active={false} turnKey={turnKey}>
+      <BotBody model={live.model} steps={live.steps} active={false} turnKey={turnKey} footer={notice}>
         {content ? <Markdown text={content} className="message-content raw-text-content" /> : null}
       </BotBody>
-      {interrupted.kind === 'error' ? (
-        <div className="chat-error" role="alert">
-          <span className="chat-error__message">{interrupted.message ?? 'The reply failed.'}</span>
-          <Button variant="secondary" size="sm" onClick={onRetry}>
-            Retry
-          </Button>
-        </div>
-      ) : (
-        <div className="turn-notice" role="status">
-          <Badge>Stopped</Badge>
-          <Button variant="secondary" size="sm" onClick={onRetry}>
-            Retry
-          </Button>
-        </div>
-      )}
     </div>
   );
 }
