@@ -537,7 +537,7 @@
   }
   .set-row--wide .ui-segmented__item {
     flex: 1;
-    min-height: 40px;
+    min-height: var(--touch);
   }
   .field-grid,
   .field-grid--two {

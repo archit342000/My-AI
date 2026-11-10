@@ -17,6 +17,7 @@ import {
   type PopoverPlacement,
   type Position,
 } from '../../lib/popover-position';
+import { pushBackLayer } from '../../lib/back-layer';
 import { pushPopover, type PopoverCloseReason } from './popover-stack';
 
 export type { PopoverPlacement };
@@ -131,6 +132,8 @@ export function Popover({
   useEffect(() => {
     if (!open) return;
     const release = pushPopover((reason) => closeRef.current(reason));
+    // On a phone a menu or a drop-down is a layer of its own: Back closes it first.
+    const releaseBack = pushBackLayer(() => closeRef.current('escape'));
     function onPointerDown(event: PointerEvent) {
       const target = event.target;
       if (!(target instanceof Element)) return;
@@ -140,6 +143,7 @@ export function Popover({
     document.addEventListener('pointerdown', onPointerDown);
     return () => {
       release();
+      releaseBack();
       document.removeEventListener('pointerdown', onPointerDown);
     };
   }, [open, anchorRef]);

@@ -564,12 +564,21 @@
   }
   .fb-acts .ui-segmented__item {
     flex: 1;
-    min-height: 38px;
+    min-height: var(--touch);
+  }
+  /* A tick box's whole line is its target. */
+  .fb-prev .task-list-item {
+    align-items: center;
+    min-height: var(--touch);
+    cursor: pointer;
+  }
+  .fb-prev .task-list-item-checkbox {
+    margin-top: 0;
   }
   .fb-acts .ui-icon-button,
   .fb-back {
-    width: 44px;
-    height: 44px;
+    width: var(--touch);
+    height: var(--touch);
   }
   .file-place {
     padding-bottom: max(var(--space-5), env(safe-area-inset-bottom));

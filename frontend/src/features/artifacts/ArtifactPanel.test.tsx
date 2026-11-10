@@ -473,7 +473,8 @@ describe('ArtifactPanel', () => {
       await screen.findByText('second');
       const boxes = screen.getAllByRole('checkbox');
       expect(boxes[1]).not.toBeDisabled();
-      fireEvent.click(boxes[1]!);
+      // The whole line is the target: pressing its words ticks the box.
+      fireEvent.click(screen.getByText('second'));
       view.unmount();
       await waitFor(() =>
         expect(update).toHaveBeenCalledWith(

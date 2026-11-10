@@ -2,3 +2,80 @@
  * Phones: edge to edge, sheets, touch sizes, safe areas (Part 6).
  * Console at Rest: only shared values from tokens.css. See the rule book in the console-at-rest repository.
  */
+
+@media (max-width: 599px) {
+  /* ── Touch targets: anything pressed is at least 48 tall (and 48 wide when it is only an icon) ── */
+
+  .ui-button,
+  .ui-button--sm,
+  .ui-input,
+  .ui-select__trigger,
+  .ui-segmented__item,
+  .ui-tabs__tab,
+  .ui-check,
+  .ui-toggle,
+  .ui-menu__item,
+  .ui-select__option,
+  .action-btn,
+  .thought-toggle,
+  .activity-header,
+  .log-row__head,
+  .code-run__head,
+  .fb-row__main,
+  .set-nav__item,
+  .chat-error__action,
+  .mermaid-ctrl-btn,
+  .logs-level,
+  .chat-list-item,
+  .folder-header,
+  .foot-item,
+  .icon-picker__item,
+  .chat-title-display {
+    min-height: var(--touch);
+  }
+  .ui-icon-button,
+  .ui-icon-button--sm,
+  .action-btn,
+  .mermaid-ctrl-btn,
+  .fb-search__clear {
+    min-width: var(--touch);
+    min-height: var(--touch);
+  }
+  /* A chip keeps its size: its remove button reaches past the chip's edge to be 48 where it is pressed. */
+  .ui-chip {
+    overflow: visible;
+  }
+  .ui-chip__remove {
+    width: var(--touch);
+    height: var(--touch);
+    margin: -8px -14px -8px -10px;
+  }
+  .ui-chip__remove:hover {
+    background: transparent;
+  }
+  .composer-tools {
+    margin-block: -8px;
+    padding-block: 8px;
+  }
+  /* A link in running text keeps its line, but its pressable area is still 48 tall. */
+  .ui-button--link,
+  .user-text__more,
+  .activity-more {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--touch);
+  }
+
+  /* ── The keyboard: the message box rides above it, and the conversation ends above the box ── */
+
+  #messages {
+    padding-bottom: calc(var(--space-4) + var(--keyboard-offset, 0px));
+  }
+
+  /* ── A lone button at the foot of a form runs the full width ── */
+
+  .crud > .ui-button,
+  .set-token > .ui-button {
+    width: 100%;
+  }
+}

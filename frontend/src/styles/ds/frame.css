@@ -498,7 +498,9 @@ input.chat-title-input {
     padding-bottom: max(var(--space-4), env(safe-area-inset-bottom));
     border-width: 0 1px 0 0;
     border-radius: 0;
-    background: var(--pop);
+    /* Opaque: the page beneath never shows through the drawer. */
+    background-color: var(--bg);
+    background-image: linear-gradient(var(--pop), var(--pop));
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }

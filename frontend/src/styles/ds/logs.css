@@ -192,7 +192,7 @@
   }
   .logs-tools > .ui-segmented > .ui-segmented__item {
     flex: 1;
-    min-height: 40px;
+    min-height: var(--touch);
   }
   .log-row__head {
     flex-wrap: wrap;

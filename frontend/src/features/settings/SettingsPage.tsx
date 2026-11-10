@@ -70,7 +70,7 @@ export function SettingsPage() {
     // Focus moves into the page (so Tab starts at Back) without ringing a button nobody pressed.
     page.current?.focus();
     // Escape leaves the page, after anything open on top of it has closed.
-    return pushModal(() => closeRef.current());
+    return pushModal(() => closeRef.current(), { back: false });
   }, []);
 
   // Bring the part the address names into view (on opening, and when the list or a link asks for one).

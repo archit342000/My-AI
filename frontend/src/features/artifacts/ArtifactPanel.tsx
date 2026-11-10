@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import type { ScopeRef } from '../../api/filesystem';
 import { Icon } from '../../components/icons/Icon';
 import { Button, IconButton } from '../../components/ui/Button';
+import { useBackLayer } from '../../hooks/useBackLayer';
 import { FileBrowser, type FileBrowserHandle } from './FileBrowser';
 
 export interface ArtifactPanelProps {
@@ -61,6 +62,9 @@ export function ArtifactPanel({ scope, onClose }: ArtifactPanelProps) {
   useEffect(() => {
     if (full) back.current?.focus();
   }, [full]);
+
+  // On a phone, Back leaves full screen first.
+  useBackLayer(full, () => setFullScreen(false));
 
   async function close() {
     // Nothing typed is lost: it is saved first, and the panel stays if that fails.

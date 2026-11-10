@@ -21,6 +21,7 @@ import { HeaderStatus } from './HeaderStatus';
 import { PageTitleSlot } from './page-header-context';
 import { Sidebar } from './Sidebar';
 import { DialogHost } from '../features/settings/DialogHost';
+import { useHomeBeneath } from '../hooks/useHomeBeneath';
 import { SettingsPage } from '../features/settings/SettingsPage';
 import { sectionFromSearch } from '../features/settings/settings-nav';
 import { Composer } from '../features/composer/Composer';
@@ -38,6 +39,7 @@ export function RootLayout() {
   useDraftCleanup();
   const location = useLocation();
   const path = location.pathname;
+  useHomeBeneath();
   const previousPath = useRef(path);
   // Leaving the landing page abandons a temporary chat. Keyed on the path only, so starting a chat
   // (which changes the id) never discards it.

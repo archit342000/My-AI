@@ -1,6 +1,8 @@
 import { useEffect, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { useBackLayer } from '../../hooks/useBackLayer';
 import { lockScroll, unlockScroll } from '../../lib/scroll-lock';
+import { showToast } from './toast-store';
 
 export interface HoldScreenProps {
   open: boolean;
@@ -20,6 +22,8 @@ export function HoldScreen({ open, title, children }: HoldScreenProps) {
     lockScroll();
     return unlockScroll;
   }, [open]);
+  // Back cannot skip the wait: it stays, and says so.
+  useBackLayer(open, () => showToast('Still working. This one cannot be skipped.', 'info'), true);
 
   if (!open) return null;
 

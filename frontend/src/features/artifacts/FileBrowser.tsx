@@ -525,9 +525,20 @@ export function FileBrowser({ ref, scope, full, onToggleFull }: FileBrowserProps
 
   /** A tick box pressed in the preview ticks the same box in the file's text. */
   function onPreviewClick(event: ReactMouseEvent<HTMLDivElement>) {
-    const box = event.target;
-    if (!(box instanceof HTMLInputElement) || box.type !== 'checkbox') return;
-    const boxes = Array.from(event.currentTarget.querySelectorAll('input[type="checkbox"]'));
+    const target = event.target as HTMLElement;
+    // A link inside the line keeps doing what links do.
+    if (target.closest('a')) return;
+    // The box itself, or anywhere on its line (the line is the touch target on a phone).
+    const box =
+      target instanceof HTMLInputElement && target.type === 'checkbox'
+        ? target
+        : target
+            .closest('li.task-list-item')
+            ?.querySelector<HTMLInputElement>('input[type="checkbox"]');
+    if (!box) return;
+    const boxes = Array.from(
+      event.currentTarget.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'),
+    );
     edit(toggleTask(content, boxes.indexOf(box)));
   }
   const preview = useRef<HTMLDivElement>(null);

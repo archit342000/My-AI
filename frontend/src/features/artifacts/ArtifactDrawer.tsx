@@ -1,6 +1,7 @@
 import { useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from 'react';
 import { createPortal } from 'react-dom';
 import type { ScopeRef } from '../../api/filesystem';
+import { useBackLayer } from '../../hooks/useBackLayer';
 import { useUiStore } from '../../state/ui-store';
 import { ArtifactPanel } from './ArtifactPanel';
 
@@ -50,6 +51,8 @@ function persistWidth(width: number): void {
 export function ArtifactDrawer({ scope }: { scope: ScopeRef }) {
   const setOpen = useUiStore((s) => s.setArtifactsOpen);
   const [width, setWidth] = useState(readWidth);
+  // On a phone the panel is a screen of its own: Back closes it (what was typed is saved as it goes).
+  useBackLayer(true, () => setOpen(false));
   const drag = useRef<{ startX: number; startWidth: number } | null>(null);
 
   function onPointerDown(event: PointerEvent<HTMLDivElement>) {
