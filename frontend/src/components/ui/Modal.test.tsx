@@ -34,6 +34,34 @@ function Harness({ onOuter, onInner }: { onOuter: () => void; onInner: () => voi
   );
 }
 
+describe('Modal title', () => {
+  it('keeps the title in the same place with and without a back button, and the footer after the body', () => {
+    const { rerender } = render(
+      <Modal open onClose={() => undefined} title="Plain" footer={<button>Go</button>}>
+        <p>body</p>
+      </Modal>,
+    );
+    const row = () => document.querySelector('.ui-modal__header-row') as HTMLElement;
+    expect(row().firstElementChild?.tagName).toBe('H2');
+    rerender(
+      <Modal
+        open
+        onClose={() => undefined}
+        onBack={() => undefined}
+        title="Sub"
+        footer={<button>Go</button>}
+      >
+        <p>body</p>
+      </Modal>,
+    );
+    expect(row().firstElementChild?.getAttribute('aria-label')).toBe('Back');
+    expect(row().children[1]?.tagName).toBe('H2'); // title follows the back button, then the close button
+    expect(row().lastElementChild?.getAttribute('aria-label')).toBe('Close');
+    const dialog = document.querySelector('.modal-content') as HTMLElement;
+    expect(dialog.lastElementChild?.className).toContain('modal-footer');
+  });
+});
+
 describe('Modal', () => {
   it('renders title and body only when open', () => {
     const { rerender } = render(

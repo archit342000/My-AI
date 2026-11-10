@@ -16,13 +16,19 @@ export default defineConfig({
     {
       name: 'desktop',
       use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } },
-      testIgnore: /mobile-keyboard\.spec\.ts/,
+      testIgnore: /mobile-(layout|keyboard)\.spec\.ts/,
     },
     {
-      // A phone: touch, mobile viewport and user agent. The on-screen keyboard is simulated in the spec.
+      // A 390px phone screen in Chrome (touch, mobile viewport): the layout rules at 768px and below, and the
+      // on-screen keyboard (simulated in the spec).
       name: 'phone',
-      use: { ...devices['Pixel 7'] },
-      testMatch: /mobile-keyboard\.spec\.ts/,
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 390, height: 844 },
+        isMobile: true,
+        hasTouch: true,
+      },
+      testMatch: /mobile-(layout|keyboard)\.spec\.ts/,
     },
   ],
 });

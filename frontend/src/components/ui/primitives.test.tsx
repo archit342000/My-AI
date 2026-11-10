@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { Badge } from './Badge';
@@ -263,11 +263,86 @@ describe('RadioCards and SegmentedControl', () => {
 });
 
 describe('Slider', () => {
-  it('clamps typed numbers to the range', () => {
-    const onChange = vi.fn();
-    render(<Slider label="Temperature" value={1} onChange={onChange} min={0} max={2} step={0.05} />);
-    fireEvent.change(screen.getByRole('spinbutton', { name: 'Temperature value' }), { target: { value: '9' } });
-    expect(onChange).toHaveBeenLastCalledWith(2);
+  const box = () => screen.getByRole('spinbutton', { name: 'Max tokens value' }) as HTMLInputElement;
+  const setup = (value = 16384, onChange = vi.fn()) => {
+    render(<Slider label="Max tokens" value={value} onChange={onChange} min={256} max={32768} step={256} decimals={0} />);
+    return onChange;
+  };
+
+  it('accepts typing and commits on blur', () => {
+    const onChange = setup();
+    fireEvent.focus(box());
+    fireEvent.change(box(), { target: { value: '5000' } });
+    expect(onChange).not.toHaveBeenCalled(); // typing does not clamp or commit
+    expect(box().value).toBe('5000');
+    fireEvent.blur(box());
+    expect(onChange).toHaveBeenLastCalledWith(5120); // rounded to the 256 step
+  });
+
+  it('can be cleared and retyped, and a cleared box restores the previous value on blur', () => {
+    const onChange = setup(8192);
+    fireEvent.focus(box());
+    fireEvent.change(box(), { target: { value: '' } });
+    expect(box().value).toBe('');
+    fireEvent.blur(box());
+    expect(onChange).not.toHaveBeenCalled();
+    expect(box().value).toBe('8192');
+  });
+
+  it('clamps an out-of-range entry on blur', () => {
+    const onChange = setup();
+    fireEvent.focus(box());
+    fireEvent.change(box(), { target: { value: '99999' } });
+    fireEvent.blur(box());
+    expect(onChange).toHaveBeenLastCalledWith(32768);
+    fireEvent.focus(box());
+    fireEvent.change(box(), { target: { value: '1' } });
+    fireEvent.keyDown(box(), { key: 'Enter' });
+    expect(onChange).toHaveBeenLastCalledWith(256);
+  });
+
+  it('Escape restores the value without committing (with real focus, so the blur it causes is real)', () => {
+    const onChange = setup(4096);
+    act(() => box().focus());
+    fireEvent.change(box(), { target: { value: '777' } });
+    fireEvent.keyDown(box(), { key: 'Escape' });
+    expect(box().value).toBe('4096');
+    expect(onChange).not.toHaveBeenCalled();
+    expect(document.activeElement).not.toBe(box());
+  });
+
+  it('focusing and leaving the number box without typing does not change the value', () => {
+    const onChange = setup(2050);
+    fireEvent.focus(box());
+    fireEvent.blur(box());
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('Enter commits once and leaves the box, so the next keystroke does not append to the old text', () => {
+    const onChange = setup(2048);
+    act(() => box().focus());
+    fireEvent.change(box(), { target: { value: '3000' } });
+    fireEvent.keyDown(box(), { key: 'Enter' });
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenLastCalledWith(3072);
+    expect(document.activeElement).not.toBe(box());
+  });
+
+  it('a later edit commits normally after an Enter', () => {
+    const onChange = setup(2048);
+    act(() => box().focus());
+    fireEvent.change(box(), { target: { value: '3000' } });
+    fireEvent.keyDown(box(), { key: 'Enter' });
+    act(() => box().focus());
+    fireEvent.change(box(), { target: { value: '5000' } });
+    act(() => box().blur());
+    expect(onChange).toHaveBeenLastCalledWith(5120);
+    expect(onChange).toHaveBeenCalledTimes(2);
+  });
+
+  it('sets the --fill custom property that draws the filled track', () => {
+    render(<Slider label="Top P" value={0.25} onChange={vi.fn()} min={0} max={1} step={0.01} />);
+    expect(screen.getByRole('slider', { name: 'Top P' }).getAttribute('style')).toContain('--fill: 25%');
   });
 
   it('exposes the range input with its min and max', () => {
@@ -275,6 +350,13 @@ describe('Slider', () => {
     const range = screen.getByRole('slider', { name: 'Top P' });
     expect(range).toHaveAttribute('max', '1');
     expect(range).toHaveValue('0.5');
+  });
+
+  it('dragging the range reports the value', () => {
+    const onChange = vi.fn();
+    render(<Slider label="Top P" value={0.5} onChange={onChange} min={0} max={1} step={0.01} />);
+    fireEvent.change(screen.getByRole('slider', { name: 'Top P' }), { target: { value: '0.75' } });
+    expect(onChange).toHaveBeenLastCalledWith(0.75);
   });
 });
 

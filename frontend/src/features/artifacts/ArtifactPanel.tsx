@@ -1,7 +1,12 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '../../api/chats';
-import { artifactsApi, type Artifact, type ScopeRef } from '../../api/filesystem';
+import {
+  artifactsApi,
+  artifactsKey,
+  type Artifact,
+  type ScopeRef,
+} from '../../api/filesystem';
 import { Icon } from '../../components/icons/Icon';
 import { Button, IconButton } from '../../components/ui/Button';
 import { EmptyState } from '../../components/ui/EmptyState';
@@ -17,8 +22,6 @@ import { VersionsDialog } from './VersionsDialog';
 import { buildTree, isDirectoryEntry, type TreeNode } from './artifact-tree';
 
 const CodeEditor = lazy(() => import('./CodeEditor').then((m) => ({ default: m.CodeEditor })));
-
-const scopeKey = (s: ScopeRef) => `${s.chatId ?? ''}|${s.workspaceId ?? ''}`;
 
 const EXPORTS: Array<{ format: 'markdown' | 'html' | 'pdf'; label: string }> = [
   { format: 'markdown', label: 'Markdown (.md)' },
@@ -46,10 +49,10 @@ export function ArtifactPanel({ scope, onClose }: ArtifactPanelProps) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [filter, setFilter] = useState('');
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
-  const key = scopeKey(scope);
+  const [, key] = artifactsKey(scope);
 
   const list = useQuery({
-    queryKey: ['artifacts', key],
+    queryKey: artifactsKey(scope),
     queryFn: () => artifactsApi.list(scope),
     enabled: Boolean(scope.chatId || scope.workspaceId),
   });
@@ -62,6 +65,32 @@ export function ArtifactPanel({ scope, onClose }: ArtifactPanelProps) {
   useEffect(() => {
     setDraft(null);
   }, [selected]);
+
+  // A file link in the transcript asks for a file: select it once the list is in.
+  const requestedPath = useUiStore((s) => s.requestedArtifactPath);
+  useEffect(() => {
+    // Read the store, not the closure: a second run of this effect (StrictMode) must not answer the
+    // same request again.
+    if (!requestedPath || useUiStore.getState().requestedArtifactPath === null) return;
+    if (list.isError && !list.data) {
+      useUiStore.getState().clearRequestedArtifact();
+      showToast('Could not load files', 'error');
+      return;
+    }
+    // Wait while the list is refetching: a drawer opened on a cached list may not have the new file yet.
+    if (!list.data || list.isFetching) return;
+    const wanted = requestedPath.replace(/^\.?\//, '');
+    const hit = list.data.find(
+      (a) =>
+        a.title === wanted ||
+        a.filename === wanted ||
+        (a.folder ? `${a.folder}/${a.filename}` === wanted : false),
+    );
+    // Clear first: the check above then stops any second run from answering the request again.
+    useUiStore.getState().clearRequestedArtifact();
+    if (hit) setSelected(hit.id);
+    else showToast(`File not found: ${requestedPath}`, 'error');
+  }, [requestedPath, list.data, list.isFetching, list.isError]);
 
   const needle = filter.trim().toLowerCase();
   const tree = useMemo(() => buildTree(list.data ?? []), [list.data]);
@@ -81,7 +110,7 @@ export function ArtifactPanel({ scope, onClose }: ArtifactPanelProps) {
         language: 'markdown',
       }),
     onSuccess: async (res) => {
-      await queryClient.invalidateQueries({ queryKey: ['artifacts', key] });
+      await queryClient.invalidateQueries({ queryKey: artifactsKey(scope) });
       // A chat's own artifact counts as chat content, so the chat joins the sidebar list.
       if (scope.chatId) await queryClient.invalidateQueries({ queryKey: queryKeys.chats });
       setSelected(res.id);
@@ -105,7 +134,7 @@ export function ArtifactPanel({ scope, onClose }: ArtifactPanelProps) {
     onSuccess: async () => {
       setSelected(null);
       setEditing(false);
-      await queryClient.invalidateQueries({ queryKey: ['artifacts', key] });
+      await queryClient.invalidateQueries({ queryKey: artifactsKey(scope) });
       if (scope.chatId) await queryClient.invalidateQueries({ queryKey: queryKeys.chats });
     },
     onError: (e) => showToast(e instanceof Error ? e.message : 'Delete failed', 'error'),
