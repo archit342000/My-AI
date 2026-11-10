@@ -8,7 +8,15 @@ import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Textarea } from '../../components/ui/Field';
 import { EmptyState } from '../../components/ui/EmptyState';
-import type { Turn } from '../../lib/chat-model';
+import {
+  firstMessageId,
+  lastEvent,
+  turnReasoning,
+  turnText,
+  turnTools,
+  type Step,
+  type Turn,
+} from '../../lib/chat-model';
 import { emptyLiveTurn, type LiveTurn } from './stream-reducer';
 import { useStreamStore, type InterruptedTurn, type PendingUser } from '../../state/stream-store';
 import { ThoughtHeader, ThoughtTimeline } from './ThoughtBlock';
@@ -189,22 +197,22 @@ async function remove(
  */
 function BotBody({
   model,
-  reasoning,
-  tools,
+  steps,
   active,
   status,
   children,
   footer,
 }: {
   model: string | null | undefined;
-  reasoning: string;
-  tools: Extract<Turn, { kind: 'assistant' }>['tools'];
+  steps: Step[];
   active: boolean;
   status?: string | null;
   children: ReactNode;
   footer?: ReactNode;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const reasoning = turnReasoning(steps);
+  const tools = turnTools(steps);
   const hasReasoning = Boolean(reasoning) || tools.length > 0;
   return (
     <div className="bot-turn">
@@ -252,41 +260,40 @@ function AssistantTurn({
   onDelete: () => void;
 }) {
   const queryClient = useQueryClient();
+  const text = turnText(turn.steps);
   return (
     <div className="message-row chat-row bot-message bot" data-message-id={turn.id}>
-      <BotBody model={turn.model} reasoning={turn.thinking ?? ''} tools={turn.tools} active={false}>
-        <Markdown text={turn.text} className="message-content raw-text-content" />
+      <BotBody model={turn.model} steps={turn.steps} active={false}>
+        <Markdown text={text} className="message-content raw-text-content" />
       </BotBody>
       <MessageActions
-        text={turn.text}
+        text={text}
         role="assistant"
         canRetry={isLast}
         onRetry={onRetry}
-        onDelete={() => void remove(chatId, turn.id, queryClient, onDelete)}
+        onDelete={() => void remove(chatId, firstMessageId(turn), queryClient, onDelete)}
       />
     </div>
   );
 }
 
 function LiveAssistant({ live }: { live: LiveTurn }) {
-  const thinking = !live.content;
+  const content = turnText(live.steps);
+  const thinking = !content;
   return (
     <div className="message-row chat-row bot-message bot streaming thinking" data-live="true">
       <BotBody
         model={live.model}
-        reasoning={live.reasoning ?? ''}
-        tools={live.tools}
+        steps={live.steps}
         active={thinking}
-        status={live.events.at(-1) ?? null}
+        status={lastEvent(live.steps)}
       >
         {live.redactNotice ? (
           <div className="validation-fixing">
             <span className="processing-spinner" /> {live.redactNotice}
           </div>
         ) : null}
-        {live.content ? (
-          <Markdown text={live.content} className="message-content raw-text-content" />
-        ) : null}
+        {content ? <Markdown text={content} className="message-content raw-text-content" /> : null}
       </BotBody>
     </div>
   );
@@ -301,12 +308,11 @@ function InterruptedAssistant({
   onRetry: () => void;
 }) {
   const { live } = interrupted;
+  const content = turnText(live.steps);
   return (
     <div className="message-row chat-row bot-message bot" data-interrupted={interrupted.kind}>
-      <BotBody model={live.model} reasoning={live.reasoning} tools={live.tools} active={false}>
-        {live.content ? (
-          <Markdown text={live.content} className="message-content raw-text-content" />
-        ) : null}
+      <BotBody model={live.model} steps={live.steps} active={false}>
+        {content ? <Markdown text={content} className="message-content raw-text-content" /> : null}
       </BotBody>
       {interrupted.kind === 'error' ? (
         <div className="chat-error" role="alert">
@@ -368,6 +374,13 @@ export function MessageList({
   const dismissInterrupted = useStreamStore((s) => s.dismissInterrupted);
   const lastUserIdx = findLast(turns, (t) => t.kind === 'user');
   const follow = useAutoFollow(ref, chatId, pending);
+  /**
+   * While a retry, resume or reattach streams, the live row replays the whole turn, so the persisted
+   * rows of that turn are not drawn next to it. A new send has a pending user row instead: the
+   * persisted rows are all earlier turns and stay.
+   */
+  const hidden = (turn: Turn, i: number) =>
+    turn.kind === 'assistant' && streaming && !pending && i > lastUserIdx;
 
   // A partial reply belongs to the screen it was shown on: drop it when the chat is left.
   useEffect(() => {
@@ -391,7 +404,7 @@ export function MessageList({
   async function retry(assistantIdx: number) {
     if (!turns.slice(0, assistantIdx).some((t) => t.kind === 'user')) return;
     try {
-      await chatsApi.deleteMessage(chatId, turns[assistantIdx]!.id);
+      await chatsApi.deleteMessage(chatId, firstMessageId(turns[assistantIdx]!));
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Retry failed', 'error');
       return;
@@ -403,7 +416,7 @@ export function MessageList({
   return (
     <div id="messages" ref={ref} className="messages-list">
       {turns.map((turn, i) =>
-        turn.kind === 'user' ? (
+        hidden(turn, i) ? null : turn.kind === 'user' ? (
           <UserTurn
             key={turn.id}
             turn={turn}

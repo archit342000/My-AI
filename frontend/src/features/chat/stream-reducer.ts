@@ -1,33 +1,20 @@
 /**
  * Pure reducer for the completions stream (OpenAI-style `choices[0].delta` plus the app's
  * extra events). Mirrors the legacy `sendMessage` read loop in `static/script.js`.
+ * The turn is an ordered step list, the same shape `toTurns` builds from stored messages.
  */
-import type { ToolActivity } from '../../lib/chat-model';
+import type { Step } from '../../lib/chat-model';
 
 export interface LiveTurn {
-  content: string;
-  reasoning: string;
-  tools: ToolActivity[];
-  events: string[];
+  steps: Step[];
   model: string | null;
   redactNotice: string | null;
-  /** Count of sub-agent deltas; their content is not shown in the main transcript yet. */
-  subAgentDeltas: number;
-  /** Snapshot taken at each `event`, used to roll back a failed attempt on `redact`. */
-  snapshot: { content: string; reasoning: string; toolCount: number };
+  /** Steps saved at each main-agent `event`, used to roll back a failed attempt on `redact`. */
+  snapshot: Step[];
 }
 
 export function emptyLiveTurn(): LiveTurn {
-  return {
-    content: '',
-    reasoning: '',
-    tools: [],
-    events: [],
-    model: null,
-    redactNotice: null,
-    subAgentDeltas: 0,
-    snapshot: { content: '', reasoning: '', toolCount: 0 },
-  };
+  return { steps: [], model: null, redactNotice: null, snapshot: [] };
 }
 
 interface ToolCallDelta {
@@ -64,14 +51,12 @@ export class StreamError extends Error {}
 
 export function applyChunk(turn: LiveTurn, chunk: StreamChunk): LiveTurn {
   if (chunk.error) throw new StreamError(chunk.error);
-  let next = chunk.model ? { ...turn, model: chunk.model } : turn;
+  const next = chunk.model ? { ...turn, model: chunk.model } : turn;
 
   if (chunk.__redact__) {
     return {
       ...next,
-      content: next.snapshot.content,
-      reasoning: next.snapshot.reasoning,
-      tools: next.tools.slice(0, next.snapshot.toolCount),
+      steps: next.snapshot,
       redactNotice: chunk.message ?? 'Correcting formatting...',
     };
   }
@@ -79,35 +64,99 @@ export function applyChunk(turn: LiveTurn, chunk: StreamChunk): LiveTurn {
   const delta = chunk.choices?.[0]?.delta;
   if (!delta) return next;
 
-  const isSubAgent = Boolean(chunk.parent_type && chunk.parent_type !== 'main');
-  if (isSubAgent) return { ...next, subAgentDeltas: next.subAgentDeltas + 1 };
+  const agent = chunk.parent_type && chunk.parent_type !== 'main' ? chunk.parent_type : null;
 
   if (delta.role === 'event') {
     // Events are activity labels, not answer text (legacy `continue`s after them).
-    return {
-      ...next,
-      events: [...next.events, delta.content ?? ''],
-      snapshot: { content: next.content, reasoning: next.reasoning, toolCount: next.tools.length },
-    };
+    const text = delta.content ?? '';
+    // An empty event adds no step, like the saved path; the snapshot still moves to this point.
+    const steps = text ? addStep(next.steps, { kind: 'event', text, agent }, agent) : next.steps;
+    return { ...next, steps, snapshot: agent === null ? steps : next.snapshot };
   }
-  if (delta.reasoning_content) next = { ...next, reasoning: next.reasoning + delta.reasoning_content };
-  if (delta.content) next = { ...next, content: next.content + delta.content };
-  if (delta.tool_calls?.length) next = { ...next, tools: mergeToolCalls(next.tools, delta.tool_calls) };
-  if (delta.tool_result) next = { ...next, tools: attachResult(next.tools, delta.tool_result) };
-  return next;
+  let steps = next.steps;
+  if (delta.reasoning_content) steps = appendText(steps, 'reasoning', delta.reasoning_content, agent);
+  if (delta.content) steps = appendText(steps, 'text', delta.content, agent);
+  if (delta.tool_calls?.length) steps = mergeToolCalls(steps, delta.tool_calls, agent);
+  if (delta.tool_result) steps = attachResult(steps, delta.tool_result, agent);
+  return steps === next.steps ? next : { ...next, steps };
 }
 
-/** Tool-call fragments: a new id starts a call; later fragments append arguments by id or index. */
-export function mergeToolCalls(tools: ToolActivity[], deltas: ToolCallDelta[]): ToolActivity[] {
-  const out = tools.slice();
+/**
+ * Where a step by `agent` goes. The main agent appends. A sub-agent's steps go directly after the
+ * main-agent tool step that is still running (the first without a result; tools run one at a time),
+ * after that tool's earlier sub-agent steps; with no running tool they are appended.
+ */
+function insertionIndex(steps: Step[], agent: string | null): number {
+  if (agent === null) return steps.length;
+  const running = steps.findIndex((s) => s.kind === 'tool' && s.agent === null && s.result === null);
+  if (running === -1) return steps.length;
+  let end = running + 1;
+  while (end < steps.length && steps[end]?.agent !== null) end++;
+  return end;
+}
+
+function addStep(steps: Step[], step: Step, agent: string | null): Step[] {
+  const at = insertionIndex(steps, agent);
+  return [...steps.slice(0, at), step, ...steps.slice(at)];
+}
+
+/** Extends the last step of the same kind and agent in the block, else starts a new step. */
+function appendText(
+  steps: Step[],
+  kind: 'reasoning' | 'text',
+  text: string,
+  agent: string | null,
+): Step[] {
+  const at = insertionIndex(steps, agent);
+  const prev = steps[at - 1];
+  if (prev && prev.kind === kind && prev.agent === agent) {
+    const out = steps.slice();
+    out[at - 1] = { ...prev, text: prev.text + text };
+    return out;
+  }
+  return [...steps.slice(0, at), { kind, text, agent }, ...steps.slice(at)];
+}
+
+/**
+ * Tool-call fragments: a new id starts a call; later fragments append arguments by id, or by index
+ * among the tool steps added since the last non-tool step when they carry no id.
+ */
+export function mergeToolCalls(
+  steps: Step[],
+  deltas: ToolCallDelta[],
+  agent: string | null = null,
+): Step[] {
+  let out = steps.slice();
   for (const d of deltas) {
     const id = d.id ?? '';
-    let idx = id ? out.findIndex((t) => t.id === id) : -1;
-    if (idx === -1 && !id && typeof d.index === 'number') idx = d.index < out.length ? d.index : -1;
+    let idx = id ? out.findIndex((s) => s.kind === 'tool' && s.agent === agent && s.id === id) : -1;
+    if (idx === -1 && !id && typeof d.index === 'number') {
+      const run: number[] = [];
+      for (let i = out.length - 1; i >= 0; i--) {
+        const s = out[i];
+        if (!s) break;
+        // A finished call belongs to an earlier round: a new round's fragments never continue it.
+        if (s.kind === 'tool' && s.agent === agent && s.result === null) run.unshift(i);
+        else if (s.agent === agent || run.length > 0) break;
+      }
+      idx = run[d.index] ?? -1;
+    }
     if (idx === -1) {
-      out.push({ id, name: d.function?.name ?? 'tool', args: d.function?.arguments ?? '', result: null });
+      out = addStep(
+        out,
+        {
+          kind: 'tool',
+          id,
+          name: d.function?.name ?? 'tool',
+          args: d.function?.arguments ?? '',
+          result: null,
+          agent,
+        },
+        agent,
+      );
     } else {
-      const existing = out[idx]!;
+      const existing = out[idx];
+      if (existing?.kind !== 'tool') continue;
       out[idx] = {
         ...existing,
         name: d.function?.name && existing.name === 'tool' ? d.function.name : existing.name,
@@ -118,19 +167,27 @@ export function mergeToolCalls(tools: ToolActivity[], deltas: ToolCallDelta[]): 
   return out;
 }
 
-/** Attaches a tool result to its call, or to the most recent call still waiting for a result. */
-export function attachResult(tools: ToolActivity[], result: ToolResultDelta): ToolActivity[] {
-  const out = tools.slice();
-  let idx = result.tool_call_id ? out.findIndex((t) => t.id === result.tool_call_id) : -1;
+/** Attaches a tool result to its call, or to the newest call of the same agent still waiting. */
+export function attachResult(
+  steps: Step[],
+  result: ToolResultDelta,
+  agent: string | null = null,
+): Step[] {
+  const out = steps.slice();
+  let idx = result.tool_call_id
+    ? out.findIndex((s) => s.kind === 'tool' && s.id === result.tool_call_id)
+    : -1;
   if (idx === -1) {
     for (let i = out.length - 1; i >= 0; i--) {
-      if (out[i]!.result === null) {
+      const s = out[i];
+      if (s?.kind === 'tool' && s.agent === agent && s.result === null) {
         idx = i;
         break;
       }
     }
   }
   if (idx === -1) return out;
-  out[idx] = { ...out[idx]!, result: result.content ?? '' };
+  const target = out[idx];
+  if (target?.kind === 'tool') out[idx] = { ...target, result: result.content ?? '' };
   return out;
 }
