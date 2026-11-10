@@ -31,6 +31,9 @@ export interface StreamState {
   pending: PendingUser | null;
   interrupted: InterruptedTurn | null;
   controller: AbortController | null;
+  /** True from the moment Stop is pressed until the turn has finished, which follows the stop answer. */
+  stopping: boolean;
+  setStopping: (stopping: boolean) => void;
   start: (chatId: string, pending: PendingUser | null, controller: AbortController) => void;
   update: (live: LiveTurn) => void;
   /** Ends the in-flight turn as stopped or failed, keeping the partial reply. Call before `finish`. */
@@ -45,10 +48,12 @@ export const useStreamStore = create<StreamState>((set) => ({
   pending: null,
   interrupted: null,
   controller: null,
+  stopping: false,
+  setStopping: (stopping) => set({ stopping }),
   start: (chatId, pending, controller) =>
-    set({ chatId, pending, controller, interrupted: null, live: null }),
+    set({ chatId, pending, controller, interrupted: null, live: null, stopping: false }),
   update: (live) => set({ live }),
   interrupt: (turn) => set({ interrupted: turn }),
   dismissInterrupted: () => set({ interrupted: null }),
-  finish: () => set({ chatId: null, live: null, pending: null, controller: null }),
+  finish: () => set({ chatId: null, live: null, pending: null, controller: null, stopping: false }),
 }));

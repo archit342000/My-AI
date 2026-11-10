@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Modal } from '../../components/ui/Modal';
 import { Select } from '../../components/ui/Select';
@@ -18,6 +18,8 @@ type Tab = 'general' | 'persona' | 'parameters';
 /** Starting value when a sampling parameter leaves the model-default state. */
 const TEMPERATURE_START = 1;
 const TOP_P_START = 1;
+/** How long a status message stays visible. */
+const STATUS_MS = 3000;
 
 /**
  * Optional sampling value: unset means "model default". Shows a Set button while unset and a
@@ -63,7 +65,14 @@ function OptionalSlider({
 /** Chat Settings: model, thinking, sampling parameters and persona (legacy tabs). */
 export function ChatSettingsModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [tab, setTab] = useState<Tab>('general');
-  const settings = useSettingsStore();
+  const model = useSettingsStore((s) => s.model);
+  const userPreferences = useSettingsStore((s) => s.userPreferences);
+  const sampling = useSettingsStore((s) => s.sampling);
+  const personaId = useSettingsStore((s) => s.personaId);
+  const setModel = useSettingsStore((s) => s.setModel);
+  const setUserPreferences = useSettingsStore((s) => s.setUserPreferences);
+  const setSampling = useSettingsStore((s) => s.setSampling);
+  const setPersona = useSettingsStore((s) => s.setPersona);
   const models = useQuery({
     queryKey: settingsKeys.models,
     queryFn: modelsApi.list,
@@ -76,7 +85,16 @@ export function ChatSettingsModal({ open, onClose }: { open: boolean; onClose: (
     enabled: open,
     staleTime: SETTINGS_STALE_MS,
   });
-  const [saved, setSaved] = useState<string | null>(null);
+  // `id` changes with every message, so picking the same value again restarts the timer.
+  const [status, setStatus] = useState<{ text: string; id: number } | null>(null);
+  const saved = status?.text ?? null;
+  const setSaved = (text: string) => setStatus((prev) => ({ text, id: (prev?.id ?? 0) + 1 }));
+  // The status line goes away by itself.
+  useEffect(() => {
+    if (!status) return undefined;
+    const timer = window.setTimeout(() => setStatus(null), STATUS_MS);
+    return () => window.clearTimeout(timer);
+  }, [status]);
 
   const tabs: Array<[Tab, string]> = [
     ['general', 'General'],
@@ -113,18 +131,18 @@ export function ChatSettingsModal({ open, onClose }: { open: boolean; onClose: (
                   placeholder="Select a model"
                   searchable
                   searchPlaceholder="Search models"
-                  value={settings.model ?? ''}
+                  value={model ?? ''}
                   options={modelSelectOptions(models.data ?? [])}
                   onChange={(id) => {
-                    settings.setModel(id, id);
+                    setModel(id, id);
                     setSaved('Model updated');
                   }}
                 />
               )}
             </UiField>
             <Toggle
-              checked={settings.userPreferences}
-              onChange={(v) => settings.setUserPreferences(v)}
+              checked={userPreferences}
+              onChange={(v) => setUserPreferences(v)}
               label="User preferences"
               description="Personalise responses using your profile and learned preferences."
             />
@@ -133,9 +151,9 @@ export function ChatSettingsModal({ open, onClose }: { open: boolean; onClose: (
                 <Select
                   id={c.id}
                   aria-label="Thinking profile"
-                  value={settings.sampling.thinking_profile}
+                  value={sampling.thinking_profile}
                   options={['general', 'precision', 'none'].map((p) => ({ value: p, label: thinkingProfileLabel(p) }))}
-                  onChange={(v) => settings.setSampling({ thinking_profile: v })}
+                  onChange={(v) => setSampling({ thinking_profile: v })}
                 />
               )}
             </UiField>
@@ -148,9 +166,9 @@ export function ChatSettingsModal({ open, onClose }: { open: boolean; onClose: (
               <Select
                 id={c.id}
                 aria-label="Persona"
-                value={settings.personaId ?? ''}
+                value={personaId ?? ''}
                 options={[{ value: '', label: 'None' }, ...(personas.data ?? []).map((p) => ({ value: p.id, label: p.name }))]}
-                onChange={(v) => settings.setPersona(v || null)}
+                onChange={(v) => setPersona(v || null)}
               />
             )}
           </UiField>
@@ -162,12 +180,12 @@ export function ChatSettingsModal({ open, onClose }: { open: boolean; onClose: (
               {() => (
                 <Slider
                   label="Max tokens"
-                  value={settings.sampling.max_tokens}
+                  value={sampling.max_tokens}
                   min={256}
                   max={32768}
                   step={256}
                   decimals={0}
-                  onChange={(v) => settings.setSampling({ max_tokens: v })}
+                  onChange={(v) => setSampling({ max_tokens: v })}
                 />
               )}
             </UiField>
@@ -175,12 +193,12 @@ export function ChatSettingsModal({ open, onClose }: { open: boolean; onClose: (
               {() => (
                 <Slider
                   label="Thinking budget"
-                  value={settings.sampling.thinking_budget_tokens}
+                  value={sampling.thinking_budget_tokens}
                   min={0}
                   max={8000}
                   step={100}
                   decimals={0}
-                  onChange={(v) => settings.setSampling({ thinking_budget_tokens: v })}
+                  onChange={(v) => setSampling({ thinking_budget_tokens: v })}
                 />
               )}
             </UiField>
@@ -188,12 +206,12 @@ export function ChatSettingsModal({ open, onClose }: { open: boolean; onClose: (
               {() => (
                 <OptionalSlider
                   label="Temperature"
-                  value={settings.sampling.temperature}
+                  value={sampling.temperature}
                   start={TEMPERATURE_START}
                   min={0}
                   max={2}
                   step={0.05}
-                  onChange={(v) => settings.setSampling({ temperature: v })}
+                  onChange={(v) => setSampling({ temperature: v })}
                 />
               )}
             </UiField>
@@ -201,12 +219,12 @@ export function ChatSettingsModal({ open, onClose }: { open: boolean; onClose: (
               {() => (
                 <OptionalSlider
                   label="Top P"
-                  value={settings.sampling.top_p}
+                  value={sampling.top_p}
                   start={TOP_P_START}
                   min={0}
                   max={1}
                   step={0.01}
-                  onChange={(v) => settings.setSampling({ top_p: v })}
+                  onChange={(v) => setSampling({ top_p: v })}
                 />
               )}
             </UiField>

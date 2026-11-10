@@ -72,7 +72,7 @@ describe('MessageList', () => {
   it('Save & regenerate edits the message and resumes, without posting a new turn', async () => {
     const edit = vi.spyOn(chatsApi, 'editMessage').mockResolvedValue({} as never);
     const resume = vi.spyOn(sendTurnModule, 'resumeTurn').mockResolvedValue(undefined);
-    const send = vi.spyOn(sendTurnModule, 'sendTurn').mockResolvedValue(undefined);
+    const send = vi.spyOn(sendTurnModule, 'sendTurn').mockResolvedValue(true);
     renderWithProviders(<MessageList turns={toTurns([...msgs] as never)} chatId="c1" onChanged={() => undefined} />);
     const row = document.querySelector('[data-message-id="1"]') as HTMLElement;
     fireEvent.click(within(row).getByRole('button', { name: 'Edit message' }));
@@ -210,7 +210,7 @@ describe('MessageList', () => {
   it('retry on the last reply deletes it, then resumes from the stored user message (no new user row)', async () => {
     const del = vi.spyOn(chatsApi, 'deleteMessage').mockResolvedValue(new Response(null, { status: 200 }));
     const resume = vi.spyOn(sendTurnModule, 'resumeTurn').mockResolvedValue(undefined);
-    const send = vi.spyOn(sendTurnModule, 'sendTurn').mockResolvedValue(undefined);
+    const send = vi.spyOn(sendTurnModule, 'sendTurn').mockResolvedValue(true);
     renderWithProviders(<MessageList turns={toTurns([...msgs] as never)} chatId="c1" onChanged={() => undefined} />);
     const a2 = document.querySelector('[data-message-id="4"]') as HTMLElement;
     fireEvent.click(within(a2).getByRole('button', { name: 'Retry response' }));
@@ -222,7 +222,7 @@ describe('MessageList', () => {
 
   it('the user bubble Retry (no reply yet) resumes without sending a new turn', async () => {
     const resume = vi.spyOn(sendTurnModule, 'resumeTurn').mockResolvedValue(undefined);
-    const send = vi.spyOn(sendTurnModule, 'sendTurn').mockResolvedValue(undefined);
+    const send = vi.spyOn(sendTurnModule, 'sendTurn').mockResolvedValue(true);
     renderWithProviders(<MessageList turns={toTurns(msgs.slice(0, 3) as never)} chatId="c1" onChanged={() => undefined} />);
     const u2 = document.querySelector('[data-message-id="3"]') as HTMLElement;
     fireEvent.click(within(u2).getByRole('button', { name: 'Retry response' }));
@@ -493,5 +493,88 @@ describe('MessageList thought box', () => {
     fireEvent.click(within(row).getByRole('button', { name: 'Delete message' }));
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
     await waitFor(() => expect(useThoughtStore.getState().expanded).toEqual({}));
+  });
+});
+
+describe('resume banner and Stop notice', () => {
+  beforeEach(() => {
+    useStreamStore.setState({ chatId: null, live: null, pending: null, interrupted: null, controller: null });
+  });
+  afterEach(() => vi.restoreAllMocks());
+  const unanswered = toTurns(msgs.slice(0, 3) as never);
+
+  it('shows the banner instead of Retry response when the chat needs a resume', () => {
+    renderWithProviders(<MessageList turns={unanswered} chatId="c1" onChanged={() => undefined} resumeNeeded />);
+    expect(screen.getByText(/This conversation was interrupted/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Retry response' })).toBeNull();
+  });
+
+  it('shows the banner whenever the server says a resume is needed, even if the last turn has a reply', () => {
+    renderWithProviders(<MessageList turns={toTurns([...msgs] as never)} chatId="c1" onChanged={() => undefined} resumeNeeded />);
+    expect(screen.getByText(/This conversation was interrupted/)).toBeTruthy();
+  });
+
+  it('keeps Retry response and no banner when no resume is needed', () => {
+    renderWithProviders(<MessageList turns={unanswered} chatId="c1" onChanged={() => undefined} />);
+    expect(screen.queryByText(/This conversation was interrupted/)).toBeNull();
+    expect(screen.getByRole('button', { name: 'Retry response' })).toBeTruthy();
+  });
+
+  it('shows no banner while a turn streams', () => {
+    useStreamStore.setState({ chatId: 'c1', live: null, pending: null, interrupted: null, controller: null });
+    renderWithProviders(<MessageList turns={unanswered} chatId="c1" onChanged={() => undefined} resumeNeeded />);
+    expect(screen.queryByText(/This conversation was interrupted/)).toBeNull();
+  });
+
+  it('says a stopped partial reply is not saved', () => {
+    useStreamStore.setState({
+      chatId: null,
+      live: null,
+      pending: null,
+      interrupted: { chatId: 'c1', live: { steps: [{ kind: 'text', text: 'half', agent: null }], model: null, redactNotice: null, snapshot: [] } as never, kind: 'stopped', message: null },
+      controller: null,
+    });
+    renderWithProviders(<MessageList turns={unanswered} chatId="c1" onChanged={() => undefined} />);
+    expect(screen.getByText('This partial reply is not saved.')).toBeTruthy();
+  });
+});
+
+describe('a stopped or failed turn while the server is still busy', () => {
+  const partial = { steps: [{ kind: 'text', text: 'half a reply', agent: null }], model: 'M', redactNotice: null, snapshot: [] } as never;
+  const unanswered = toTurns([msgs[0]] as never); // one user turn, no reply yet
+  afterEach(() => {
+    vi.restoreAllMocks();
+    useStreamStore.setState({ chatId: null, live: null, pending: null, interrupted: null, controller: null, stopping: false });
+  });
+
+  it.each(['stopped', 'error'] as const)('shows one bot row (never the live row too) with Retry disabled while busy (%s)', (kind) => {
+    useStreamStore.setState({
+      chatId: 'c1',
+      live: partial,
+      pending: null,
+      interrupted: { chatId: 'c1', live: partial, kind, message: kind === 'error' ? 'boom' : null },
+      controller: null,
+      stopping: true,
+    });
+    const { container } = renderWithProviders(<MessageList turns={unanswered} chatId="c1" onChanged={() => undefined} />);
+    expect(container.querySelectorAll('.bot-message')).toHaveLength(1);
+    expect(container.querySelector('[data-live="true"]')).toBeNull();
+    expect((screen.getByRole('button', { name: 'Retry' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('enables Retry once the store is idle and Retry starts the turn', () => {
+    const resume = vi.spyOn(sendTurnModule, 'resumeTurn').mockResolvedValue(undefined);
+    useStreamStore.setState({
+      chatId: null,
+      live: null,
+      pending: null,
+      interrupted: { chatId: 'c1', live: partial, kind: 'stopped', message: null },
+      controller: null,
+    });
+    renderWithProviders(<MessageList turns={unanswered} chatId="c1" onChanged={() => undefined} />);
+    const retry = screen.getByRole('button', { name: 'Retry' }) as HTMLButtonElement;
+    expect(retry.disabled).toBe(false);
+    fireEvent.click(retry);
+    expect(resume).toHaveBeenCalledTimes(1);
   });
 });

@@ -7,7 +7,7 @@ import {
   type ChangeEvent,
   type KeyboardEvent,
 } from 'react';
-import { useNavigate, useParams } from 'react-router';
+import { useMatch, useNavigate } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { modelsApi, settingsKeys, skillsApi } from '../../api/settings';
 import { Icon } from '../../components/icons/Icon';
@@ -22,6 +22,7 @@ import { saveTemporaryChat } from '../chat/temporary-chat';
 import { useUiStore } from '../../state/ui-store';
 import { useStreamStore } from '../../state/stream-store';
 import { generateChatId, sendTurn, stopTurn } from '../chat/send-turn';
+import { useChatDetail } from '../chat/useChatQueries';
 import { useKeyboardOffset } from '../../hooks/useKeyboardOffset';
 import { rovingTarget } from '../../lib/roving';
 import { matchSlashCommands, slashCommandsFor, type SlashCommand } from './slash';
@@ -39,7 +40,8 @@ const MAX_TEXTAREA_PX = 200;
 
 /** Message composer: auto-growing textarea, attachments, slash commands, send/stop. */
 export function Composer() {
-  const { chatId: routeChatId } = useParams();
+  // The composer lives in the layout (one instance across routes), so it reads the id from the URL.
+  const routeChatId = useMatch('/chat/:chatId')?.params.chatId;
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [text, setText] = useState('');
@@ -51,10 +53,9 @@ export function Composer() {
   const area = useRef<HTMLTextAreaElement>(null);
   const inputContainer = useRef<HTMLDivElement>(null);
   const inputArea = useRef<HTMLDivElement>(null);
-  const streamingChat = useStreamStore((s) => s.chatId);
-  const streaming = streamingChat !== null;
   const hasModel = useSettingsStore((s) => Boolean(s.model));
   const selectedModel = useSettingsStore((s) => s.model);
+  const chatScoped = useSettingsStore((s) => s.chatScoped);
   const researchMode = useSettingsStore((s) => s.modes.researchMode);
   const setModel = useSettingsStore((s) => s.setModel);
   const models = useQuery({
@@ -76,16 +77,33 @@ export function Composer() {
   // Legacy parity: with no stored (or a stale) selection, default to the configured model for the current mode.
   useEffect(() => {
     if (!models.data || !modelConfig.data) return;
-    if (selectedModel && models.data.some((m) => m.id === selectedModel)) return;
+    // An opened chat's own model (applied by `useChatSettings` in the same commit) must stay; read
+    // the store now, because the render-time value may be older than what the chat just applied.
+    const { chatScoped: inChat, model: currentModel } = useSettingsStore.getState();
+    if (inChat) return;
+    if (currentModel && models.data.some((m) => m.id === currentModel)) return;
     const preferred = researchMode
       ? modelConfig.data.research?.main
       : modelConfig.data.general?.text;
     const pick = models.data.find((m) => m.id === preferred) ?? models.data[0];
     if (pick) setModel(pick.id, pick.id);
-  }, [models.data, modelConfig.data, selectedModel, researchMode, setModel]);
+  // `chatScoped` stays a dependency so the effect runs again when chat settings end.
+  }, [models.data, modelConfig.data, selectedModel, chatScoped, researchMode, setModel]);
   const keyboard = useKeyboardOffset(window.matchMedia('(pointer: coarse)').matches);
   const temporaryChatId = useUiStore((s) => s.temporaryChatId);
   const temporary = !routeChatId && temporaryChatId !== null;
+  // Stop belongs to the chat that is generating; another chat's composer stays usable and a send
+  // there is refused with an explanation.
+  const openChatId = routeChatId ?? temporaryChatId;
+  const streaming = useStreamStore((s) => openChatId !== null && s.chatId === openChatId);
+  const stopping = useStreamStore((s) => s.stopping);
+  // What was last sent, to put back if the server refuses it after the box was cleared.
+  const lastSent = useRef<{ chatId: string; text: string; attachments: Attachment[] } | null>(null);
+  const openChat = useRef(openChatId);
+  useEffect(() => {
+    openChat.current = openChatId;
+  }, [openChatId]);
+  const detail = useChatDetail(routeChatId);
   const [chatForUploads, setChatForUploads] = useState<string | null>(
     routeChatId ?? temporaryChatId,
   );
@@ -93,6 +111,17 @@ export function Composer() {
   useEffect(() => {
     setChatForUploads(routeChatId ?? temporaryChatId);
   }, [routeChatId, temporaryChatId]);
+
+  // The composer is not remounted on navigation, so a draft would follow the user into another chat.
+  // The move a first send makes to its own new chat keeps what was typed since.
+  const ownNavigation = useRef<string | null>(null);
+  useEffect(() => {
+    const own = routeChatId !== undefined && ownNavigation.current === routeChatId;
+    ownNavigation.current = null;
+    if (own) return;
+    setText('');
+    setAttachments([]);
+  }, [routeChatId]);
 
   async function saveTemporary() {
     const cached = queryClient.getQueryData<{
@@ -265,10 +294,34 @@ export function Composer() {
     const files: UploadedFile[] = toUploadedFiles(attachments);
     const isNew = !routeChatId && !temporary;
     const id = chatForUploads ?? generateChatId();
-    setText('');
-    setAttachments([]);
-    if (isNew) navigate(`/chat/${id}`, { replace: true });
-    await sendTurn({ queryClient, chatId: id, text: content, files, isNewChat: isNew, temporary });
+    // The text and files are cleared once the turn is accepted here, and put back if the server then refuses it.
+    lastSent.current = { chatId: id, text, attachments };
+    await sendTurn({
+      queryClient,
+      chatId: id,
+      text: content,
+      files,
+      isNewChat: isNew,
+      temporary,
+      onAccepted: () => {
+        setText('');
+        setAttachments([]);
+      },
+      onRefused: () => {
+        const sent = lastSent.current;
+        // The text belongs to the chat it was sent in: not into another one opened since.
+        if (!sent || sent.chatId !== openChat.current) return;
+        // Only into an empty box: anything typed since stays.
+        setText((current) => (current === '' ? sent.text : current));
+        setAttachments((current) => (current.length === 0 ? sent.attachments : current));
+      },
+      navigate: isNew
+        ? () => {
+            ownNavigation.current = id;
+            navigate(`/chat/${id}`, { replace: true });
+          }
+        : undefined,
+    });
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
@@ -299,6 +352,9 @@ export function Composer() {
       void send();
     }
   }
+
+  // A chat that failed to load has nothing to send to.
+  if (routeChatId && detail.isError && !detail.data) return null;
 
   const listId = 'slash-command-listbox';
   return (
@@ -409,8 +465,9 @@ export function Composer() {
               id="send-btn"
               type="button"
               className="send-btn"
-              title="Stop"
-              aria-label="Stop generating"
+              title={stopping ? 'Stopping' : 'Stop'}
+              aria-label={stopping ? 'Stopping' : 'Stop generating'}
+              disabled={stopping}
               onClick={() => void stopTurn()}
             >
               <Icon name="close" size={18} strokeWidth={2.5} />
