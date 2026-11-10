@@ -70,6 +70,12 @@ describe('design tokens', () => {
     expect(hexLines(read('styles/fonts.css'))).toEqual([]);
   });
 
+  it('the design system sheets (styles/ds) contain no hex colour', () => {
+    for (const name of readdirSync(join(SRC, 'styles/ds'))) {
+      expect(hexLines(read(`styles/ds/${name}`)), name).toEqual([]);
+    }
+  });
+
   it('no component file contains a hex colour', () => {
     const offenders = componentFiles(SRC)
       .filter((file) => hexLines(readFileSync(file, 'utf8')).length > 0)

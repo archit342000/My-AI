@@ -8,6 +8,22 @@ import './styles/legacy.css';
 import './styles/components.css';
 import './styles/tokens.css';
 import './styles/bridge.css';
+// The design system's own sheets, one per area. They replace the two legacy sheets block by block.
+import './styles/ds/base.css';
+import './styles/ds/controls.css';
+import './styles/ds/layers.css';
+import './styles/ds/frame.css';
+import './styles/ds/home.css';
+import './styles/ds/chat.css';
+import './styles/ds/content.css';
+import './styles/ds/files.css';
+import './styles/ds/workspace.css';
+import './styles/ds/settings.css';
+import './styles/ds/logs.css';
+import './styles/ds/tools.css';
+import './styles/ds/states.css';
+import './styles/ds/phone.css';
+import './styles/ds/dev.css';
 import { App } from './app/App';
 
 const root = document.getElementById('root');

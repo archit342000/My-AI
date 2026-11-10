@@ -1,0 +1,97 @@
+/*
+ * Page basics: lettering, focus ring, scrollbars, typewriter labels, status light, tick rule.
+ * Console at Rest: only shared values from tokens.css. See the rule book in the console-at-rest repository.
+ */
+
+html {
+  background-color: var(--bg);
+}
+
+body {
+  color: var(--fg);
+  font-family: var(--font);
+  font-size: var(--text-body);
+  line-height: 1.6;
+}
+
+::selection {
+  background: var(--accent-soft);
+}
+
+/* Keyboard focus: one ring everywhere. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Thin scrollbars that sit on the panel, never a system-grey gutter. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--edge-strong) transparent;
+}
+
+/* Read by screen readers only. */
+.sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Typewriter label: section names, figures and status only (rule book 2.2). */
+.sec,
+.dat {
+  font-family: var(--mono);
+  font-size: var(--text-label);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.dat.keep {
+  text-transform: none;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Tick rule: the drawn divider under headers and between blocks. */
+.ticks {
+  flex: none;
+  height: 5px;
+  background-image: repeating-linear-gradient(90deg, var(--tick) 0 1px, transparent 1px 8px);
+}
+
+/* Status light with its word. */
+.statline {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.led {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--led);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--led) 25%, transparent);
+}
+.led.ok {
+  background: var(--ok);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 25%, transparent);
+}
+.led.warn {
+  background: var(--warn);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn) 25%, transparent);
+}
+.led.bad {
+  background: var(--bad);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--bad) 25%, transparent);
+}
+.led.off {
+  background: var(--edge-strong);
+  box-shadow: none;
+}
+.led.busy {
+  animation: led 1s ease-in-out infinite;
+}
