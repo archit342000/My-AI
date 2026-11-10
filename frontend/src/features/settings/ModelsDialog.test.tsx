@@ -47,9 +47,8 @@ describe('ModelsDialog', () => {
     await waitFor(() => expect(useToastStore.getState().toasts.some((t) => t.message === 'out of memory')).toBe(true));
   });
 
-  it('speed test is disabled until a model is chosen and then reports the result', async () => {
+  it('shows the speed test and keeps Run disabled until a model is chosen', async () => {
     vi.spyOn(modelsApi, 'list').mockResolvedValue(models);
-    const speed = vi.spyOn(modelsApi, 'testSpeed').mockResolvedValue({ tokens_per_second: 42 });
     renderWithProviders(<ModelsDialog open onClose={() => undefined} />);
     await screen.findAllByText('A');
     const run = screen.getByRole('button', { name: 'Run speed test' }) as HTMLButtonElement;
@@ -57,9 +56,6 @@ describe('ModelsDialog', () => {
     fireEvent.click(screen.getByRole('combobox', { name: 'Speed test target' }));
     fireEvent.click(screen.getByRole('option', { name: /^A\b/ }));
     expect(run.disabled).toBe(false);
-    fireEvent.click(run);
-    await waitFor(() => expect(speed).toHaveBeenCalledWith('A', 4096));
-    expect(await screen.findByText(/"tokens_per_second": 42/)).toBeTruthy();
   });
 
   it('an instance without a status object shows "Status unknown" and offers Load (F8)', async () => {
@@ -67,16 +63,5 @@ describe('ModelsDialog', () => {
     renderWithProviders(<ModelsDialog open onClose={() => undefined} />);
     expect(await screen.findByText('Status unknown')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Load' })).toBeTruthy();
-  });
-
-  it('a failed speed test shows the failure status', async () => {
-    vi.spyOn(modelsApi, 'list').mockResolvedValue(models);
-    vi.spyOn(modelsApi, 'testSpeed').mockRejectedValue(new Error('timeout'));
-    renderWithProviders(<ModelsDialog open onClose={() => undefined} />);
-    await screen.findAllByText('A');
-    fireEvent.click(screen.getByRole('combobox', { name: 'Speed test target' }));
-    fireEvent.click(screen.getByRole('option', { name: /^B\b/ }));
-    fireEvent.click(screen.getByRole('button', { name: 'Run speed test' }));
-    expect(await screen.findByText('Speed test failed')).toBeTruthy();
   });
 });

@@ -3,21 +3,18 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Modal } from '../../components/ui/Modal';
 import { showToast } from '../../components/ui/toast-store';
 import { modelsApi, settingsKeys } from '../../api/settings';
-import { Section, Status } from './forms';
+import { Section } from './forms';
+import { SpeedTestPanel } from './SpeedTestPanel';
 import { Input } from '../../components/ui/Field';
-import { Select } from '../../components/ui/Select';
-import { Field as UiField } from '../../components/ui/Field';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
-import { modelSelectOptions, sortModels } from '../../lib/model-options';
+import { sortModels } from '../../lib/model-options';
 import { SETTINGS_STALE_MS } from '../../api/settings';
 
 /** Model manager: load/unload instances and run the speed test. */
 export function ModelsDialog({ open, onClose, onBack }: { open: boolean; onClose: () => void; onBack?: () => void }) {
   const queryClient = useQueryClient();
   const models = useQuery({ queryKey: settingsKeys.models, queryFn: modelsApi.list, enabled: open, staleTime: SETTINGS_STALE_MS, refetchInterval: open ? 5000 : false });
-  const [target, setTarget] = useState('');
-  const [result, setResult] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const refresh = () => queryClient.invalidateQueries({ queryKey: settingsKeys.models });
 
@@ -34,12 +31,6 @@ export function ModelsDialog({ open, onClose, onBack }: { open: boolean; onClose
     mutationFn: (id: string) => modelsApi.unload(id),
     onSuccess: () => void refresh(),
     onError: (e) => showToast(e instanceof Error ? e.message : 'Unload failed', 'error'),
-  });
-
-  const speed = useMutation({
-    mutationFn: () => modelsApi.testSpeed(target, 4096),
-    onSuccess: (r) => setResult(JSON.stringify(r, null, 2)),
-    onError: (e) => setResult(e instanceof Error ? e.message : 'Speed test failed'),
   });
 
   return (
@@ -76,26 +67,7 @@ export function ModelsDialog({ open, onClose, onBack }: { open: boolean; onClose
         {models.isPending ? <div className="model-list__status">Loading…</div> : null}
       </Section>
 
-      <Section title="Speed test">
-        <UiField label="Speed test target">
-          {(c) => (
-            <Select
-              id={c.id}
-              placeholder="Select a model"
-              searchable
-              searchPlaceholder="Search models"
-              value={target}
-              options={modelSelectOptions(models.data ?? [])}
-              onChange={setTarget}
-            />
-          )}
-        </UiField>
-        <Button variant="primary" className="models-run" disabled={!target || speed.isPending} onClick={() => { setResult(null); speed.mutate(); }}>
-          {speed.isPending ? 'Running…' : 'Run speed test'}
-        </Button>
-        {result ? <pre className="font-mono model-result">{result}</pre> : null}
-        <Status message={speed.isError ? 'Speed test failed' : null} tone="error" />
-      </Section>
+      <SpeedTestPanel models={models.data ?? []} />
     </Modal>
   );
 }

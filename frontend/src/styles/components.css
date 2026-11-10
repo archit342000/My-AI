@@ -2838,12 +2838,6 @@ html {
   font-size: 0.875rem;
 }
 
-.model-result {
-  margin-top: var(--space-3);
-  white-space: pre-wrap;
-  font-size: 0.75rem;
-}
-
 .skill-name {
   position: relative;
   display: flex;
@@ -2923,6 +2917,91 @@ html {
   background: var(--danger, #b3261e);
   color: #fff;
   font-size: 0.875rem;
+}
+
+/* Speed test (model manager) */
+.speed-test__actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.speed-test__status {
+  margin-top: var(--space-3);
+  font-size: 0.875rem;
+  color: var(--content-muted);
+}
+
+.speed-test__figures {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+  gap: var(--space-3);
+  margin: var(--space-3) 0;
+}
+
+.speed-test__figures dt {
+  font-size: 0.75rem;
+  color: var(--content-muted);
+}
+
+.speed-test__figures dd {
+  margin: 0;
+  font-size: 1rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.speed-test__warnings {
+  margin: var(--space-2) 0 0;
+  padding-left: var(--space-4);
+  font-size: 0.8125rem;
+  color: var(--content-muted);
+}
+
+.speed-chart {
+  display: block;
+  width: 100%;
+  max-width: 28rem;
+  height: auto;
+}
+
+.speed-chart__axis {
+  stroke: var(--content-muted);
+  stroke-width: 1;
+  opacity: 0.5;
+}
+
+.speed-chart__line {
+  stroke: var(--accent, currentColor);
+  stroke-width: 2;
+}
+
+.speed-chart__dot {
+  fill: var(--accent, currentColor);
+}
+
+.speed-chart__label {
+  fill: var(--content-muted);
+  font-size: 12px;
+}
+
+.speed-chart__label--end {
+  text-anchor: end;
+}
+
+.speed-test__context {
+  margin-top: var(--space-3);
+}
+
+.speed-test__context-label {
+  display: block;
+  margin-bottom: var(--space-1);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.speed-test__context .ui-slider__number {
+  flex: 0 0 7rem;
+  width: 7rem;
 }
 
 /* ───────────────────────── Version history ───────────────────────── */
