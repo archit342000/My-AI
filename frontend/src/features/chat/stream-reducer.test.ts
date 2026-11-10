@@ -131,3 +131,62 @@ describe('tool calls', () => {
     expect(turnTools(attachResult(steps, { content: 'latest' }))[1]?.result).toBe('latest');
   });
 });
+
+describe('clarification requests', () => {
+  const call = (id: string, name: string, args: string) =>
+    delta({ tool_calls: [{ id, index: 0, function: { name, arguments: args } }] });
+  const ARGS = '{"question":"Which colour?","options":["Red","Blue"]}';
+
+  it('the model\'s own call alone sets nothing: the request exists once the server repeats it', () => {
+    const t = applyChunk(emptyLiveTurn(), call('c1', 'request_clarification', ARGS));
+    expect(t.pendingRequest).toBeNull();
+    expect(turnTools(t.steps)).toHaveLength(1);
+  });
+
+  it('the repeated chunk sets the pending request and leaves the step\'s arguments alone', () => {
+    let t = applyChunk(emptyLiveTurn(), call('c1', 'request_clarification', ARGS));
+    t = applyChunk(t, call('c1', 'request_clarification', ARGS));
+    expect(t.pendingRequest).toEqual({ id: 'c1', question: 'Which colour?', options: ['Red', 'Blue'] });
+    expect(turnTools(t.steps)).toEqual([{ id: 'c1', name: 'request_clarification', args: ARGS, result: null }]);
+    const only = turnTools(t.steps)[0];
+    expect(JSON.parse(only?.args ?? '')).toEqual({ question: 'Which colour?', options: ['Red', 'Blue'] });
+  });
+
+  it('a request raised under another tool\'s id (a code-runner approval) leaves that step as it was', () => {
+    let t = applyChunk(emptyLiveTurn(), call('run1', 'run_code', '{"code":"print(1)"}'));
+    t = applyChunk(t, call('run1', 'request_clarification', '{"question":"Allow network access?","options":["Allow","Deny"]}'));
+    expect(t.pendingRequest).toMatchObject({ id: 'run1', question: 'Allow network access?' });
+    expect(turnTools(t.steps)).toEqual([{ id: 'run1', name: 'run_code', args: '{"code":"print(1)"}', result: null }]);
+  });
+
+  it('the tool result for that id closes the request; another id does not', () => {
+    let t = applyChunk(emptyLiveTurn(), call('c1', 'request_clarification', ARGS));
+    t = applyChunk(t, call('c1', 'request_clarification', ARGS));
+    t = applyChunk(t, delta({ tool_result: { tool_call_id: 'other', content: 'x' } }));
+    expect(t.pendingRequest).not.toBeNull();
+    t = applyChunk(t, delta({ tool_result: { tool_call_id: 'c1', content: 'Red' } }));
+    expect(t.pendingRequest).toBeNull();
+    expect(turnTools(t.steps)[0]?.result).toBe('Red');
+  });
+
+  it('a result without an id does not close an open request', () => {
+    let t = applyChunk(emptyLiveTurn(), call('c1', 'request_clarification', ARGS));
+    t = applyChunk(t, call('c1', 'request_clarification', ARGS));
+    t = applyChunk(t, delta({ tool_result: { content: 'x' } }));
+    expect(t.pendingRequest).not.toBeNull();
+  });
+
+  it('a redact closes it, and arguments that do not parse give the fixed question', () => {
+    let t = applyChunk(emptyLiveTurn(), call('c1', 'request_clarification', 'oops'));
+    t = applyChunk(t, call('c1', 'request_clarification', 'oops'));
+    expect(t.pendingRequest?.question).toBe('The assistant needs your input.');
+    t = applyChunk(t, { __redact__: true });
+    expect(t.pendingRequest).toBeNull();
+  });
+
+  it('a call with another name that repeats an id sets nothing', () => {
+    let t = applyChunk(emptyLiveTurn(), call('c1', 'grep_search', '{}'));
+    t = applyChunk(t, call('c1', 'grep_search', ''));
+    expect(t.pendingRequest).toBeNull();
+  });
+});

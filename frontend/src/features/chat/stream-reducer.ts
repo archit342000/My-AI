@@ -4,6 +4,7 @@
  * The turn is an ordered step list, the same shape `toTurns` builds from stored messages.
  */
 import type { Step } from '../../lib/chat-model';
+import { CLARIFICATION_TOOL, parseClarification, type ClarificationRequest } from '../../lib/clarification';
 
 export interface LiveTurn {
   steps: Step[];
@@ -11,10 +12,12 @@ export interface LiveTurn {
   redactNotice: string | null;
   /** Steps saved at each main-agent `event`, used to roll back a failed attempt on `redact`. */
   snapshot: Step[];
+  /** A question the turn is waiting on (see `lib/clarification.ts`); null when nothing is pending. */
+  pendingRequest: ClarificationRequest | null;
 }
 
 export function emptyLiveTurn(): LiveTurn {
-  return { steps: [], model: null, redactNotice: null, snapshot: [] };
+  return { steps: [], model: null, redactNotice: null, snapshot: [], pendingRequest: null };
 }
 
 interface ToolCallDelta {
@@ -58,6 +61,7 @@ export function applyChunk(turn: LiveTurn, chunk: StreamChunk): LiveTurn {
       ...next,
       steps: next.snapshot,
       redactNotice: chunk.message ?? 'Correcting formatting...',
+      pendingRequest: null,
     };
   }
 
@@ -74,11 +78,36 @@ export function applyChunk(turn: LiveTurn, chunk: StreamChunk): LiveTurn {
     return { ...next, steps, snapshot: agent === null ? steps : next.snapshot };
   }
   let steps = next.steps;
+  let pendingRequest = next.pendingRequest;
   if (delta.reasoning_content) steps = appendText(steps, 'reasoning', delta.reasoning_content, agent);
   if (delta.content) steps = appendText(steps, 'text', delta.content, agent);
-  if (delta.tool_calls?.length) steps = mergeToolCalls(steps, delta.tool_calls, agent);
-  if (delta.tool_result) steps = attachResult(steps, delta.tool_result, agent);
-  return steps === next.steps ? next : { ...next, steps };
+  if (delta.tool_calls?.length) {
+    // The server repeats a `request_clarification` call (same id) once its callback is registered: that chunk
+    // is the pending request. It never changes the step it repeats (a code-runner approval repeats the run's id).
+    const repeats = delta.tool_calls.filter((d) => isRepeatedRequest(steps, d));
+    for (const d of repeats) {
+      pendingRequest = parseClarification(d.id ?? '', d.function?.arguments ?? '');
+    }
+    const rest = delta.tool_calls.filter((d) => !repeats.includes(d));
+    if (rest.length) steps = mergeToolCalls(steps, rest, agent);
+  }
+  if (delta.tool_result) {
+    steps = attachResult(steps, delta.tool_result, agent);
+    // The answer arrived (here or in another tab): the question is closed.
+    const answered = delta.tool_result.tool_call_id;
+    if (pendingRequest && answered === pendingRequest.id) pendingRequest = null;
+  }
+  if (steps === next.steps && pendingRequest === next.pendingRequest) return next;
+  return { ...next, steps, pendingRequest };
+}
+
+/** A `request_clarification` call whose id already belongs to a step: the repeat the server sends when it waits. */
+function isRepeatedRequest(steps: Step[], d: ToolCallDelta): boolean {
+  return (
+    d.function?.name === CLARIFICATION_TOOL &&
+    Boolean(d.id) &&
+    steps.some((s) => s.kind === 'tool' && s.id === d.id)
+  );
 }
 
 /**

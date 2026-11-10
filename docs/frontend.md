@@ -98,6 +98,11 @@ Sub-agent steps carry the agent name and sit after the tool call that started th
 the live row replaces the persisted rows of the turn being generated. Retry and Delete act on the whole turn
 (they delete its first stored message; the server removes the rest). Text steps are joined with a blank line.
 
+A turn can wait for the user: the server repeats a `request_clarification` tool call (same id) once its callback is registered, and the
+reducer keeps that as `LiveTurn.pendingRequest` without touching the step it repeats (a code-runner approval repeats the run's id).
+`ClarificationPrompt` shows the question and options under the live reply; answering posts `/api/tools/clarification/response`, the
+`tool_result` closes the request, Cancel stops the turn. A reload reattaches to the running turn and the replayed stream brings the
+prompt back.
 Starting a chat: `sendTurn` puts the new chat in the detail and list caches, starts the stream store and only then
 calls the `navigate` callback, so the chat page mounts with data (no loading, error or not-found state) and the
 sidebar lists the chat at once. The composer clears its text and files only when `sendTurn` accepts the turn

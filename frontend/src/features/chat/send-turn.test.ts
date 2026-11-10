@@ -837,7 +837,7 @@ describe('reattach starts only with a stream', () => {
   it('a 204 never makes the store busy and keeps the stopped partial reply', async () => {
     const interrupted = {
       chatId: 'chat-1',
-      live: { steps: [], model: null, redactNotice: null, snapshot: [] },
+      live: { steps: [], model: null, redactNotice: null, snapshot: [], pendingRequest: null },
       kind: 'stopped' as const,
       message: null,
     };
@@ -963,7 +963,7 @@ describe('stopIfStreaming', () => {
 describe('races around stop and reattach', () => {
   const interrupted = {
     chatId: 'chat-1',
-    live: { steps: [], model: null, redactNotice: null, snapshot: [] },
+    live: { steps: [], model: null, redactNotice: null, snapshot: [], pendingRequest: null },
     kind: 'stopped' as const,
     message: null,
   };
@@ -1085,6 +1085,7 @@ describe('refusals, aborts and leaks around the retry window', () => {
       model: null,
       redactNotice: null,
       snapshot: [],
+      pendingRequest: null,
     },
     kind: 'stopped',
     message: null,

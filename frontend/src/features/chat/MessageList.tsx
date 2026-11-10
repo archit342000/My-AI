@@ -13,6 +13,7 @@ import { firstMessageId, turnText, type Step, type Turn } from '../../lib/chat-m
 import { statusOf, timelineOf } from '../../lib/thought-timeline';
 import { emptyLiveTurn, type LiveTurn } from './stream-reducer';
 import { useStreamStore, type InterruptedTurn, type PendingUser } from '../../state/stream-store';
+import { ClarificationPrompt } from './ClarificationPrompt';
 import { ThoughtBox } from './ThoughtBox';
 import { friendlyToolName } from './tool-names';
 import { useModelDisplayName } from './useModelDisplayName';
@@ -305,11 +306,33 @@ function AssistantTurn({
   );
 }
 
-function LiveAssistant({ live, turnKey }: { live: LiveTurn; turnKey: string }) {
+function LiveAssistant({
+  live,
+  turnKey,
+  chatId,
+}: {
+  live: LiveTurn;
+  turnKey: string;
+  chatId: string;
+}) {
   const content = turnText(live.steps);
   return (
     <div className="message-row chat-row bot-message bot streaming thinking" data-live="true">
-      <BotBody model={live.model} steps={live.steps} active turnKey={turnKey}>
+      <BotBody
+        model={live.model}
+        steps={live.steps}
+        active
+        turnKey={turnKey}
+        footer={
+          live.pendingRequest ? (
+            <ClarificationPrompt
+              key={live.pendingRequest.id}
+              chatId={chatId}
+              request={live.pendingRequest}
+            />
+          ) : null
+        }
+      >
         {live.redactNotice ? (
           <div className="validation-fixing" role="status">
             <span className="ui-spinner" aria-hidden="true" /> Fixing the reply…
@@ -494,7 +517,7 @@ export function MessageList({
       {pending ? <LiveUser pending={pending} /> : null}
       {/* A stopped or failed turn has its own row: the live row never shows next to it. */}
       {streaming && !interrupted ? (
-        <LiveAssistant live={live ?? emptyLiveTurn()} turnKey={liveKey} />
+        <LiveAssistant live={live ?? emptyLiveTurn()} turnKey={liveKey} chatId={chatId} />
       ) : null}
       {showInterrupted && interrupted ? (
         <InterruptedAssistant
