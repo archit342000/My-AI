@@ -18,14 +18,12 @@ const JS_HOOKS = new Set<string>([
  * the test fails if an entry becomes styled, so this list can only shrink.
  */
 const TODO_UNSTYLED = new Set<string>([
-  'chat-row',
   'copy-msg-btn',
   'delete-msg-btn',
   'edit-msg-btn',
   'message-text-wrapper',
   'raw-text-content',
   'retry-msg-btn',
-  'title-text',
 ]);
 
 function cssSelectors(): Set<string> {
@@ -54,8 +52,8 @@ describe('css coverage', () => {
   const usage = tsxClassNames();
 
   it('finds class names in both sources (scanner sanity)', () => {
-    expect(css.has('btn-primary')).toBe(true);
-    expect(usage.has('btn-primary')).toBe(true);
+    expect(css.has('ui-button')).toBe(true);
+    expect(usage.has('ui-button')).toBe(true);
   });
 
   it('every TSX class name has a CSS rule', () => {

@@ -1,3 +1,4 @@
+import { PHONE_MAX_WIDTH } from '../lib/breakpoints';
 import {
   useCallback,
   useEffect,
@@ -15,7 +16,6 @@ import {
 
 /** Pixels an arrow key moves the sidebar edge. */
 export const RESIZE_KEY_STEP = 16;
-const PHONE_MAX_WIDTH = 768;
 
 /**
  * Resizing of the sidebar by its right edge: pointer drag and arrow keys (as a separator). The width is
@@ -40,7 +40,7 @@ export function useSidebarResize(aside: RefObject<HTMLElement | null>) {
     const sync = () =>
       root.style.setProperty(
         '--sidebar-width',
-        window.innerWidth <= 768 ? '0px' : `${el.getBoundingClientRect().width}px`,
+        window.innerWidth <= PHONE_MAX_WIDTH ? '0px' : `${el.getBoundingClientRect().width}px`,
       );
     sync();
     window.addEventListener('resize', sync);

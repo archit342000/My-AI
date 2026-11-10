@@ -1,3 +1,4 @@
+import { PageTitle } from '../../app/PageTitle';
 import { Fragment, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router';
@@ -9,7 +10,14 @@ import { Badge, type BadgeTone } from '../../components/ui/Badge';
 import { SegmentedControl } from '../../components/ui/SegmentedControl';
 import { logsApi, toEntries, type LogStream } from './logsApi';
 import { useIsAdmin } from '../../state/user-store';
-import { LOG_LEVELS, columnLabel, levelOf, rowKeys, scalarColumns, type LogLevel } from './log-levels';
+import {
+  LOG_LEVELS,
+  columnLabel,
+  levelOf,
+  rowKeys,
+  scalarColumns,
+  type LogLevel,
+} from './log-levels';
 
 const LIMITS = [50, 100, 200, 500];
 const MAX_CHARS = 4000;
@@ -35,7 +43,11 @@ export function LogsPage() {
   return isAdmin ? (
     <LogsContent />
   ) : (
-    <EmptyState icon="info" title="Not available" description="The logs are only available to the administrator." />
+    <EmptyState
+      icon="info"
+      title="Not available"
+      description="The logs are only available to the administrator."
+    />
   );
 }
 
@@ -49,7 +61,11 @@ function LogsContent() {
   // Rows are expanded by their stable key, not their position: the list refreshes every few seconds.
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
-  const tables = useQuery({ queryKey: ['log-tables'], queryFn: logsApi.dbTables, enabled: stream === 'database' });
+  const tables = useQuery({
+    queryKey: ['log-tables'],
+    queryFn: logsApi.dbTables,
+    enabled: stream === 'database',
+  });
   const data = useQuery({
     queryKey: ['logs', stream, limit, table, chatId],
     queryFn: async () => {
@@ -119,11 +135,37 @@ function LogsContent() {
       <div className="logs-main">
         <header className="logs-toolbar">
           <h1 className="font-heading logs-title">Logs</h1>
-          <SegmentedControl label="Log stream" value={stream} onChange={(v) => { setStream(v as LogStream); setExpanded(new Set()); }} options={STREAMS} />
+          <PageTitle>Logs</PageTitle>
+          <SegmentedControl
+            label="Log stream"
+            value={stream}
+            onChange={(v) => {
+              setStream(v as LogStream);
+              setExpanded(new Set());
+            }}
+            options={STREAMS}
+          />
           <div className="logs-toolbar__controls">
-            <Select aria-label="Rows" value={String(limit)} onChange={(v) => setLimit(Number(v))} options={LIMITS.map((n) => ({ value: String(n), label: `${n} rows` }))} />
-            <Input aria-label="Filter entries" placeholder="Filter…" value={filter} onChange={(e) => setFilter(e.target.value)} className="logs-filter" />
-            <Button variant="secondary" disabled={awaitingChatId} onClick={() => void data.refetch()}>Refresh</Button>
+            <Select
+              aria-label="Rows"
+              value={String(limit)}
+              onChange={(v) => setLimit(Number(v))}
+              options={LIMITS.map((n) => ({ value: String(n), label: `${n} rows` }))}
+            />
+            <Input
+              aria-label="Filter entries"
+              placeholder="Filter…"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              className="logs-filter"
+            />
+            <Button
+              variant="secondary"
+              disabled={awaitingChatId}
+              onClick={() => void data.refetch()}
+            >
+              Refresh
+            </Button>
           </div>
         </header>
 
@@ -133,16 +175,31 @@ function LogsContent() {
               aria-label="Table"
               value={table}
               onChange={setTable}
-              options={[...(tables.data?.chat_tables ?? []), ...(tables.data?.global_tables ?? [])].map((t) => ({ value: t, label: t }))}
+              options={[
+                ...(tables.data?.chat_tables ?? []),
+                ...(tables.data?.global_tables ?? []),
+              ].map((t) => ({ value: t, label: t }))}
             />
-            <Input aria-label="Chat id" placeholder="chat id" value={chatId} onChange={(e) => setChatId(e.target.value)} className="logs-chat-id" />
+            <Input
+              aria-label="Chat id"
+              placeholder="chat id"
+              value={chatId}
+              onChange={(e) => setChatId(e.target.value)}
+              className="logs-chat-id"
+            />
           </div>
         ) : null}
 
         {stream === 'app' ? (
           <div className="logs-levels" role="group" aria-label="Filter by level">
             {LOG_LEVELS.map((level) => (
-              <button key={level} type="button" className="logs-level-chip" aria-pressed={levels.has(level)} onClick={() => toggleLevel(level)}>
+              <button
+                key={level}
+                type="button"
+                className="logs-level-chip"
+                aria-pressed={levels.has(level)}
+                onClick={() => toggleLevel(level)}
+              >
                 <Badge tone={LEVEL_TONE[level]}>{level}</Badge>
               </button>
             ))}
@@ -158,7 +215,10 @@ function LogsContent() {
         </div>
 
         {awaitingChatId ? (
-          <EmptyState title="Enter a chat id to load rows" description="Database rows are loaded per chat." />
+          <EmptyState
+            title="Enter a chat id to load rows"
+            description="Database rows are loaded per chat."
+          />
         ) : data.isError ? (
           <EmptyState icon="error" title="Could not load logs" description={data.error.message} />
         ) : !data.isPending && visible.length === 0 ? (
@@ -176,7 +236,11 @@ function LogsContent() {
             <table className="logs-table">
               <thead>
                 <tr>
-                  {columns.map((c) => <th key={c} scope="col">{columnLabel(c)}</th>)}
+                  {columns.map((c) => (
+                    <th key={c} scope="col">
+                      {columnLabel(c)}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
@@ -186,7 +250,11 @@ function LogsContent() {
                   const isOpen = expanded.has(key);
                   return (
                     <Fragment key={key}>
-                      <tr className="logs-row" aria-expanded={isOpen} onClick={() => toggleExpanded(key)}>
+                      <tr
+                        className="logs-row"
+                        aria-expanded={isOpen}
+                        onClick={() => toggleExpanded(key)}
+                      >
                         {columns.map((c) => (
                           <td key={c} title={String(row[c] ?? '')}>
                             {renderCell(c, row)}
@@ -196,7 +264,9 @@ function LogsContent() {
                       {isOpen ? (
                         <tr className="logs-row-detail">
                           <td colSpan={Math.max(columns.length, 1)}>
-                            <pre className="logs-json">{json.length > MAX_CHARS ? `${json.slice(0, MAX_CHARS)}\n…` : json}</pre>
+                            <pre className="logs-json">
+                              {json.length > MAX_CHARS ? `${json.slice(0, MAX_CHARS)}\n…` : json}
+                            </pre>
                           </td>
                         </tr>
                       ) : null}
@@ -209,10 +279,12 @@ function LogsContent() {
         ) : (
           <ol className="logs-list">
             {rows.map(({ entry, key }) => {
-              const text = typeof entry === 'string' ? entry : JSON.stringify(entry, null, 2) ?? '';
+              const text =
+                typeof entry === 'string' ? entry : (JSON.stringify(entry, null, 2) ?? '');
               const isOpen = expanded.has(key);
               const level = levelOf(entry);
-              const shown = isOpen || text.length <= MAX_CHARS ? text : `${text.slice(0, MAX_CHARS)}\n…`;
+              const shown =
+                isOpen || text.length <= MAX_CHARS ? text : `${text.slice(0, MAX_CHARS)}\n…`;
               return (
                 <li key={key} className="logs-entry">
                   {level ? <Badge tone={LEVEL_TONE[level]}>{level}</Badge> : null}

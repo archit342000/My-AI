@@ -56,3 +56,64 @@ describe('SidebarChats workspace rows', () => {
     expect(second.querySelector('svg')?.innerHTML).not.toBe(first.querySelector('svg')?.innerHTML);
   });
 });
+
+describe('SidebarChats day groups, times and the row menu', () => {
+  const today = new Date();
+  today.setHours(9, 5, 0, 0);
+  const lastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 3, 10, 0);
+
+  function mockDated() {
+    vi.spyOn(chatsApi, 'list').mockResolvedValue([
+      { id: 'a', title: 'Written today', workspace_id: null, timestamp: today.getTime() },
+      {
+        id: 'b',
+        title: 'Written before',
+        workspace_id: null,
+        timestamp: lastMonth.getTime() / 1000,
+      },
+      { id: 'c', title: 'No date', workspace_id: null, timestamp: null },
+    ] as never);
+    vi.spyOn(chatsApi, 'listWorkspaces').mockResolvedValue([] as never);
+  }
+
+  it('groups chats under Today and Earlier and shows a 24-hour time or a date', async () => {
+    mockDated();
+    renderWithProviders(<SidebarChats />);
+    const todayGroup = await screen.findByRole('group', { name: 'Today' });
+    const earlier = screen.getByRole('group', { name: 'Earlier' });
+    expect(todayGroup).toHaveTextContent('Written today');
+    expect(todayGroup).toHaveTextContent('09:05');
+    expect(earlier).toHaveTextContent('Written before');
+    expect(earlier).toHaveTextContent('No date');
+    expect(earlier).toHaveTextContent(/3 [A-Z][a-z]{2}/);
+  });
+
+  it('leaves out a heading that has no chats', async () => {
+    vi.spyOn(chatsApi, 'list').mockResolvedValue([
+      { id: 'a', title: 'Only today', workspace_id: null, timestamp: today.getTime() },
+    ] as never);
+    vi.spyOn(chatsApi, 'listWorkspaces').mockResolvedValue([] as never);
+    renderWithProviders(<SidebarChats />);
+    await screen.findByRole('group', { name: 'Today' });
+    expect(screen.queryByRole('group', { name: 'Earlier' })).toBeNull();
+  });
+
+  it('every chat has a named menu button that opens the same menu as a right-click', async () => {
+    mockDated();
+    renderWithProviders(<SidebarChats />);
+    fireEvent.click(await screen.findByRole('button', { name: 'More for Written today' }));
+    expect(await screen.findByRole('menuitem', { name: /Move to workspace/ })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Rename' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Delete' })).toBeInTheDocument();
+  });
+
+  it('Rename opens a small pop-up attached to the row, not a centred one', async () => {
+    mockDated();
+    renderWithProviders(<SidebarChats />);
+    fireEvent.click(await screen.findByRole('button', { name: 'More for Written today' }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Rename' }));
+    const pop = await screen.findByRole('dialog', { name: 'Rename chat' });
+    expect(pop.closest('.modal-backdrop')).toBeNull();
+    expect(screen.getByRole('textbox', { name: 'Name' })).toHaveValue('Written today');
+  });
+});

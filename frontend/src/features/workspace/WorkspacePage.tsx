@@ -1,3 +1,4 @@
+import { PageTitle } from '../../app/PageTitle';
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -77,6 +78,7 @@ export function WorkspacePage() {
           {name === null ? (
             <div className="workspace-header__text">
               <h1 className="font-heading workspace-header__name">{workspace.name}</h1>
+              <PageTitle>{workspace.name}</PageTitle>
               <p className="workspace-header__stats">
                 {members.length} {members.length === 1 ? 'chat' : 'chats'}
               </p>

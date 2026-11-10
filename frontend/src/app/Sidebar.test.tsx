@@ -10,6 +10,7 @@ import { useToastStore } from '../components/ui/toast-store';
 import { ADMIN, USER, signInAs } from '../test/roles';
 import * as filesApi from '../api/files';
 import { useAttachmentStore } from '../state/attachment-store';
+import { subscribeSphere } from '../lib/sphere-signal';
 
 /** Shows the current pathname so tests can assert navigation. */
 function LocationProbe() {
@@ -48,7 +49,7 @@ describe('Sidebar', () => {
 
   it('the collapse button flips the collapsed flag', () => {
     renderWithProviders(<Sidebar />);
-    fireEvent.click(screen.getByRole('button', { name: 'Collapse sidebar' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse the panel' }));
     expect(useUiStore.getState().sidebarCollapsed).toBe(true);
   });
 
@@ -56,13 +57,13 @@ describe('Sidebar', () => {
     renderWithProviders(<Sidebar />);
     fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
     expect(useModalStore.getState().open).toBe('chat-settings');
-    fireEvent.click(screen.getByRole('button', { name: 'System settings' }));
+    fireEvent.click(screen.getByRole('button', { name: 'System' }));
     expect(useModalStore.getState().open).toBe('system-settings');
   });
 
   it('New chat navigates to the home route', () => {
     renderWithProviders(withProbe, { route: '/chat/c1', path: '/*' });
-    fireEvent.click(screen.getByRole('button', { name: 'New Chat' }));
+    fireEvent.click(screen.getByRole('button', { name: 'New chat' }));
     expect(screen.getByTestId('location').textContent).toBe('/');
   });
 
@@ -78,10 +79,14 @@ describe('Sidebar', () => {
 
   it('the temporary-chat button is dimmed inside a saved chat and not elsewhere', () => {
     const chat = renderWithProviders(withProbe, { route: '/chat/c1', path: '/*' });
-    expect(screen.getByRole('button', { name: 'Temporary Chat' }).className).toContain('temp-chat-btn--dim');
+    expect(screen.getByRole('button', { name: 'Temporary chat' }).className).toContain(
+      'temp-chat-btn--dim',
+    );
     chat.unmount();
     renderWithProviders(withProbe, { route: '/', path: '/*' });
-    expect(screen.getByRole('button', { name: 'Temporary Chat' }).className).not.toContain('temp-chat-btn--dim');
+    expect(screen.getByRole('button', { name: 'Temporary chat' }).className).not.toContain(
+      'temp-chat-btn--dim',
+    );
   });
 
   it('New chat throws away the files staged for the unsent new chat, and gives the next one a fresh id', async () => {
@@ -90,7 +95,7 @@ describe('Sidebar', () => {
     const draft = useAttachmentStore.getState().draftChatId;
     useAttachmentStore.getState().add(draft, [stagedFile(draft, 'f1')]);
     renderWithProviders(withProbe, { route: '/', path: '/*' });
-    fireEvent.click(screen.getByRole('button', { name: 'New Chat' }));
+    fireEvent.click(screen.getByRole('button', { name: 'New chat' }));
     await waitFor(() => expect(del).toHaveBeenCalledWith('f1', {}));
     expect(useAttachmentStore.getState().draftChatId).not.toBe(draft);
   });
@@ -101,11 +106,13 @@ describe('Sidebar', () => {
   });
 
   it('New workspace opens the name prompt and creates, then opens, the workspace (F1)', async () => {
-    const create = vi.spyOn(chatsApi, 'createWorkspace').mockResolvedValue({ id: 'ws-1', name: 'Work' } as never);
+    const create = vi
+      .spyOn(chatsApi, 'createWorkspace')
+      .mockResolvedValue({ id: 'ws-1', name: 'Work' } as never);
     renderWithProviders(withProbe, { route: '/', path: '/*' });
-    fireEvent.click(screen.getByRole('button', { name: 'New Workspace' }));
+    fireEvent.click(screen.getByRole('button', { name: 'New workspace' }));
     fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Work' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Create workspace' }));
     await waitFor(() => expect(screen.getByTestId('location').textContent).toBe('/workspace/ws-1'));
     expect(create).toHaveBeenCalledWith('Work');
   });
@@ -114,17 +121,19 @@ describe('Sidebar', () => {
     useToastStore.setState({ toasts: [] });
     vi.spyOn(chatsApi, 'createWorkspace').mockRejectedValue(new Error('name exists'));
     renderWithProviders(withProbe, { route: '/', path: '/*' });
-    fireEvent.click(screen.getByRole('button', { name: 'New Workspace' }));
+    fireEvent.click(screen.getByRole('button', { name: 'New workspace' }));
     fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Work' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
-    await waitFor(() => expect(useToastStore.getState().toasts.some((t) => t.message === 'name exists')).toBe(true));
+    fireEvent.click(screen.getByRole('button', { name: 'Create workspace' }));
+    await waitFor(() =>
+      expect(useToastStore.getState().toasts.some((t) => t.message === 'name exists')).toBe(true),
+    );
     expect(screen.getByTestId('location').textContent).toBe('/');
   });
 
   it('Temporary chat starts a temporary chat on the landing page (F2)', () => {
     useUiStore.setState({ temporaryChatId: null });
     renderWithProviders(withProbe, { route: '/chat/c1', path: '/*' });
-    fireEvent.click(screen.getByRole('button', { name: 'Temporary Chat' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Temporary chat' }));
     expect(screen.getByTestId('location').textContent).toBe('/');
     expect(useUiStore.getState().temporaryChatId).not.toBeNull();
   });
@@ -160,5 +169,28 @@ describe('Sidebar by role', () => {
     renderWithProviders(<Sidebar />);
     expect(screen.getByRole('link', { name: 'Logs' })).toBeInTheDocument();
     expect(screen.getByText('admin@test.io')).toBeInTheDocument();
+  });
+
+  it('pressing the app mark sends a ripple through the sphere', () => {
+    const seen: string[] = [];
+    const off = subscribeSphere((signal) => seen.push(signal.type));
+    renderWithProviders(withProbe);
+    fireEvent.click(screen.getByRole('button', { name: 'My AI' }));
+    off();
+    expect(seen).toContain('ripple');
+  });
+
+  it('collapsed, it is a rail: the same actions by name, no user line', () => {
+    signInAs(ADMIN);
+    useUiStore.setState({ sidebarCollapsed: true });
+    renderWithProviders(withProbe);
+    expect(screen.getByRole('button', { name: 'Expand the panel' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+    for (const name of ['New chat', 'Temporary chat', 'New workspace', 'Settings', 'System']) {
+      expect(screen.getByRole('button', { name })).toBeInTheDocument();
+    }
+    expect(screen.queryByText('admin@test.io')).toBeNull();
   });
 });

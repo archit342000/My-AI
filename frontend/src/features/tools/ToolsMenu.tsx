@@ -1,3 +1,4 @@
+import { PHONE_QUERY } from '../../lib/breakpoints';
 import { useRef, useState, type RefObject } from 'react';
 import { Icon } from '../../components/icons/Icon';
 import { Button } from '../../components/ui/Button';
@@ -16,8 +17,6 @@ const MODES: Array<[keyof ModeToggles, string, string]> = [
   ['gitMode', 'Git Agent', 'Autonomous version control and syncing'],
   ['codeExecutionMode', 'Code Execution', 'Calculations and scripts (sandboxed)'],
 ];
-
-const PHONE_QUERY = '(max-width: 768px)';
 
 /**
  * Wrench button next to the composer: mode toggles plus browser and code-run dialogs. The panel is

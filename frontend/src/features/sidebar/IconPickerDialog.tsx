@@ -44,7 +44,9 @@ export function IconPickerDialog({
               title={name}
               aria-label={name}
               aria-pressed={selected}
-              className={selected ? 'icon-picker__item icon-picker__item--selected' : 'icon-picker__item'}
+              className={
+                selected ? 'icon-picker__item icon-picker__item--selected' : 'icon-picker__item'
+              }
               onClick={() => onPick(name)}
             >
               <Icon name={name as IconName} size={20} strokeWidth={2.5} />

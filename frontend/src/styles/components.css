@@ -254,35 +254,10 @@
   outline-offset: 2px;
 }
 
-/* The title pill and its rename field: one row, centred; the field looks like the pill while it is edited. */
-.chat-header-content.chat-title-row {
-  flex-direction: row;
-  justify-content: center;
-  align-items: center;
-  width: 100%;
-  max-width: 800px;
-  position: relative;
-}
-.chat-title-display.chat-title-input {
-  width: min(32rem, 100%);
-  max-width: 100%;
-  font-family: inherit;
-  cursor: text;
-  transform: none;
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-subtle);
-}
-
 /* Links in an answer or a file preview are readable in both themes (legacy leaves the browser's blue). */
 .message-row .message-content a,
 .artifact-drawer .message-content a {
   color: var(--accent);
-}
-
-/* The files button is dimmed (still clickable) while the open chat has no files; legacy dims it to 0.35 too. */
-.top-right-btn--empty {
-  opacity: 0.35;
 }
 
 /* In the dark theme a highlighted code block has one surface: the block's, not the highlighter's own. */
@@ -314,47 +289,6 @@
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: var(--space-2);
-}
-
-/* ───────────────────────── Mobile navigation (mobile-topbar, sidebar-scrim) ───────────────────────── */
-
-/* Desktop: no mobile chrome. The sidebar's own collapse control handles the rail. */
-.mobile-topbar,
-.sidebar-scrim {
-  display: none;
-}
-
-@media (max-width: 768px) {
-  .mobile-topbar {
-    position: fixed;
-    top: max(1.25rem, env(safe-area-inset-top));
-    left: 1.25rem;
-    /* Above the sticky chat title header, which shares --z-header and comes later in the DOM. */
-    z-index: calc(var(--z-header) + 1);
-    display: inline-flex;
-    width: 3.5rem;
-    height: 3.5rem;
-    border-radius: 1rem;
-    color: var(--accent);
-    background: var(--surface-elevated);
-    border: 1px solid var(--border-subtle);
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
-  }
-  /* The drawer has its own collapse button and the scrim closes it, so the menu button steps aside. */
-  .mobile-topbar[hidden] {
-    display: none;
-  }
-  .sidebar-scrim {
-    display: block;
-    position: fixed;
-    inset: 0;
-    z-index: calc(var(--z-sidebar) - 1);
-    border: none;
-    padding: 0;
-    background: var(--scrim);
-    cursor: pointer;
-    animation: popOverIn 0.2s ease-out both;
-  }
 }
 
 /* ───────────────────────── Composer (chat-input-area, slash menu, attachment chips) ───────────────────────── */
@@ -1262,14 +1196,6 @@
   background: var(--surface-secondary);
 }
 
-/* ───────────────────────── Workspace list scroll (F-45) ───────────────────────── */
-
-/* The workspace list gets a bounded height and scrolls on its own, so more workspaces stay reachable. */
-.folder-list {
-  max-height: min(40vh, 360px);
-  overflow-y: auto;
-}
-
 .custom-scroll {
   scrollbar-width: thin;
   scrollbar-color: var(--border-subtle) transparent;
@@ -1879,68 +1805,11 @@ html {
   padding-inline-start: calc(var(--space-3) + 0.6em);
 }
 
-/* ───────────────────────── Collapsed sidebar rail (sidebar rail) ───────────────────────── */
-
-/* Legacy hides the brand and temp-chat button when collapsed; the rail keeps the logo. */
-#sidebar.sidebar-collapsed .sidebar-brand {
-  display: flex !important;
-  justify-content: center;
-}
-
-#sidebar.sidebar-collapsed .sidebar-brand .sidebar-logo-icon {
-  flex: none;
-}
-
-.sidebar-rail__link {
-  color: var(--content-muted);
-  text-decoration: none;
-}
-
-.sidebar-rail__link:hover {
-  color: var(--content-primary);
-}
-
-.ui-icon-button--active {
-  color: var(--accent);
-  background: var(--glass-border);
-}
-
-#sidebar.sidebar-collapsed #temp-chat-btn {
-  display: inline-flex !important;
-}
-
 /* Composer hint shown when no model is selected (F4). */
 .composer-hint {
   font-size: 0.8rem;
   color: var(--content-muted);
   padding: 0 4px 6px;
-}
-
-/* The signed-in user's email at the bottom of the sidebar. */
-.sidebar-user {
-  padding: 0.375rem 0.625rem;
-  font-size: 0.75rem;
-  color: var(--content-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* Shown over the app when a request answers 401 (the Access session ended). */
-.session-banner {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 1000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 1rem;
-  padding: 0.625rem 1rem;
-  background: var(--danger, #b3261e);
-  color: #fff;
-  font-size: 0.875rem;
 }
 
 /* Speed test (model manager) */
@@ -2093,99 +1962,6 @@ html {
   font-size: 0.85rem;
 }
 
-/* ───────────────────────── Sidebar lists (workspace folders, chat rows) ───────────────────────── */
-
-.folder-chevron-wrapper {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  width: 16px;
-  height: 16px;
-  cursor: pointer;
-}
-.folder-chevron {
-  transition: transform 0.2s ease;
-}
-.folder-item.expanded .folder-chevron {
-  transform: rotate(90deg);
-}
-/* The icon and the count never shrink; a long name truncates instead. */
-.folder-title {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  flex: 1;
-  min-width: 0;
-}
-.folder-icon {
-  flex-shrink: 0;
-  opacity: 0.7;
-}
-.folder-emoji {
-  flex-shrink: 0;
-  font-size: 11px;
-}
-.folder-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 0.8125rem;
-  font-weight: 600;
-  color: var(--content-primary);
-}
-.folder-count {
-  flex-shrink: 0;
-  padding: 1px 6px;
-  border-radius: var(--radius-sm);
-  background: var(--surface-secondary);
-  color: var(--content-muted);
-  font-size: 0.7rem;
-  font-weight: 500;
-}
-.chat-list-item-title {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex: 1;
-  width: 100%;
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-}
-.chat-list-item-text {
-  display: block;
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* ───────────────────────── Sidebar footer and rail details ───────────────────────── */
-
-/* Legacy dims the temporary-chat button inside a saved chat. */
-#temp-chat-btn.temp-chat-btn--dim {
-  opacity: 0.4;
-}
-/* The page that is open: the Logs entry reads as selected. */
-.sidebar-footer-btn.active,
-.sidebar-rail__link.active {
-  color: var(--accent);
-  background: var(--accent-subtle);
-}
-
-/* The expanded sidebar's width is the remembered one (set by the resize handle); legacy defaults to 16rem. */
-@media (min-width: 769px) {
-  #sidebar.sidebar-expanded {
-    width: var(--sidebar-expanded-width, 16rem);
-  }
-}
-.resize-handle:focus-visible {
-  outline: 2px solid var(--focus-ring);
-}
-
 /* ───────────────────────── Workspace page ───────────────────────── */
 
 .workspace-view {
@@ -2255,32 +2031,6 @@ html {
   margin-top: var(--legacy-space-6);
 }
 
-/* Collapsed rail: the logo, the toggle and the buttons below share one centred column (nothing clipped). */
-#sidebar.sidebar-collapsed .sidebar-header {
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-3) 0;
-}
-#sidebar.sidebar-collapsed .sidebar-brand {
-  justify-content: center;
-  width: 100%;
-}
-#sidebar.sidebar-collapsed .sidebar-header .sidebar-icon-btn {
-  margin: 0;
-}
-
-/* The phone drawer has a fixed width: no resize handle. While dragging on a desktop, text is not selected. */
-@media (max-width: 768px) {
-  .resize-handle {
-    display: none;
-  }
-}
-#app-root:has(#sidebar.resizing) {
-  user-select: none;
-}
-
 /* ───────────────────────── Clarification prompt (clarify) ───────────────────────── */
 
 /* The question a waiting turn asks, in the bubble column under the live reply. */
@@ -2317,28 +2067,6 @@ html {
 }
 
 @media (max-width: 768px) {
-  /* One opaque band at the top: the menu button and the files button sit in it, and the chat title between
-     them. Messages scroll under it and never show beside or behind either button. */
-  main::before {
-    content: '';
-    position: fixed;
-    inset: 0 0 auto 0;
-    height: var(--phone-topbar-h);
-    background: var(--bg-primary);
-    z-index: calc(var(--z-header) - 1);
-    pointer-events: none;
-  }
-  .chat-title-header {
-    height: var(--phone-topbar-h);
-    padding-inline: var(--phone-topbar-inset);
-    background: var(--bg-primary);
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-  }
-  .chat-header-content {
-    max-width: 100%;
-    min-width: 0;
-  }
 
   /* A reply without a thought box stacks like the legacy row: avatar on top, answer at the full column width. */
   .bot-turn {
@@ -2348,32 +2076,6 @@ html {
   .bot-turn__avatar,
   .bot-turn__body {
     grid-column: 1;
-  }
-
-  /* The files button is shown on every page that has a composer; on the home page it is dimmed (nothing to show yet). */
-  .top-right-btn:disabled {
-    opacity: 0.35;
-    cursor: default;
-    pointer-events: none;
-  }
-
-  /* The drawer: opaque, with all three actions. New Chat shrinks (the label stays) and wraps when it must. */
-  #sidebar {
-    background: var(--bg-primary);
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-  }
-  #sidebar .sidebar-actions {
-    flex-wrap: wrap;
-  }
-  #sidebar #new-chat-btn {
-    flex: 1 1 100%;
-    min-width: 0;
-  }
-  #sidebar #temp-chat-btn,
-  #sidebar #new-folder-btn {
-    flex: 1 1 0;
-    width: auto;
   }
   .model-row {
     flex-wrap: wrap;

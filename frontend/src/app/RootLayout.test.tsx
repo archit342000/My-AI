@@ -24,10 +24,13 @@ describe('RootLayout', () => {
   it('renders the sidebar, the main area and the artifacts toggle', () => {
     vi.spyOn(chatsApi, 'list').mockResolvedValue([]);
     vi.spyOn(chatsApi, 'listWorkspaces').mockResolvedValue([]);
-    const { container } = renderWithProviders(<RootLayout />, { route: '/chat/c1', path: '/chat/:chatId' });
+    const { container } = renderWithProviders(<RootLayout />, {
+      route: '/chat/c1',
+      path: '/chat/:chatId',
+    });
     expect(container.querySelector('#sidebar')).not.toBeNull();
     expect(container.querySelector('main')).not.toBeNull();
-    expect(screen.getByRole('button', { name: 'View files and artifacts' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Files' })).toBeTruthy();
   });
 
   it('has one composer on the landing page and in a chat, and none on other pages', () => {
@@ -47,7 +50,7 @@ describe('RootLayout', () => {
     vi.spyOn(chatsApi, 'list').mockResolvedValue([]);
     vi.spyOn(chatsApi, 'listWorkspaces').mockResolvedValue([]);
     renderWithProviders(<RootLayout />, { route: '/chat/c1', path: '/chat/:chatId' });
-    fireEvent.click(screen.getByRole('button', { name: 'View files and artifacts' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Files' }));
     expect(useUiStore.getState().artifactsOpen).toBe(true);
   });
 
@@ -55,20 +58,23 @@ describe('RootLayout', () => {
     vi.spyOn(chatsApi, 'list').mockResolvedValue([]);
     vi.spyOn(chatsApi, 'listWorkspaces').mockResolvedValue([]);
     const home = renderWithProviders(<RootLayout />);
-    expect(screen.getByRole('button', { name: 'View files and artifacts' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Files' })).toBeDisabled();
     home.unmount();
     const chat = renderWithProviders(<RootLayout />, { route: '/chat/c1', path: '/chat/:chatId' });
-    expect(screen.getByRole('button', { name: 'View files and artifacts' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Files' })).toBeEnabled();
     chat.unmount();
     renderWithProviders(<RootLayout />, { route: '/logs', path: '/logs' });
-    expect(screen.queryByRole('button', { name: 'View files and artifacts' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Files' })).toBeNull();
   });
 
   it('has no files button on a workspace page (its page always shows the files)', () => {
     vi.spyOn(chatsApi, 'list').mockResolvedValue([]);
     vi.spyOn(chatsApi, 'listWorkspaces').mockResolvedValue([]);
-    renderWithProviders(<RootLayout />, { route: '/workspace/w1', path: '/workspace/:workspaceId' });
-    expect(screen.queryByRole('button', { name: 'View files and artifacts' })).toBeNull();
+    renderWithProviders(<RootLayout />, {
+      route: '/workspace/w1',
+      path: '/workspace/:workspaceId',
+    });
+    expect(screen.queryByRole('button', { name: 'Files' })).toBeNull();
   });
 
   it('the header files button asks before closing a panel with unsaved edits', () => {
@@ -76,9 +82,9 @@ describe('RootLayout', () => {
     vi.spyOn(chatsApi, 'listWorkspaces').mockResolvedValue([]);
     useUiStore.setState({ artifactsOpen: true, artifactsDirty: true });
     renderWithProviders(<RootLayout />, { route: '/chat/c1', path: '/chat/:chatId' });
-    fireEvent.click(screen.getByRole('button', { name: 'View files and artifacts' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Files' }));
     expect(useUiStore.getState().artifactsOpen).toBe(true);
-    fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Discard changes' }));
     expect(useUiStore.getState().artifactsOpen).toBe(false);
     useUiStore.setState({ artifactsDirty: false });
   });
@@ -86,7 +92,10 @@ describe('RootLayout', () => {
   it('marks the page is-ios on an iPhone and not on a desktop', () => {
     vi.spyOn(chatsApi, 'list').mockResolvedValue([]);
     vi.spyOn(chatsApi, 'listWorkspaces').mockResolvedValue([]);
-    vi.stubGlobal('navigator', { userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)', maxTouchPoints: 5 });
+    vi.stubGlobal('navigator', {
+      userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)',
+      maxTouchPoints: 5,
+    });
     const phone = renderWithProviders(<RootLayout />);
     expect(document.documentElement.classList.contains('is-ios')).toBe(true);
     phone.unmount();
@@ -167,7 +176,7 @@ describe('RootLayout', () => {
     vi.spyOn(chatsApi, 'listWorkspaces').mockResolvedValue([]);
     vi.spyOn(artifactsApi, 'list').mockResolvedValue([]);
     renderWithProviders(<RootLayout />, { route: '/chat/c1', path: '/chat/:chatId' });
-    const button = screen.getByRole('button', { name: 'View files and artifacts' });
+    const button = screen.getByRole('button', { name: 'Files' });
     await waitFor(() => expect(button).toHaveClass('top-right-btn--empty'));
     expect(button).toBeEnabled();
   });
@@ -176,8 +185,11 @@ describe('RootLayout', () => {
     vi.spyOn(chatsApi, 'list').mockResolvedValue([]);
     vi.spyOn(chatsApi, 'listWorkspaces').mockResolvedValue([]);
     const list = vi.spyOn(artifactsApi, 'list').mockResolvedValue([]);
-    const { client } = renderWithProviders(<RootLayout />, { route: '/chat/c1', path: '/chat/:chatId' });
-    const button = screen.getByRole('button', { name: 'View files and artifacts' });
+    const { client } = renderWithProviders(<RootLayout />, {
+      route: '/chat/c1',
+      path: '/chat/:chatId',
+    });
+    const button = screen.getByRole('button', { name: 'Files' });
     await waitFor(() => expect(button).toHaveClass('top-right-btn--empty')); // positive control
     list.mockResolvedValue([{ id: 'a', type: 'file' }] as never);
     await act(() => client.invalidateQueries({ queryKey: ['artifacts', 'c1|'] }));

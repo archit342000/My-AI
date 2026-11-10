@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes } from 'react';
+import type { ButtonHTMLAttributes, Ref } from 'react';
 import { Icon, type IconName } from '../icons/Icon';
 import { cx } from '../../lib/cx';
 import { Tooltip } from './Tooltip';
@@ -10,6 +10,7 @@ import { Tooltip } from './Tooltip';
 export type ButtonVariant = 'primary' | 'quiet' | 'secondary' | 'ghost' | 'danger' | 'link';
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+  ref?: Ref<HTMLButtonElement>;
   variant?: ButtonVariant;
   size?: 'md' | 'sm';
   /** Disables the button and shows a spinner (sets aria-busy). */
@@ -64,6 +65,7 @@ export function Button({
 }
 
 export interface IconButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children'> {
+  ref?: Ref<HTMLButtonElement>;
   icon: IconName;
   /** Accessible name; also the tooltip text unless `tooltip` is false. */
   label: string;

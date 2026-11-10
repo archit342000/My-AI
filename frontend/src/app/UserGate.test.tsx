@@ -46,7 +46,10 @@ describe('UserGate', () => {
 
   it('never renders the app before /api/me has answered', async () => {
     let release: (r: Response) => void = () => undefined;
-    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>((resolve) => (release = resolve))));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => new Promise<Response>((resolve) => (release = resolve))),
+    );
     renderGate();
     await new Promise((r) => setTimeout(r, 20));
     expect(screen.queryByTestId('app')).toBeNull();
@@ -84,7 +87,9 @@ describe('UserGate', () => {
   it('shows the generic error on a server error', async () => {
     mockMe(() => json({ error: 'boom' }, 500));
     renderGate();
-    await waitFor(() => expect(screen.getByText("Couldn't load your account.")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText("Couldn't load your account.")).toBeInTheDocument(),
+    );
     expect(screen.queryByTestId('app')).toBeNull();
   });
 });

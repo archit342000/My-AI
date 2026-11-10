@@ -1,3 +1,4 @@
+import { PageTitle } from '../../app/PageTitle';
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
@@ -34,7 +35,7 @@ function ChatTitle({ chatId, title }: { chatId: string; title: string }) {
 
   return (
     <div id="chat-title-header" className="chat-title-header">
-      <div className="chat-header-content chat-title-row">
+      <div className="chat-title-row">
         {editing ? (
           <input
             className="chat-title-display chat-title-input"
@@ -126,7 +127,9 @@ export function ChatPage() {
     return (
       <div className="chat-error" role="alert">
         <span className="chat-error__message">
-          {notFound ? 'This chat no longer exists.' : `Could not load chat: ${error?.message ?? ''}`}
+          {notFound
+            ? 'This chat no longer exists.'
+            : `Could not load chat: ${error?.message ?? ''}`}
         </span>
         <button type="button" className="chat-error__action" onClick={() => navigate('/')}>
           New chat
@@ -138,7 +141,9 @@ export function ChatPage() {
   const turns = toTurns(data.messages);
   return (
     <>
-      <ChatTitle chatId={data.id} title={data.title || 'Untitled chat'} />
+      <PageTitle>
+        <ChatTitle chatId={data.id} title={data.title || 'Untitled chat'} />
+      </PageTitle>
       <MessageList
         turns={turns}
         chatId={data.id}
