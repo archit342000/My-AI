@@ -11,6 +11,8 @@ import { useThemeSync } from '../hooks/useThemeSync';
 import { useModalStore } from '../state/modal-store';
 import { useUiStore } from '../state/ui-store';
 import { useUserStore } from '../state/user-store';
+import { discardNewChatDraft } from '../features/composer/draft-cleanup';
+import { useDraftCleanup } from '../features/composer/useDraftCleanup';
 import { useChatHasNoFiles } from '../features/artifacts/useChatHasNoFiles';
 import { Sidebar } from './Sidebar';
 import { DialogHost } from '../features/settings/DialogHost';
@@ -22,6 +24,8 @@ export function RootLayout() {
   useThemeSync(themeMode);
   const toggleArtifacts = useUiStore((s) => s.toggleArtifacts);
   const queryClient = useQueryClient();
+  // Unsent files are deleted when the page closes, whichever route is open.
+  useDraftCleanup();
   const path = useLocation().pathname;
   const previousPath = useRef(path);
   // Leaving the landing page abandons a temporary chat. Keyed on the path only, so starting a chat
@@ -31,6 +35,9 @@ export function RootLayout() {
     if (shouldDiscardTemporaryChat(previousPath.current, path, hasTemporary)) {
       void discardTemporaryChat(queryClient);
     }
+    // Files staged for a new chat that was never sent are abandoned when the user leaves the landing page.
+    // (A send clears them first, so starting a chat never gets here with files.)
+    if (previousPath.current === '/' && path !== '/') void discardNewChatDraft(queryClient);
     previousPath.current = path;
   }, [path, queryClient]);
   // On phones the sidebar overlays the page, so close it after navigating.

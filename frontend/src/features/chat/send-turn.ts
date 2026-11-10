@@ -23,10 +23,6 @@ import { useStreamStore, type InterruptedTurn, type PendingUser } from '../../st
 import { useUiStore } from '../../state/ui-store';
 import { applyChunk, emptyLiveTurn, StreamError, type StreamChunk } from './stream-reducer';
 
-/** Same id shape as the legacy `generateId()`. */
-export function generateChatId(): string {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2);
-}
 
 export function historyFromCache(queryClient: QueryClient, chatId: string): HistoryMessage[] {
   const detail = queryClient.getQueryData<{ messages: Parameters<typeof toTurns>[0] }>(

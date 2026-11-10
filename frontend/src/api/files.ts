@@ -45,9 +45,15 @@ export function uploadFile(file: File, chatId: string, onProgress?: (fraction: n
   });
 }
 
-/** Deletes an uploaded file from the server (its row and the stored copy). */
-export async function deleteFile(fileId: string): Promise<void> {
-  await apiRequest(`/api/files/${encodeURIComponent(fileId)}`, { method: 'DELETE' });
+/**
+ * Deletes an uploaded file from the server (its row and the stored copy). `keepalive` lets the request
+ * finish while the page is being closed.
+ */
+export async function deleteFile(fileId: string, options: { keepalive?: boolean } = {}): Promise<void> {
+  await apiRequest(`/api/files/${encodeURIComponent(fileId)}`, {
+    method: 'DELETE',
+    keepalive: options.keepalive,
+  });
 }
 
 export function fileUrl(fileId: string): string {

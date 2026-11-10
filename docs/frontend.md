@@ -33,6 +33,12 @@ A React build missing from `dist/` returns 503 with the build command.
 
 ## State
 
+- **Staged files:** `state/attachment-store.ts` keeps the files staged for sending per chat (the open chat's id, the temporary chat's id,
+  or a draft id for the next new chat), so a chip only shows in the chat it was uploaded for. Files staged for a new chat that is never
+  sent are deleted when the user presses New Chat, leaves the landing page, discards a temporary chat or closes the page
+  (`features/composer/draft-cleanup.ts`, `useDraftCleanup`); a draft in an existing chat is kept. Files can be picked, dropped on the
+  page area or pasted; `/help` opens a list of commands and skills.
+- **Server state:** TanStack Query. Query keys live in `api/chats.ts` and `api/settings.ts`.
 - **Server state:** TanStack Query. Query keys live in `api/chats.ts`, `api/settings.ts` and `api/filesystem.ts`.
 - **UI state:** Zustand. Stream state (`state/stream-store.ts`) holds the in-flight turn.
 - **Browser state:** `localStorage` keys keep the legacy names and formats (`my_ai_selected_model`,
