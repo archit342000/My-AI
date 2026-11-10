@@ -2,12 +2,14 @@ import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { skillsApi, settingsKeys, type Skill } from '../../api/settings';
 import { CrudDialog, type FormFooter } from './CrudList';
-import { Field } from '../../components/ui/Field';
+import { filterSkills } from '../../lib/list-filter';
+import { Field, Input } from '../../components/ui/Field';
 
 export function SkillsDialog({ open, onClose, onBack }: { open: boolean; onClose: () => void; onBack?: () => void }) {
   const queryClient = useQueryClient();
   const list = useQuery({ queryKey: settingsKeys.skills, queryFn: skillsApi.list, enabled: open });
   const refresh = () => queryClient.invalidateQueries({ queryKey: settingsKeys.skills });
+  const [query, setQuery] = useState('');
   return (
     <CrudDialog<Skill>
       open={open}
@@ -16,7 +18,16 @@ export function SkillsDialog({ open, onClose, onBack }: { open: boolean; onClose
       noun="skill"
       title="Skills"
       emptyText="No skills yet. A skill is a named set of instructions you trigger with /name."
-      items={list.data ?? []}
+      items={filterSkills(list.data ?? [], query)}
+      filtering={query.trim() !== ''}
+      toolbar={
+        <Input
+          aria-label="Search skills"
+          placeholder="Search…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+      }
       describe={(s) => ({ id: s.id, title: `/${s.name}`, subtitle: s.description, fullText: s.description })}
       renderForm={(initial, onDone, footer) => <SkillForm initial={initial} onDone={onDone} onSaved={refresh} footer={footer} />}
       onDelete={async (item) => {

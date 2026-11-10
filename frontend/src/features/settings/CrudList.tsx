@@ -23,6 +23,8 @@ export function CrudDialog<T>({
   renderForm,
   onDelete,
   emptyText,
+  toolbar,
+  filtering = false,
 }: {
   open: boolean;
   onClose: () => void;
@@ -41,6 +43,10 @@ export function CrudDialog<T>({
   renderForm: (initial: T | null, onDone: () => void, footer: FormFooter) => ReactNode;
   onDelete: (item: T) => Promise<void>;
   emptyText: string;
+  /** Search and filter controls shown above the list. */
+  toolbar?: ReactNode;
+  /** True while the toolbar narrows the list: an empty list then reads "No matches". */
+  filtering?: boolean;
 }) {
   const [editing, setEditing] = useState<{ item: T | null } | null>(null);
   const [toDelete, setToDelete] = useState<T | null>(null);
@@ -103,7 +109,10 @@ export function CrudDialog<T>({
             >
               Add
             </Button>
-            {items.length === 0 ? <p className="crud-empty">{emptyText}</p> : null}
+            {toolbar ? <div className="crud-toolbar">{toolbar}</div> : null}
+            {items.length === 0 ? (
+              <p className="crud-empty">{filtering ? 'No matches' : emptyText}</p>
+            ) : null}
             <ul className="crud-list">
               {items.map((item) => {
                 const d = describe(item);

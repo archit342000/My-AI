@@ -55,7 +55,8 @@ A React build missing from `dist/` returns 503 with the build command.
   banner from `RootLayout` for a later request); a 403 shows a toast and still throws `ApiError`.
 - **Admin gating:** the UI hides what the server refuses for a user (`useIsAdmin()`): the Logs link and page, the runner
   settings and the agent, model and stealth links in System Settings, the four admin dialogs in `DialogHost`, the Git Agent
-  toggle (a user's `gitMode` stays off) and the browser portal button. This is convenience only; the server enforces it.
+  toggle (a user's `gitMode` stays off), the "Git agent" section of System Settings (GitHub token, allowed git commands) and the browser
+  portal button. This is convenience only; the server enforces it.
 
 ## Conventions
 
@@ -116,6 +117,16 @@ back (only into an empty box). `reattachTurn` makes the store busy only once a s
 Deleting a chat (or discarding a temporary one) stops its turn first (`stopIfStreaming`). Limit: nothing on the server bounds how long a worker takes
 to exit, so a slower exit still ends in the refusal toast with the reply and text kept. A stop request that never answers keeps the chat in "Stopping" until the browser gives up on it; a reload
 recovers. A chat whose stop was answered a moment ago (or that has a stopped row) is not reattached to, even if the refetch still says it is running. Each repeated attempt after a stop uses one of the user's turns per minute (the server counts a request refused as "in progress"), so a repeat that fails 5 times costs 5; and a turn another tab starts during that short window is attached when the chat next refetches.
+
+System Settings: "New chat defaults" (thinking profile, user preferences, max tokens, thinking budget) edit the store's `defaults` through
+`setDefaults`, so the next new chat starts from them while an open chat keeps its own values. "Delete all chats" (any user, behind a
+confirmation) stops a turn that is generating, deletes the caller's chats, discards a temporary chat and returns to the empty home page. The
+Git agent section (admin) keeps the GitHub token write-only: it is sent once, never read back, and only "Configured" or "Not configured" is shown;
+the allowed git commands are saved on each change with the full list. The memory dialog has a text search, a tag filter and a sort (newest or
+oldest); the skills dialog has a text search (client-side, `lib/list-filter.ts`).
+
+**Dropped from legacy:** "Reset app" (it cleared the saved connection settings, which no longer exist under Cloudflare Access, together with the saved
+model and theme and then reloaded). The model and theme can be changed in their own dialogs; nothing else in it is needed.
 
 ## Known gaps
 

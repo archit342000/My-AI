@@ -297,3 +297,36 @@ describe('per-chat settings', () => {
     expect(useSettingsStore.getState().sampling.enable_thinking).toBe(true);
   });
 });
+
+describe('new-chat defaults from System Settings', () => {
+  beforeEach(() => localStorage.clear());
+
+  it('changes the stored defaults and the active values, persists them, and derives thinking from the profile', () => {
+    signIn(ADMIN);
+    useSettingsStore.getState().setDefaults({ thinking_profile: 'none', userPreferences: false, max_tokens: 4096, thinking_budget_tokens: 500 });
+    const s = useSettingsStore.getState();
+    expect(s.sampling).toMatchObject({ thinking_profile: 'none', enable_thinking: false, max_tokens: 4096, thinking_budget_tokens: 500 });
+    expect(s.userPreferences).toBe(false);
+    expect(s.defaults.sampling).toMatchObject({ thinking_profile: 'none', max_tokens: 4096 });
+    signIn(ADMIN); // reload
+    expect(useSettingsStore.getState().defaults.sampling).toMatchObject({ thinking_profile: 'none', enable_thinking: false, max_tokens: 4096 });
+    expect(useSettingsStore.getState().userPreferences).toBe(false);
+  });
+
+  it('keeps the other fields of my_ai_chat_defaults', () => {
+    localStorage.setItem('my_ai_chat_defaults', JSON.stringify({ maxTokens: 1234 }));
+    signIn(ADMIN);
+    useSettingsStore.getState().setDefaults({ userPreferences: false });
+    expect(JSON.parse(localStorage.getItem('my_ai_chat_defaults') ?? '{}')).toEqual({ maxTokens: 1234, userPreferences: false });
+  });
+
+  it('leaves an open chat\'s active values alone, and the next reset yields the new defaults', () => {
+    signIn(ADMIN);
+    useSettingsStore.getState().applyChat({ id: 'c1', title: 't', messages: [], max_tokens: 111 } as never, []);
+    useSettingsStore.getState().setDefaults({ max_tokens: 8192 });
+    expect(useSettingsStore.getState().sampling.max_tokens).toBe(111);
+    expect(useSettingsStore.getState().defaults.sampling.max_tokens).toBe(8192);
+    useSettingsStore.getState().resetToDefaults();
+    expect(useSettingsStore.getState().sampling.max_tokens).toBe(8192);
+  });
+});
