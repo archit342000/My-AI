@@ -79,4 +79,13 @@ describe('recorded stream fixtures', () => {
     expect(turnText(t.steps)).toBe('Draft one\n\nFixed answer.');
     expect(t.redactNotice).toBe('Correcting formatting...');
   });
+
+  it('clarify: the waiting turn has one tool step with valid arguments and a pending request', async () => {
+    const t = await run('clarify');
+    const tools = turnTools(t.steps);
+    expect(tools).toHaveLength(1);
+    expect(tools[0]?.result).toBeNull();
+    expect(JSON.parse(tools[0]?.args ?? '')).toEqual({ question: 'Which colour?', options: ['Red', 'Blue'] });
+    expect(t.pendingRequest).toEqual({ id: 'call_1', question: 'Which colour?', options: ['Red', 'Blue'] });
+  });
 });

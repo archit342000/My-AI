@@ -19,6 +19,7 @@ import {
 } from '../../lib/chat-model';
 import { emptyLiveTurn, type LiveTurn } from './stream-reducer';
 import { useStreamStore, type InterruptedTurn, type PendingUser } from '../../state/stream-store';
+import { ClarificationPrompt } from './ClarificationPrompt';
 import { ThoughtHeader, ThoughtTimeline } from './ThoughtBlock';
 import { ToolActivityFeed, ToolSummary } from './ToolActivity';
 import { MessageActions } from './MessageActions';
@@ -277,7 +278,7 @@ function AssistantTurn({
   );
 }
 
-function LiveAssistant({ live }: { live: LiveTurn }) {
+function LiveAssistant({ live, chatId }: { live: LiveTurn; chatId: string }) {
   const content = turnText(live.steps);
   const thinking = !content;
   return (
@@ -287,6 +288,15 @@ function LiveAssistant({ live }: { live: LiveTurn }) {
         steps={live.steps}
         active={thinking}
         status={lastEvent(live.steps)}
+        footer={
+          live.pendingRequest ? (
+            <ClarificationPrompt
+              key={live.pendingRequest.id}
+              chatId={chatId}
+              request={live.pendingRequest}
+            />
+          ) : null
+        }
       >
         {live.redactNotice ? (
           <div className="validation-fixing">
@@ -446,7 +456,7 @@ export function MessageList({
         />
       ) : null}
       {pending ? <LiveUser pending={pending} /> : null}
-      {streaming ? <LiveAssistant live={live ?? emptyLiveTurn()} /> : null}
+      {streaming ? <LiveAssistant live={live ?? emptyLiveTurn()} chatId={chatId} /> : null}
       {showInterrupted && interrupted ? (
         <InterruptedAssistant interrupted={interrupted} onRetry={retryLast} />
       ) : null}

@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { renderWithProviders } from '../../test/render';
 import { MessageList } from './MessageList';
 import { toTurns } from '../../lib/chat-model';
-import { applyChunk, emptyLiveTurn } from './stream-reducer';
+import { applyChunk, emptyLiveTurn, type LiveTurn } from './stream-reducer';
 import { oneToolReply, threeToolReply } from '../../test/fixtures/chat-detail';
 import { chatsApi } from '../../api/chats';
 import { chatListInvalidated } from '../../test/invalidation';
@@ -366,5 +366,47 @@ describe('MessageList with a tool reply in the real API shape', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
     await waitFor(() => expect(del).toHaveBeenCalledWith('c1', '2'));
     expect(del).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('MessageList clarification prompt', () => {
+  const live = (pendingRequest: LiveTurn['pendingRequest']): LiveTurn => ({
+    steps: [],
+    model: 'M',
+    redactNotice: null,
+    snapshot: [],
+    pendingRequest,
+  });
+  const request = { id: 'c1', question: 'Which colour?', options: ['Red', 'Blue'] };
+  const reset = () => useStreamStore.setState({ chatId: null, live: null, pending: null, interrupted: null, controller: null });
+  beforeEach(reset);
+  afterEach(() => {
+    reset();
+    vi.restoreAllMocks();
+  });
+
+  it('a live turn with a pending request shows the prompt, and it is gone once the request closes', () => {
+    useStreamStore.setState({ chatId: 'c1', live: live(request), pending: { text: 'q', images: [], files: []}, interrupted: null, controller: null });
+    renderWithProviders(<MessageList turns={[]} chatId="c1" onChanged={() => undefined} />);
+    expect(screen.getByText('Which colour?')).toBeTruthy();
+    act(() => useStreamStore.setState({ live: live(null) }));
+    expect(screen.queryByText('Which colour?')).toBeNull();
+  });
+
+  it('stopping the turn (interrupt, then finish) dismisses the prompt', () => {
+    useStreamStore.setState({ chatId: 'c1', live: live(request), pending: { text: 'q', images: [], files: []}, interrupted: null, controller: null });
+    renderWithProviders(<MessageList turns={[]} chatId="c1" onChanged={() => undefined} />);
+    expect(screen.getByText('Which colour?')).toBeTruthy();
+    act(() => {
+      useStreamStore.getState().interrupt({ chatId: 'c1', live: live(request), kind: 'stopped', message: null });
+      useStreamStore.getState().finish();
+    });
+    expect(screen.queryByText('Which colour?')).toBeNull();
+  });
+
+  it('another chat\'s pending request shows nothing here', () => {
+    useStreamStore.setState({ chatId: 'other', live: live(request), pending: null, interrupted: null, controller: null });
+    renderWithProviders(<MessageList turns={[]} chatId="c1" onChanged={() => undefined} />);
+    expect(screen.queryByText('Which colour?')).toBeNull();
   });
 });

@@ -2515,3 +2515,30 @@ body {
   color: #fff;
   font-size: 0.875rem;
 }
+
+/* ───────────────────────── Clarification prompt (clarify) ───────────────────────── */
+
+/* The question a waiting turn asks, in the bubble column under the live reply. */
+.clarify {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: 100%;
+  margin-top: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-xl);
+  background: var(--surface-elevated);
+}
+.clarify__question {
+  min-width: 0;
+}
+.clarify__custom {
+  width: 100%;
+  background: var(--bg-input);
+}
+.clarify__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
