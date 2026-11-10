@@ -3,6 +3,8 @@ import { defineConfig, devices } from '@playwright/test';
 // Uses the system Chrome (see plans/frontend-react-migration notes); no browser download.
 export default defineConfig({
   testDir: 'e2e',
+  // The stack suite has its own config (playwright.stack.config.ts): it starts the real backend.
+  testIgnore: 'stack/**',
   timeout: 60_000,
   fullyParallel: false,
   workers: 1,

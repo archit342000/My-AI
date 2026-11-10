@@ -35,7 +35,7 @@ Applies to `frontend/`. Layout, state placement and run commands are in `docs/fr
 ## Styling and accessibility
 
 - CSS Custom Properties for colors, spacing, radii and z-index. No hardcoded hex values or magic pixel sizes in components.
-- Reuse the shared UI primitives (`Modal`, `Toast`, `ContextMenu`, `ConfirmDialog`) instead of building new ones.
+- Reuse the shared UI primitives (`Modal`, `Toast`, `Menu`, `Popover`, `ConfirmDialog`) instead of building new ones.
 - Interactive elements are real `<button>`/`<a>` elements with an accessible name. Icon-only buttons need `aria-label`.
 - Everything must be keyboard operable; keep focus visible.
 

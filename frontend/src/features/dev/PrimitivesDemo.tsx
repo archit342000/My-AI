@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { Badge } from '../../components/ui/Badge';
 import { Button, IconButton } from '../../components/ui/Button';
-import { ContextMenu, type MenuItem } from '../../components/ui/ContextMenu';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Field, Input, Textarea } from '../../components/ui/Field';
 import { Menu, type MenuEntry } from '../../components/ui/Menu';
@@ -24,17 +23,11 @@ const MODELS: SelectOption[] = [
 export function PrimitivesDemo() {
   const [modalOpen, setModalOpen] = useState(false);
   const [nestedOpen, setNestedOpen] = useState(false);
-  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const [model, setModel] = useState('qwen');
   const [view, setView] = useState('preview');
   const [style, setStyle] = useState('precise');
   const [vision, setVision] = useState(false);
   const [temperature, setTemperature] = useState(0.7);
-
-  const items: MenuItem[] = [
-    { id: 'rename', label: 'Rename', icon: 'edit', onSelect: () => showToast('Renamed', 'success') },
-    { id: 'delete', label: 'Delete', icon: 'trash', danger: true, onSelect: () => showToast('Deleted', 'error') },
-  ];
 
   const menuItems: MenuEntry[] = [
     { id: 'rename', label: 'Rename', icon: 'edit', onSelect: () => showToast('Renamed', 'success') },
@@ -76,16 +69,7 @@ export function PrimitivesDemo() {
             <Button variant="ghost">Hover me</Button>
           </Tooltip>
           <Menu items={menuItems} label="Chat actions" trigger={(props) => <Button {...props}>Menu</Button>} />
-          <span
-            onContextMenu={(event) => {
-              event.preventDefault();
-              setMenu({ x: event.clientX, y: event.clientY });
-            }}
-          >
-            <Button variant="secondary">Right-click for context menu</Button>
-          </span>
         </div>
-        {menu ? <ContextMenu x={menu.x} y={menu.y} items={items} onClose={() => setMenu(null)} /> : null}
       </section>
 
       <section className="ui-demo__section">
