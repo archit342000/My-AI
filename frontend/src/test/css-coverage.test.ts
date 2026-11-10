@@ -23,7 +23,6 @@ const TODO_UNSTYLED = new Set<string>([
   'copy-msg-btn',
   'delete-msg-btn',
   'edit-msg-btn',
-  'folder-chevron-wrapper',
   'full-width-reasoning',
   'message-content-wrapper',
   'message-text-wrapper',
@@ -34,7 +33,6 @@ const TODO_UNSTYLED = new Set<string>([
   'thought-text',
   'title-text',
   'validation-fixing',
-  'workspace-view',
 ]);
 
 function cssSelectors(): Set<string> {

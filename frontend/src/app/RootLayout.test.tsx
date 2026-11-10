@@ -36,6 +36,13 @@ describe('RootLayout', () => {
     expect(screen.queryByRole('button', { name: 'View files and artifacts' })).toBeNull();
   });
 
+  it('has no files button on a workspace page (its page always shows the files)', () => {
+    vi.spyOn(chatsApi, 'list').mockResolvedValue([]);
+    vi.spyOn(chatsApi, 'listWorkspaces').mockResolvedValue([]);
+    renderWithProviders(<RootLayout />, { route: '/workspace/w1', path: '/workspace/:workspaceId' });
+    expect(screen.queryByRole('button', { name: 'View files and artifacts' })).toBeNull();
+  });
+
   it('shows a reload banner once the session has expired, and not before', () => {
     vi.spyOn(chatsApi, 'list').mockResolvedValue([]);
     vi.spyOn(chatsApi, 'listWorkspaces').mockResolvedValue([]);

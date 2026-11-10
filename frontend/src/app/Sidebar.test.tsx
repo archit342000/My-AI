@@ -51,6 +51,24 @@ describe('Sidebar', () => {
     expect(screen.getByTestId('location').textContent).toBe('/');
   });
 
+  it('Logs is an in-app link: clicking it moves the router, not the page, and marks it current', () => {
+    signInAs(ADMIN);
+    renderWithProviders(withProbe, { route: '/', path: '/*' });
+    const link = screen.getByRole('link', { name: 'Logs' });
+    const notPrevented = fireEvent.click(link);
+    expect(notPrevented).toBe(false); // the router handled it (default prevented): no document load
+    expect(screen.getByTestId('location').textContent).toBe('/logs');
+    expect(screen.getByRole('link', { name: 'Logs' }).getAttribute('aria-current')).toBe('page');
+  });
+
+  it('the temporary-chat button is dimmed inside a saved chat and not elsewhere', () => {
+    const chat = renderWithProviders(withProbe, { route: '/chat/c1', path: '/*' });
+    expect(screen.getByRole('button', { name: 'Temporary Chat' }).className).toContain('temp-chat-btn--dim');
+    chat.unmount();
+    renderWithProviders(withProbe, { route: '/', path: '/*' });
+    expect(screen.getByRole('button', { name: 'Temporary Chat' }).className).not.toContain('temp-chat-btn--dim');
+  });
+
   it('links to the logs page', () => {
     renderWithProviders(<Sidebar />);
     expect(screen.getByRole('link', { name: 'Logs' }).getAttribute('href')).toBe('/logs');

@@ -81,7 +81,7 @@ export function RootLayout() {
         )}
         <Sidebar />
         <main>
-          {onLogs || path === '/' ? null : (
+          {onLogs || path === '/' || path.startsWith('/workspace/') ? null : (
             <button
               id="nav-files-btn"
               type="button"

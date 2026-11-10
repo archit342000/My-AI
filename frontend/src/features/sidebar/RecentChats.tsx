@@ -48,7 +48,7 @@ export function SidebarChats() {
           id: `move-${w.id}`,
           type: 'item' as const,
           label: w.name,
-          icon: 'grid' as const,
+          icon: workspaceIconName(w),
           onSelect: () =>
             void run(() => chatsApi.patch(chat.id, { workspace_id: w.id }), 'Move failed'),
         }));
@@ -287,6 +287,13 @@ function useLongPress(open: (x: number, y: number) => void) {
   };
 }
 
+/** The workspace's own icon when it names a known one, else the generic grid. */
+function workspaceIconName(workspace: Workspace): IconName {
+  return workspace.icon && iconPaths(workspace.icon as IconName)
+    ? (workspace.icon as IconName)
+    : 'grid';
+}
+
 function WorkspaceFolder({ workspace, chats }: { workspace: Workspace; chats: ChatSummary[] }) {
   const openMenu = useContext(MenuCtx);
   const queryClient = useQueryClient();
@@ -294,8 +301,7 @@ function WorkspaceFolder({ workspace, chats }: { workspace: Workspace; chats: Ch
   const navigate = useNavigate();
   const press = useLongPress((x, y) => openMenu({ kind: 'workspace', workspace }, x, y));
   const [expanded, setExpanded] = useState(() => isWorkspaceExpanded(workspace.name));
-  const iconName =
-    workspace.icon && iconPaths(workspace.icon as IconName) ? (workspace.icon as IconName) : null;
+  const iconName = workspaceIconName(workspace);
 
   function toggle() {
     const next = !expanded;
@@ -352,60 +358,18 @@ function WorkspaceFolder({ workspace, chats }: { workspace: Workspace; chats: Ch
             e.stopPropagation();
             toggle();
           }}
-          style={{
-            cursor: 'pointer',
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            width: 16,
-            height: 16,
-            flexShrink: 0,
-          }}
         >
-          <Icon
-            name="chevron-right"
-            size={12}
-            strokeWidth={2.5}
-            className="folder-chevron"
-            style={{
-              transform: expanded ? 'rotate(90deg)' : undefined,
-              transition: 'transform 0.2s ease',
-            }}
-          />
+          <Icon name="chevron-right" size={12} strokeWidth={2.5} className="folder-chevron" />
         </span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
-          {iconName ? (
-            <Icon name={iconName} size={14} strokeWidth={2.5} style={{ opacity: 0.7 }} />
-          ) : workspace.icon ? (
-            <span style={{ fontSize: 11 }}>{workspace.icon}</span>
+        <div className="folder-title">
+          {workspace.icon && !iconPaths(workspace.icon as IconName) ? (
+            <span className="folder-emoji">{workspace.icon}</span>
           ) : (
-            <Icon name="grid" size={14} strokeWidth={2.5} style={{ opacity: 0.7 }} />
+            <Icon name={iconName} size={14} strokeWidth={2.5} className="folder-icon" />
           )}
-          <span
-            style={{
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-              fontSize: '0.8125rem',
-              fontWeight: 600,
-              color: 'var(--content-primary)',
-            }}
-          >
-            {workspace.name}
-          </span>
+          <span className="folder-name">{workspace.name}</span>
         </div>
-        <span
-          style={{
-            fontSize: '0.7rem',
-            color: 'var(--content-muted)',
-            background: 'var(--surface-secondary)',
-            padding: '1px 6px',
-            borderRadius: 6,
-            fontWeight: 500,
-          }}
-        >
-          {chats.length}
-        </span>
+        <span className="folder-count">{chats.length}</span>
       </div>
       {expanded ? (
         <div className="folder-content">
@@ -433,31 +397,8 @@ function ChatLink({ chat }: { chat: ChatSummary }) {
       }}
       className={({ isActive }) => `chat-list-item${isActive ? ' active' : ''}`}
     >
-      <div
-        className="chat-list-item-title"
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-          overflow: 'hidden',
-          whiteSpace: 'nowrap',
-          flex: 1,
-          minWidth: 0,
-          width: '100%',
-        }}
-      >
-        <span
-          style={{
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-            display: 'block',
-            flex: 1,
-            minWidth: 0,
-          }}
-        >
-          {chat.title || 'Untitled Chat'}
-        </span>
+      <div className="chat-list-item-title">
+        <span className="chat-list-item-text">{chat.title || 'Untitled Chat'}</span>
       </div>
     </NavLink>
   );

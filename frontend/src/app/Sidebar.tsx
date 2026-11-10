@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router';
+import { useRef, useState } from 'react';
+import { NavLink, useMatch, useNavigate } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { chatsApi, queryKeys } from '../api/chats';
 import { discardTemporaryChat, startTemporaryChat } from '../features/chat/temporary-chat';
@@ -8,6 +8,8 @@ import { showToast } from '../components/ui/toast-store';
 import { Icon } from '../components/icons/Icon';
 import { IconButton } from '../components/ui/Button';
 import { Tooltip } from '../components/ui/Tooltip';
+import { cx } from '../lib/cx';
+import { useSidebarResize } from './useSidebarResize';
 import { useUiStore } from '../state/ui-store';
 import { SidebarChats } from '../features/sidebar/RecentChats';
 import { useModalStore } from '../state/modal-store';
@@ -25,6 +27,10 @@ export function Sidebar() {
   const temporaryChatId = useUiStore((s) => s.temporaryChatId);
   const isAdmin = useIsAdmin();
   const user = useUserStore((s) => s.user);
+  const aside = useRef<HTMLElement>(null);
+  const { resizing, handleProps } = useSidebarResize(aside);
+  // Legacy dims the temporary-chat button inside a saved chat: a temporary chat starts on the landing page.
+  const inChat = useMatch('/chat/:chatId') !== null;
 
   function toggleTemporary() {
     // Navigate first: the temporary chat is started on the landing page (see shouldDiscardTemporaryChat).
@@ -57,8 +63,12 @@ export function Sidebar() {
   }
 
   return (
-    <aside id="sidebar" className={collapsed ? 'sidebar-collapsed' : 'sidebar-expanded'}>
-      <div className="resize-handle" id="sidebar-resizer" />
+    <aside
+      id="sidebar"
+      ref={aside}
+      className={cx(collapsed ? 'sidebar-collapsed' : 'sidebar-expanded', resizing && 'resizing')}
+    >
+      <div className="resize-handle" id="sidebar-resizer" {...handleProps} />
 
       <div className="sidebar-header">
         <div className="sidebar-brand">
@@ -104,10 +114,10 @@ export function Sidebar() {
                 icon="clock"
                 label="Temporary chat"
                 aria-pressed={Boolean(temporaryChatId)}
-                className={temporaryChatId ? 'ui-icon-button--active' : undefined}
+                className={cx(temporaryChatId && 'ui-icon-button--active', inChat && 'temp-chat-btn--dim')}
                 onClick={toggleTemporary}
               />
-              <IconButton id="new-folder-btn" icon="grid" label="New workspace" onClick={() => setCreating(true)} />
+              <IconButton id="new-folder-btn" icon="grid-plus" label="New workspace" onClick={() => setCreating(true)} />
             </>
           ) : (
             <>
@@ -124,7 +134,7 @@ export function Sidebar() {
               <button
                 id="temp-chat-btn"
                 type="button"
-                className={`sidebar-icon-btn${temporaryChatId ? ' active' : ''}`}
+                className={cx('sidebar-icon-btn', temporaryChatId && 'active', inChat && 'temp-chat-btn--dim')}
                 title="Temporary Chat"
                 aria-label="Temporary Chat"
                 aria-pressed={Boolean(temporaryChatId)}
@@ -141,7 +151,7 @@ export function Sidebar() {
                 aria-label="New Workspace"
                 onClick={() => setCreating(true)}
               >
-                <Icon name="grid" size={18} />
+                <Icon name="grid-plus" size={18} />
                 <span className="nav-tooltip">New Workspace</span>
               </button>
             </>
@@ -171,9 +181,13 @@ export function Sidebar() {
             />
             {isAdmin ? (
               <Tooltip content="Logs">
-                <a href="/logs" className="ui-icon-button sidebar-rail__link" aria-label="Logs">
+                <NavLink
+                  to="/logs"
+                  className={({ isActive }) => cx('ui-icon-button sidebar-rail__link', isActive && 'active')}
+                  aria-label="Logs"
+                >
                   <Icon name="logs" size={16} />
-                </a>
+                </NavLink>
               </Tooltip>
             ) : null}
           </>
@@ -204,11 +218,16 @@ export function Sidebar() {
               <span className="nav-tooltip">System Settings</span>
             </button>
             {isAdmin ? (
-              <a href="/logs" className="sidebar-footer-btn" title="View Logs" aria-label="Logs">
+              <NavLink
+                to="/logs"
+                className={({ isActive }) => cx('sidebar-footer-btn', isActive && 'active')}
+                title="View Logs"
+                aria-label="Logs"
+              >
                 <Icon name="logs" size={18} />
                 <span className="sidebar-text">Logs</span>
                 <span className="nav-tooltip">Logs</span>
-              </a>
+              </NavLink>
             ) : null}
             {user ? (
               <div className="sidebar-user sidebar-text" title={`Signed in as ${user.email} (${user.role})`}>

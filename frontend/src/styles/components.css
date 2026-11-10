@@ -2022,6 +2022,10 @@
 /* ───────────────────────── Workspace icon picker (F-48) ───────────────────────── */
 
 .icon-picker__grid {
+  /* The grid scrolls inside the dialog; the footer stays in view. */
+  max-height: min(50vh, 360px);
+  overflow-y: auto;
+  padding: var(--space-1);
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
   gap: var(--space-2);
@@ -2055,12 +2059,6 @@
   border-color: var(--accent);
   box-shadow: 0 0 0 2px var(--surface-elevated), 0 0 0 4px var(--accent);
   background: var(--accent-subtle);
-}
-
-.icon-picker__footer {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: var(--space-4);
 }
 
 /* ───────────────────────── Logs page (F-49 … F-52) ───────────────────────── */
@@ -2514,4 +2512,192 @@ body {
   background: var(--danger, #b3261e);
   color: #fff;
   font-size: 0.875rem;
+}
+
+/* ───────────────────────── Sidebar lists (workspace folders, chat rows) ───────────────────────── */
+
+.folder-chevron-wrapper {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+.folder-chevron {
+  transition: transform 0.2s ease;
+}
+.folder-item.expanded .folder-chevron {
+  transform: rotate(90deg);
+}
+/* The icon and the count never shrink; a long name truncates instead. */
+.folder-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 1;
+  min-width: 0;
+}
+.folder-icon {
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+.folder-emoji {
+  flex-shrink: 0;
+  font-size: 11px;
+}
+.folder-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--content-primary);
+}
+.folder-count {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-secondary);
+  color: var(--content-muted);
+  font-size: 0.7rem;
+  font-weight: 500;
+}
+.chat-list-item-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.chat-list-item-text {
+  display: block;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ───────────────────────── Sidebar footer and rail details ───────────────────────── */
+
+/* Legacy dims the temporary-chat button inside a saved chat. */
+#temp-chat-btn.temp-chat-btn--dim {
+  opacity: 0.4;
+}
+/* The page that is open: the Logs entry reads as selected. */
+.sidebar-footer-btn.active,
+.sidebar-rail__link.active {
+  color: var(--accent);
+  background: var(--accent-subtle);
+}
+
+/* The expanded sidebar's width is the remembered one (set by the resize handle); legacy defaults to 16rem. */
+@media (min-width: 769px) {
+  #sidebar.sidebar-expanded {
+    width: var(--sidebar-expanded-width, 16rem);
+  }
+}
+.resize-handle:focus-visible {
+  outline: 2px solid var(--focus-ring);
+}
+
+/* ───────────────────────── Workspace page ───────────────────────── */
+
+.workspace-view {
+  width: 100%;
+  max-width: 960px;
+  min-height: 0;
+  margin: 0 auto;
+  padding: 72px var(--space-6) var(--space-6);
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+/* The header wraps: title and actions stack on a narrow screen instead of running off it. */
+.workspace-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-5);
+}
+.workspace-header__title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: 1 1 16rem;
+  min-width: 0;
+}
+.workspace-header__text {
+  min-width: 0;
+}
+.workspace-header__name {
+  margin: 0;
+  font-size: 1.5rem;
+  overflow-wrap: anywhere;
+}
+.workspace-header__stats {
+  margin: 0;
+  color: var(--content-muted);
+  font-size: 0.8rem;
+}
+.workspace-header__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.workspace-rename {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.workspace-rename .ui-input {
+  flex: 1 1 10rem;
+  min-width: 0;
+}
+.workspace-empty {
+  color: var(--content-muted);
+}
+/* Chat cards sit on a surface of their own. */
+.workspace-chat-card {
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-secondary);
+}
+.workspace-view .artifact-inline {
+  margin-top: var(--space-6);
+}
+
+/* Collapsed rail: the logo, the toggle and the buttons below share one centred column (nothing clipped). */
+#sidebar.sidebar-collapsed .sidebar-header {
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) 0;
+}
+#sidebar.sidebar-collapsed .sidebar-brand {
+  justify-content: center;
+  width: 100%;
+}
+#sidebar.sidebar-collapsed .sidebar-header .sidebar-icon-btn {
+  margin: 0;
+}
+
+/* The phone drawer has a fixed width: no resize handle. While dragging on a desktop, text is not selected. */
+@media (max-width: 768px) {
+  .resize-handle {
+    display: none;
+  }
+}
+#app-root:has(#sidebar.resizing) {
+  user-select: none;
 }

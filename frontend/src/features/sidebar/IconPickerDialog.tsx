@@ -1,4 +1,6 @@
+import { useEffect, useRef } from 'react';
 import { Icon, type IconName } from '../../components/icons/Icon';
+import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
 import { WORKSPACE_ICON_PATHS } from '../../components/icons/workspace-icons.generated';
 
@@ -14,9 +16,25 @@ export function IconPickerDialog({
   onPick: (icon: string | null) => void;
   onCancel: () => void;
 }) {
+  const grid = useRef<HTMLDivElement>(null);
+  // The grid scrolls inside the dialog: bring the current icon into view when it opens.
+  useEffect(() => {
+    if (!open) return;
+    grid.current?.querySelector('[aria-pressed="true"]')?.scrollIntoView?.({ block: 'nearest' });
+  }, [open]);
   return (
-    <Modal open={open} onClose={onCancel} title="Workspace Icon" maxWidth={440}>
-      <div className="icon-picker__grid">
+    <Modal
+      open={open}
+      onClose={onCancel}
+      title="Workspace Icon"
+      maxWidth={440}
+      footer={
+        <Button variant="secondary" onClick={() => onPick(null)}>
+          Remove icon
+        </Button>
+      }
+    >
+      <div className="icon-picker__grid" ref={grid}>
         {Object.keys(WORKSPACE_ICON_PATHS).map((name) => {
           const selected = current === name;
           return (
@@ -33,11 +51,6 @@ export function IconPickerDialog({
             </button>
           );
         })}
-      </div>
-      <div className="icon-picker__footer">
-        <button type="button" className="btn-secondary" onClick={() => onPick(null)}>
-          Remove icon
-        </button>
       </div>
     </Modal>
   );
