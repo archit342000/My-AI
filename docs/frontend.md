@@ -73,6 +73,16 @@ the live row replaces the persisted rows of the turn being generated. Retry and 
 
 The thought box is the legacy timeline: one box per assistant turn with collapsible entries in the order they happened (Reasoning, `Call: <tool>`, `Tool Result: <tool>`, event dividers, and a labelled group per sub-agent run, which also shows that agent's text). Built by `lib/thought-timeline.ts` from the turn's steps, drawn by `ThoughtBox`, `TimelineEntry` and `ThoughtFullView` (a dialog with every entry open). The header says "Thinking..." with the newest event or running tool for as long as the turn streams, and "Thought Process" after. Whether a box is open is kept in `state/thought-store.ts` by `chatId:ordinal` (the number of user turns up to the one it answers), so it stays open when the live reply is replaced by the saved one; deleting a turn forgets the chat's open boxes. A turn with nothing to show has no box. The retry notice is fixed text with a spinner; the server's message is not shown.
 
+## Mobile
+
+Phone rules live in the last block of `src/styles/components.css` ("Phone layout", 768px and below) and are checked at 390px by
+`e2e/mobile-layout.spec.ts` (the `phone` Playwright project). The top of every page is one opaque 5rem band that the menu button
+(legacy 3.5rem square, hidden while the drawer is open) and the files button sit in, so messages never show beside or behind
+them. The drawer is opaque, keeps all three actions (New Chat, Temporary Chat, New Workspace) and closes when a dialog opens.
+The files button is on every page with a composer and dimmed on the home page. Toasts sit above the composer (`--composer-h`),
+dialogs take the screen less an 8px margin, and a reply without a thought box stacks avatar-over-answer at the full column width.
+The drawer and the title band are opaque (no blur) on phones; other surfaces keep their blur, as the legacy UI does.
+
 ## Known gaps
 
 - The legacy per-agent renderers (research, browsing) are not ported; sub-agent steps show as a labelled group of entries.

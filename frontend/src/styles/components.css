@@ -1139,17 +1139,22 @@
 @media (max-width: 768px) {
   .mobile-topbar {
     position: fixed;
-    top: max(10px, env(safe-area-inset-top));
-    left: 10px;
+    top: max(1.25rem, env(safe-area-inset-top));
+    left: 1.25rem;
     /* Above the sticky chat title header, which shares --z-header and comes later in the DOM. */
     z-index: calc(var(--z-header) + 1);
     display: inline-flex;
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
+    width: 3.5rem;
+    height: 3.5rem;
+    border-radius: 1rem;
+    color: var(--accent);
     background: var(--surface-elevated);
     border: 1px solid var(--border-subtle);
     box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+  }
+  /* The drawer has its own collapse button and the scrim closes it, so the menu button steps aside. */
+  .mobile-topbar[hidden] {
+    display: none;
   }
   .sidebar-scrim {
     display: block;
@@ -2361,9 +2366,6 @@
   .logs-page {
     padding-inline-start: 0;
   }
-  .logs-main {
-    padding: var(--space-3);
-  }
   .logs-chat-id {
     min-width: 0;
     flex: 1 1 100%;
@@ -2642,4 +2644,109 @@ body {
   background: var(--danger, #b3261e);
   color: #fff;
   font-size: 0.875rem;
+}
+
+/* ───────────────────────── Phone layout (768px and below) ───────────────────────── */
+
+/* The top band on phones: tall enough for the 3.5rem buttons at 1.25rem from the top, plus 0.25rem. Side inset clears a button. */
+:root {
+  --phone-topbar-h: 5rem;
+  --phone-topbar-inset: 5rem;
+}
+
+@media (max-width: 768px) {
+  /* One opaque band at the top: the menu button and the files button sit in it, and the chat title between
+     them. Messages scroll under it and never show beside or behind either button. */
+  main::before {
+    content: '';
+    position: fixed;
+    inset: 0 0 auto 0;
+    height: var(--phone-topbar-h);
+    background: var(--bg-primary);
+    z-index: calc(var(--z-header) - 1);
+    pointer-events: none;
+  }
+  .chat-title-header {
+    height: var(--phone-topbar-h);
+    padding-inline: var(--phone-topbar-inset);
+    background: var(--bg-primary);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .chat-header-content {
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  /* A reply without a thought box stacks like the legacy row: avatar on top, answer at the full column width. */
+  .bot-turn {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: var(--space-3);
+  }
+  .bot-turn__avatar,
+  .bot-turn__body {
+    grid-column: 1;
+  }
+
+  /* The files button is shown on every page that has a composer; on the home page it is dimmed (nothing to show yet). */
+  .top-right-btn:disabled {
+    opacity: 0.35;
+    cursor: default;
+    pointer-events: none;
+  }
+
+  /* The drawer: opaque, with all three actions. New Chat shrinks (the label stays) and wraps when it must. */
+  #sidebar {
+    background: var(--bg-primary);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  #sidebar .sidebar-actions {
+    flex-wrap: wrap;
+  }
+  #sidebar #new-chat-btn {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+  #sidebar #temp-chat-btn,
+  #sidebar #new-folder-btn {
+    flex: 1 1 0;
+    width: auto;
+  }
+
+  /* Toasts sit above the composer, not on it (the composer publishes its height). */
+  .ui-toast-viewport {
+    bottom: calc(var(--composer-h, 0px) + max(var(--space-4), env(safe-area-inset-bottom)));
+  }
+
+  /* Dialogs use the screen: full width less a margin, as tall as the screen less a margin. */
+  .modal-content {
+    width: calc(100% - var(--space-4));
+    max-height: calc(100dvh - var(--space-4));
+  }
+  .modal-body {
+    padding: 0 var(--space-4) var(--space-4);
+  }
+  .model-row {
+    flex-wrap: wrap;
+  }
+  .model-row__name {
+    flex: 1 1 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .edit-box {
+    max-width: 100%;
+  }
+  .edit-box__actions {
+    flex-wrap: nowrap;
+  }
+  .edit-box__actions .ui-button {
+    padding-inline: var(--space-2);
+  }
+
+  /* The logs page has no title header: its content starts below the band. */
+  .logs-main {
+    padding: calc(var(--phone-topbar-h) + var(--space-3)) var(--space-3) var(--space-3);
+  }
 }
