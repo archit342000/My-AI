@@ -23,7 +23,8 @@ import { Composer } from '../features/composer/Composer';
 /** App frame: animated background, sidebar, routed main area, toasts. */
 export function RootLayout() {
   const themeMode = useUiStore((s) => s.themeMode);
-  useThemeSync(themeMode);
+  const glassMode = useUiStore((s) => s.glassMode);
+  useThemeSync(themeMode, glassMode);
   usePlatformClass();
   const toggleArtifacts = useUiStore((s) => s.toggleArtifacts);
   const artifactsOpen = useUiStore((s) => s.artifactsOpen);

@@ -71,10 +71,16 @@ export function particleAlpha(z: number, radius: number, isDark: boolean): numbe
 export interface StartOptions {
   canvas: HTMLCanvasElement;
   isDark: () => boolean;
+  /** True when the person asked for less motion: one frame is drawn and nothing moves. */
+  reduceMotion?: () => boolean;
 }
 
 /** Starts the animation. Returns a cleanup that stops the loop and removes all listeners. */
-export function startParticles({ canvas, isDark }: StartOptions): () => void {
+export function startParticles({
+  canvas,
+  isDark,
+  reduceMotion = () => false,
+}: StartOptions): () => void {
   const ctx = canvas.getContext('2d');
   if (!ctx) return () => undefined;
   const isTouch = navigator.maxTouchPoints > 0 || 'ontouchstart' in window;
@@ -170,10 +176,12 @@ export function startParticles({ canvas, isDark }: StartOptions): () => void {
       ctx!.arc(p.x, p.y, p.size, 0, Math.PI * 2);
       ctx!.fill();
     }
-    frame = requestAnimationFrame(animate);
+    // Less motion: this frame stays as it is. A resize draws one more.
+    if (!reduceMotion()) frame = requestAnimationFrame(animate);
   }
 
   function onPointerDown(e: PointerEvent) {
+    if (reduceMotion()) return;
     followX += (e.clientX - followX) * 0.15;
     followY += (e.clientY - followY) * 0.15;
     targetX = e.clientX;
@@ -183,6 +191,7 @@ export function startParticles({ canvas, isDark }: StartOptions): () => void {
   }
 
   function onPointerMove(e: PointerEvent) {
+    if (reduceMotion()) return;
     mouseX = (e.clientX - window.innerWidth / 2) / (window.innerWidth / 2);
     mouseY = (e.clientY - window.innerHeight / 2) / (window.innerHeight / 2);
     targetX = e.clientX;
@@ -194,7 +203,14 @@ export function startParticles({ canvas, isDark }: StartOptions): () => void {
     targetY = window.innerHeight / 2;
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(() => {
-      if (window.innerWidth !== width || window.innerHeight !== height) resize();
+      if (window.innerWidth !== width || window.innerHeight !== height) {
+        resize();
+        if (reduceMotion()) {
+          followX = targetX;
+          followY = targetY;
+          animate();
+        }
+      }
     }, 150);
   }
 
