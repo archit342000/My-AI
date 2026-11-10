@@ -1,14 +1,15 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { skillsApi, settingsKeys, type Skill } from '../../api/settings';
-import { CrudDialog } from './CrudList';
-import { Field } from '../../components/ui/Field';
-import { Button } from '../../components/ui/Button';
+import { CrudDialog, type FormFooter } from './CrudList';
+import { filterSkills } from '../../lib/list-filter';
+import { Field, Input } from '../../components/ui/Field';
 
 export function SkillsDialog({ open, onClose, onBack }: { open: boolean; onClose: () => void; onBack?: () => void }) {
   const queryClient = useQueryClient();
   const list = useQuery({ queryKey: settingsKeys.skills, queryFn: skillsApi.list, enabled: open });
   const refresh = () => queryClient.invalidateQueries({ queryKey: settingsKeys.skills });
+  const [query, setQuery] = useState('');
   return (
     <CrudDialog<Skill>
       open={open}
@@ -17,9 +18,18 @@ export function SkillsDialog({ open, onClose, onBack }: { open: boolean; onClose
       noun="skill"
       title="Skills"
       emptyText="No skills yet. A skill is a named set of instructions you trigger with /name."
-      items={list.data ?? []}
+      items={filterSkills(list.data ?? [], query)}
+      filtering={query.trim() !== ''}
+      toolbar={
+        <Input
+          aria-label="Search skills"
+          placeholder="Search…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+      }
       describe={(s) => ({ id: s.id, title: `/${s.name}`, subtitle: s.description, fullText: s.description })}
-      renderForm={(initial, onDone) => <SkillForm initial={initial} onDone={onDone} onSaved={refresh} />}
+      renderForm={(initial, onDone, footer) => <SkillForm initial={initial} onDone={onDone} onSaved={refresh} footer={footer} />}
       onDelete={async (item) => {
         await skillsApi.remove(item.id);
         await refresh();
@@ -47,7 +57,17 @@ function validateSkill(draft: SkillDraft): Partial<Record<keyof SkillDraft, stri
   return errors;
 }
 
-function SkillForm({ initial, onDone, onSaved }: { initial: Skill | null; onDone: () => void; onSaved: () => Promise<unknown> }) {
+function SkillForm({
+  initial,
+  onDone,
+  onSaved,
+  footer,
+}: {
+  initial: Skill | null;
+  onDone: () => void;
+  onSaved: () => Promise<unknown>;
+  footer: FormFooter;
+}) {
   const [draft, setDraft] = useState<SkillDraft>({
     name: initial?.name ?? '',
     description: initial?.description ?? '',
@@ -61,9 +81,12 @@ function SkillForm({ initial, onDone, onSaved }: { initial: Skill | null; onDone
   const valid = Object.keys(errors).length === 0;
   const shown = (key: keyof SkillDraft) => (touched[key] ? errors[key] ?? null : null);
   const set = (key: keyof SkillDraft, value: string) => setDraft((d) => ({ ...d, [key]: value }));
+  const { setCanSave } = footer;
+  useEffect(() => setCanSave(valid), [valid, setCanSave]);
 
   return (
     <form
+      id={footer.formId}
       noValidate
       onSubmit={async (e) => {
         e.preventDefault();
@@ -123,14 +146,6 @@ function SkillForm({ initial, onDone, onSaved }: { initial: Skill | null; onDone
           {error}
         </div>
       ) : null}
-      <div className="crud-actions">
-        <Button variant="primary" type="submit" disabled={!valid}>
-          Save
-        </Button>
-        <Button variant="secondary" onClick={onDone}>
-          Cancel
-        </Button>
-      </div>
     </form>
   );
 }

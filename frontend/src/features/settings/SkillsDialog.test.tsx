@@ -65,3 +65,28 @@ describe('SkillsDialog', () => {
     expect(update).toHaveBeenCalledWith('s1', expect.objectContaining({ name: 'summarise' }));
   });
 });
+
+describe('SkillsDialog search', () => {
+  afterEach(() => vi.restoreAllMocks());
+  const two = [
+    { id: 's1', name: 'summarise', description: 'Short summary', instructions: 'x' },
+    { id: 's2', name: 'translate', description: 'Translate to French', instructions: 'y' },
+  ];
+
+  it('matches the name or the description', async () => {
+    vi.spyOn(skillsApi, 'list').mockResolvedValue(two);
+    renderWithProviders(<SkillsDialog open onClose={() => undefined} />);
+    await screen.findByText('/summarise');
+    fireEvent.change(screen.getByLabelText('Search skills'), { target: { value: 'french' } });
+    expect(screen.queryByText('/summarise')).toBeNull();
+    expect(screen.getByText('/translate')).toBeTruthy();
+  });
+
+  it('says "No matches" for a query with no result', async () => {
+    vi.spyOn(skillsApi, 'list').mockResolvedValue(two);
+    renderWithProviders(<SkillsDialog open onClose={() => undefined} />);
+    await screen.findByText('/summarise');
+    fireEvent.change(screen.getByLabelText('Search skills'), { target: { value: 'nothing like this' } });
+    expect(screen.getByText('No matches')).toBeTruthy();
+  });
+});

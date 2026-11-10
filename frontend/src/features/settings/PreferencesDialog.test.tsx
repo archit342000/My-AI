@@ -72,3 +72,44 @@ describe('PreferencesDialog', () => {
     await waitFor(() => expect(useToastStore.getState().toasts.some((t) => t.type === 'error')).toBe(true), { timeout: 500 });
   });
 });
+
+describe('PreferencesDialog search, filter and sort', () => {
+  afterEach(() => vi.restoreAllMocks());
+  const many = [
+    { id: 'a', content: 'Answer in British English', tag: 'preference', timestamp: 100 },
+    { id: 'b', content: 'The project is called Atlas', tag: 'project', timestamp: 300 },
+    { id: 'c', content: 'Use metric units', tag: 'preference', timestamp: 200 },
+  ];
+  const rows = () => Array.from(document.querySelectorAll('.crud-row__title')).map((e) => e.textContent);
+
+  it('typing in the search narrows the rows', async () => {
+    vi.spyOn(preferencesApi, 'list').mockResolvedValue(many);
+    renderWithProviders(<PreferencesDialog open onClose={() => undefined} />);
+    await screen.findByText('Use metric units');
+    fireEvent.change(screen.getByLabelText('Search memory'), { target: { value: 'atlas' } });
+    expect(rows()).toEqual(['The project is called Atlas']);
+  });
+
+  it('the tag filter keeps one tag and the sort changes the order', async () => {
+    vi.spyOn(preferencesApi, 'list').mockResolvedValue(many);
+    renderWithProviders(<PreferencesDialog open onClose={() => undefined} />);
+    await screen.findByText('Use metric units');
+    expect(rows()).toEqual(['The project is called Atlas', 'Use metric units', 'Answer in British English']); // newest first
+    fireEvent.click(screen.getByRole('combobox', { name: 'Sort' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Oldest' }));
+    expect(rows()).toEqual(['Answer in British English', 'Use metric units', 'The project is called Atlas']);
+    fireEvent.click(screen.getByRole('combobox', { name: 'Filter by tag' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Project' }));
+    expect(rows()).toEqual(['The project is called Atlas']);
+  });
+
+  it('a query with no result says "No matches" and Add still works', async () => {
+    vi.spyOn(preferencesApi, 'list').mockResolvedValue(many);
+    renderWithProviders(<PreferencesDialog open onClose={() => undefined} />);
+    await screen.findByText('Use metric units');
+    fireEvent.change(screen.getByLabelText('Search memory'), { target: { value: 'zzz' } });
+    expect(screen.getByText('No matches')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /Add/ }));
+    expect(screen.getByRole('heading', { name: 'New memory' })).toBeTruthy();
+  });
+});

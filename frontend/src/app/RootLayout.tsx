@@ -12,6 +12,7 @@ import { useUiStore } from '../state/ui-store';
 import { useUserStore } from '../state/user-store';
 import { Sidebar } from './Sidebar';
 import { DialogHost } from '../features/settings/DialogHost';
+import { Composer } from '../features/composer/Composer';
 
 /** App frame: animated background, sidebar, routed main area, toasts. */
 export function RootLayout() {
@@ -105,6 +106,8 @@ export function RootLayout() {
             </button>
           )}
           <Outlet />
+          {/* One composer for the landing page and chats, so a route change never remounts it. */}
+          {path === '/' || path.startsWith('/chat/') ? <Composer /> : null}
         </main>
       </div>
       <DialogHost />
