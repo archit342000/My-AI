@@ -11,17 +11,17 @@ import { useMatch, useNavigate } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { modelsApi, settingsKeys, skillsApi } from '../../api/settings';
 import { Icon } from '../../components/icons/Icon';
-import { IconButton } from '../../components/ui/Button';
 import { Popover } from '../../components/ui/Popover';
 import { showToast } from '../../components/ui/toast-store';
 import { deleteFile, uploadFile } from '../../api/files';
+import { useAttachmentStore } from '../../state/attachment-store';
 import type { UploadedFile } from '../../api/completions';
 import { useSettingsStore } from '../../state/settings-store';
 import { queryKeys } from '../../api/chats';
 import { saveTemporaryChat } from '../chat/temporary-chat';
 import { useUiStore } from '../../state/ui-store';
 import { useStreamStore } from '../../state/stream-store';
-import { generateChatId, sendTurn, stopTurn } from '../chat/send-turn';
+import { sendTurn, stopTurn } from '../chat/send-turn';
 import { useChatDetail } from '../chat/useChatQueries';
 import { useKeyboardOffset } from '../../hooks/useKeyboardOffset';
 import { rovingTarget } from '../../lib/roving';
@@ -33,10 +33,13 @@ import {
   type Attachment,
 } from './attachments';
 import { AttachmentChip } from './AttachmentChip';
+import { HelpDialog } from './HelpDialog';
+import { filesIn, useFileDrop } from './useFileDrop';
 import { ToolsMenu } from '../tools/ToolsMenu';
 import { useModalStore } from '../../state/modal-store';
 
 const MAX_TEXTAREA_PX = 200;
+const NO_ATTACHMENTS: Attachment[] = [];
 
 /** Message composer: auto-growing textarea, attachments, slash commands, send/stop. */
 export function Composer() {
@@ -45,8 +48,8 @@ export function Composer() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [text, setText] = useState('');
-  const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
+  const [helpOpen, setHelpOpen] = useState(false);
   /** Text for which the slash menu was dismissed with Escape; it reopens when the text changes. */
   const [dismissedFor, setDismissedFor] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -91,13 +94,12 @@ export function Composer() {
   const openChatId = routeChatId ?? temporaryChatId;
   const streaming = useStreamStore((s) => openChatId !== null && s.chatId === openChatId);
   const detail = useChatDetail(routeChatId);
-  const [chatForUploads, setChatForUploads] = useState<string | null>(
-    routeChatId ?? temporaryChatId,
-  );
-
-  useEffect(() => {
-    setChatForUploads(routeChatId ?? temporaryChatId);
-  }, [routeChatId, temporaryChatId]);
+  // Staged files belong to the chat they were uploaded for: the open chat, the temporary chat, or the draft id
+  // of the next new chat. The list shown is the open chat's own.
+  const draftChatId = useAttachmentStore((s) => s.draftChatId);
+  const key = routeChatId ?? temporaryChatId ?? draftChatId;
+  const lists = useAttachmentStore((s) => s.lists);
+  const attachments = lists[key] ?? NO_ATTACHMENTS;
 
   // The composer is not remounted on navigation, so a draft would follow the user into another chat.
   // The move a first send makes to its own new chat keeps what was typed since.
@@ -107,7 +109,6 @@ export function Composer() {
     ownNavigation.current = null;
     if (own) return;
     setText('');
-    setAttachments([]);
   }, [routeChatId]);
 
   async function saveTemporary() {
@@ -145,33 +146,28 @@ export function Composer() {
     el.style.height = `${Math.min(el.scrollHeight, MAX_TEXTAREA_PX)}px`;
   }, [text]);
 
-  // Upload queue: start queued chips up to the concurrency limit. `started` guards against a
+  // Upload queue: start queued chips of every chat up to the concurrency limit. `started` guards against a
   // second start when the effect runs twice (StrictMode) before the status update lands.
   const started = useRef(new Set<string>());
-  // Chips removed while their upload was still running: the file is deleted once the upload lands.
-  const removedWhileUploading = useRef(new Set<string>());
   const refreshChatList = useCallback(
     () => queryClient.invalidateQueries({ queryKey: queryKeys.chats }),
     [queryClient],
   );
   useEffect(() => {
-    for (const item of nextToUpload(attachments)) {
+    const store = useAttachmentStore.getState();
+    for (const item of nextToUpload(Object.values(lists).flat())) {
       if (started.current.has(item.key)) continue;
       started.current.add(item.key);
-      setAttachments((list) =>
-        list.map((a) => (a.key === item.key ? { ...a, status: 'uploading', progress: 0, error: null } : a)),
-      );
+      const listKey = item.chatId;
+      store.update(listKey, item.key, { status: 'uploading', progress: 0, error: null });
       uploadFile(item.file, item.chatId, (fraction) =>
-        setAttachments((list) =>
-          list.map((a) =>
-            a.key === item.key
-              ? { ...a, progress: fraction, status: fraction >= 1 ? 'processing' : 'uploading' }
-              : a,
-          ),
-        ),
+        store.update(listKey, item.key, {
+          progress: fraction,
+          status: fraction >= 1 ? 'processing' : 'uploading',
+        }),
       )
         .then((uploaded) => {
-          if (removedWhileUploading.current.delete(item.key)) {
+          if (store.takeDoomed(item.key)) {
             // The chip is gone: drop the file too, then refresh the list (its chat is rejudged).
             void deleteFile(uploaded.file_id)
               .catch((err: unknown) =>
@@ -180,76 +176,71 @@ export function Composer() {
               .then(refreshChatList);
             return;
           }
-          setAttachments((list) =>
-            list.map((a) =>
-              a.key === item.key ? { ...a, status: 'ready', progress: 1, uploaded } : a,
-            ),
-          );
+          store.update(listKey, item.key, { status: 'ready', progress: 1, uploaded });
           void refreshChatList(); // the chat now has a file, so it belongs in the sidebar list
         })
         .catch((err: unknown) => {
-          if (removedWhileUploading.current.delete(item.key)) return; // nobody is waiting for it
+          if (store.takeDoomed(item.key)) return; // nobody is waiting for it
           const message = err instanceof Error ? err.message : 'Upload failed';
-          setAttachments((list) =>
-            list.map((a) => (a.key === item.key ? { ...a, status: 'error', error: message } : a)),
-          );
+          store.update(listKey, item.key, { status: 'error', error: message });
           showToast(message, 'error');
         })
         .finally(() => {
           started.current.delete(item.key);
         });
     }
-  }, [attachments, refreshChatList]);
+  }, [lists, refreshChatList]);
 
   const commands = useMemo(() => slashCommandsFor(skills.data), [skills.data]);
   const slashMatches = matchSlashCommands(commands, text);
   const slashOpen = slashMatches.length > 0 && dismissedFor !== text;
   const active = Math.min(activeIndex, Math.max(0, slashMatches.length - 1));
   const ready = allReady(attachments);
-  const canSend = !streaming && hasModel && ready && (text.trim().length > 0 || attachments.length > 0);
-
-  function ensureChatId(): string {
-    if (chatForUploads) return chatForUploads;
-    const id = generateChatId();
-    setChatForUploads(id);
-    return id;
-  }
+  const nothingToSend = text.trim().length === 0 && attachments.length === 0;
+  // Only a running upload or a missing model disables the button; with an empty box it stays blue (as in the
+  // legacy UI) and a click does nothing. Another chat that is generating is explained by the refusal toast.
+  const sendBlocked = !hasModel || !ready;
+  const canSend = !streaming && !sendBlocked && !nothingToSend;
 
   function onFiles(event: ChangeEvent<HTMLInputElement>) {
     const picked = Array.from(event.target.files ?? []);
     event.target.value = '';
-    if (picked.length === 0) return;
-    const chatId = ensureChatId();
-    // Every file gets its chip at once; the queue effect uploads them two at a time.
-    setAttachments((list) => [
-      ...list,
-      ...picked.map<Attachment>((file) => ({
+    addFiles(picked);
+  }
+
+  /** Stages files for the open chat (picked, dropped or pasted); every file gets its chip at once and the queue uploads them two at a time. */
+  const addFiles = useCallback((files: File[]) => {
+    if (files.length === 0) return;
+    useAttachmentStore.getState().add(
+      key,
+      files.map<Attachment>((file) => ({
         key: `${file.name}-${Date.now()}-${Math.random()}`,
         name: file.name,
         size: file.size,
         mimeType: file.type,
         file,
-        chatId,
+        chatId: key,
         status: 'queued',
         progress: 0,
         uploaded: null,
         error: null,
       })),
-    ]);
-  }
-
-  function retry(key: string) {
-    setAttachments((list) =>
-      list.map((a) => (a.key === key ? { ...a, status: 'queued', error: null } : a)),
     );
+  }, [key]);
+
+  const { dragging } = useFileDrop(inputArea, addFiles);
+
+  function retry(attachmentKey: string) {
+    useAttachmentStore.getState().update(key, attachmentKey, { status: 'queued', error: null });
   }
 
-  function remove(key: string) {
-    const chip = attachments.find((a) => a.key === key);
-    setAttachments((list) => list.filter((a) => a.key !== key));
+  function remove(attachmentKey: string) {
+    const chip = attachments.find((a) => a.key === attachmentKey);
+    const store = useAttachmentStore.getState();
+    store.remove(key, attachmentKey);
     if (!chip) return;
-    if (started.current.has(key)) {
-      removedWhileUploading.current.add(key); // the upload is still running: clean up when it lands
+    if (started.current.has(attachmentKey)) {
+      store.markDoomed(attachmentKey); // the upload is still running: clean up when it lands
     } else if (chip.uploaded) {
       void deleteFile(chip.uploaded.file_id)
         .catch((err: unknown) =>
@@ -275,12 +266,12 @@ export function Composer() {
     }
     if (content === '/help') {
       setText('');
-      showToast('Type /skills to manage skills; each skill runs with /name', 'info');
+      setHelpOpen(true);
       return;
     }
     const files: UploadedFile[] = toUploadedFiles(attachments);
     const isNew = !routeChatId && !temporary;
-    const id = chatForUploads ?? generateChatId();
+    const id = key;
     // The text and files are cleared only once the turn is accepted; a refused send keeps them.
     await sendTurn({
       queryClient,
@@ -291,7 +282,9 @@ export function Composer() {
       temporary,
       onAccepted: () => {
         setText('');
-        setAttachments([]);
+        useAttachmentStore.getState().clear(key);
+        // The files now belong to the chat just started: the next new chat gets a fresh draft id.
+        if (isNew) useAttachmentStore.getState().renewDraft();
       },
       navigate: isNew
         ? () => {
@@ -355,6 +348,19 @@ export function Composer() {
           </button>
         </div>
       ) : null}
+      <HelpDialog
+        open={helpOpen}
+        onClose={() => {
+          setHelpOpen(false);
+          area.current?.focus();
+        }}
+        commands={commands}
+      />
+      {dragging ? (
+        <div className="composer-drop-hint" role="status">
+          Drop files to attach
+        </div>
+      ) : null}
       {attachments.length > 0 ? (
         <div className="composer-chips" aria-label="Attached files">
           {attachments.map((a) => (
@@ -402,14 +408,16 @@ export function Composer() {
             </div>
           ))}
         </Popover>
-        <IconButton
+        <button
           id="attach-btn"
+          type="button"
           className="input-action-btn"
-          icon="plus"
-          label="Attach files"
-          size="md"
+          title="Attach files"
+          aria-label="Attach files"
           onClick={() => fileInput.current?.click()}
-        />
+        >
+          <Icon name="plus" size={20} />
+        </button>
         <ToolsMenu />
         <input
           ref={fileInput}
@@ -430,12 +438,19 @@ export function Composer() {
           aria-controls={slashOpen ? listId : undefined}
           aria-autocomplete="list"
           aria-activedescendant={slashOpen ? `${listId}-${active}` : undefined}
-          placeholder="Type a message…"
+          placeholder="Start a conversation..."
           onChange={(e) => {
             setText(e.target.value);
             setActiveIndex(0);
           }}
           onKeyDown={onKeyDown}
+          onPaste={(e) => {
+            // A pasted file is staged; pasted text still goes into the box.
+            const pasted = filesIn(e.clipboardData);
+            if (pasted.length === 0) return;
+            e.preventDefault();
+            addFiles(pasted);
+          }}
         />
         <div id="send-btn-wrapper">
           {streaming ? (
@@ -456,7 +471,8 @@ export function Composer() {
               className="send-btn"
               title="Send"
               aria-label="Send message"
-              disabled={!canSend}
+              disabled={sendBlocked}
+              aria-disabled={nothingToSend ? true : undefined}
               onClick={() => void send()}
             >
               <Icon name="send" size={18} />

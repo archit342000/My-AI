@@ -8,6 +8,6 @@ describe('HomePage', () => {
     renderWithProviders(<HomePage />);
     expect(screen.getByText('Hello there')).toBeTruthy();
     expect(screen.getByText('How can I help you today?')).toBeTruthy();
-    expect(screen.queryByPlaceholderText('Type a message…')).toBeNull();
+    expect(screen.queryByPlaceholderText('Start a conversation...')).toBeNull();
   });
 });

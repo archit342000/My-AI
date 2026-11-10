@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { Link, MemoryRouter } from 'react-router';
 import { chatsApi } from '../../api/chats';
 import { ApiError } from '../../api/client';
@@ -9,12 +9,15 @@ import { Composer } from './Composer';
 import { useSettingsStore } from '../../state/settings-store';
 import { useStreamStore } from '../../state/stream-store';
 import { useModalStore } from '../../state/modal-store';
+import { useAttachmentStore } from '../../state/attachment-store';
+import { useUiStore } from '../../state/ui-store';
 import { useToastStore } from '../../components/ui/toast-store';
 import * as files from '../../api/files';
+import type { UploadedFile } from '../../api/completions';
 import { chatListInvalidated } from '../../test/invalidation';
 import * as sendTurnModule from '../chat/send-turn';
 
-const textarea = () => screen.getByPlaceholderText('Type a message…') as HTMLTextAreaElement;
+const textarea = () => screen.getByPlaceholderText('Start a conversation...') as HTMLTextAreaElement;
 const sendBtn = () => screen.getByRole('button', { name: /Send message|Stop generating/ }) as HTMLButtonElement;
 
 describe('Composer', () => {
@@ -29,11 +32,43 @@ describe('Composer', () => {
     useSettingsStore.setState({ model: null, modelName: null });
   });
 
-  it('send is disabled when empty and enabled once there is text', () => {
+  it('with an empty box the send button stays blue (aria-disabled, not disabled) and a click sends nothing', () => {
+    const send = vi.spyOn(sendTurnModule, 'sendTurn').mockResolvedValue(true);
     renderWithProviders(<Composer />);
-    expect(sendBtn().disabled).toBe(true);
-    fireEvent.change(textarea(), { target: { value: 'hi' } });
     expect(sendBtn().disabled).toBe(false);
+    expect(sendBtn().getAttribute('aria-disabled')).toBe('true');
+    fireEvent.click(sendBtn());
+    expect(send).not.toHaveBeenCalled();
+    fireEvent.change(textarea(), { target: { value: 'hi' } });
+    expect(sendBtn().getAttribute('aria-disabled')).toBeNull();
+  });
+
+  it('uses the legacy placeholder', () => {
+    renderWithProviders(<Composer />);
+    expect(screen.getByPlaceholderText('Start a conversation...')).toBeTruthy();
+  });
+
+  it('the attach and tools buttons are plain composer action buttons', () => {
+    renderWithProviders(<Composer />);
+    const attach = screen.getByRole('button', { name: 'Attach files' });
+    expect(attach.id).toBe('attach-btn');
+    expect(attach.className).toBe('input-action-btn');
+    expect(document.getElementById('tools-button')?.className).toBe('input-action-btn');
+  });
+
+  it('send is disabled while a file uploads, and enabled again once it is ready', async () => {
+    let finish: (f: UploadedFile) => void = () => undefined;
+    vi.spyOn(files, 'uploadFile').mockImplementation(
+      () => new Promise((resolve) => (finish = resolve as typeof finish)),
+    );
+    const { container } = renderWithProviders(<Composer />, { route: '/chat/c1', path: '/chat/:chatId' });
+    fireEvent.change(container.querySelector('input[type=file]') as HTMLInputElement, {
+      target: { files: [new File(['abc'], 'a.txt', { type: 'text/plain' })] },
+    });
+    fireEvent.change(textarea(), { target: { value: 'hi' } });
+    await waitFor(() => expect(sendBtn().disabled).toBe(true));
+    finish({ file_id: 'f1', name: 'a.txt', size: 3, mime_type: 'text/plain' });
+    await waitFor(() => expect(sendBtn().disabled).toBe(false));
   });
 
   it('send is disabled when no model is selected, even with text', () => {
@@ -90,14 +125,19 @@ describe('Composer', () => {
     expect(send.mock.calls[0]![0].chatId).toBeTruthy();
   });
 
-  it('/help shows a hint and clears the box without sending', () => {
+  it('/help opens the command list, clears the box without sending, and Escape returns focus to the box', () => {
     const send = vi.spyOn(sendTurnModule, 'sendTurn').mockResolvedValue(true);
     renderWithProviders(<Composer />);
+    textarea().focus();
     fireEvent.change(textarea(), { target: { value: '/help' } });
     fireEvent.keyDown(textarea(), { key: 'Enter' });
     expect(send).not.toHaveBeenCalled();
     expect(textarea().value).toBe('');
-    expect(useToastStore.getState().toasts.some((t) => t.message.includes('/skills'))).toBe(true);
+    const dialog = screen.getByRole('dialog', { name: 'Commands and skills' });
+    expect(dialog.textContent).toContain('/skills');
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('dialog', { name: 'Commands and skills' })).toBeNull();
+    expect(document.activeElement).toBe(textarea());
   });
 
   it('/skills opens the skills dialog', () => {
@@ -250,7 +290,7 @@ describe('Composer', () => {
     vi.spyOn(chatsApi, 'get').mockRejectedValue(new ApiError(404, {}, 'missing'));
     renderWithProviders(<Composer />, { route: '/chat/gone', path: '/chat/:chatId' });
     await waitFor(() => expect(chatsApi.get).toHaveBeenCalled());
-    await waitFor(() => expect(screen.queryByPlaceholderText('Type a message…')).toBeNull());
+    await waitFor(() => expect(screen.queryByPlaceholderText('Start a conversation...')).toBeNull());
   });
 
   it('keeps the text and files when the send is refused', async () => {
@@ -334,5 +374,138 @@ describe('Composer', () => {
     const click = vi.spyOn(input, 'click');
     fireEvent.click(screen.getByRole('button', { name: /Attach files|attach/i }).closest('button') ?? document.getElementById('attach-btn')!);
     expect(click).toHaveBeenCalled();
+  });
+});
+
+describe('Composer staged files per chat', () => {
+  const uploaded = (id: string, name: string) => ({ file_id: id, name, size: 3, mime_type: 'text/plain' });
+  const attach = (container: HTMLElement, name: string) =>
+    fireEvent.change(container.querySelector('input[type=file]') as HTMLInputElement, {
+      target: { files: [new File(['abc'], name, { type: 'text/plain' })] },
+    });
+  function renderWithLinks(route: string) {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    return render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter initialEntries={[route]}>
+          <Composer />
+          <Link to="/chat/a">chat a</Link>
+          <Link to="/chat/b">chat b</Link>
+          <Link to="/">home</Link>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+  }
+
+  beforeEach(() => {
+    useSettingsStore.setState({ model: 'm1', modelName: 'Model 1' });
+    useStreamStore.setState({ chatId: null, live: null, pending: null, interrupted: null, controller: null });
+    vi.spyOn(chatsApi, 'get').mockResolvedValue({ id: 'x', title: 't', messages: [] } as never);
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    useSettingsStore.setState({ model: null, modelName: null });
+  });
+
+  it('a file staged in one chat is not shown in another, and is shown again when the user comes back', async () => {
+    vi.spyOn(files, 'uploadFile').mockResolvedValue(uploaded('f1', 'a.txt'));
+    const view = renderWithLinks('/chat/a');
+    attach(view.container, 'a.txt');
+    await waitFor(() => expect(screen.getByText('a.txt')).toBeTruthy());
+    fireEvent.click(screen.getByText('chat b'));
+    await waitFor(() => expect(screen.queryByText('a.txt')).toBeNull());
+    fireEvent.click(screen.getByText('chat a'));
+    await waitFor(() => expect(screen.getByText('a.txt')).toBeTruthy());
+  });
+
+  it('a file staged on the home page is not shown in temporary mode', async () => {
+    vi.spyOn(files, 'uploadFile').mockResolvedValue(uploaded('f1', 'a.txt'));
+    const view = renderWithLinks('/');
+    attach(view.container, 'a.txt');
+    await waitFor(() => expect(screen.getByText('a.txt')).toBeTruthy());
+    act(() => useUiStore.getState().setTemporaryChatId('temp1'));
+    await waitFor(() => expect(screen.queryByText('a.txt')).toBeNull());
+    act(() => useUiStore.getState().setTemporaryChatId(null));
+    await waitFor(() => expect(screen.getByText('a.txt')).toBeTruthy());
+  });
+
+  it('uploads for the chat the file is staged in, and sending clears that chat only', async () => {
+    const upload = vi.spyOn(files, 'uploadFile').mockResolvedValue(uploaded('f1', 'a.txt'));
+    const send = vi.spyOn(sendTurnModule, 'sendTurn').mockImplementation(async (a) => {
+      a.onAccepted?.();
+      return true;
+    });
+    const view = renderWithLinks('/chat/a');
+    attach(view.container, 'a.txt');
+    await waitFor(() => expect(upload).toHaveBeenCalledWith(expect.any(File), 'a', expect.any(Function)));
+    useAttachmentStore.getState().add('b', [
+      { key: 'kb', name: 'b.txt', size: 1, mimeType: 'text/plain', file: new File(['x'], 'b.txt'), chatId: 'b', status: 'ready', progress: 1, uploaded: uploaded('f2', 'b.txt'), error: null },
+    ]);
+    await waitFor(() => expect(sendBtn().disabled).toBe(false));
+    fireEvent.change(textarea(), { target: { value: 'go' } });
+    fireEvent.click(sendBtn());
+    await waitFor(() => expect(send).toHaveBeenCalled());
+    expect(useAttachmentStore.getState().lists['a']).toBeUndefined();
+    expect(useAttachmentStore.getState().lists['b']).toHaveLength(1);
+  });
+
+  it('after the first send of a new chat the next new chat gets a fresh draft id', async () => {
+    vi.spyOn(sendTurnModule, 'sendTurn').mockImplementation(async (a) => {
+      a.onAccepted?.();
+      return true;
+    });
+    renderWithLinks('/');
+    const before = useAttachmentStore.getState().draftChatId;
+    fireEvent.change(textarea(), { target: { value: 'hello' } });
+    fireEvent.click(sendBtn());
+    await waitFor(() => expect(useAttachmentStore.getState().draftChatId).not.toBe(before));
+  });
+});
+
+describe('Composer drop and paste', () => {
+  const uploaded = { file_id: 'f1', name: 'a.txt', size: 3, mime_type: 'text/plain' };
+  beforeEach(() => {
+    useSettingsStore.setState({ model: 'm1', modelName: 'Model 1' });
+    vi.spyOn(files, 'uploadFile').mockResolvedValue(uploaded);
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    useSettingsStore.setState({ model: null, modelName: null });
+  });
+
+  it('files dropped on the page area get chips, and the drop state shows while dragging them', async () => {
+    renderWithProviders(
+      <main data-testid="zone">
+        <Composer />
+      </main>,
+      { route: '/chat/c1', path: '/chat/:chatId' },
+    );
+    const zone = screen.getByTestId('zone');
+    const data = { types: ['Files'], files: [new File(['a'], 'a.txt'), new File(['b'], 'b.txt')] };
+    fireEvent.dragEnter(zone, { dataTransfer: data });
+    expect(screen.getByText('Drop files to attach')).toBeTruthy();
+    fireEvent.drop(zone, { dataTransfer: data });
+    await waitFor(() => expect(screen.getAllByText(/\.txt$/)).toHaveLength(2));
+    expect(screen.queryByText('Drop files to attach')).toBeNull();
+  });
+
+  it('a pasted file gets a chip, and pasted text still goes into the box', async () => {
+    renderWithProviders(<Composer />, { route: '/chat/c1', path: '/chat/:chatId' });
+    fireEvent.paste(textarea(), { clipboardData: { files: [new File(['a'], 'pasted.png')], types: ['Files'] } });
+    await waitFor(() => expect(screen.getByText('pasted.png')).toBeTruthy());
+    // Text: no files in the clipboard, so the default paste is not prevented.
+    const notPrevented = fireEvent.paste(textarea(), { clipboardData: { files: [], types: ['text/plain'] } });
+    expect(notPrevented).toBe(true);
+  });
+
+  it('a drag without files shows no drop state', () => {
+    renderWithProviders(
+      <main data-testid="zone">
+        <Composer />
+      </main>,
+      { route: '/chat/c1', path: '/chat/:chatId' },
+    );
+    fireEvent.dragEnter(screen.getByTestId('zone'), { dataTransfer: { types: ['text/plain'], files: [] } });
+    expect(screen.queryByText('Drop files to attach')).toBeNull();
   });
 });

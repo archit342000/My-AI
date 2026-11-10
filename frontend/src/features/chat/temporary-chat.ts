@@ -1,8 +1,9 @@
 import type { QueryClient } from '@tanstack/react-query';
 import { chatsApi, queryKeys } from '../../api/chats';
 import { useSettingsStore } from '../../state/settings-store';
+import { useAttachmentStore } from '../../state/attachment-store';
 import { useUiStore } from '../../state/ui-store';
-import { generateChatId } from './send-turn';
+import { generateChatId } from '../../lib/chat-id';
 
 /** Enters temporary mode with a fresh chat id. The server row is created lazily by the first turn. */
 export function startTemporaryChat(): string {
@@ -16,6 +17,8 @@ export async function discardTemporaryChat(queryClient: QueryClient): Promise<vo
   const id = useUiStore.getState().temporaryChatId;
   if (!id) return;
   useUiStore.getState().setTemporaryChatId(null);
+  // Files staged for it go with it.
+  await useAttachmentStore.getState().discard(id);
   try {
     await chatsApi.remove(id);
   } catch {
