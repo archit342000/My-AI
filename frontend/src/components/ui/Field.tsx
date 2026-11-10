@@ -21,12 +21,21 @@ export interface FieldProps {
 }
 
 /** Label, required marker, hint and error text wired to one control through ARIA. */
-export function Field({ id, label, required = false, hint, error, className, children }: FieldProps) {
+export function Field({
+  id,
+  label,
+  required = false,
+  hint,
+  error,
+  className,
+  children,
+}: FieldProps) {
   const generated = useId();
   const fieldId = id ?? generated;
   const hintId = `${fieldId}-hint`;
   const errorId = `${fieldId}-error`;
-  const describedBy = [hint ? hintId : null, error ? errorId : null].filter(Boolean).join(' ') || undefined;
+  const describedBy =
+    [hint ? hintId : null, error ? errorId : null].filter(Boolean).join(' ') || undefined;
   return (
     <div className={cx('ui-field', className)}>
       <label htmlFor={fieldId} className="ui-field__label">
@@ -56,7 +65,11 @@ export function Field({ id, label, required = false, hint, error, className, chi
   );
 }
 
-export function Input({ mono = false, className, ...rest }: ComponentProps<'input'> & { mono?: boolean }) {
+export function Input({
+  mono = false,
+  className,
+  ...rest
+}: ComponentProps<'input'> & { mono?: boolean }) {
   return <input {...rest} className={cx('ui-input', mono && 'ui-input--mono', className)} />;
 }
 

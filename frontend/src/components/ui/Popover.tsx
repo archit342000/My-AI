@@ -109,7 +109,9 @@ export function Popover({
     visual?.addEventListener('scroll', update);
     // The panel's real height decides where a `right` panel must shift to; it changes as content loads.
     const observer =
-      typeof ResizeObserver === 'undefined' || !panelRef.current ? null : new ResizeObserver(update);
+      typeof ResizeObserver === 'undefined' || !panelRef.current
+        ? null
+        : new ResizeObserver(update);
     if (observer && panelRef.current) observer.observe(panelRef.current);
     return () => {
       window.removeEventListener('resize', update);

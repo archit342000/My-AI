@@ -11,7 +11,13 @@ export interface EmptyStateProps {
 }
 
 /** Placeholder for an empty list or screen: icon, title, optional text and one action. */
-export function EmptyState({ icon = 'info', title, description, action, className }: EmptyStateProps) {
+export function EmptyState({
+  icon = 'info',
+  title,
+  description,
+  action,
+  className,
+}: EmptyStateProps) {
   return (
     <div className={cx('ui-empty', className)}>
       <Icon name={icon} size={28} className="ui-empty__icon" />

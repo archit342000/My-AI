@@ -3,7 +3,11 @@ import { cx } from '../../lib/cx';
 import { IconButton } from './Button';
 import { useToastStore, type ToastType } from './toast-store';
 
-const ICON_FOR: Record<ToastType, UiIconName> = { info: 'info', success: 'success', error: 'error' };
+const ICON_FOR: Record<ToastType, UiIconName> = {
+  info: 'info',
+  success: 'success',
+  error: 'error',
+};
 const VARIANT_CLASS: Record<ToastType, string> = {
   info: 'ui-toast--info',
   success: 'ui-toast--success',

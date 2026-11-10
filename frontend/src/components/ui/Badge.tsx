@@ -11,6 +11,14 @@ const TONE_CLASS: Record<BadgeTone, string> = {
   accent: 'ui-badge--accent',
 };
 
-export function Badge({ tone = 'neutral', children, className }: { tone?: BadgeTone; children: ReactNode; className?: string }) {
+export function Badge({
+  tone = 'neutral',
+  children,
+  className,
+}: {
+  tone?: BadgeTone;
+  children: ReactNode;
+  className?: string;
+}) {
   return <span className={cx('ui-badge', TONE_CLASS[tone], className)}>{children}</span>;
 }

@@ -67,14 +67,20 @@ export function Select({
 
   const selected = options.find((option) => option.value === value);
   const q = query.trim().toLowerCase();
-  const groups = groupOptions(q ? options.filter((option) => option.label.toLowerCase().includes(q)) : options);
+  const groups = groupOptions(
+    q ? options.filter((option) => option.label.toLowerCase().includes(q)) : options,
+  );
   const flat = groups.flatMap((group) => group.options);
 
   function openList() {
     const grouped = groupOptions(options).flatMap((group) => group.options);
     const current = grouped.find((option) => option.value === value);
     setQuery('');
-    setActive(current && !current.disabled ? current.index : (grouped.find((option) => !option.disabled)?.index ?? -1));
+    setActive(
+      current && !current.disabled
+        ? current.index
+        : (grouped.find((option) => !option.disabled)?.index ?? -1),
+    );
     setOpen(true);
   }
 
@@ -108,9 +114,14 @@ export function Select({
     const buffer = typeahead.current;
     buffer.text = now - buffer.at > 500 ? key.toLowerCase() : buffer.text + key.toLowerCase();
     buffer.at = now;
-    const start = Math.max(0, flat.findIndex((option) => option.index === active));
+    const start = Math.max(
+      0,
+      flat.findIndex((option) => option.index === active),
+    );
     const ordered = [...flat.slice(start), ...flat.slice(0, start)];
-    const hit = ordered.find((option) => !option.disabled && option.label.toLowerCase().startsWith(buffer.text));
+    const hit = ordered.find(
+      (option) => !option.disabled && option.label.toLowerCase().startsWith(buffer.text),
+    );
     if (hit) setActive(hit.index);
   }
 
@@ -154,7 +165,13 @@ export function Select({
         setOpen(false);
         return;
       default:
-        if (!searchable && event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
+        if (
+          !searchable &&
+          event.key.length === 1 &&
+          !event.ctrlKey &&
+          !event.metaKey &&
+          !event.altKey
+        ) {
           typeAhead(event.key);
         }
     }
@@ -209,7 +226,9 @@ export function Select({
               const text = event.target.value;
               setQuery(text);
               const needle = text.trim().toLowerCase();
-              const first = groupOptions(options.filter((option) => option.label.toLowerCase().includes(needle)))
+              const first = groupOptions(
+                options.filter((option) => option.label.toLowerCase().includes(needle)),
+              )
                 .flatMap((group) => group.options)
                 .find((option) => !option.disabled);
               setActive(first?.index ?? -1);
@@ -219,8 +238,16 @@ export function Select({
         ) : null}
         <div className="ui-select__list">
           {groups.map((group) => (
-            <div key={group.name ?? '__ungrouped'} role="group" aria-label={group.name ?? undefined}>
-              {group.name ? <div className="ui-select__group" aria-hidden="true">{group.name}</div> : null}
+            <div
+              key={group.name ?? '__ungrouped'}
+              role="group"
+              aria-label={group.name ?? undefined}
+            >
+              {group.name ? (
+                <div className="ui-select__group" aria-hidden="true">
+                  {group.name}
+                </div>
+              ) : null}
               {group.options.map((option) => (
                 <div
                   key={option.value}
@@ -234,9 +261,13 @@ export function Select({
                   onMouseDown={(event) => event.preventDefault()}
                   onClick={() => choose(option)}
                 >
-                  {option.dot ? <span className={DOT_CLASS[option.dot]} aria-hidden="true" /> : null}
+                  {option.dot ? (
+                    <span className={DOT_CLASS[option.dot]} aria-hidden="true" />
+                  ) : null}
                   <span className="ui-select__option-label">{option.label}</span>
-                  {option.hint ? <span className="ui-select__option-hint">{option.hint}</span> : null}
+                  {option.hint ? (
+                    <span className="ui-select__option-hint">{option.hint}</span>
+                  ) : null}
                 </div>
               ))}
             </div>

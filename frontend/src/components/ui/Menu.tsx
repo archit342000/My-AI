@@ -1,4 +1,11 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+  type RefObject,
+} from 'react';
 import { Icon, type IconName } from '../icons/Icon';
 import { cx } from '../../lib/cx';
 import { Popover } from './Popover';
@@ -11,9 +18,16 @@ export type MenuEntry =
       icon?: IconName;
       danger?: boolean;
       disabled?: boolean;
+      /** Why the item is off, shown beside it. */
+      reason?: string;
+      /** Marks the item as the current choice (a tick-style highlight). */
+      checked?: boolean;
+      /** Keys that do the same, shown at the end (for example ['Ctrl', 'K']). */
+      keys?: string[];
       onSelect: () => void;
     }
   | { type: 'separator'; id: string }
+  | { type: 'group'; id: string; label: string }
   | {
       type: 'submenu';
       id: string;
@@ -108,10 +122,20 @@ function isActionItem(entry: MenuEntry): entry is ActionItem {
 }
 
 function enabledItems(list: HTMLElement): HTMLButtonElement[] {
-  return Array.from(list.querySelectorAll<HTMLButtonElement>(':scope > [role="menuitem"]:not(:disabled)'));
+  return Array.from(
+    list.querySelectorAll<HTMLButtonElement>(
+      ':scope > :is([role="menuitem"], [role="menuitemradio"]):not(:disabled)',
+    ),
+  );
 }
 
-export function MenuList({ items, autoFocus = false, searchable = false, onDone, onBack }: MenuListProps) {
+export function MenuList({
+  items,
+  autoFocus = false,
+  searchable = false,
+  onDone,
+  onBack,
+}: MenuListProps) {
   const listRef = useRef<HTMLDivElement>(null);
   const [query, setQuery] = useState('');
 
@@ -122,9 +146,15 @@ export function MenuList({ items, autoFocus = false, searchable = false, onDone,
   }, [autoFocus, searchable]);
 
   const q = query.trim().toLowerCase();
-  const visible = searchable && q
-    ? items.filter((entry) => entry.type !== 'separator' && entry.label.toLowerCase().includes(q))
-    : items;
+  const visible =
+    searchable && q
+      ? items.filter(
+          (entry) =>
+            entry.type !== 'separator' &&
+            entry.type !== 'group' &&
+            entry.label.toLowerCase().includes(q),
+        )
+      : items;
 
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     const list = listRef.current;
@@ -182,6 +212,13 @@ export function MenuList({ items, autoFocus = false, searchable = false, onDone,
         if (entry.type === 'separator') {
           return <div key={entry.id} role="separator" className="ui-menu__separator" />;
         }
+        if (entry.type === 'group') {
+          return (
+            <div key={entry.id} role="presentation" className="ui-menu__group">
+              {entry.label}
+            </div>
+          );
+        }
         if (entry.type === 'submenu') {
           return <SubMenu key={entry.id} entry={entry} onDone={onDone} />;
         }
@@ -189,7 +226,8 @@ export function MenuList({ items, autoFocus = false, searchable = false, onDone,
           <button
             key={entry.id}
             type="button"
-            role="menuitem"
+            role={entry.checked === undefined ? 'menuitem' : 'menuitemradio'}
+            aria-checked={entry.checked}
             tabIndex={-1}
             disabled={entry.disabled}
             className={cx('ui-menu__item', entry.danger && 'ui-menu__item--danger')}
@@ -200,6 +238,18 @@ export function MenuList({ items, autoFocus = false, searchable = false, onDone,
           >
             {entry.icon ? <Icon name={entry.icon} size={16} /> : null}
             <span className="ui-menu__label">{entry.label}</span>
+            {entry.disabled && entry.reason ? (
+              <span className="ui-menu__reason">{entry.reason}</span>
+            ) : null}
+            {entry.keys ? (
+              <span className="ui-kbd-group" aria-hidden="true">
+                {entry.keys.map((key) => (
+                  <kbd key={key} className="ui-kbd">
+                    {key}
+                  </kbd>
+                ))}
+              </span>
+            ) : null}
           </button>
         );
       })}
@@ -207,7 +257,13 @@ export function MenuList({ items, autoFocus = false, searchable = false, onDone,
   );
 }
 
-function SubMenu({ entry, onDone }: { entry: Extract<MenuEntry, { type: 'submenu' }>; onDone: () => void }) {
+function SubMenu({
+  entry,
+  onDone,
+}: {
+  entry: Extract<MenuEntry, { type: 'submenu' }>;
+  onDone: () => void;
+}) {
   const ref = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
 

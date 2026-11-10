@@ -1,5 +1,12 @@
 import { useState } from 'react';
 import { Badge } from '../../components/ui/Badge';
+import { Checkbox } from '../../components/ui/Checkbox';
+import { Chip } from '../../components/ui/Chip';
+import { Kbd } from '../../components/ui/Kbd';
+import { StatusLight } from '../../components/ui/StatusLight';
+import { Tabs } from '../../components/ui/Tabs';
+import { Tag } from '../../components/ui/Tag';
+import { TickRule } from '../../components/ui/TickRule';
 import { Button, IconButton } from '../../components/ui/Button';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Field, Input, Textarea } from '../../components/ui/Field';
@@ -29,9 +36,16 @@ export function PrimitivesDemo() {
   const [style, setStyle] = useState('precise');
   const [vision, setVision] = useState(false);
   const [temperature, setTemperature] = useState(0.7);
+  const [ticked, setTicked] = useState<boolean | 'mixed'>('mixed');
+  const [tab, setTab] = useState('network');
 
   const menuItems: MenuEntry[] = [
-    { id: 'rename', label: 'Rename', icon: 'edit', onSelect: () => showToast('Renamed', 'success') },
+    {
+      id: 'rename',
+      label: 'Rename',
+      icon: 'edit',
+      onSelect: () => showToast('Renamed', 'success'),
+    },
     { type: 'separator', id: 'sep' },
     {
       type: 'submenu',
@@ -45,7 +59,13 @@ export function PrimitivesDemo() {
       })),
     },
     { type: 'separator', id: 'sep2' },
-    { id: 'delete', label: 'Delete', icon: 'trash', danger: true, onSelect: () => showToast('Deleted', 'error') },
+    {
+      id: 'delete',
+      label: 'Delete',
+      icon: 'trash',
+      danger: true,
+      onSelect: () => showToast('Deleted', 'error'),
+    },
   ];
 
   return (
@@ -59,8 +79,12 @@ export function PrimitivesDemo() {
           <Button variant="secondary">Secondary</Button>
           <Button variant="ghost">Ghost</Button>
           <Button variant="danger">Danger</Button>
-          <Button variant="secondary" loading>Saving</Button>
-          <Button variant="secondary" size="sm">Small</Button>
+          <Button variant="secondary" loading>
+            Saving
+          </Button>
+          <Button variant="secondary" size="sm">
+            Small
+          </Button>
           <IconButton icon="edit" label="Edit" />
           <IconButton icon="trash" label="Delete" tone="danger" />
           <IconButton icon="close" label="Close" size="sm" />
@@ -71,14 +95,73 @@ export function PrimitivesDemo() {
           <Tooltip content="Tooltip text">
             <Button variant="ghost">Hover me</Button>
           </Tooltip>
-          <Menu items={menuItems} label="Chat actions" trigger={(props) => <Button {...props}>Menu</Button>} />
+          <Menu
+            items={menuItems}
+            label="Chat actions"
+            trigger={(props) => <Button {...props}>Menu</Button>}
+          />
+        </div>
+      </section>
+
+      <section className="ui-demo__section">
+        <h2>Button kinds, labels and small pieces</h2>
+        <div className="ui-demo__row">
+          <Button variant="primary">Solid</Button>
+          <Button variant="quiet">Quiet</Button>
+          <Button variant="secondary">Outline</Button>
+          <Button variant="ghost">Plain</Button>
+          <Button variant="danger">Danger</Button>
+          <Button variant="link">Show all 24</Button>
+          <Button aria-pressed="true">On</Button>
+          <Button disabled reason="Pick a model first">
+            Off, with a reason
+          </Button>
+        </div>
+        <div className="ui-demo__row">
+          <StatusLight label="Ready" />
+          <StatusLight label="Thinking" busy />
+          <StatusLight label="Saved" tone="ok" />
+          <StatusLight label="Offline" tone="warn" />
+          <StatusLight label="Failed" tone="bad" />
+          <Chip>notes.md</Chip>
+          <Chip tint removeLabel="Switch off Web search" onRemove={() => showToast('Off', 'info')}>
+            Web search
+          </Chip>
+          <Tag>Python</Tag>
+          <Badge tone="accent">v3</Badge>
+          <span className="ui-count">3</span>
+          <span className="ui-count ui-count--quiet">12</span>
+          <Kbd keys={['Ctrl', 'K']} />
+        </div>
+        <TickRule />
+        <div className="ui-demo__row">
+          <Checkbox checked={ticked} onChange={setTicked}>
+            Tick box (starts mixed)
+          </Checkbox>
+          <Tabs
+            label="Log kind"
+            value={tab}
+            onChange={setTab}
+            options={[
+              { value: 'network', label: 'Network' },
+              { value: 'events', label: 'Events' },
+              { value: 'app', label: 'App' },
+              { value: 'database', label: 'Database' },
+            ]}
+          />
         </div>
       </section>
 
       <section className="ui-demo__section">
         <h2>Select, segmented, radio cards</h2>
         <div className="ui-demo__stack">
-          <Select aria-label="Model" value={model} onChange={setModel} options={MODELS} searchable />
+          <Select
+            aria-label="Model"
+            value={model}
+            onChange={setModel}
+            options={MODELS}
+            searchable
+          />
           <SegmentedControl
             label="View"
             value={view}
@@ -103,12 +186,22 @@ export function PrimitivesDemo() {
       <section className="ui-demo__section">
         <h2>Toggle, slider, fields</h2>
         <div className="ui-demo__stack">
-          <Toggle checked={vision} onChange={setVision} label="Vision" description="Send images to the model" />
-          <Slider label="Temperature" value={temperature} onChange={setTemperature} min={0} max={2} step={0.05} />
+          <Toggle
+            checked={vision}
+            onChange={setVision}
+            label="Vision"
+            description="Send images to the model"
+          />
+          <Slider
+            label="Temperature"
+            value={temperature}
+            onChange={setTemperature}
+            min={0}
+            max={2}
+            step={0.05}
+          />
           <Field label="Skill name" required hint="Lowercase letters and dashes">
-            {(control) => (
-              <Input {...control} placeholder="my-skill" mono />
-            )}
+            {(control) => <Input {...control} placeholder="my-skill" mono />}
           </Field>
           <Field label="Instructions" error="Add at least one instruction">
             {(control) => <Textarea {...control} placeholder="Write the instructions" autoGrow />}
