@@ -22,7 +22,7 @@
     1. **Initiation:** Components (e.g., `ChatHandler`) submit a task via `start_task()`.
     2. **Isolation:** A `TaskWorker` thread is spawned, creating a dedicated `asyncio` loop for that specific chat ID. It runs inside `user_context` of the chat's owner, so `log_event` records `user_id`; `recover_tasks` now emits a `task_recovered` event for each flagged task, as the chat's owner (a failure there never removes the saved resume state).
     3. **Generation:** `TaskExecutor` iterates through the provided generator function, pushing chunks to the `response_cache`.
-    4. **Interruption:** Users can signal a stop via `stop_task()`, which flags the task for cancellation and allows for clean rollback.
+    4. **Interruption:** Users can signal a stop via `stop_task()`, which flags the task for cancellation and allows for clean rollback. `stop_task_and_wait(chat_id, timeout)` also waits (bounded by `TASK_STOP_WAIT_SECONDS`) for the worker thread to exit and returns whether it did; `/stop`, chat delete and clear-all use it. `running_chat_ids()` lists live workers and `forget_chat(chat_id)` removes the interrupted flag and task files of a deleted chat. The wait covers the worker thread only: a tool call already running in the executor thread pool is not joined and may finish after the stop answered.
     5. **Cleanup:** A background thread periodically expires old cache entries and stale channels.
 
 ## 🛠️ Usage & Conventions

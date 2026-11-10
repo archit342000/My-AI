@@ -24,6 +24,7 @@ chat_bp = Blueprint('chat', __name__)
 openai_bp = Blueprint('openai', __name__)
 
 FILE_SYSTEMS_DIR = os.path.join(config.DATA_DIR, "file_systems")
+STILL_STOPPING = "The chat is still stopping its response; try again in a moment."
 
 # =============================================================================
 # GLOBAL CHAT MANAGEMENT (Route Prefix: /api/chats)
@@ -86,7 +87,38 @@ def delete_workspace(workspace_id):
 @chat_bp.route('', methods=['DELETE'])
 @chat_bp.route('/', methods=['DELETE'])
 def clear_all_chats():
-    db.delete_all_chats(current_user_id())
+    """Deletes every chat of the caller. Their running turns are stopped first (a turn that has not ended in time is a 409)."""
+    user_id = current_user_id()
+    mine = {c['id'] for c in db.get_all_chats(user_id)}
+    # One shared deadline: the request waits at most TASK_STOP_WAIT_SECONDS in total. A turn that starts
+    # while the others are stopping is caught by the next pass.
+    deadline = time.monotonic() + config.TASK_STOP_WAIT_SECONDS
+    stopped = []
+    while True:
+        running = [cid for cid in task_manager.running_chat_ids() if cid in mine]
+        if not running:
+            break
+        if stopped and time.monotonic() >= deadline:
+            log_event("chat_clear_all_stop_timeout", {"chat_ids": running})
+            return jsonify({"error": STILL_STOPPING}), 409
+        for chat_id in running:
+            task_manager.stop_task(chat_id)
+        still_running = [
+            chat_id for chat_id in running
+            if not task_manager.stop_task_and_wait(chat_id, max(0.0, deadline - time.monotonic()))
+        ]
+        if still_running:
+            log_event("chat_clear_all_stop_timeout", {"chat_ids": still_running})
+            return jsonify({"error": STILL_STOPPING}), 409
+        stopped += running
+    from backend.tools.callbacks import callback_registry
+    from backend.database import response_cache
+    for chat_id in stopped:
+        callback_registry.cleanup_chat(chat_id)
+        response_cache.cleanup_chat(chat_id)
+    for chat_id in mine:
+        task_manager.forget_chat(chat_id)
+    db.delete_all_chats(user_id)
     return jsonify({"success": True})
 
 @chat_bp.route('/save', methods=['POST'])
@@ -256,6 +288,14 @@ def remove_chat(chat_id):
     denied = require_chat_owner(chat_id)
     if denied:
         return denied
+    # End the chat's turn first: a worker that outlives the chat would write rows for a chat that is gone.
+    if not task_manager.stop_task_and_wait(chat_id):
+        log_event("chat_delete_stop_timeout", {"chat_id": chat_id})
+        return jsonify({"error": STILL_STOPPING}), 409
+    from backend.tools.callbacks import callback_registry
+    from backend.database import response_cache
+    callback_registry.cleanup_chat(chat_id)
+    response_cache.cleanup_chat(chat_id)
     from backend.rag import RAGProvider
     from backend.models import get_embedding_model
     from backend.files.manager import FileManager
@@ -276,7 +316,8 @@ def remove_chat(chat_id):
     except Exception as e:
         logger.error(f"Error during physical file cleanup for chat {chat_id}: {e}")
 
-    # 3. Database Cleanup
+    # 3. Database Cleanup (the task files go first: a failure there leaves the chat intact)
+    task_manager.forget_chat(chat_id)
     db.delete_chat(chat_id=chat_id)
     
     FileSystemChannelManager.release_channel(chat_id)
@@ -676,13 +717,17 @@ def resume_chat(chat_id):
 @chat_bp.route('/<chat_id>/stop', methods=['POST'])
 def stop_chat(chat_id):
     """
-    Interrupts a running turn and rolls back.
+    Interrupts a running turn and rolls back. Answers once the turn's worker has exited:
+    `stopped` is false when it was still alive after TASK_STOP_WAIT_SECONDS (the rollback still ran).
     """
     denied = require_chat_owner(chat_id)
     if denied:
         return denied
     try:
-        task_manager.stop_task(chat_id)
+        # Wait first, so the rollback follows the worker's last write.
+        stopped = task_manager.stop_task_and_wait(chat_id)
+        if not stopped:
+            log_event("chat_stop_timeout", {"chat_id": chat_id})
         db.rollback_to_last_user_message(chat_id)
         from backend.database import response_cache
         response_cache.clear_sse_chunks(chat_id)
@@ -700,7 +745,7 @@ def stop_chat(chat_id):
         db.update_chat(chat_id, resume_suppressed=1)
         
         log_event("chat_stopped", {"chat_id": chat_id})
-        return jsonify({"status": "success"})
+        return jsonify({"status": "success", "stopped": stopped})
     except Exception as e:
         logger.error(f"Error stopping chat {chat_id}: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500

@@ -91,6 +91,8 @@ TIMEOUT_MCP_TOOL_CALL = int(os.getenv("TIMEOUT_MCP_TOOL_CALL", 300))    # Max se
 TIMEOUT_LLM_STREAM_READ = int(os.getenv("TIMEOUT_LLM_STREAM_READ", 1800))  # Max seconds between LLM tokens before dropping stream (must accommodate large prefills)
 # FileSystem channel acquire timeout (seconds) — prevents permanent hang if holder crashes
 FILE_SYSTEM_CHANNEL_ACQUIRE_TIMEOUT = int(os.getenv("FILE_SYSTEM_CHANNEL_ACQUIRE_TIMEOUT", 30))
+# How long stop, delete and clear-all wait (seconds) for a running turn's worker to exit before they answer
+TASK_STOP_WAIT_SECONDS = float(os.getenv("TASK_STOP_WAIT_SECONDS", 5))
 # Subscriber poll interval (seconds) — how often subscribe() checks if the task is still alive
 SUBSCRIBER_POLL_INTERVAL = float(os.getenv("SUBSCRIBER_POLL_INTERVAL", 5.0))
 
