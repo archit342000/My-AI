@@ -7,6 +7,7 @@ import { discardTemporaryChat, shouldDiscardTemporaryChat } from '../features/ch
 import { Outlet, useLocation } from 'react-router';
 import { AmbientBackground } from '../components/background/AmbientBackground';
 import { ToastViewport } from '../components/ui/Toast';
+import { usePlatformClass } from '../hooks/usePlatformClass';
 import { useThemeSync } from '../hooks/useThemeSync';
 import { useModalStore } from '../state/modal-store';
 import { useUiStore } from '../state/ui-store';
@@ -22,6 +23,7 @@ import { Composer } from '../features/composer/Composer';
 export function RootLayout() {
   const themeMode = useUiStore((s) => s.themeMode);
   useThemeSync(themeMode);
+  usePlatformClass();
   const toggleArtifacts = useUiStore((s) => s.toggleArtifacts);
   const queryClient = useQueryClient();
   // Unsent files are deleted when the page closes, whichever route is open.

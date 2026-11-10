@@ -9,7 +9,7 @@ React 19 + TypeScript + Vite single-page app. Replaces the legacy UI in `static/
 | `npm run dev` | Vite dev server on :5173, proxies `/api`, `/v1`, `/legacy` to Flask on :5000 (`BACKEND_URL` to override) |
 | `npm run build` | Typecheck, then build to `dist/` (Flask serves it when `FRONTEND=react`) |
 | `npm run typecheck` / `lint` / `test` | Strict TS, ESLint, Vitest + Testing Library |
-| `npm run e2e` | Playwright, uses system Chrome at `/opt/google/chrome/chrome` |
+| `npm run e2e` | Playwright, uses system Chrome at `/opt/google/chrome/chrome`; the `phone` project runs only `mobile-keyboard.spec.ts` (Pixel 7 profile), the `desktop` project the rest |
 | `node scripts/gen-icons.cjs` | Regenerates `src/components/icons/workspace-icons.generated.ts` from `static/js/icons.js` |
 | `node scripts/gen-tool-labels.cjs` | Regenerates `src/features/chat/tool-labels.generated.ts` from `static/js/constants.js` |
 

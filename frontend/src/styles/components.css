@@ -1796,7 +1796,14 @@ input[type="range"].ui-slider__input::-moz-range-thumb {
 .messages-list {
   scrollbar-width: thin;
   scrollbar-color: var(--border-subtle) transparent;
-  padding-bottom: calc(var(--composer-h, 180px) + var(--space-4));
+  padding-bottom: calc(var(--composer-h, 180px) + var(--keyboard-offset, 0px) + var(--space-4));
+}
+
+/* On phones the legacy stylesheet fixes `#messages` padding with !important; the keyboard offset must still count. */
+@media (max-width: 768px) {
+  #messages.messages-list {
+    padding-bottom: calc(var(--composer-h, 180px) + var(--keyboard-offset, 0px) + var(--space-4)) !important;
+  }
 }
 
 .messages-list::-webkit-scrollbar {

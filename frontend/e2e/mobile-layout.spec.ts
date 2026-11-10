@@ -145,8 +145,12 @@ test('the files button is dimmed on the home page and absent on the logs page', 
 });
 
 test('a toast appears above the composer, not on it', async ({ page }) => {
+  // A send the server refuses shows an error toast (`/help` opens a dialog now, so it no longer does).
+  await page.route('**/v1/chat/completions', (route) =>
+    route.fulfill({ status: 500, json: { error: 'The model is unavailable' } }),
+  );
   await page.goto('/');
-  await page.locator('#chat-textarea').fill('/help');
+  await page.locator('#chat-textarea').fill('hello');
   await page.keyboard.press('Enter');
   const toast = page.locator('.ui-toast').first();
   await expect(toast).toBeVisible();

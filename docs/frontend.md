@@ -155,6 +155,16 @@ The files button is on every page with a composer and dimmed on the home page. T
 dialogs take the screen less an 8px margin, and a reply without a thought box stacks avatar-over-answer at the full column width.
 The drawer and the title band are opaque (no blur) on phones; other surfaces keep their blur, as the legacy UI does.
 
+## Mobile
+
+The viewport meta (`index.html`) is the legacy one: `interactive-widget=resizes-content` (the layout resizes with the on-screen keyboard
+where the browser supports it), `maximum-scale=1.0, user-scalable=no` and `viewport-fit=cover`. Where the keyboard only overlays the page
+(iOS Safari), `useKeyboardOffset` raises the composer by the covered height and publishes it as `--keyboard-offset` on `<html>`; the
+transcript pads its bottom by it and `useAutoFollow` scrolls a pinned reader to the end again when the window or visual viewport
+resizes. `usePlatformClass` (called by `RootLayout`) adds `is-ios` to `<html>` on iOS and iPadOS, which the legacy stylesheet keys on, and blocks
+touches that start outside a scroll area (`SCROLL_AREAS` in `lib/scroll-lock.ts`) so the page cannot rubber-band. The phone Playwright
+project simulates the keyboard by shrinking `visualViewport.height` (`e2e/mobile-keyboard.spec.ts`).
+
 ## Known gaps
 
 - The legacy per-agent renderers (research, browsing) are not ported; sub-agent steps show as a labelled group of entries.
