@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { readVisibleViewport, tooltipPosition } from '../../lib/popover-position';
 
 export interface TooltipProps {
   content: ReactNode;
@@ -15,22 +16,37 @@ export interface TooltipProps {
 export function Tooltip({ content, children, delay = 350 }: TooltipProps) {
   const anchorRef = useRef<HTMLSpanElement>(null);
   const timer = useRef<number | undefined>(undefined);
-  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  const bubbleRef = useRef<HTMLDivElement>(null);
+  const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null);
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
 
   useEffect(() => () => window.clearTimeout(timer.current), []);
+
+  // Once the bubble is on screen its size is known: put it where it fits inside the visible viewport.
+  useLayoutEffect(() => {
+    const bubble = bubbleRef.current;
+    if (!anchorRect || !bubble) return;
+    const size = bubble.getBoundingClientRect();
+    setPos(tooltipPosition(anchorRect, size, readVisibleViewport()));
+  }, [anchorRect]);
 
   function show(wait: number) {
     window.clearTimeout(timer.current);
     timer.current = window.setTimeout(() => {
       const rect = anchorRef.current?.getBoundingClientRect();
-      if (rect) setPos({ x: rect.left + rect.width / 2, y: rect.top });
+      if (rect) setAnchorRect(rect);
     }, wait);
   }
 
   function hide() {
     window.clearTimeout(timer.current);
+    setAnchorRect(null);
     setPos(null);
   }
+
+  const placement: CSSProperties = pos
+    ? { left: pos.left, top: pos.top }
+    : { left: 0, top: 0, visibility: 'hidden' };
 
   return (
     <span
@@ -45,9 +61,14 @@ export function Tooltip({ content, children, delay = 350 }: TooltipProps) {
       }}
     >
       {children}
-      {pos
+      {anchorRect
         ? createPortal(
-            <div role="tooltip" className="ui-tooltip" style={{ left: pos.x, top: pos.y - 8, transform: 'translate(-50%, -100%)' }} /* dynamic-style */>
+            <div
+              ref={bubbleRef}
+              role="tooltip"
+              className="ui-tooltip"
+              style={placement} // dynamic-style
+            >
               {content}
             </div>,
             document.body,

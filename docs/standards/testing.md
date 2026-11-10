@@ -60,7 +60,7 @@ Run from `frontend/`: `npm run typecheck`, `npm run lint`, `npm run test`. End-t
 (`frontend/e2e/stack/`) and drives the built UI: send, multi-round tool turns, stop and retry,
 temporary chat, and the legacy-UI geometry of the chat page (`geometry.json`). It is not part of
 `scripts/check.sh`. It needs the repo `venv` Python (or `E2E_PYTHON`), a cached tokenizer
-(`E2E_TOKENIZER`, default `Qwen/Qwen3.6-35B-A3B`) and a built `dist/`. Specs for a known bug are
-marked `test.fail()` (and `it.fails` in the recorded-fixture unit tests); the change that fixes the bug removes the
+(`E2E_TOKENIZER`, default `Qwen/Qwen3.6-35B-A3B`) and a built `dist/`. A spec for a known bug can be
+marked `test.fail()` (and a unit test `it.fails`) so the suite stays green; the change that fixes the bug removes the
 marker, because Playwright and Vitest report an unexpected pass. Fixtures in
 `src/test/fixtures/api/` are recorded with `node e2e/stack/record-fixtures.mjs` against a running stack.

@@ -8,7 +8,18 @@ import {
   parseUserContent,
   splitAttachmentNote,
   toTurns,
+  firstMessageId,
+  turnReasoning,
+  turnText,
+  turnTools,
+  type Step,
 } from './chat-model';
+import {
+  noToolReply,
+  oneToolReply,
+  subAgentReply,
+  threeToolReply,
+} from '../test/fixtures/chat-detail';
 
 function msg(over: Partial<StoredMessage>): StoredMessage {
   return {
@@ -65,7 +76,7 @@ describe('parseToolCalls', () => {
 });
 
 describe('toTurns', () => {
-  it('pairs tool results with their calls and drops tool-role rows', () => {
+  it('pairs tool results with their calls into one assistant turn', () => {
     const messages: StoredMessage[] = [
       msg({ id: '1', role: 'user', content: 'list files' }),
       msg({
@@ -79,21 +90,131 @@ describe('toTurns', () => {
       msg({ id: '4', role: 'assistant', content: 'Done.' }),
     ];
     const turns = toTurns(messages);
-    expect(turns.map((t) => t.kind)).toEqual(['user', 'assistant', 'assistant']);
+    expect(turns.map((t) => t.kind)).toEqual(['user', 'assistant']);
     const assistant = turns[1];
-    expect(assistant?.kind === 'assistant' && assistant.tools).toEqual([
+    expect(assistant?.kind === 'assistant' && turnTools(assistant.steps)).toEqual([
       { id: 'call1', name: 'grep_search', args: '{}', result: 'a.txt' },
     ]);
+    expect(assistant?.kind === 'assistant' && turnText(assistant.steps)).toBe('Let me check.\n\nDone.');
   });
 
   it('moves <think> text and reasoning into thinking and keeps the answer', () => {
     const turns = toTurns([msg({ id: '5', role: 'assistant', content: '<think>x</think>Answer', reasoning_content: 'why' })]);
-    expect(turns[0]).toMatchObject({ kind: 'assistant', text: 'Answer', thinking: 'why\nx' });
+    const t = turns[0];
+    expect(t?.kind === 'assistant' && turnText(t.steps)).toBe('Answer');
+    expect(t?.kind === 'assistant' && turnReasoning(t.steps)).toBe('why\nx');
   });
 
   it('skips sub-agent messages from the main transcript', () => {
     const turns = toTurns([msg({ id: '6', role: 'assistant', content: 'inner', parent_type: 'sub_agent' })]);
     expect(turns).toHaveLength(0);
+  });
+});
+
+describe('parseToolCalls shapes', () => {
+  const list = [{ id: 'x1', function: { name: 'read_file', arguments: '{"p":1}' } }];
+  it('reads the list the API returns and the JSON string of older payloads', () => {
+    expect(parseToolCalls(list)).toEqual([{ id: 'x1', name: 'read_file', args: '{"p":1}' }]);
+    expect(parseToolCalls(JSON.stringify(list))).toEqual([{ id: 'x1', name: 'read_file', args: '{"p":1}' }]);
+  });
+  it('returns none for a non-list value', () => {
+    expect(parseToolCalls({ id: 'x' })).toEqual([]);
+  });
+  it('skips null and non-object entries instead of throwing', () => {
+    expect(parseToolCalls([null, 3, ...list])).toEqual([{ id: 'x1', name: 'read_file', args: '{"p":1}' }]);
+  });
+});
+
+describe('toTurns with the real API shape', () => {
+  const assistants = (m: Parameters<typeof toTurns>[0]) => toTurns(m).filter((t) => t.kind === 'assistant');
+
+  it('makes one assistant turn for 0, 1 and 3 tool rounds', () => {
+    expect(assistants(noToolReply)).toHaveLength(1);
+    expect(assistants(oneToolReply)).toHaveLength(1);
+    const three = toTurns(threeToolReply);
+    expect(three.map((t) => t.kind)).toEqual(['user', 'assistant', 'user', 'assistant']);
+  });
+
+  it('shows stored tool calls and results from list-shaped tool_calls', () => {
+    const [turn] = assistants(oneToolReply);
+    expect(turn?.kind === 'assistant' && turnTools(turn.steps)).toEqual([
+      { id: 't1', name: 'list_files', args: '{}', result: 'a.txt' },
+    ]);
+  });
+
+  it('orders steps as reasoning, text, tool, then the next round', () => {
+    const [turn] = assistants(oneToolReply);
+    expect(turn?.kind === 'assistant' && turn.steps.map((s) => s.kind)).toEqual([
+      'reasoning',
+      'text',
+      'tool',
+      'text',
+    ]);
+  });
+
+  it('lists every stored assistant row of the turn, first one first', () => {
+    const turn = toTurns(threeToolReply)[1];
+    expect(turn).toMatchObject({ id: '2', messageIds: ['2', '4', '6', '8'], model: 'M' });
+    expect(turn?.kind === 'assistant' && turnTools(turn.steps).map((t) => t.result)).toEqual(['r1', 'r2', 'r3']);
+  });
+
+  it('shows stored tool calls from a JSON-string tool_calls row after reload', () => {
+    const calls = JSON.stringify([{ id: 'j1', function: { name: 'read_file', arguments: '{}' } }]);
+    const turn = toTurns([
+      { ...oneToolReply[0]! },
+      { ...oneToolReply[1]!, tool_calls: calls },
+      { ...oneToolReply[2]!, tool_call_id: 'j1' },
+    ]).at(-1);
+    expect(turn?.kind === 'assistant' && turnTools(turn.steps)).toEqual([
+      { id: 'j1', name: 'read_file', args: '{}', result: 'a.txt' },
+    ]);
+  });
+
+  it('starts messageIds at a leading event row so Delete removes the whole turn', () => {
+    const turn = toTurns([
+      { ...oneToolReply[0]! },
+      { ...oneToolReply[1]!, id: 20, role: 'event', content: 'planning', tool_calls: null },
+      { ...oneToolReply[3]!, id: 21 },
+    ]).at(-1);
+    expect(turn).toMatchObject({ id: '20', messageIds: ['20', '21'] });
+  });
+
+  it('places a sub-agent row whose parent is not a tool call after the last tool step of its row', () => {
+    const turn = toTurns([
+      { ...subAgentReply[0]! },
+      {
+        ...subAgentReply[1]!,
+        sub_agent_history: [
+          { id: 30, agent_name: 'solo', role: 'assistant', content: 'solo says', parent_message_id: '2', sequence_order: 1 },
+        ],
+      },
+    ]).at(-1);
+    expect(turn?.kind === 'assistant' && turn.steps.map((s) => (s.kind === 'tool' ? s.id : `${s.kind}:${s.agent}`))).toEqual([
+      's1',
+      's2',
+      'text:solo',
+    ]);
+  });
+
+  it('firstMessageId is the first stored id of an assistant turn and the id of a user turn', () => {
+    const [user, assistant] = toTurns(threeToolReply);
+    expect(user && firstMessageId(user)).toBe('1');
+    expect(assistant && firstMessageId(assistant)).toBe('2');
+  });
+
+  it('puts sub-agent steps after the tool that started them, and event rows in the steps', () => {
+    const [turn] = assistants(subAgentReply);
+    const label = (s: Step) => (s.kind === 'tool' ? `tool:${s.id}` : `${s.kind}:${s.agent ?? 'main'}`);
+    expect(turn?.kind === 'assistant' && turn.steps.map(label)).toEqual([
+      'tool:s1',
+      'event:first',
+      'text:first',
+      'tool:s2',
+      'text:second',
+      'event:main',
+      'text:main',
+    ]);
+    expect(turn?.kind === 'assistant' && turnText(turn.steps)).toBe('Summary.');
   });
 });
 
@@ -209,16 +330,16 @@ describe('recorded chats from the real backend', () => {
     expect(turns.map((t) => t.kind)).toEqual(['user', 'assistant']);
   });
 
-  // The turn-model change draws one row per user message; until it lands the stored tool rounds
-  // (assistant, tool, assistant, ...) come out as several assistant turns, so these are expected to fail.
-  it.fails('reads a chat with three tool rounds as one assistant turn', () => {
+  it('reads a chat with three tool rounds as one assistant turn', () => {
     const turns = toTurns(threeToolChat.messages);
     expect(turns.filter((t) => t.kind === 'assistant')).toHaveLength(1);
   });
 
-  it.fails('keeps the tool calls the server returns as a list', () => {
+  it('keeps the tool calls the server returns as a list', () => {
     const tools = (messages: StoredMessage[]) =>
-      toTurns(messages).flatMap((t) => (t.kind === 'assistant' ? t.tools : []));
+      toTurns(messages).flatMap((t) =>
+        t.kind === 'assistant' ? t.steps.filter((step) => step.kind === 'tool') : [],
+      );
     expect(tools(oneToolChat.messages)).toHaveLength(1);
     expect(tools(threeToolChat.messages)).toHaveLength(3);
   });

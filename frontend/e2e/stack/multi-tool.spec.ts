@@ -1,12 +1,9 @@
 import { expect, test } from '@playwright/test';
 import { botRows, send, startChat, waitIdle } from './helpers';
 
-// Fixed by the turn-model change (one assistant turn per user message): until it is merged these two fail, and
-// `test.fail()` keeps the suite green. When it lands Playwright reports the unexpected pass: delete the marker.
 test('a reply with three tool rounds is one assistant row, live and after a reload', async ({
   page,
 }) => {
-  test.fail(true, 'develop draws one row per assistant message: fixed by the turn-model change');
   await page.goto('/');
   await send(page, 'MULTI use tools');
   await expect(page).toHaveURL(/\/chat\/[a-z0-9]+$/);
@@ -21,11 +18,14 @@ test('a reply with three tool rounds is one assistant row, live and after a relo
 });
 
 test('the tool calls of the turn are kept after a reload', async ({ page }) => {
-  test.fail(true, 'develop draws one row per assistant message: fixed by the turn-model change');
   await startChat(page, 'MULTI keep the tools');
   await page.reload();
   await expect(botRows(page)).toHaveCount(1);
-  await botRows(page).first().locator('.thought-header').click();
-  // All three calls are listed under the reply.
-  await expect(botRows(page).first().getByText('Get Time')).toHaveCount(3);
+  await botRows(page)
+    .first()
+    .getByRole('button', { name: /Thought Process/ })
+    .click();
+  // All three calls are listed in the reply's box, each with its result.
+  await expect(botRows(page).first().getByText('Call: Get Time')).toHaveCount(3);
+  await expect(botRows(page).first().getByText('Tool Result: Get Time')).toHaveCount(3);
 });

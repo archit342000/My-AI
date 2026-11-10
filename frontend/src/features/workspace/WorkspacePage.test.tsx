@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { renderWithProviders } from '../../test/render';
 import { WorkspacePage } from './WorkspacePage';
 import { chatsApi } from '../../api/chats';
@@ -88,7 +88,42 @@ describe('WorkspacePage', () => {
     await waitFor(() => expect(useToastStore.getState().toasts.some((t) => t.type === 'error')).toBe(true), { timeout: 500 });
   });
 
-  describe('files panel (the Files toggle)', () => {
+  it('shows how many chats the workspace has', async () => {
+    vi.spyOn(chatsApi, 'listWorkspaces').mockResolvedValue(ws as never);
+    vi.spyOn(chatsApi, 'list').mockResolvedValue(chats as never);
+    vi.spyOn(artifactsApi, 'list').mockResolvedValue([] as never);
+    renderWithProviders(<WorkspacePage />, { route: '/workspace/w1', path: '/workspace/:workspaceId' });
+    expect(await screen.findByText('1 chat')).toBeTruthy();
+  });
+
+  it('rename uses the shared input and carries no inline style', async () => {
+    vi.spyOn(chatsApi, 'listWorkspaces').mockResolvedValue(ws as never);
+    vi.spyOn(chatsApi, 'list').mockResolvedValue([] as never);
+    vi.spyOn(artifactsApi, 'list').mockResolvedValue([] as never);
+    const { container } = renderWithProviders(<WorkspacePage />, { route: '/workspace/w1', path: '/workspace/:workspaceId' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Rename workspace' }));
+    expect(screen.getByLabelText('Workspace name').className).toContain('ui-input');
+    expect(container.querySelector('[style]')).toBeNull();
+  });
+
+  it('deleting a workspace confirms, refreshes the lists and moves the router home without a page load', async () => {
+    vi.spyOn(chatsApi, 'listWorkspaces').mockResolvedValue(ws as never);
+    vi.spyOn(chatsApi, 'list').mockResolvedValue([] as never);
+    vi.spyOn(artifactsApi, 'list').mockResolvedValue([] as never);
+    vi.spyOn(client, 'apiRequest').mockResolvedValue(new Response(null) as never);
+    const assign = vi.fn();
+    vi.stubGlobal('location', { ...window.location, assign });
+    const { client: queryClient } = renderWithProviders(<WorkspacePage />, { route: '/workspace/w1', path: '/workspace/:workspaceId' });
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete workspace' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    expect(await screen.findByTestId('elsewhere')).toBeTruthy();
+    expect(assign).not.toHaveBeenCalled();
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['workspaces'] });
+    vi.unstubAllGlobals();
+  });
+
+  describe('files section', () => {
     const renderPage = () => {
       vi.spyOn(chatsApi, 'listWorkspaces').mockResolvedValue(ws as never);
       vi.spyOn(chatsApi, 'list').mockResolvedValue(chats as never);
@@ -96,36 +131,22 @@ describe('WorkspacePage', () => {
       return renderWithProviders(<WorkspacePage />, { route: '/workspace/w1', path: '/workspace/:workspaceId' });
     };
 
-    it('is hidden while the toggle is off', async () => {
-      renderPage();
-      expect(await screen.findByRole('heading', { name: 'Research' })).toBeTruthy();
-      expect(screen.queryByRole('region', { name: 'Artifacts' })).toBeNull();
-      expect(screen.queryByRole('heading', { name: 'Files' })).toBeNull();
-    });
-
-    it('is shown while the toggle is on', async () => {
-      useUiStore.setState({ artifactsOpen: true });
+    it('is always there, once, whatever the Files toggle says', async () => {
       renderPage();
       expect(await screen.findByRole('region', { name: 'Artifacts' })).toBeTruthy();
-      // the page's own heading and the panel's heading both read "Files"
-      expect(screen.getAllByRole('heading', { name: 'Files' })).toHaveLength(2);
+      expect(screen.getAllByRole('heading', { name: 'Files' })).toHaveLength(1);
+      expect(screen.queryByRole('button', { name: 'Close files panel' })).toBeNull();
     });
 
-    it('follows the toggle after the page has rendered', async () => {
-      renderPage();
-      await screen.findByRole('heading', { name: 'Research' });
-      act(() => useUiStore.getState().toggleArtifacts());
-      expect(await screen.findByRole('region', { name: 'Artifacts' })).toBeTruthy();
-      act(() => useUiStore.getState().toggleArtifacts());
-      await waitFor(() => expect(screen.queryByRole('region', { name: 'Artifacts' })).toBeNull());
-    });
-
-    it('closes from its own close button', async () => {
-      useUiStore.setState({ artifactsOpen: true });
-      renderPage();
-      fireEvent.click(await screen.findByRole('button', { name: 'Close files panel' }));
-      expect(useUiStore.getState().artifactsOpen).toBe(false);
-      await waitFor(() => expect(screen.queryByRole('region', { name: 'Artifacts' })).toBeNull());
+    it('a workspace whose list holds only the server\'s placeholder folder shows the empty state', async () => {
+      vi.spyOn(chatsApi, 'listWorkspaces').mockResolvedValue(ws as never);
+      vi.spyOn(chatsApi, 'list').mockResolvedValue([] as never);
+      vi.spyOn(artifactsApi, 'list').mockResolvedValue([
+        { id: '', type: 'directory', filename: 'workspace', title: 'workspace' },
+      ] as never);
+      renderWithProviders(<WorkspacePage />, { route: '/workspace/w1', path: '/workspace/:workspaceId' });
+      await screen.findByRole('region', { name: 'Artifacts' });
+      await waitFor(() => expect(screen.queryByText('workspace')).toBeNull());
     });
   });
 });

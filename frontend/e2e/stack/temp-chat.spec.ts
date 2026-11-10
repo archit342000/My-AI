@@ -1,12 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { send, waitIdle } from './helpers';
 
-// Fixed by the start-chat-and-send change: on develop a temporary chat's reply is not drawn on the landing page.
 test('a temporary chat answers, is not listed, and can be saved', async ({ page }) => {
-  test.fail(
-    true,
-    'develop does not show the temporary chat reply: fixed by the start-chat-and-send change',
-  );
   await page.goto('/');
   await page.locator('#temp-chat-btn').click();
   await expect(page.locator('#temp-chat-banner')).toBeVisible();

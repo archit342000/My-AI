@@ -12,6 +12,6 @@ Python or `E2E_PYTHON`, and a cached tokenizer named by `E2E_TOKENIZER`). It is 
 | `geometry.json`       | Legacy-UI rectangles and the `expectedFail` list (it can only shrink)                                                      |
 | `record-fixtures.mjs` | Re-records `src/test/fixtures/api/*.json` from a running stack                                                             |
 
-Specs marked `test.fail()` cover behaviour that another change fixes; that change deletes the marker when
+A spec for a known bug can be marked `test.fail()` (and a unit test `it.fails`) so the suite stays green; the fixing change deletes the marker when
 Playwright reports the unexpected pass. Environment: `E2E_STACK_PORT` (default 5195), `E2E_STUB_PORT`
 (default port + 1), `E2E_PYTHON`, `E2E_TOKENIZER`.

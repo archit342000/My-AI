@@ -1,4 +1,3 @@
-import { Composer } from '../composer/Composer';
 import { MessageList } from '../chat/MessageList';
 import { toTurns } from '../../lib/chat-model';
 import { useChatDetail } from '../chat/useChatQueries';
@@ -33,7 +32,6 @@ export function HomePage() {
           </div>
         </div>
       )}
-      <Composer />
     </>
   );
 }

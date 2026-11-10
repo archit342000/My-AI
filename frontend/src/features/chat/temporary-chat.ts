@@ -1,8 +1,10 @@
 import type { QueryClient } from '@tanstack/react-query';
 import { chatsApi, queryKeys } from '../../api/chats';
 import { useSettingsStore } from '../../state/settings-store';
+import { useAttachmentStore } from '../../state/attachment-store';
 import { useUiStore } from '../../state/ui-store';
-import { generateChatId } from './send-turn';
+import { generateChatId } from '../../lib/chat-id';
+import { stopIfStreaming } from './send-turn';
 
 /** Enters temporary mode with a fresh chat id. The server row is created lazily by the first turn. */
 export function startTemporaryChat(): string {
@@ -12,10 +14,29 @@ export function startTemporaryChat(): string {
 }
 
 /** Leaves temporary mode and removes whatever the server stored for it (404 means nothing was sent). */
-export async function discardTemporaryChat(queryClient: QueryClient): Promise<void> {
+let discarding: { id: string; run: Promise<void> } | null = null;
+
+export function discardTemporaryChat(queryClient: QueryClient): Promise<void> {
+  const id = useUiStore.getState().temporaryChatId;
+  // A second call for the same chat while the first is still stopping its turn waits for it instead
+  // of deleting twice; a different (newer) temporary chat gets its own discard.
+  if (discarding && discarding.id === id) return discarding.run;
+  const run = discard(queryClient).finally(() => {
+    if (discarding?.run === run) discarding = null;
+  });
+  if (id) discarding = { id, run };
+  return run;
+}
+
+async function discard(queryClient: QueryClient): Promise<void> {
   const id = useUiStore.getState().temporaryChatId;
   if (!id) return;
+  // The temporary chat may still be generating: stop it first, while temporary mode is still on, so
+  // the composer does not offer Send over a store that is busy with this chat.
+  await stopIfStreaming(id);
   useUiStore.getState().setTemporaryChatId(null);
+  // Files staged for it go with it.
+  await useAttachmentStore.getState().discard(id);
   try {
     await chatsApi.remove(id);
   } catch {

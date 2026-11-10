@@ -46,24 +46,36 @@ for (const [name, viewport] of Object.entries(VIEWPORTS)) {
         }),
       )
       .toBe(0);
-    const measured = await page.evaluate((selectors) => {
-      const out: Record<string, Rect | null> = {};
-      for (const [key, selector] of Object.entries(selectors)) {
-        const el = document.querySelector(selector);
-        if (!el) {
-          out[key] = null;
-          continue;
+    const measure = () =>
+      page.evaluate((selectors) => {
+        const out: Record<string, Rect | null> = {};
+        for (const [key, selector] of Object.entries(selectors)) {
+          const el = document.querySelector(selector);
+          if (!el) {
+            out[key] = null;
+            continue;
+          }
+          const r = el.getBoundingClientRect();
+          out[key] = {
+            x: Math.round(r.x),
+            y: Math.round(r.y),
+            width: Math.round(r.width),
+            height: Math.round(r.height),
+          };
         }
-        const r = el.getBoundingClientRect();
-        out[key] = {
-          x: Math.round(r.x),
-          y: Math.round(r.y),
-          width: Math.round(r.width),
-          height: Math.round(r.height),
-        };
-      }
-      return out;
-    }, SELECTORS);
+        return out;
+      }, SELECTORS);
+    // Wait until the layout has settled: two measurements in a row are the same.
+    let previous = '';
+    await expect
+      .poll(async () => {
+        const now = JSON.stringify(await measure());
+        const same = now === previous;
+        previous = now;
+        return same;
+      })
+      .toBe(true);
+    const measured = await measure();
 
     const known = new Set(geometry.expectedFail[name] ?? []);
     const wrong: string[] = [];

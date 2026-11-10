@@ -1,6 +1,7 @@
 import '@testing-library/jest-dom/vitest';
 import { beforeEach } from 'vitest';
 import { initUserStorage } from '../lib/user-storage';
+import { useAttachmentStore } from '../state/attachment-store';
 import { useUserStore } from '../state/user-store';
 
 // jsdom does not implement layout scrolling; stub it so unlocking modals is quiet.
@@ -30,4 +31,6 @@ const TEST_ADMIN = { id: 'test-admin', email: 'admin@test', role: 'admin' } as c
 beforeEach(() => {
   initUserStorage(TEST_ADMIN);
   useUserStore.setState({ user: TEST_ADMIN, sessionExpired: false });
+  // Staged files are kept per chat in a store: start every test with none.
+  useAttachmentStore.setState({ lists: {}, doomed: {} });
 });

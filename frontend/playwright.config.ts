@@ -14,5 +14,23 @@ export default defineConfig({
     trace: 'off',
     launchOptions: { executablePath: '/opt/google/chrome/chrome', args: ['--no-sandbox'] },
   },
-  projects: [{ name: 'desktop', use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } } }],
+  projects: [
+    {
+      name: 'desktop',
+      use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } },
+      testIgnore: /mobile-(layout|keyboard)\.spec\.ts/,
+    },
+    {
+      // A 390px phone screen in Chrome (touch, mobile viewport): the layout rules at 768px and below, and the
+      // on-screen keyboard (simulated in the spec).
+      name: 'phone',
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 390, height: 844 },
+        isMobile: true,
+        hasTouch: true,
+      },
+      testMatch: /mobile-(layout|keyboard)\.spec\.ts/,
+    },
+  ],
 });

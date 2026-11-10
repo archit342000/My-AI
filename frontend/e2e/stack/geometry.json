@@ -103,7 +103,7 @@
     }
   },
   "expectedFail": {
-    "desktop": ["botAvatar", "botContent", "attachButton"],
-    "phone": ["userMessage", "botAvatar", "botContent", "attachButton"]
+    "desktop": [],
+    "phone": ["botAvatar", "botContent", "messages", "userMessage"]
   }
 }
