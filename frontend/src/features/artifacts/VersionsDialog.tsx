@@ -146,7 +146,6 @@ export function VersionsDialog({
           ) : null}
           {versions.data && list.length === 0 ? (
             <EmptyState
-              icon="clock"
               title="No earlier versions"
               description="A version is kept each time the file is saved."
             />

@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { GonePage } from '../../app/DeadEnds';
 import { PageTitle } from '../../app/PageTitle';
 import { apiRequest } from '../../api/client';
 import { chatsApi, queryKeys } from '../../api/chats';
@@ -10,6 +11,7 @@ import { showToast } from '../../components/ui/toast-store';
 import { Button, IconButton } from '../../components/ui/Button';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { PromptDialog } from '../../components/ui/PromptDialog';
+import { Skeleton } from '../../components/ui/Skeleton';
 import { TickRule } from '../../components/ui/TickRule';
 import { fullDateTime, whenLabel } from '../../lib/format-time';
 import { workspaceEmoji, workspaceIconName } from '../../lib/workspace-icon';
@@ -67,30 +69,43 @@ export function WorkspacePage() {
   });
 
   if (!workspace) {
-    if (workspaces.isPending) return <div className="chat-loading" aria-busy="true" />;
-    if (workspaces.isError)
+    if (workspaces.isPending) {
       return (
-        <div className="chat-error" role="alert">
-          <span className="chat-error__message">
-            Couldn't open this workspace. Your chats and files are safe.
-          </span>
-          <button
-            type="button"
-            className="chat-error__action"
-            onClick={() => void workspaces.refetch()}
-          >
-            Try again
-          </button>
+        <div
+          className="workspace-view"
+          role="status"
+          aria-label="Loading the workspace"
+          aria-busy="true"
+        >
+          <Skeleton width="38%" height="28px" />
+          <div className="workspace-chat-grid">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="workspace-chat-card workspace-chat-card--placeholder">
+                <Skeleton width="40%" />
+                <Skeleton width="82%" height="16px" />
+              </div>
+            ))}
+          </div>
+          <Skeleton width="100%" height="260px" />
         </div>
       );
-    return (
-      <div className="chat-error" role="alert">
-        <span className="chat-error__message">This workspace no longer exists.</span>
-        <button type="button" className="chat-error__action" onClick={() => navigate('/')}>
-          New chat
-        </button>
-      </div>
-    );
+    }
+    if (workspaces.isError) {
+      return (
+        <EmptyState
+          className="page-problem"
+          drawing="broke"
+          title="Couldn't open this workspace"
+          description="Something went wrong on the way. Your chats and files are safe."
+          action={
+            <Button variant="quiet" onClick={() => void workspaces.refetch()}>
+              Try again
+            </Button>
+          }
+        />
+      );
+    }
+    return <GonePage what="workspace" />;
   }
 
   const headerIcon = workspaceIconName(workspace.icon);
@@ -162,7 +177,6 @@ export function WorkspacePage() {
         ) : chats.isPending ? null : (
           <EmptyState
             className="workspace-empty"
-            icon={headerIcon}
             title="Nothing in this workspace yet"
             description="Chats you start here are kept together, along with the files they make."
             action={

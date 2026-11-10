@@ -483,7 +483,6 @@ export function MessageList({
       {turns.length === 0 && !pending && !streaming ? (
         <EmptyState
           className="chat-empty"
-          icon="sparkles"
           title="Nothing here yet"
           description="Send a message to start the conversation."
         />

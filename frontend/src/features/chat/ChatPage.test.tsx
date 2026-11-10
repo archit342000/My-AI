@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { renderWithProviders } from '../../test/render';
 import { ChatPage } from './ChatPage';
 import { chatsApi } from '../../api/chats';
@@ -84,10 +84,32 @@ describe('ChatPage', () => {
     expect(useUiStore.getState().filesAvailable).toBe(false);
   });
 
+  it('shows the shape of a conversation while the chat loads', () => {
+    vi.spyOn(chatsApi, 'get').mockReturnValue(new Promise(() => undefined) as never);
+    renderWithProviders(<ChatPage />, { route: '/chat/c1', path: '/chat/:chatId' });
+    const loading = screen.getByRole('status', { name: 'Loading the chat' });
+    expect(loading.querySelectorAll('.skel').length).toBeGreaterThan(5);
+  });
+
+  it('a chat that cannot be loaded says why and can be tried again', async () => {
+    // The chat is asked for a few times before it is given up on: the clock is moved past that.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const get = vi.spyOn(chatsApi, 'get').mockRejectedValue(new ApiError(403, {}, 'not yours'));
+    renderWithProviders(<ChatPage />, { route: '/chat/c1', path: '/chat/:chatId' });
+    await act(() => vi.advanceTimersByTimeAsync(10_000));
+    vi.useRealTimers();
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'This chat could not be loaded. not yours',
+    );
+    get.mockResolvedValue(detail() as never);
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByText('first answer')).toBeTruthy();
+  });
+
   it('offers a way back from a missing chat', async () => {
     vi.spyOn(chatsApi, 'get').mockRejectedValue(new ApiError(404, {}, 'missing'));
     renderWithProviders(<ChatPage />, { route: '/chat/c1', path: '/chat/:chatId' });
-    fireEvent.click(await screen.findByRole('button', { name: 'New chat' }));
+    fireEvent.click(await screen.findByRole('link', { name: 'Go to Home' }));
     expect(await screen.findByTestId('elsewhere')).toBeTruthy();
   });
 
@@ -115,7 +137,8 @@ describe('ChatPage', () => {
     get.mockRejectedValue(new ApiError(404, {}, 'missing'));
     await client.invalidateQueries({ queryKey: ['chat', 'c1'] });
     expect(await screen.findByRole('alert')).toHaveTextContent('This chat no longer exists.');
-    expect(screen.getByRole('button', { name: 'New chat' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Go to Home' })).toBeTruthy();
+    expect(screen.queryByText('first answer')).toBeNull();
   });
 
   it("keeps seeded data on screen while the chat's own turn runs and the server still says 404", async () => {

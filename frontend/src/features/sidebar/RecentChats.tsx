@@ -6,6 +6,7 @@ import { Menu, type MenuEntry } from '../../components/ui/Menu';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { IconPickerDialog } from './IconPickerDialog';
 import { PromptDialog } from '../../components/ui/PromptDialog';
+import { SkeletonLines } from '../../components/ui/Skeleton';
 import { useUiStore } from '../../state/ui-store';
 import { showToast } from '../../components/ui/toast-store';
 import { Icon } from '../../components/icons/Icon';
@@ -217,6 +218,29 @@ export function SidebarChats() {
 
       <div id="recent-chats-sidebar-section" className="sidebar-section">
         <div id="chat-history-list" className="chat-history-scroll">
+          {/* Loading, a problem and "nothing yet" each have their own line: never a blank panel. */}
+          {chats.isPending ? (
+            <SkeletonLines
+              className="side-state sidebar-text"
+              label="Loading your chats"
+              widths={['70%', '85%', '60%', '78%', '66%']}
+            />
+          ) : chats.isError ? (
+            <div className="side-state sidebar-text" role="alert">
+              <p className="ui-hint">Couldn't load your chats.</p>
+              <button
+                type="button"
+                className="ui-button ui-button--ghost ui-button--sm"
+                onClick={() => void chats.refetch()}
+              >
+                Try again
+              </button>
+            </div>
+          ) : all.length === 0 ? (
+            <p className="ui-hint side-state sidebar-text">
+              No chats yet. Start one and it will appear here.
+            </p>
+          ) : null}
           {DAY_GROUPS.map(({ key, label }) => {
             const rows = loose.filter((c) => dayGroup(c.timestamp) === key);
             if (rows.length === 0) return null;

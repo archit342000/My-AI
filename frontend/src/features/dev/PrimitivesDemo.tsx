@@ -219,7 +219,6 @@ export function PrimitivesDemo() {
           <Badge tone="accent">New</Badge>
         </div>
         <EmptyState
-          icon="folder"
           title="No workspaces yet"
           description="Group related chats and files in a workspace."
           action={<Button variant="primary">New workspace</Button>}

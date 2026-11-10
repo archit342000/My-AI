@@ -51,7 +51,8 @@ export function measureWords(element: HTMLElement): Box[] {
     const rects = typeof range.getClientRects === 'function' ? range.getClientRects() : [];
     for (const rect of Array.from(rects)) boxes.push(rect);
   }
-  for (const control of Array.from(element.querySelectorAll('button, a, .led'))) {
+  // Buttons, the status light and a dead end's small drawing are shapes, not text: each gets its own patch.
+  for (const control of Array.from(element.querySelectorAll('button, a, .led, .dotted-drawing'))) {
     boxes.push(control.getBoundingClientRect());
   }
   return boxes;

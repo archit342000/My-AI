@@ -1,9 +1,12 @@
+import { GonePage } from '../../app/DeadEnds';
 import { PageTitle } from '../../app/PageTitle';
 import { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router';
+import { useParams } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { ApiError } from '../../api/client';
 import { chatsApi, queryKeys } from '../../api/chats';
+import { Notice } from '../../components/ui/Notice';
+import { Skeleton } from '../../components/ui/Skeleton';
 import { showToast } from '../../components/ui/toast-store';
 import { toTurns } from '../../lib/chat-model';
 import { useStreamStore } from '../../state/stream-store';
@@ -89,9 +92,24 @@ function ChatTitle({ chatId, title }: { chatId: string; title: string }) {
   );
 }
 
+/** The shape of a conversation while it loads: what was asked on the right, an answer below it. */
+function ChatSkeleton() {
+  return (
+    <div className="chat-loading" role="status" aria-label="Loading the chat" aria-busy="true">
+      <Skeleton className="chat-loading__asked" width="56%" height="48px" />
+      {['30%', '92%', '97%', '84%', '58%'].map((w) => (
+        <Skeleton key={w} width={w} />
+      ))}
+      <Skeleton width="100%" height="120px" />
+      <Skeleton width="88%" />
+      <Skeleton width="64%" />
+    </div>
+  );
+}
+
+/** A chat: its title in the header, the conversation, and the Files panel when it is open. */
 export function ChatPage() {
   const { chatId } = useParams();
-  const navigate = useNavigate();
   const { data, error, isPending, refetch } = useChatDetail(chatId);
   useChatSettings(chatId);
   const queryClient = useQueryClient();
@@ -120,20 +138,14 @@ export function ChatPage() {
   const gone = error instanceof ApiError && error.status === 404;
   const starting = gone && streaming === chatId;
   const notFound = gone && !starting;
-  if (!data && (isPending || !error || starting)) {
-    return <div className="chat-loading" aria-busy="true" />;
-  }
-  if (!data || notFound) {
+  if (!data && (isPending || !error || starting)) return <ChatSkeleton />;
+  if (notFound) return <GonePage what="chat" />;
+  if (!data) {
     return (
-      <div className="chat-error" role="alert">
-        <span className="chat-error__message">
-          {notFound
-            ? 'This chat no longer exists.'
-            : `Could not load chat: ${error?.message ?? ''}`}
-        </span>
-        <button type="button" className="chat-error__action" onClick={() => navigate('/')}>
-          New chat
-        </button>
+      <div className="page-problem">
+        <Notice tone="bad" actionLabel="Try again" onAction={() => void refetch()}>
+          This chat could not be loaded. {error?.message ?? ''}
+        </Notice>
       </div>
     );
   }

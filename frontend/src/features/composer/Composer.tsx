@@ -25,6 +25,7 @@ import { sendTurn, stopTurn } from '../chat/send-turn';
 import { rippleSphere } from '../../lib/sphere-signal';
 import { cx } from '../../lib/cx';
 import { Notice } from '../../components/ui/Notice';
+import { useOnline } from '../../hooks/useOnline';
 import { ActiveTools } from '../tools/ActiveTools';
 import { useChatDetail } from '../chat/useChatQueries';
 import { useKeyboardOffset } from '../../hooks/useKeyboardOffset';
@@ -46,6 +47,7 @@ export function Composer() {
   const routeChatId = useMatch('/chat/:chatId')?.params.chatId;
   const navigate = useNavigate();
   const openSettings = useOpenSettings();
+  const online = useOnline();
   const queryClient = useQueryClient();
   const [text, setText] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
@@ -208,7 +210,7 @@ export function Composer() {
   const nothingToSend = text.trim().length === 0 && attachments.length === 0;
   // Only a running upload or a missing model disables the button; with an empty box it stays blue (as in the
   // legacy UI) and a click does nothing. Another chat that is generating is explained by the refusal toast.
-  const sendBlocked = !hasModel || !ready;
+  const sendBlocked = !hasModel || !ready || !online;
   const canSend = !streaming && !sendBlocked && !nothingToSend;
 
   function onFiles(event: ChangeEvent<HTMLInputElement>) {
@@ -360,6 +362,11 @@ export function Composer() {
       ref={inputArea}
       style={{ transform: keyboard ? `translateY(-${keyboard}px)` : undefined }} // dynamic-style
     >
+      {!online ? (
+        <Notice tone="warn" className="offline-notice">
+          No connection. Everything here is saved; sending is paused until you are back online.
+        </Notice>
+      ) : null}
       {temporary ? (
         <Notice
           className="temp-chat-banner"
@@ -456,7 +463,8 @@ export function Composer() {
           aria-controls={slashOpen ? listId : undefined}
           aria-autocomplete="list"
           aria-activedescendant={slashOpen ? `${listId}-${active}` : undefined}
-          placeholder="Start a conversation..."
+          placeholder={online ? 'Start a conversation...' : 'Waiting for a connection...'}
+          disabled={!online}
           onChange={(e) => {
             setText(e.target.value);
             setActiveIndex(0);

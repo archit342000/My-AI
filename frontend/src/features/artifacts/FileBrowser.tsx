@@ -615,7 +615,7 @@ export function FileBrowser({ ref, scope, full, onToggleFull }: FileBrowserProps
         ) : null}
         {empty ? (
           <EmptyState
-            icon="folder"
+            drawing={needle ? 'not-found' : 'nothing'}
             title={needle ? 'Nothing matches' : 'No files yet'}
             description={
               needle

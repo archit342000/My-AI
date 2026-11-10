@@ -54,7 +54,7 @@ export function LogsPage() {
   ) : (
     <EmptyState
       className="logs-denied"
-      icon="lock"
+      drawing="gone"
       title="Not available"
       description="The logs are only available to the administrator."
     />
@@ -189,7 +189,6 @@ function LogsContent() {
 
       {awaitingChatId ? (
         <EmptyState
-          icon="database"
           title="Enter a chat id"
           description="Database rows are loaded one chat at a time."
         />
@@ -205,7 +204,7 @@ function LogsContent() {
         </div>
       ) : visible.length === 0 ? (
         <EmptyState
-          icon="list"
+          drawing={entries.length === 0 ? 'nothing' : 'not-found'}
           title={entries.length === 0 ? 'Nothing logged yet' : 'Nothing matches'}
           description={
             entries.length === 0

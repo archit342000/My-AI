@@ -2,24 +2,15 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ApiError, shouldRetryQuery } from '../api/client';
 import { meApi, meKeys } from '../api/me';
+import { Button } from '../components/ui/Button';
+import { DeadEnd } from '../components/ui/DeadEnd';
+import { StatusLight } from '../components/ui/StatusLight';
 import { initUserStorage } from '../lib/user-storage';
 import { useSettingsStore } from '../state/settings-store';
 import { useUserStore } from '../state/user-store';
 
 function reload() {
   window.location.reload();
-}
-
-/** A full-page message with a Reload button, shown before the app frame exists. */
-function GateMessage({ text }: { text: string }) {
-  return (
-    <div className="chat-error" role="alert">
-      <p>{text}</p>
-      <button type="button" className="btn-secondary" onClick={reload}>
-        Reload
-      </button>
-    </div>
-  );
 }
 
 /**
@@ -45,12 +36,30 @@ export function UserGate({ children }: { children: ReactNode }) {
   }, [data]);
 
   if (error) {
-    return error instanceof ApiError && error.status === 401 ? (
-      <GateMessage text="Your session has expired." />
-    ) : (
-      <GateMessage text="Couldn't load your account." />
+    const expired = error instanceof ApiError && error.status === 401;
+    return (
+      <DeadEnd
+        drawing={expired ? 'gone' : 'broke'}
+        title={expired ? 'Your session has ended.' : "Couldn't load your account."}
+        details={expired || !(error instanceof Error) ? undefined : error.message}
+        actions={
+          <Button variant="primary" onClick={reload}>
+            {expired ? 'Sign in again' : 'Try again'}
+          </Button>
+        }
+      >
+        {expired
+          ? 'Sign in again to carry on. Nothing you saved is lost.'
+          : 'The app is not answering. Check your connection, then try again.'}
+      </DeadEnd>
     );
   }
-  if (!ready) return <div className="chat-error">Loading…</div>;
+  if (!ready) {
+    return (
+      <div className="gate-wait">
+        <StatusLight label="Loading" busy />
+      </div>
+    );
+  }
   return <>{children}</>;
 }

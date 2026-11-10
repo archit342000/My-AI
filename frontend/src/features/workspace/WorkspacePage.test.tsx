@@ -54,7 +54,34 @@ describe('WorkspacePage', () => {
       route: '/workspace/nope',
       path: '/workspace/:workspaceId',
     });
-    expect(await screen.findByText('This workspace no longer exists.')).toBeTruthy();
+    expect(await screen.findByRole('alert')).toHaveTextContent('This workspace no longer exists.');
+    expect(screen.getByRole('link', { name: 'Go to Home' })).toBeTruthy();
+  });
+
+  it('shows the shape of the page while the workspaces load', () => {
+    vi.spyOn(chatsApi, 'listWorkspaces').mockReturnValue(new Promise(() => undefined) as never);
+    vi.spyOn(chatsApi, 'list').mockResolvedValue([] as never);
+    renderWithProviders(<WorkspacePage />, {
+      route: '/workspace/w1',
+      path: '/workspace/:workspaceId',
+    });
+    const loading = screen.getByRole('status', { name: 'Loading the workspace' });
+    expect(loading.querySelectorAll('.skel').length).toBeGreaterThan(4);
+  });
+
+  it('a workspace that cannot be opened says so and can be tried again', async () => {
+    const list = vi.spyOn(chatsApi, 'listWorkspaces').mockRejectedValue(new Error('down'));
+    vi.spyOn(chatsApi, 'list').mockResolvedValue([] as never);
+    renderWithProviders(<WorkspacePage />, {
+      route: '/workspace/w1',
+      path: '/workspace/:workspaceId',
+    });
+    expect(
+      await screen.findByText("Couldn't open this workspace", {}, { timeout: 3000 }),
+    ).toBeTruthy();
+    list.mockResolvedValue(ws as never);
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByRole('heading', { name: 'Research' })).toBeTruthy();
   });
 
   it('rename sends PATCH with the trimmed name', async () => {

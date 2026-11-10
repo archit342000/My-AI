@@ -23,10 +23,6 @@
 .messages-list > * {
   flex: none;
 }
-.chat-loading {
-  flex: 1;
-  min-height: 0;
-}
 .chat-empty {
   margin: auto;
 }

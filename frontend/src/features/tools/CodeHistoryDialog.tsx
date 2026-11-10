@@ -33,7 +33,6 @@ export function CodeHistoryDialog({ open, onClose }: { open: boolean; onClose: (
       <div className="tool-window">
         {id === null ? (
           <EmptyState
-            icon="terminal"
             title="Open a chat first"
             description="Runs are listed for the chat that is open."
           />
@@ -49,7 +48,6 @@ export function CodeHistoryDialog({ open, onClose }: { open: boolean; onClose: (
           </div>
         ) : runs.length === 0 ? (
           <EmptyState
-            icon="terminal"
             title="No code has been run yet"
             description="When the AI runs code in this chat, each run is listed here."
           />

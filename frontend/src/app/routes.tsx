@@ -1,4 +1,5 @@
 import { createBrowserRouter } from 'react-router';
+import { NotFoundPage, RouteError } from './DeadEnds';
 import { RootLayout } from './RootLayout';
 import { HomePage } from '../features/home/HomePage';
 import { ChatPage } from '../features/chat/ChatPage';
@@ -10,6 +11,7 @@ import { PrimitivesDemo } from '../features/dev/PrimitivesDemo';
 export const router = createBrowserRouter([
   {
     element: <RootLayout />,
+    errorElement: <RouteError />,
     children: [
       { path: '/', element: <HomePage /> },
       { path: '/chat/:chatId', element: <ChatPage /> },
@@ -19,7 +21,7 @@ export const router = createBrowserRouter([
       { path: '/settings', element: <SettingsRedirect /> },
       { path: '/settings/:section', element: <SettingsRedirect /> },
       ...(import.meta.env.DEV ? [{ path: '/dev/ui', element: <PrimitivesDemo /> }] : []),
-      { path: '*', element: <div className="chat-error">Page not found</div> },
+      { path: '*', element: <NotFoundPage /> },
     ],
   },
 ]);

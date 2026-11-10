@@ -156,6 +156,25 @@ describe('Composer', () => {
     expect(document.activeElement).toBe(textarea());
   });
 
+  it('offline: the box waits for a connection and says nothing is lost; it comes back by itself', () => {
+    const online = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    renderWithProviders(<Composer />);
+    const box = () => screen.getByRole('combobox') as HTMLTextAreaElement;
+    expect(box()).toBeDisabled();
+    expect(box().placeholder).toBe('Waiting for a connection...');
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'No connection. Everything here is saved; sending is paused until you are back online.',
+    );
+    expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled();
+    online.mockReturnValue(true);
+    act(() => {
+      window.dispatchEvent(new Event('online'));
+    });
+    expect(box()).toBeEnabled();
+    expect(box().placeholder).toBe('Start a conversation...');
+    expect(screen.queryByText(/No connection/)).toBeNull();
+  });
+
   it('/skills opens the settings page at Skills and clears the box', () => {
     function Address() {
       const location = useLocation();

@@ -43,14 +43,14 @@ describe('SidebarChats workspace rows', () => {
     expect(screen.getByText('Loose chat').className).toBe('chat-list-item-text');
   });
 
-  it('the move submenu shows each workspace with its own icon, the generic grid only for an unknown one', async () => {
+  it('the move submenu shows each workspace with its own icon', async () => {
     mockData();
     renderWithProviders(<SidebarChats />);
     fireEvent.contextMenu(await screen.findByText('Loose chat'));
     fireEvent.click(await screen.findByRole('menuitem', { name: /Move to workspace/ }));
     const second = await screen.findByRole('menuitem', { name: 'Second' });
     const first = await screen.findByRole('menuitem', { name: longName });
-    // Each shows its own icon's drawing; an unknown icon name would fall back to the grid.
+    // Each shows its own icon's drawing; an unknown icon name would fall back to the folder.
     expect(second.querySelector('svg')?.innerHTML).toContain(iconPaths('logs')?.slice(0, 20));
     expect(first.querySelector('svg')?.innerHTML).toContain(iconPaths('folder')?.slice(0, 20));
     expect(second.querySelector('svg')?.innerHTML).not.toBe(first.querySelector('svg')?.innerHTML);
@@ -115,5 +115,38 @@ describe('SidebarChats day groups, times and the row menu', () => {
     const pop = await screen.findByRole('dialog', { name: 'Rename chat' });
     expect(pop.closest('.modal-backdrop')).toBeNull();
     expect(screen.getByRole('textbox', { name: 'Name' })).toHaveValue('Written today');
+  });
+});
+
+describe('SidebarChats loading, problem and empty', () => {
+  it('shows placeholder lines while the chats load', () => {
+    vi.spyOn(chatsApi, 'list').mockReturnValue(new Promise(() => undefined) as never);
+    vi.spyOn(chatsApi, 'listWorkspaces').mockResolvedValue([] as never);
+    renderWithProviders(<SidebarChats />);
+    expect(
+      screen.getByRole('status', { name: 'Loading your chats' }).querySelectorAll('.skel'),
+    ).toHaveLength(5);
+  });
+
+  it('says so when the chats cannot be loaded, and Try again asks once more', async () => {
+    const list = vi.spyOn(chatsApi, 'list').mockRejectedValue(new Error('down'));
+    vi.spyOn(chatsApi, 'listWorkspaces').mockResolvedValue([] as never);
+    renderWithProviders(<SidebarChats />);
+    expect(await screen.findByRole('alert', {}, { timeout: 3000 })).toHaveTextContent(
+      "Couldn't load your chats.",
+    );
+    list.mockResolvedValue([{ id: 'c2', title: 'Loose chat', workspace_id: null }] as never);
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByText('Loose chat')).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('says there are no chats yet when there are none', async () => {
+    vi.spyOn(chatsApi, 'list').mockResolvedValue([] as never);
+    vi.spyOn(chatsApi, 'listWorkspaces').mockResolvedValue([] as never);
+    renderWithProviders(<SidebarChats />);
+    expect(
+      await screen.findByText('No chats yet. Start one and it will appear here.'),
+    ).toBeTruthy();
   });
 });
