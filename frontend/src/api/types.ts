@@ -59,6 +59,9 @@ export interface StoredSubAgentRow {
 export interface ChatDetail extends ChatSummary {
   messages: StoredMessage[];
   message_order_map?: string;
+  /** True when a turn was interrupted and can be continued (false while one runs or after a stop). */
+  resume_needed?: boolean;
+  file_system_mode?: number;
 }
 
 export interface Workspace {

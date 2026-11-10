@@ -16,6 +16,8 @@ import { turnText, turnTools } from '../../lib/chat-model';
 import { threeToolReply } from '../../test/fixtures/chat-detail';
 import { useToastStore } from '../../components/ui/toast-store';
 import { queryKeys } from '../../api/chats';
+import { artifactsKey } from '../../api/filesystem';
+import { useUiStore } from '../../state/ui-store';
 
 /** Routes only the completion endpoint; every other request gets an empty JSON response. */
 function mockCompletion(respond: (signal: AbortSignal) => Response, seen: { pending?: unknown } = {}) {
@@ -462,9 +464,155 @@ describe('a send while another chat generates', () => {
     expect(useToastStore.getState().toasts).toHaveLength(0);
   });
 
+  it('Retry of the chat that is already generating is ignored without a message', async () => {
+    useStreamStore.setState({ chatId: 'chat-1', live: null, pending: null, interrupted: null, controller: new AbortController() });
+    await resumeTurn(new QueryClient(), 'chat-1');
+    expect(useToastStore.getState().toasts).toHaveLength(0);
+  });
+
   it('Retry shows the same explanation', async () => {
     useStreamStore.setState({ chatId: 'other', live: null, pending: null, interrupted: null, controller: new AbortController() });
     await resumeTurn(new QueryClient(), 'chat-1');
     expect(useToastStore.getState().toasts.some((t) => t.message === BUSY_TOAST)).toBe(true);
+  });
+});
+
+describe('files follow the turn', () => {
+  const fileTurn = (name: string) =>
+    sseResponse(
+      sseText([toolCallChunk('c1', name, '{}'), toolResultChunk('c1', 'done'), contentChunk('ok')]),
+    );
+  const artifactInvalidations = (a: ReturnType<typeof args>) => {
+    const calls: number[] = [];
+    const original = a.queryClient.invalidateQueries.bind(a.queryClient);
+    vi.spyOn(a.queryClient, 'invalidateQueries').mockImplementation((filters) => {
+      if (JSON.stringify(filters?.queryKey) === JSON.stringify(artifactsKey({ chatId: 'chat-1' }))) {
+        calls.push(1);
+      }
+      return original(filters);
+    });
+    return calls;
+  };
+
+  beforeEach(() => {
+    useUiStore.setState({ artifactsOpen: false });
+    useSettingsStore.setState({ modes: { ...useSettingsStore.getState().modes, fileSystemMode: false } });
+  });
+
+  it('refreshes the files list when a file tool finishes and again at the end', async () => {
+    mockCompletion(() => fileTurn('create_fs_file'));
+    const a = args();
+    const calls = artifactInvalidations(a);
+    await sendTurn(a);
+    expect(calls).toHaveLength(2);
+  });
+
+  it('does not refresh the files list for a read-only tool', async () => {
+    mockCompletion(() => fileTurn('read_fs_file'));
+    const a = args();
+    const calls = artifactInvalidations(a);
+    await sendTurn(a);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('does not open the drawer of another chat the user moved to while the turn runs', async () => {
+    window.history.pushState({}, '', '/chat/other-chat');
+    mockCompletion(() => fileTurn('create_fs_file'));
+    const a = args();
+    a.queryClient.setQueryData(['chat', 'chat-1'], { id: 'chat-1', messages: [], file_system_mode: 1 });
+    await sendTurn(a);
+    expect(useUiStore.getState().artifactsOpen).toBe(false);
+  });
+
+  it('opens the files drawer once when the chat is in file-system mode, and not otherwise', async () => {
+    window.history.pushState({}, '', '/chat/chat-1');
+    mockCompletion(() => fileTurn('create_fs_file'));
+    await sendTurn(args());
+    expect(useUiStore.getState().artifactsOpen).toBe(false);
+
+    mockCompletion(() => fileTurn('create_fs_file'));
+    const a = args();
+    a.queryClient.setQueryData(['chat', 'chat-1'], { id: 'chat-1', messages: [], file_system_mode: 1 });
+    await sendTurn(a);
+    expect(useUiStore.getState().artifactsOpen).toBe(true);
+  });
+
+  it('does not reopen a drawer the user closed during the same turn', async () => {
+    window.history.pushState({}, '', '/chat/chat-1');
+    mockCompletion(() =>
+      sseResponse(
+        sseText([
+          toolCallChunk('c1', 'create_fs_file', '{}'),
+          toolResultChunk('c1', 'done'),
+          toolCallChunk('c2', 'create_fs_file', '{}'),
+          toolResultChunk('c2', 'done'),
+        ]),
+      ),
+    );
+    const a = args();
+    a.queryClient.setQueryData(['chat', 'chat-1'], { id: 'chat-1', messages: [], file_system_mode: 1 });
+    let opened = 0;
+    const unsubscribe = useUiStore.subscribe((s, prev) => {
+      if (s.artifactsOpen && !prev.artifactsOpen) {
+        opened++;
+        useUiStore.setState({ artifactsOpen: false }); // the user closes it at once
+      }
+    });
+    await sendTurn(a);
+    unsubscribe();
+    expect(opened).toBe(1);
+  });
+});
+
+describe('the chat remembers its model', () => {
+  const patchBodies = (): unknown[] => {
+    const calls = (globalThis.fetch as unknown as { mock: { calls: Array<[string, RequestInit?]> } }).mock.calls;
+    return calls
+      .filter(([, init]) => init?.method === 'PATCH')
+      .map(([, init]) => JSON.parse(String(init?.body)) as unknown);
+  };
+
+  it('puts last_model in the new-chat PATCH', async () => {
+    mockCompletion(() => sseResponse(sseText([contentChunk('Hi')])));
+    await sendTurn({ queryClient: new QueryClient(), chatId: 'n1', text: 'hi', files: [], isNewChat: true });
+    expect(patchBodies()[0]).toMatchObject({ last_model: 'test-model' });
+  });
+
+  it('saves the model once when it differs from the stored one, and not when it is the same', async () => {
+    mockCompletion(() => sseResponse(sseText([contentChunk('Hi')])));
+    const a = args();
+    a.queryClient.setQueryData(['chat', 'chat-1'], { id: 'chat-1', messages: [], last_model: 'old-model' });
+    await sendTurn(a);
+    expect(patchBodies()).toEqual([{ last_model: 'test-model' }]);
+
+    mockCompletion(() => sseResponse(sseText([contentChunk('Hi')])));
+    const b = args();
+    b.queryClient.setQueryData(['chat', 'chat-1'], { id: 'chat-1', messages: [], last_model: 'test-model' });
+    await sendTurn(b);
+    expect(patchBodies()).toEqual([]);
+  });
+
+  it('does not PATCH the model again on the next send before the chat is refetched', async () => {
+    mockCompletion(() => sseResponse(sseText([contentChunk('Hi')])));
+    const a = args();
+    a.queryClient.setQueryData(['chat', 'chat-1'], { id: 'chat-1', messages: [], last_model: 'old-model' });
+    await sendTurn(a);
+    await sendTurn(a);
+    expect(patchBodies()).toEqual([{ last_model: 'test-model' }]);
+  });
+
+  it('shows no toast when the server refuses the model change', async () => {
+    const fetchMock = vi.fn(async (path: string, init?: RequestInit) => {
+      if (init?.method === 'PATCH') {
+        return new Response(JSON.stringify({ error: 'research chat' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+      }
+      if (path === '/v1/chat/completions') return sseResponse(sseText([contentChunk('Hi')]));
+      return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const a = args();
+    a.queryClient.setQueryData(['chat', 'chat-1'], { id: 'chat-1', messages: [], last_model: 'old-model' });
+    await sendTurn(a);
+    expect(useToastStore.getState().toasts).toHaveLength(0);
   });
 });

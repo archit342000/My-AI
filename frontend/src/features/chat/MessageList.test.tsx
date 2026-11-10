@@ -368,3 +368,46 @@ describe('MessageList with a tool reply in the real API shape', () => {
     expect(del).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('resume banner and Stop notice', () => {
+  beforeEach(() => {
+    useStreamStore.setState({ chatId: null, live: null, pending: null, interrupted: null, controller: null });
+  });
+  afterEach(() => vi.restoreAllMocks());
+  const unanswered = toTurns(msgs.slice(0, 3) as never);
+
+  it('shows the banner instead of Retry response when the chat needs a resume', () => {
+    renderWithProviders(<MessageList turns={unanswered} chatId="c1" onChanged={() => undefined} resumeNeeded />);
+    expect(screen.getByText(/This conversation was interrupted/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Retry response' })).toBeNull();
+  });
+
+  it('shows the banner whenever the server says a resume is needed, even if the last turn has a reply', () => {
+    renderWithProviders(<MessageList turns={toTurns([...msgs] as never)} chatId="c1" onChanged={() => undefined} resumeNeeded />);
+    expect(screen.getByText(/This conversation was interrupted/)).toBeTruthy();
+  });
+
+  it('keeps Retry response and no banner when no resume is needed', () => {
+    renderWithProviders(<MessageList turns={unanswered} chatId="c1" onChanged={() => undefined} />);
+    expect(screen.queryByText(/This conversation was interrupted/)).toBeNull();
+    expect(screen.getByRole('button', { name: 'Retry response' })).toBeTruthy();
+  });
+
+  it('shows no banner while a turn streams', () => {
+    useStreamStore.setState({ chatId: 'c1', live: null, pending: null, interrupted: null, controller: null });
+    renderWithProviders(<MessageList turns={unanswered} chatId="c1" onChanged={() => undefined} resumeNeeded />);
+    expect(screen.queryByText(/This conversation was interrupted/)).toBeNull();
+  });
+
+  it('says a stopped partial reply is not saved', () => {
+    useStreamStore.setState({
+      chatId: null,
+      live: null,
+      pending: null,
+      interrupted: { chatId: 'c1', live: { steps: [{ kind: 'text', text: 'half', agent: null }], model: null, redactNotice: null, snapshot: [] } as never, kind: 'stopped', message: null },
+      controller: null,
+    });
+    renderWithProviders(<MessageList turns={unanswered} chatId="c1" onChanged={() => undefined} />);
+    expect(screen.getByText('This partial reply is not saved.')).toBeTruthy();
+  });
+});

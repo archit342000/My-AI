@@ -1510,6 +1510,23 @@
   min-height: 40vh;
 }
 
+/* A reply that is still streaming is drawn block by block; the blocks stack like one document. */
+.streaming-blocks {
+  display: block;
+}
+
+.streaming-block {
+  display: block;
+}
+
+/* Full view of a mermaid diagram. */
+.mermaid-popout {
+  display: flex;
+  justify-content: center;
+  overflow: auto;
+  max-height: 80vh;
+}
+
 /* Empty chat: the same hero as the landing page, centred in the transcript area. */
 .chat-empty {
   min-height: 50vh;

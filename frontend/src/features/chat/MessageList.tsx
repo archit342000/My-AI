@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { chatsApi, queryKeys } from '../../api/chats';
 import { Markdown } from '../../components/markdown/Markdown';
+import { StreamingMarkdown } from '../../components/markdown/StreamingMarkdown';
 import { showToast } from '../../components/ui/toast-store';
 import { useAutoFollow } from './useAutoFollow';
 import { Badge } from '../../components/ui/Badge';
@@ -22,6 +23,7 @@ import { useStreamStore, type InterruptedTurn, type PendingUser } from '../../st
 import { ThoughtHeader, ThoughtTimeline } from './ThoughtBlock';
 import { ToolActivityFeed, ToolSummary } from './ToolActivity';
 import { MessageActions } from './MessageActions';
+import { ResumeBanner } from './ResumeBanner';
 import { resumeTurn } from './send-turn';
 
 const USER_AVATAR = (
@@ -293,7 +295,7 @@ function LiveAssistant({ live }: { live: LiveTurn }) {
             <span className="processing-spinner" /> {live.redactNotice}
           </div>
         ) : null}
-        {content ? <Markdown text={content} className="message-content raw-text-content" /> : null}
+        {content ? <StreamingMarkdown text={content} /> : null}
       </BotBody>
     </div>
   );
@@ -324,6 +326,7 @@ function InterruptedAssistant({
       ) : (
         <div className="turn-notice" role="status">
           <Badge>Stopped</Badge>
+          <span>This partial reply is not saved.</span>
           <Button variant="secondary" size="sm" onClick={onRetry}>
             Retry
           </Button>
@@ -358,10 +361,13 @@ export function MessageList({
   turns,
   chatId,
   onChanged,
+  resumeNeeded = false,
 }: {
   turns: Turn[];
   chatId: string;
   onChanged: () => void;
+  /** The server says the last turn was interrupted and can be continued. */
+  resumeNeeded?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
@@ -394,7 +400,11 @@ export function MessageList({
   const replyPersisted = turns.at(-1)?.kind === 'assistant';
   const showInterrupted = interrupted !== null && !replyPersisted;
   const lastHasReply = lastUserIdx >= 0 && turns.slice(lastUserIdx + 1).some((t) => t.kind === 'assistant');
-  const showUserRetry = !streaming && !showInterrupted && lastUserIdx >= 0 && !lastHasReply;
+  // The server decides (research interruptions can need a resume even after a reply).
+  const showBanner = resumeNeeded && !streaming && !showInterrupted && lastUserIdx >= 0;
+  // One control: the banner replaces the Retry button under the last user turn.
+  const showUserRetry =
+    !streaming && !showInterrupted && !showBanner && lastUserIdx >= 0 && !lastHasReply;
 
   /** Retry regenerates from the stored user message, so attachments are reused as sent. */
   function retryLast() {
@@ -450,6 +460,7 @@ export function MessageList({
       {showInterrupted && interrupted ? (
         <InterruptedAssistant interrupted={interrupted} onRetry={retryLast} />
       ) : null}
+      {showBanner ? <ResumeBanner chatId={chatId} /> : null}
       {streaming && !follow.pinned ? (
         <button type="button" className="chat-jump-latest" onClick={follow.jumpToLatest}>
           Jump to latest

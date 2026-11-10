@@ -13,7 +13,9 @@ import {
   type HistoryMessage,
   type UploadedFile,
 } from '../../api/completions';
+import { artifactsKey } from '../../api/filesystem';
 import { toTurns, turnText } from '../../lib/chat-model';
+import { finishedFileChanges } from '../../lib/fs-tools';
 import type { ChatDetail, ChatSummary } from '../../api/types';
 import { showToast } from '../../components/ui/toast-store';
 import { useSettingsStore } from '../../state/settings-store';
@@ -57,6 +59,7 @@ async function consume(
   const store = useStreamStore.getState();
   let live = emptyLiveTurn();
   let listRefreshed = false;
+  let fileChanges = 0;
   try {
     for await (const raw of source) {
       if (!listRefreshed) {
@@ -67,6 +70,16 @@ async function consume(
       }
       live = applyChunk(live, raw as StreamChunk);
       store.update(live);
+      const changes = finishedFileChanges(live.steps);
+      if (changes > fileChanges) {
+        // The agent wrote files: refresh the files panel now, and open it the first time this turn
+        // when the chat works on files.
+        if (fileChanges === 0 && fileSystemModeOn(queryClient, chatId) && chatIsOpen(chatId)) {
+          useUiStore.getState().setArtifactsOpen(true);
+        }
+        fileChanges = changes;
+        void queryClient.invalidateQueries({ queryKey: artifactsKey({ chatId }) });
+      }
     }
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') {
@@ -90,12 +103,41 @@ async function consume(
       showToast(message, 'error');
     }
   } finally {
+    if (fileChanges > 0) void queryClient.invalidateQueries({ queryKey: artifactsKey({ chatId }) });
     await queryClient.invalidateQueries({ queryKey: queryKeys.chat(chatId) });
     // End the turn as soon as the saved chat is in: the live and pending rows then give way to the
     // saved ones in one render, with no moment where both are drawn.
     useStreamStore.getState().finish();
     await queryClient.invalidateQueries({ queryKey: queryKeys.chats });
   }
+}
+
+/** Saves the model on the chat when it differs from the one stored, so the chat remembers it. */
+function rememberModel(queryClient: QueryClient, chatId: string, model: string): void {
+  const stored = queryClient.getQueryData<ChatDetail>(queryKeys.chat(chatId))?.last_model;
+  if (stored === undefined || stored === model) return;
+  // The server refuses the change for some chats (a research chat answers 400); that is not worth
+  // interrupting the turn for, and the next send tries again.
+  void chatsApi
+    .patch(chatId, { last_model: model })
+    .then(() =>
+      // Until the chat is refetched, the cache would make the next send repeat the same PATCH.
+      queryClient.setQueryData<ChatDetail>(queryKeys.chat(chatId), (detail) =>
+        detail ? { ...detail, last_model: model } : detail,
+      ),
+    )
+    .catch(() => undefined);
+}
+
+/** Whether this chat is the one on screen (the user may have moved to another while it runs). */
+function chatIsOpen(chatId: string): boolean {
+  return window.location.pathname === `/chat/${encodeURIComponent(chatId)}`;
+}
+
+/** Whether the chat works on files: its saved flag, or the toggle for a chat not saved yet. */
+function fileSystemModeOn(queryClient: QueryClient, chatId: string): boolean {
+  const detail = queryClient.getQueryData<ChatDetail>(queryKeys.chat(chatId));
+  return Boolean(detail?.file_system_mode) || useSettingsStore.getState().modes.fileSystemMode;
 }
 
 /** Shown when a send or Retry is refused because another chat's turn is running. */
@@ -259,6 +301,7 @@ export async function sendTurn({
         git_mode: settings.modes.gitMode ? 1 : 0,
         code_execution_mode: settings.modes.codeExecutionMode ? 1 : 0,
         thinking_profile: settings.sampling.thinking_profile,
+        last_model: settings.model,
       });
     } catch (err) {
       useStreamStore.getState().finish();
@@ -268,6 +311,8 @@ export async function sendTurn({
     }
     useUiStore.getState().setNewChatWorkspaceId(null);
   }
+
+  if (!isNewChat && !temporary) rememberModel(queryClient, chatId, settings.model);
 
   const body = completionBody(settings, settings.model, chatId, messages, { userPreferences: temporary ? false : settings.userPreferences, files });
 
@@ -285,8 +330,10 @@ export async function resumeTurn(queryClient: QueryClient, chatId: string): Prom
     showToast('Select a model first', 'error');
     return;
   }
-  if (useStreamStore.getState().chatId) {
-    showToast(BUSY_TOAST, 'error');
+  const running = useStreamStore.getState().chatId;
+  if (running) {
+    // A second click for the chat that is already generating needs no explanation.
+    if (running !== chatId) showToast(BUSY_TOAST, 'error');
     return;
   }
 
