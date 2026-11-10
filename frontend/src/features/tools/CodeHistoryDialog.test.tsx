@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { renderWithProviders } from '../../test/render';
 import { CodeHistoryDialog } from './CodeHistoryDialog';
 import { codeExecApi, type CodeRun } from '../../api/filesystem';
@@ -59,9 +59,12 @@ describe('CodeHistoryDialog', () => {
       route: '/chat/c1',
       path: '/chat/:chatId',
     });
-    expect(await screen.findByText('print(1 + 1)')).toBeTruthy();
+    await screen.findByRole('group', { name: 'Code' });
+    expect(screen.getByText('2 runs')).toBeTruthy();
     const cards = document.querySelectorAll('.code-run');
     expect(cards).toHaveLength(2);
+    // The newest run is open; the others open when pressed.
+    fireEvent.click(cards[1]?.querySelector('button') as HTMLElement);
     expect(cards[0]?.querySelector('[role="group"][aria-label="Code"] pre')?.textContent).toBe(
       'print(1 + 1)',
     );
@@ -84,13 +87,13 @@ describe('CodeHistoryDialog', () => {
     expect(await screen.findByText('Timed out')).toBeTruthy();
   });
 
-  it('shows Loading… while the runs load', () => {
+  it('shows placeholder rows while the runs load', () => {
     vi.spyOn(codeExecApi, 'history').mockReturnValue(new Promise(() => undefined));
     renderWithProviders(<CodeHistoryDialog open onClose={() => undefined} />, {
       route: '/chat/c1',
       path: '/chat/:chatId',
     });
-    expect(screen.getByText('Loading…')).toBeTruthy();
+    expect(screen.getByRole('status', { name: 'Loading the runs' })).toBeTruthy();
   });
 
   it('labels a run with no exit code and no timeout as Failed, and copes with missing time fields', async () => {
@@ -109,6 +112,7 @@ describe('CodeHistoryDialog', () => {
     });
     expect(await screen.findByText('Failed')).toBeTruthy();
     expect(document.querySelector('.code-run__meta')).toBeNull();
+    expect(screen.getByText('1 run')).toBeTruthy();
   });
 
   it('shows an error state when the runs cannot be loaded', async () => {
@@ -126,11 +130,11 @@ describe('CodeHistoryDialog', () => {
       route: '/chat/c1',
       path: '/chat/:chatId',
     });
-    expect(await screen.findByText('No runs yet.')).toBeTruthy();
+    expect(await screen.findByText('No code has been run yet')).toBeTruthy();
     first.unmount();
     history.mockClear();
     renderWithProviders(<CodeHistoryDialog open onClose={() => undefined} />);
-    expect(screen.getByText('Open a chat to see its runs.')).toBeTruthy();
+    expect(screen.getByText('Open a chat first')).toBeTruthy();
     expect(history).not.toHaveBeenCalled();
   });
 });

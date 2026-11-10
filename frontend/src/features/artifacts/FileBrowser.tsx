@@ -768,6 +768,7 @@ export function FileBrowser({ ref, scope, full, onToggleFull }: FileBrowserProps
           open={showVersions}
           onClose={() => setShowVersions(false)}
           artifactId={current.id}
+          fileName={current.title}
           scope={scope}
           onRestored={() => {
             setDraft(null);

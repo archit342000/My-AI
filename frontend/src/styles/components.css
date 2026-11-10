@@ -108,25 +108,6 @@
 html {
   background-color: var(--bg-primary);
 }
-
-/* ───────────────────────── Tool dialogs (code history, portal) ───────────────────────── */
-
-.tool-dialog__note {
-  margin: 0;
-  color: var(--content-muted);
-}
-.tool-dialog__error {
-  color: var(--danger-text);
-  font-size: 0.875rem;
-}
-.portal-frame {
-  display: block;
-  width: 100%;
-  height: 70vh;
-  border: 0;
-  border-radius: var(--radius-lg);
-  background: var(--bg-primary);
-}
 .models-run {
   margin-top: var(--space-3);
 }
@@ -140,105 +121,10 @@ html {
   margin: 0;
 }
 
-/* ───────────────────────── Version history ───────────────────────── */
-
-.versions__list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.versions__item {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-}
-.versions__label {
-  flex: 1 1 14rem;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  font-size: 0.85rem;
-}
-.versions__status {
-  margin: 0 0 var(--space-2);
-  color: var(--content-muted);
-}
-.versions__error {
-  margin: var(--space-3) 0 0;
-  color: var(--danger-text);
-}
-.versions__preview,
-.versions__lines {
-  margin: var(--space-3) 0 0;
-  max-height: 300px;
-  overflow: auto;
-  padding: var(--space-3);
-  border-radius: var(--radius-md);
-  background: var(--bg-chat-display);
-  font-size: 0.75rem;
-  white-space: pre-wrap;
-}
-.versions__diff {
-  min-width: 0;
-}
-.versions__line {
-  display: block;
-}
-.versions__line--added {
-  background: var(--success-subtle);
-  color: var(--success-text);
-}
-.versions__line--removed {
-  background: var(--danger-subtle);
-  color: var(--danger-text);
-}
-
 /* ───────────────────────── Phone layout (768px and below) ───────────────────────── */
 
 /* The top band on phones: tall enough for the 3.5rem buttons at 1.25rem from the top, plus 0.25rem. Side inset clears a button. */
 :root {
   --phone-topbar-h: 5rem;
   --phone-topbar-inset: 5rem;
-}
-.code-run {
-  margin-bottom: var(--space-4);
-  padding: var(--space-3);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  background: var(--surface-secondary);
-}
-.code-run__head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2) var(--space-3);
-  margin-bottom: var(--space-2);
-}
-.code-run__language {
-  font-weight: 600;
-  color: var(--content-primary);
-}
-.code-run__meta {
-  font-size: 0.75rem;
-  color: var(--content-muted);
-}
-.code-run__block {
-  margin: var(--space-2) 0 0;
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-md);
-  background: var(--bg-primary);
-  font-size: 0.75rem;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  max-height: 260px;
-  overflow: auto;
-}
-.code-run__block--error {
-  color: var(--danger-text);
 }
