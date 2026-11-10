@@ -27,6 +27,8 @@ A React build missing from `dist/` returns 503 with the build command.
 | `src/components/` | Shared UI: `ui/` (Modal, Toast, ContextMenu, ConfirmDialog), `icons/`, `markdown/`, `background/` |
 | `src/features/` | `chat/`, `composer/`, `sidebar/`, `artifacts/`, `workspace/`, `settings/`, `tools/`, `logs/`, `home/`, `dev/` |
 | `src/lib/` | Pure logic with unit tests: markdown pipeline, chat model, popover placement, scroll, particles, theme |
+| `public/` | Files copied as-is to the `dist/` root: `theme-init.js`, loaded from `index.html` before the app |
+| `src/lib/` | Pure logic with unit tests: markdown pipeline, chat model, scroll, particles, theme |
 | `src/state/` | Zustand stores: UI, settings, stream, modal, current user |
 | `src/styles/legacy.css` | Legacy stylesheet, imported unchanged; class names are shared with the legacy UI |
 | `scripts/` | Generators for icon and tool-label data from `static/js/` |
@@ -43,6 +45,7 @@ A React build missing from `dist/` returns 503 with the build command.
   sent are deleted when the user presses New Chat, leaves the landing page, discards a temporary chat or closes the page
   (`features/composer/draft-cleanup.ts`, `useDraftCleanup`); a draft in an existing chat is kept. Files can be picked, dropped on the
   page area or pasted; `/help` opens a list of commands and skills.
+- **Theme:** `public/theme-init.js` (loaded from `index.html` before the app) sets the `dark` class on `<html>` from `my_ai_theme_mode` and the OS setting before first paint, so a dark-theme user sees no light flash; `useThemeSync` keeps running after mount. A unit test keeps the script in step with `resolveDark`. It tolerates blocked storage and a missing media query on purpose: it runs before the app and must never stop the page from loading. Only `html` carries the page colour: a `body` background would paint above the fixed particle canvas.
 - **Server state:** TanStack Query. Query keys live in `api/chats.ts` and `api/settings.ts`.
 - **Server state:** TanStack Query. Query keys live in `api/chats.ts`, `api/settings.ts` and `api/filesystem.ts`.
 - **UI state:** Zustand. Stream state (`state/stream-store.ts`) holds the in-flight turn.

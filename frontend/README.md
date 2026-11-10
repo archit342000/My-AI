@@ -21,6 +21,7 @@ React 19 + TypeScript + Vite single-page app. Replaces the legacy UI in `static/
 | `src/app/` | `UserGate` (loads `/api/me` first), router, root layout, sidebar |
 | `src/components/` | Shared UI: `ui/` (Modal, Toast, ContextMenu), `icons/`, `markdown/`, `background/` |
 | `src/features/` | Feature folders: `chat/`, `sidebar/`, `home/`, `dev/` (dev-only primitives page at `/dev/ui`) |
+| `public/` | Files copied as-is to the `dist/` root (`theme-init.js`, loaded from `index.html` before the app) |
 | `src/lib/` | Pure logic with unit tests: markdown pipeline, chat model, scroll, particles, theme |
 | `src/state/` | Zustand stores (UI state, current user `user-store.ts`) |
 | `src/styles/legacy.css` | The legacy stylesheet, imported unchanged so existing class names keep working |
