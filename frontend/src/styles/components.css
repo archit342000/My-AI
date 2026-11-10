@@ -625,7 +625,7 @@
   gap: var(--space-3);
   min-width: 0;
 }
-.ui-slider__input {
+input[type="range"].ui-slider__input {
   flex: 1 1 auto;
   min-width: 0;
   height: 20px;
@@ -634,7 +634,7 @@
   appearance: none;
   cursor: pointer;
 }
-.ui-slider__input::-webkit-slider-runnable-track {
+input[type="range"].ui-slider__input::-webkit-slider-runnable-track {
   height: 4px;
   border-radius: 999px;
   background: linear-gradient(
@@ -645,7 +645,7 @@
     var(--off-track) 100%
   );
 }
-.ui-slider__input::-webkit-slider-thumb {
+input[type="range"].ui-slider__input::-webkit-slider-thumb {
   -webkit-appearance: none;
   width: 16px;
   height: 16px;
@@ -654,17 +654,17 @@
   border: 2px solid var(--accent);
   background: var(--surface-elevated);
 }
-.ui-slider__input::-moz-range-track {
+input[type="range"].ui-slider__input::-moz-range-track {
   height: 4px;
   border-radius: 999px;
   background: var(--off-track);
 }
-.ui-slider__input::-moz-range-progress {
+input[type="range"].ui-slider__input::-moz-range-progress {
   height: 4px;
   border-radius: 999px;
   background: var(--accent);
 }
-.ui-slider__input::-moz-range-thumb {
+input[type="range"].ui-slider__input::-moz-range-thumb {
   width: 14px;
   height: 14px;
   border-radius: 50%;
@@ -672,11 +672,19 @@
   background: var(--surface-elevated);
 }
 .ui-slider__number {
-  flex: 0 0 64px;
-  width: 64px;
+  flex: 0 0 72px;
+  width: 72px;
   min-height: 30px;
   padding: 4px 6px;
   text-align: right;
+  font-variant-numeric: tabular-nums;
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+.ui-slider__number::-webkit-inner-spin-button,
+.ui-slider__number::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 
 /* ───────────────────────── Badge (ui-badge) ───────────────────────── */

@@ -27,7 +27,7 @@ React 19 + TypeScript + Vite single-page app. Replaces the legacy UI in `static/
 
 ## Conventions
 
-- Keep legacy class names and `localStorage` keys so existing browsers and styles keep working. Settings keys are per user through `nsKey()` (the admin keeps the existing names, others get `<key>:<userId>`); admin-only controls are hidden with `useIsAdmin()`. See `docs/frontend.md`.
+- Keep legacy class names and `localStorage` keys so existing browsers and styles keep working. Settings keys are per user through `nsKey()` (the admin keeps the existing names, others get `<key>:<userId>`; newer keys: `my_ai_modes`, and `userPreferences` inside `my_ai_chat_defaults`); admin-only controls are hidden with `useIsAdmin()`. See `docs/frontend.md`.
 - Server state goes through TanStack Query; UI state through Zustand.
 - Markdown HTML is always sanitised by DOMPurify before it reaches the DOM.
 - Every modal must close on Escape (use `Modal`, which handles the stack).
