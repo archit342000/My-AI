@@ -96,6 +96,13 @@ export function Composer() {
   // there is refused with an explanation.
   const openChatId = routeChatId ?? temporaryChatId;
   const streaming = useStreamStore((s) => openChatId !== null && s.chatId === openChatId);
+  const stopping = useStreamStore((s) => s.stopping);
+  // What was last sent, to put back if the server refuses it after the box was cleared.
+  const lastSent = useRef<{ chatId: string; text: string; attachments: Attachment[] } | null>(null);
+  const openChat = useRef(openChatId);
+  useEffect(() => {
+    openChat.current = openChatId;
+  }, [openChatId]);
   const detail = useChatDetail(routeChatId);
   const [chatForUploads, setChatForUploads] = useState<string | null>(
     routeChatId ?? temporaryChatId,
@@ -287,7 +294,8 @@ export function Composer() {
     const files: UploadedFile[] = toUploadedFiles(attachments);
     const isNew = !routeChatId && !temporary;
     const id = chatForUploads ?? generateChatId();
-    // The text and files are cleared only once the turn is accepted; a refused send keeps them.
+    // The text and files are cleared once the turn is accepted here, and put back if the server then refuses it.
+    lastSent.current = { chatId: id, text, attachments };
     await sendTurn({
       queryClient,
       chatId: id,
@@ -298,6 +306,14 @@ export function Composer() {
       onAccepted: () => {
         setText('');
         setAttachments([]);
+      },
+      onRefused: () => {
+        const sent = lastSent.current;
+        // The text belongs to the chat it was sent in: not into another one opened since.
+        if (!sent || sent.chatId !== openChat.current) return;
+        // Only into an empty box: anything typed since stays.
+        setText((current) => (current === '' ? sent.text : current));
+        setAttachments((current) => (current.length === 0 ? sent.attachments : current));
       },
       navigate: isNew
         ? () => {
@@ -449,8 +465,9 @@ export function Composer() {
               id="send-btn"
               type="button"
               className="send-btn"
-              title="Stop"
-              aria-label="Stop generating"
+              title={stopping ? 'Stopping' : 'Stop'}
+              aria-label={stopping ? 'Stopping' : 'Stop generating'}
+              disabled={stopping}
               onClick={() => void stopTurn()}
             >
               <Icon name="close" size={18} strokeWidth={2.5} />

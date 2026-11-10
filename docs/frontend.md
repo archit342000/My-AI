@@ -107,6 +107,16 @@ rendered on its own, so a JSON-escaped `\n` in a one-line block can look differe
 A stopped reply's notice lives only in the open page: after a reload the reply is gone, as the server rolled it back.
 The chat's model is saved as `last_model` with the first send and whenever it changes.
 
+Stop, Retry and delete follow the server's state: `stopTurn` marks the store `stopping`, posts the stop request and aborts the stream; `consume` waits
+for the stop request before it refetches the chat, so the screen never shows replies the server has since rolled back, and the composer shows a
+disabled "Stopping" button and the stopped row's Retry is disabled until the store is idle. The live row and the Stopped/failed row are never drawn
+together. A send or Retry refused as "a response is already in progress" within 3 seconds of a stop is repeated (5 attempts, 400 ms apart), because
+the server only signals the old worker; a refusal that remains puts the stopped partial reply back and the composer puts the typed text and files
+back (only into an empty box). `reattachTurn` makes the store busy only once a stream came back, so reopening a stopped chat never flashes Stop.
+Deleting a chat (or discarding a temporary one) stops its turn first (`stopIfStreaming`). Limit: nothing on the server bounds how long a worker takes
+to exit, so a slower exit still ends in the refusal toast with the reply and text kept. A stop request that never answers keeps the chat in "Stopping" until the browser gives up on it; a reload
+recovers. A chat whose stop was answered a moment ago (or that has a stopped row) is not reattached to, even if the refetch still says it is running. Each repeated attempt after a stop uses one of the user's turns per minute (the server counts a request refused as "in progress"), so a repeat that fails 5 times costs 5; and a turn another tab starts during that short window is attached when the chat next refetches.
+
 ## Known gaps
 
 - Sub-agent reasoning and tool calls are in the thought box's lists without an agent label, and the newest event shows as the live status line; sub-agent text is kept in the steps but not drawn. The legacy per-agent renderers are not ported.
