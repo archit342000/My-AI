@@ -381,8 +381,11 @@
   font-size: 0.85rem;
   color: var(--content-muted);
 }
-.ui-select__search {
+.ui-input.ui-select__search {
+  /* A full-width input plus a margin overflows the panel: size it to the panel minus both margins. */
+  width: calc(100% - 2 * var(--space-2));
   margin: var(--space-2);
+  box-sizing: border-box;
 }
 
 /* Status dot used by model options (loaded state). */
