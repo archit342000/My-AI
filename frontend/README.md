@@ -13,6 +13,7 @@ React 19 + TypeScript + Vite single-page app. Replaces the legacy UI in `static/
 | `npm run e2e:stack` | Playwright against the real backend with a scripted model (needs venv Python, a cached tokenizer and `dist/`; not in `check.sh`) |
 | `node scripts/gen-icons.cjs` | Regenerates `src/components/icons/workspace-icons.generated.ts` from `static/js/icons.js` |
 | `node scripts/gen-tool-labels.cjs` | Regenerates `src/features/chat/tool-labels.generated.ts` from `static/js/constants.js` |
+| `node scripts/sync-design-tokens.cjs <checkout>` | Refreshes `src/styles/tokens.css` from a checkout of the `console-at-rest` design repository |
 
 ## Layout
 
@@ -25,7 +26,7 @@ React 19 + TypeScript + Vite single-page app. Replaces the legacy UI in `static/
 | `public/` | Files copied as-is to the `dist/` root (`theme-init.js`, loaded from `index.html` before the app) |
 | `src/lib/` | Pure logic with unit tests: markdown pipeline, chat model, scroll, particles, theme |
 | `src/state/` | Zustand stores (UI state, current user `user-store.ts`) |
-| `src/styles/legacy.css` | The legacy stylesheet, imported unchanged so existing class names keep working |
+| `src/styles/` | `tokens.css` (shared design values, synced copy, never edited), `fonts.css`, `legacy.css` + `components.css` (existing class names), `bridge.css` (legacy variable names pointed at the shared values, temporary) |
 
 ## Conventions
 

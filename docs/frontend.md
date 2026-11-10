@@ -30,8 +30,8 @@ A React build missing from `dist/` returns 503 with the build command.
 | `src/lib/` | Pure logic with unit tests: markdown pipeline, chat model, popover placement, scroll, particles, theme |
 | `public/` | Files copied as-is to the `dist/` root: `theme-init.js`, loaded from `index.html` before the app |
 | `src/state/` | Zustand stores: UI, settings, stream, modal, current user |
-| `src/styles/legacy.css` | Legacy stylesheet, imported unchanged; class names are shared with the legacy UI |
-| `scripts/` | Generators for icon and tool-label data from `static/js/` |
+| `src/styles/` | `tokens.css` (the Console at Rest shared values, a synced copy: never edit), `fonts.css`, `legacy.css` and `components.css` (class names shared with the legacy UI), `bridge.css` (legacy variable names pointed at the shared values; temporary) |
+| `scripts/` | Generators for icon and tool-label data from `static/js/`; `sync-design-tokens.cjs` copies `tokens.css` from the design repository |
 
 ## State
 
@@ -45,14 +45,13 @@ A React build missing from `dist/` returns 503 with the build command.
   sent are deleted when the user presses New Chat, leaves the landing page, discards a temporary chat or closes the page
   (`features/composer/draft-cleanup.ts`, `useDraftCleanup`); a draft in an existing chat is kept. Files can be picked, dropped on the
   page area or pasted; `/help` opens a list of commands and skills.
-- **Theme:** `public/theme-init.js` (loaded from `index.html` before the app) sets the `dark` class on `<html>` from `my_ai_theme_mode` and the OS setting before first paint, so a dark-theme user sees no light flash; `useThemeSync` keeps running after mount. A unit test keeps the script in step with `resolveDark`. It tolerates blocked storage and a missing media query on purpose: it runs before the app and must never stop the page from loading. Only `html` carries the page colour: a `body` background would paint above the fixed particle canvas.
-- **Server state:** TanStack Query. Query keys live in `api/chats.ts` and `api/settings.ts`.
+- **Theme:** `public/theme-init.js` (loaded from `index.html` before the app) sets the `dark` class, `data-theme` and `data-glass` on `<html>` from `my_ai_theme_mode`, `my_ai_glass_mode`, the OS setting and whether the browser can blur, before first paint; `useThemeSync` keeps them in step after mount. A unit test keeps the script in step with `resolveDark` and `resolveGlass`. It tolerates blocked storage and missing APIs on purpose: it runs before the app and must never stop the page from loading. `data-theme` is always explicit (`tokens.css` reads it; legacy selectors read `dark`). Panels: `glassMode` is `auto`, `frosted` or `solid`; `auto` is solid only where blur is unsupported, and solid removes every `backdrop-filter`. Less motion: `tokens.css` removes all CSS animation and the particle canvas draws one still frame. Only `html` carries the page colour: a `body` background would paint above the fixed particle canvas.
 - **Server state:** TanStack Query. Query keys live in `api/chats.ts`, `api/settings.ts` and `api/filesystem.ts`.
 - **UI state:** Zustand. Stream state (`state/stream-store.ts`) holds the in-flight turn.
 - **Browser state:** `localStorage` keys keep the legacy names and formats (`my_ai_selected_model`,
   `my_ai_sampling_params`, `chatWorkspaces`, ...). Do not rename them. They are per user: every read and write goes
   through `nsKey()` (`lib/user-storage.ts`), which keeps these exact names for the admin (who owns all existing
-  browser data) and uses `<key>:<userId>` for any other user. The theme and artifact-drawer width stay global (device
+  browser data) and uses `<key>:<userId>` for any other user. The theme, panel mode (`my_ai_glass_mode`) and artifact-drawer width stay global (device
   preferences).
 - **Per-chat settings:** `state/settings-store.ts` holds the active values (what the next send uses) and a `defaults` snapshot
   (what a new chat starts from, mirrored in storage). Opening a chat (`features/chat/useChatSettings.ts`, once per chat when the
@@ -75,6 +74,9 @@ A React build missing from `dist/` returns 503 with the build command.
 ## Conventions
 
 - Keep legacy class names so the shared stylesheet still applies.
+- Colours, lettering, spacing, corners, shadows, layers and speeds come from `styles/tokens.css` (design repository `console-at-rest`; refresh with
+  `node scripts/sync-design-tokens.cjs <checkout>`). Load order in `main.tsx`: fonts, legacy, components, tokens, bridge. The typefaces (Sora,
+  Instrument Sans, JetBrains Mono) are served by the app from `@fontsource-variable/*`. `bridge.css` uses `color-mix()`: Chrome 111, Firefox 113, Safari 16.2 or newer.
 - Every model's HTML goes through `renderMarkdown` (DOMPurify). Do not inject unsanitised HTML.
 - The attachment `[System Note: ...]` the router appends to a user message is for the model: `src/lib/chat-model.ts` strips it from
   user bubbles and the edit box and shows its files as chips. The stored message keeps it.
