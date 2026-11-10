@@ -588,19 +588,20 @@ def test_send_and_resume_exclude_each_other_on_one_chat(mock_handler_class, mock
 @patch('backend.chat.router.log_event')
 def test_stop_chat(mock_log_event, mock_callback_registry, mock_response_cache, mock_db, mock_task_manager, client):
     mock_db.get_chat.return_value = {"research_state": "ongoing"}
+    mock_task_manager.stop_task_and_wait.return_value = True
     
     response = client.post('/api/chats/chat1/stop')
     
     assert response.status_code == 200
-    assert response.json == {"status": "success"}
-    mock_task_manager.stop_task.assert_called_with("chat1")
+    assert response.json == {"status": "success", "stopped": True}
+    mock_task_manager.stop_task_and_wait.assert_called_with("chat1")
     mock_db.rollback_to_last_user_message.assert_called_with("chat1")
     mock_response_cache.clear_sse_chunks.assert_called_with("chat1")
     mock_db.update_chat.assert_any_call("chat1", research_state='none')
     mock_callback_registry.cleanup_chat.assert_called_with("chat1")
     mock_db.update_chat.assert_any_call("chat1", resume_suppressed=1)
     
-    mock_task_manager.stop_task.side_effect = Exception("error")
+    mock_task_manager.stop_task_and_wait.side_effect = Exception("error")
     response = client.post('/api/chats/chat1/stop')
     assert response.status_code == 500
 
@@ -1509,3 +1510,121 @@ def test_a_foreign_chat_is_still_404_and_does_not_spend_a_turn(mock_db, mock_tm,
         assert as_user_b.post(url, json=body).status_code == 404  # refused by ownership before the limiter
     mock_tm.claim_turn.assert_not_called()
     assert rate_limit.turn_limiter._windows == {}  # the limiter was never consulted for the refused requests
+
+
+@patch('backend.chat.router.task_manager')
+@patch('backend.chat.router.db')
+def test_stop_waits_for_the_worker_before_rolling_back(mock_db, mock_task_manager, client):
+    order = []
+    mock_task_manager.stop_task_and_wait.side_effect = lambda chat_id: order.append("wait") or True
+    mock_db.rollback_to_last_user_message.side_effect = lambda chat_id: order.append("rollback")
+    assert client.post('/api/chats/chat1/stop').status_code == 200
+    assert order == ["wait", "rollback"]
+
+
+@patch('backend.chat.router.log_event')
+@patch('backend.chat.router.task_manager')
+@patch('backend.chat.router.db')
+def test_stop_that_times_out_still_rolls_back_and_reports_it(mock_db, mock_task_manager, mock_log_event, client):
+    mock_task_manager.stop_task_and_wait.return_value = False
+    response = client.post('/api/chats/chat1/stop')
+    assert response.status_code == 200
+    assert response.json == {"status": "success", "stopped": False}
+    mock_db.rollback_to_last_user_message.assert_called_once_with("chat1")
+    mock_log_event.assert_any_call("chat_stop_timeout", {"chat_id": "chat1"})
+
+
+@patch('backend.chat.router.task_manager')
+@patch('backend.chat.router.db')
+def test_stop_of_another_users_chat_is_a_404_and_stops_nothing(mock_db, mock_task_manager, app, login_as, user_b):
+    login_as(app, user_b)
+    response = app.test_client().post('/api/chats/chat1/stop')
+    assert response.status_code == 404
+    mock_task_manager.stop_task_and_wait.assert_not_called()
+    mock_db.rollback_to_last_user_message.assert_not_called()
+
+
+@patch('backend.database.response_cache')
+@patch('backend.files.manager.FileManager')
+@patch('backend.rag.RAGProvider')
+@patch('backend.models.get_embedding_model')
+@patch('backend.chat.router.task_manager')
+@patch('backend.chat.router.db')
+@patch('backend.chat.router.FileSystemChannelManager')
+def test_delete_ends_the_turn_before_deleting_and_forgets_the_chat(
+    mock_fscm, mock_db, mock_task_manager, mock_get_embedding, mock_rag_provider, mock_file_manager,
+    mock_response_cache, client
+):
+    order = []
+    mock_task_manager.stop_task_and_wait.side_effect = lambda chat_id: order.append("wait") or True
+    mock_task_manager.forget_chat.side_effect = lambda chat_id: order.append("forget")
+    mock_db.delete_chat.side_effect = lambda chat_id: order.append("delete")
+    assert client.delete('/api/chats/chat1').status_code == 200
+    assert order == ["wait", "forget", "delete"]
+    # The whole cache entry and its WAL go, not only the buffered chunks.
+    mock_response_cache.cleanup_chat.assert_called_once_with("chat1")
+
+
+@patch('backend.chat.router.task_manager')
+@patch('backend.chat.router.db')
+def test_delete_leaves_the_chat_when_its_task_files_cannot_be_removed(mock_db, mock_task_manager, client):
+    mock_task_manager.stop_task_and_wait.return_value = True
+    mock_task_manager.forget_chat.side_effect = PermissionError("denied")
+    with patch('backend.models.get_embedding_model'), patch('backend.rag.RAGProvider'), \
+         patch('backend.files.manager.FileManager'):
+        assert client.delete('/api/chats/chat1').status_code == 500
+    mock_db.delete_chat.assert_not_called()
+
+
+@patch('backend.chat.router.log_event')
+@patch('backend.chat.router.task_manager')
+@patch('backend.chat.router.db')
+def test_delete_is_refused_while_the_turn_is_still_ending(mock_db, mock_task_manager, mock_log_event, client):
+    mock_task_manager.stop_task_and_wait.return_value = False
+    response = client.delete('/api/chats/chat1')
+    assert response.status_code == 409
+    assert "still stopping" in response.json["error"]
+    mock_db.delete_chat.assert_not_called()
+    mock_task_manager.forget_chat.assert_not_called()
+    mock_log_event.assert_any_call("chat_delete_stop_timeout", {"chat_id": "chat1"})
+
+
+@patch('backend.chat.router.task_manager')
+@patch('backend.chat.router.db')
+def test_clear_all_stops_only_the_callers_running_turns_first(mock_db, mock_task_manager, app, login_as, user_b):
+    login_as(app, user_b)
+    order = []
+    mock_db.get_all_chats.return_value = [{"id": "b1"}, {"id": "b2"}]
+    # a9 belongs to someone else; the second snapshot shows b1 gone, so the loop ends
+    mock_task_manager.running_chat_ids.side_effect = [["b1", "a9"], ["a9"]]
+    mock_task_manager.stop_task_and_wait.side_effect = lambda chat_id, timeout: order.append("wait") or True
+    mock_db.delete_all_chats.side_effect = lambda user_id: order.append("delete")
+    assert app.test_client().delete('/api/chats/').status_code == 200
+    mock_task_manager.stop_task.assert_called_once_with("b1")
+    assert [c.args[0] for c in mock_task_manager.stop_task_and_wait.call_args_list] == ["b1"]  # never the other user's a9
+    assert order == ["wait", "delete"]
+    assert sorted(c.args[0] for c in mock_task_manager.forget_chat.call_args_list) == ["b1", "b2"]
+
+
+@patch('backend.chat.router.log_event')
+@patch('backend.chat.router.task_manager')
+@patch('backend.chat.router.db')
+def test_clear_all_deletes_nothing_while_a_turn_is_still_ending(mock_db, mock_task_manager, mock_log_event, client):
+    mock_db.get_all_chats.return_value = [{"id": "c1"}]
+    mock_task_manager.running_chat_ids.return_value = ["c1"]
+    mock_task_manager.stop_task_and_wait.return_value = False
+    response = client.delete('/api/chats/')
+    assert response.status_code == 409
+    mock_db.delete_all_chats.assert_not_called()
+    mock_log_event.assert_any_call("chat_clear_all_stop_timeout", {"chat_ids": ["c1"]})
+
+
+@patch('backend.chat.router.task_manager')
+@patch('backend.chat.router.db')
+def test_clear_all_stops_a_turn_that_started_after_the_first_pass(mock_db, mock_task_manager, client):
+    mock_db.get_all_chats.return_value = [{"id": "c1"}, {"id": "c2"}]
+    mock_task_manager.running_chat_ids.side_effect = [["c1"], ["c2"], []]
+    mock_task_manager.stop_task_and_wait.return_value = True
+    assert client.delete('/api/chats/').status_code == 200
+    assert [c.args[0] for c in mock_task_manager.stop_task_and_wait.call_args_list] == ["c1", "c2"]
+    mock_db.delete_all_chats.assert_called_once()

@@ -3,6 +3,7 @@ import threading
 import time
 import os
 import json
+import re
 from typing import Dict, Any, Callable, Optional, Set
 from backend.auth.context import user_context
 from backend.database import response_cache as cache_system
@@ -71,6 +72,44 @@ class TaskManager:
             self.interrupted_tasks.add(chat_id)
             if chat_id in self._active_tasks:
                 self._active_tasks[chat_id].stop()
+
+    def stop_task_and_wait(self, chat_id: str, timeout: Optional[float] = None) -> bool:
+        """
+        Signals a task to stop, as `stop_task` does, then waits for its worker thread to exit.
+        The wait is bounded by `timeout` seconds (default `config.TASK_STOP_WAIT_SECONDS`).
+        Returns True when there was no worker or it has exited, False when it is still alive.
+        """
+        if timeout is None:
+            timeout = config.TASK_STOP_WAIT_SECONDS
+        with self._lock:
+            self.interrupted_tasks.add(chat_id)
+            worker = self._active_tasks.get(chat_id)
+            if worker is None:
+                return True
+            worker.stop()
+        # Join outside the lock: the worker's `finally` takes it (`pop_task`).
+        worker.join(max(0.0, timeout))
+        return not worker.is_alive()
+
+    def running_chat_ids(self) -> list:
+        """Snapshot of the chat ids that have a live worker."""
+        with self._lock:
+            return [cid for cid, worker in self._active_tasks.items() if worker.is_alive()]
+
+    def forget_chat(self, chat_id: str):
+        """
+        Removes what the manager keeps for a chat that is going away: the interrupted flag and the
+        task files (`<id>.json`, which `recover_tasks` may have left as `needs_resume`, and `<id>_state.json`).
+        An OSError other than a missing file propagates, so the caller does not report a clean delete.
+        """
+        safe_id = re.sub(r'[^a-zA-Z0-9_\-]', '', str(chat_id))
+        with self._lock:
+            self.interrupted_tasks.discard(chat_id)
+        for name in (f"{safe_id}.json", f"{safe_id}_state.json"):
+            try:
+                os.remove(os.path.join(TASKS_DIR, name))
+            except FileNotFoundError:
+                pass
 
     def is_task_running(self, chat_id: str) -> bool:
         """Checks if a task is actively running in a thread."""

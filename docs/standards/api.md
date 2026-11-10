@@ -18,7 +18,7 @@ Client code lives in `frontend/src/api/`.
 - JSON in, JSON out (`jsonify`). Field names are `snake_case` on the server; the typed client in `frontend/src/api/` maps them.
 - Success returns the resource or `{"success": true}`; creates return the new resource.
 - Status codes: `200` ok, `400` invalid input, `401` not authenticated (set by `authenticate_request`), `403` forbidden operation (also an unknown or inactive user),
-  `404` not found (also another user's chat or workspace, so ids are not confirmed), `413` upload too large, `429` over the caller's turn limit (with a `Retry-After` header in seconds), `500` unexpected failure.
+  `404` not found (also another user's chat or workspace, so ids are not confirmed), `409` conflict (a chat's turn has not ended in time to delete it), `413` upload too large, `429` over the caller's turn limit (with a `Retry-After` header in seconds), `500` unexpected failure.
 - Error body is `{"error": "<short message>"}`. The personas and skills routes also include `"success": false`; keep that there for
   compatibility but use the plain form elsewhere. Do not return stack traces or `str(e)` of internal exceptions from new code.
 - Validate before acting, and fail with `400` (not a partial write).
@@ -31,7 +31,7 @@ Client code lives in `frontend/src/api/`.
 - Payloads follow the OpenAI chunk format with the project's extensions: content and reasoning deltas, tool-call fragments,
   tool results, `event` activity labels, sub-agent deltas and `__redact__`. The reader and fixtures are described in `docs/frontend.md`.
 - Errors during a stream are sent as `data: {"error": "<message>"}` and the stream ends. Never raise after the response has started.
-- A turn runs independently of the HTTP request: the client may disconnect and re-attach. Stop it with `POST /api/chats/<id>/stop`.
+- A turn runs independently of the HTTP request: the client may disconnect and re-attach. Stop it with `POST /api/chats/<id>/stop`, which answers only after the turn's worker has exited (waiting at most `TASK_STOP_WAIT_SECONDS`, default 5) with `{"status": "success", "stopped": true}`; if the worker is still alive after the wait it still rolls back and answers `"stopped": false`. `DELETE /api/chats/<id>` and `DELETE /api/chats` (clear all, the caller's chats only) stop running turns first and answer `409 {"error": "The chat is still stopping its response; try again in a moment."}`, deleting nothing, when a turn has not ended within the wait.
 - `POST /v1/chat/completions` checks in this order: another user's chat is `404`; `uploadedFiles` that are not attached to the chat are
   `400 {"error": "Unknown file"}`; then the chat is created for the caller (or confirmed theirs) and the turn slot is claimed. A rejected
   request writes nothing.

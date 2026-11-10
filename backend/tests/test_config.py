@@ -157,3 +157,16 @@ def test_run_queue_settings_read_the_environment_and_clamp_bad_values(clean_env,
     finally:
         monkeypatch.undo()
         importlib.reload(c)
+
+
+def test_task_stop_wait_seconds_defaults_to_five_and_reads_the_environment(clean_env, monkeypatch):
+    import backend.config as c
+    monkeypatch.delenv("TASK_STOP_WAIT_SECONDS", raising=False)
+    try:
+        c = _reload_with(monkeypatch)
+        assert c.TASK_STOP_WAIT_SECONDS == 5.0
+        c = _reload_with(monkeypatch, TASK_STOP_WAIT_SECONDS="1.5")
+        assert c.TASK_STOP_WAIT_SECONDS == 1.5
+    finally:
+        monkeypatch.undo()
+        importlib.reload(c)

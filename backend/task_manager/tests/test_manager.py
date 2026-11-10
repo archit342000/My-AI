@@ -266,3 +266,91 @@ def test_recover_tasks_keeps_the_resume_state_when_the_owner_lookup_fails(chat_o
         TaskManager().recover_tasks()
     assert mock_dump.call_args.args[0]["status"] == "needs_resume"
     mock_remove.assert_not_called()  # a failed owner lookup must not delete the state file just written
+
+
+class _GatedWorker(RealThread):
+    """A real thread that runs until `release` is set; `stop()` is recorded, as the real worker's cancel is."""
+
+    def __init__(self, manager, chat_id):
+        super().__init__(daemon=True)
+        self.manager, self.chat_id = manager, chat_id
+        self.release = threading.Event()
+        self.stopped = False
+
+    def run(self):
+        self.release.wait(10)
+        self.manager.pop_task(self.chat_id)  # the real worker's `finally` takes the manager lock
+
+    def stop(self):
+        self.stopped = True
+
+
+def _manager_with_worker(chat_id="c1"):
+    with patch("threading.Thread"):
+        mgr = TaskManager()
+    worker = _GatedWorker(mgr, chat_id)
+    mgr._active_tasks[chat_id] = worker
+    worker.start()
+    return mgr, worker
+
+
+def test_stop_task_and_wait_returns_true_once_the_worker_has_exited():
+    mgr, worker = _manager_with_worker()
+    worker.release.set()
+    assert mgr.stop_task_and_wait("c1", timeout=5) is True
+    assert worker.stopped is True
+    assert mgr.is_task_running("c1") is False
+    assert mgr.claim_turn("c1") is True  # a send right after the stop is accepted
+
+
+def test_stop_task_and_wait_gives_up_after_the_timeout_and_then_succeeds():
+    mgr, worker = _manager_with_worker()
+    assert mgr.stop_task_and_wait("c1", timeout=0.05) is False
+    assert mgr.is_task_running("c1") is True
+    worker.release.set()
+    assert mgr.stop_task_and_wait("c1", timeout=5) is True
+
+
+def test_stop_task_and_wait_without_a_worker_returns_true_at_once():
+    with patch("threading.Thread"):
+        mgr = TaskManager()
+    assert mgr.stop_task_and_wait("none", timeout=0) is True
+
+
+def test_stop_task_and_wait_uses_the_configured_default_timeout():
+    mgr, worker = _manager_with_worker()
+    try:
+        with patch("backend.task_manager.manager.config.TASK_STOP_WAIT_SECONDS", 0.05):
+            assert mgr.stop_task_and_wait("c1") is False
+    finally:
+        worker.release.set()
+
+
+def test_running_chat_ids_lists_only_live_workers():
+    mgr, worker = _manager_with_worker("live")
+    done = _GatedWorker(mgr, "done")
+    mgr._active_tasks["done"] = done  # never started: not alive
+    assert mgr.running_chat_ids() == ["live"]
+    worker.release.set()
+
+
+def test_forget_chat_removes_the_flag_and_both_task_files(tmp_path):
+    with patch("threading.Thread"):
+        mgr = TaskManager()
+    (tmp_path / "c1.json").write_text("{}")
+    (tmp_path / "c1_state.json").write_text("{}")
+    mgr.interrupted_tasks.add("c1")
+    with patch("backend.task_manager.manager.TASKS_DIR", str(tmp_path)):
+        mgr.forget_chat("c1")
+        mgr.forget_chat("c1")  # nothing left: a no-op
+    assert list(tmp_path.iterdir()) == []
+    assert "c1" not in mgr.interrupted_tasks
+
+
+def test_forget_chat_lets_a_removal_error_reach_the_caller(tmp_path):
+    with patch("threading.Thread"):
+        mgr = TaskManager()
+    with patch("backend.task_manager.manager.TASKS_DIR", str(tmp_path)), \
+         patch("backend.task_manager.manager.os.remove", side_effect=PermissionError("denied")):
+        with pytest.raises(PermissionError):
+            mgr.forget_chat("c1")

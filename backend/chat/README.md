@@ -38,6 +38,7 @@
     - **Delegation:** `ChatHandler` acts as a facade, delegating specific responsibilities to `ToolHandler` and `AgentHandler`.
     - **Serial Execution:** `TurnHandler` prevents race conditions by ensuring only one assistant turn runs at a time for a given chat.
     - **Anchoring:** Messages are "woven" together using parent IDs to maintain strict hierarchy (especially for sub-agents).
+*   **Stop and delete:** `POST /<id>/stop` waits for the turn's worker to exit before rolling back and answers `stopped: true|false`. `DELETE /<id>` and `DELETE /` (clear all) stop the caller's running turns first and answer `409` without deleting when one has not ended within `TASK_STOP_WAIT_SECONDS` (contract in `docs/standards/api.md`).
 *   **Testing:** 
     - **Local:** Specialized unit tests are located in `tests/` within this directory.
       - **Run Command:** `EMBEDDING_URL="http://mock" AI_URL="http://mock" ./venv/bin/python3 -m pytest backend/chat/tests/`
