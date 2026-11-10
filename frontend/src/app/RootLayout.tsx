@@ -8,10 +8,12 @@ import { Outlet, useLocation } from 'react-router';
 import { AmbientBackground } from '../components/background/AmbientBackground';
 import { ToastViewport } from '../components/ui/Toast';
 import { useThemeSync } from '../hooks/useThemeSync';
+import { useModalStore } from '../state/modal-store';
 import { useUiStore } from '../state/ui-store';
 import { useUserStore } from '../state/user-store';
 import { discardNewChatDraft } from '../features/composer/draft-cleanup';
 import { useDraftCleanup } from '../features/composer/useDraftCleanup';
+import { useChatHasNoFiles } from '../features/artifacts/useChatHasNoFiles';
 import { Sidebar } from './Sidebar';
 import { DialogHost } from '../features/settings/DialogHost';
 import { Composer } from '../features/composer/Composer';
@@ -42,7 +44,13 @@ export function RootLayout() {
   useEffect(() => {
     if (window.innerWidth <= 768) useUiStore.getState().setSidebarCollapsed(true);
   }, [path]);
+  // A dialog opened from the drawer covers the page, so the drawer closes (phone widths only).
+  const dialogOpen = useModalStore((s) => s.open !== null);
+  useEffect(() => {
+    if (dialogOpen && window.innerWidth <= 768) useUiStore.getState().setSidebarCollapsed(true);
+  }, [dialogOpen]);
   const onLogs = useLocation().pathname.startsWith('/logs');
+  const noFiles = useChatHasNoFiles();
   const sidebarCollapsed = useUiStore((s) => s.sidebarCollapsed);
   const sessionExpired = useUserStore((s) => s.sessionExpired);
   // On phones the sidebar is a drawer: Escape closes it (through the modal stack, so it stays
@@ -77,6 +85,7 @@ export function RootLayout() {
           label={sidebarCollapsed ? 'Open sidebar' : 'Close sidebar'}
           tooltip={false}
           aria-expanded={!sidebarCollapsed}
+          hidden={!sidebarCollapsed}
           onClick={() => useUiStore.getState().toggleSidebar()}
         />
         {sidebarCollapsed ? null : (
@@ -89,13 +98,14 @@ export function RootLayout() {
         )}
         <Sidebar />
         <main>
-          {onLogs || path === '/' ? null : (
+          {onLogs ? null : (
             <button
               id="nav-files-btn"
               type="button"
-              className="btn-secondary glass top-right-btn"
+              className={`btn-secondary glass top-right-btn${noFiles ? ' top-right-btn--empty' : ''}`}
               title="View Files / Artifacts"
               aria-label="View files and artifacts"
+              disabled={path === '/'}
               onClick={toggleArtifacts}
             >
               <svg

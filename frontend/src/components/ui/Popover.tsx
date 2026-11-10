@@ -9,13 +9,22 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { cx } from '../../lib/cx';
+import {
+  computePosition,
+  readVisibleViewport,
+  zeroRect,
+  type PopoverPlacement,
+  type Position,
+} from '../../lib/popover-position';
 import { pushPopover, type PopoverCloseReason } from './popover-stack';
 
-export type PopoverPlacement = 'bottom' | 'right' | 'top';
+export type { PopoverPlacement };
 
 export interface PopoverProps {
   open: boolean;
   anchorRef: RefObject<HTMLElement | null>;
+  /** Element to place the panel against when it differs from the anchor (the anchor still decides what counts as an outside press). */
+  positionRef?: RefObject<HTMLElement | null>;
   /** Anchor at a viewport point instead of an element (context menus). Takes precedence over `anchorRef`. */
   point?: { x: number; y: number };
   /** Called on Escape (top-most popover only) or a pointer down outside every popover and the anchor. */
@@ -31,57 +40,15 @@ export interface PopoverProps {
   className?: string;
 }
 
-interface Position {
-  /** Distance from the viewport top; unset for `top` placement, which anchors by `bottom`. */
-  top?: number;
-  /** Distance from the viewport bottom; used by `top` placement so the panel grows upward. */
-  bottom?: number;
-  left: number;
-  width: number;
-  maxHeight: number;
-}
-
-const MARGIN = 8;
-const GAP = 4;
-
-/** A zero-size rect at a point, so a context menu opens at the pointer with the same placement rules. */
-function zeroRect(x: number, y: number): DOMRect {
-  return { x, y, left: x, right: x, top: y, bottom: y, width: 0, height: 0, toJSON: () => ({}) } as DOMRect;
-}
-/** Space between a `top` panel and its anchor (the composer). */
-const TOP_GAP = 8;
-
-/** Places the panel next to the anchor: `bottom` and `right` flip when the viewport is short, `top` sits above. */
-function computePosition(
-  anchor: DOMRect,
-  placement: PopoverPlacement,
-  width: number | undefined,
-  minWidth: number,
-  viewport: { width: number; height: number },
-): Position {
-  if (placement === 'right') {
-    const w = width ?? minWidth;
-    const spaceRight = viewport.width - anchor.right - MARGIN - GAP;
-    const left =
-      spaceRight >= w ? anchor.right + GAP : Math.max(MARGIN, anchor.left - GAP - w);
-    const top = Math.max(MARGIN, Math.min(anchor.top, viewport.height - MARGIN - 120));
-    return { top, left, width: w, maxHeight: viewport.height - top - MARGIN };
-  }
-  const w = width ?? Math.max(anchor.width, minWidth);
-  const left = Math.max(MARGIN, Math.min(anchor.left, viewport.width - w - MARGIN));
-  if (placement === 'top') {
-    // Above the anchor (composer autocomplete), never taller than the space available. Anchored by
-    // the bottom edge so a short list still sits directly on top of the anchor.
-    const maxHeight = Math.min(anchor.top - MARGIN - TOP_GAP, 360);
-    return { bottom: viewport.height - anchor.top + TOP_GAP, left, width: w, maxHeight };
-  }
-  const below = viewport.height - anchor.bottom - MARGIN - GAP;
-  const above = anchor.top - MARGIN - GAP;
-  if (below >= 220 || below >= above) {
-    return { top: anchor.bottom + GAP, left, width: w, maxHeight: below };
-  }
-  const maxHeight = Math.min(above, 480);
-  return { top: anchor.top - GAP - maxHeight, left, width: w, maxHeight };
+function samePosition(a: Position | null, b: Position): boolean {
+  return (
+    a !== null &&
+    a.top === b.top &&
+    a.bottom === b.bottom &&
+    a.left === b.left &&
+    a.width === b.width &&
+    a.maxHeight === b.maxHeight
+  );
 }
 
 /**
@@ -94,6 +61,7 @@ function computePosition(
 export function Popover({
   open,
   anchorRef,
+  positionRef,
   point,
   onClose,
   children,
@@ -106,6 +74,7 @@ export function Popover({
   className,
 }: PopoverProps) {
   const [pos, setPos] = useState<Position | null>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef(onClose);
   useEffect(() => {
     closeRef.current = onClose;
@@ -113,30 +82,43 @@ export function Popover({
 
   const pointX = point?.x;
   const pointY = point?.y;
-  const hasPoint = pointX !== undefined && pointY !== undefined;
 
   useLayoutEffect(() => {
     if (!open) return;
     const update = () => {
-      const rect = hasPoint
-        ? zeroRect(pointX as number, pointY as number)
-        : anchorRef.current?.getBoundingClientRect();
+      const rect =
+        pointX !== undefined && pointY !== undefined
+          ? zeroRect(pointX, pointY)
+          : (positionRef ?? anchorRef).current?.getBoundingClientRect();
       if (!rect) return;
-      setPos(
-        computePosition(rect, placement, width, minWidth, {
-          width: window.innerWidth,
-          height: window.innerHeight,
-        }),
+      const next = computePosition(
+        rect,
+        placement,
+        width,
+        minWidth,
+        readVisibleViewport(),
+        panelRef.current?.offsetHeight,
       );
+      setPos((current) => (samePosition(current, next) ? current : next));
     };
     update();
     window.addEventListener('resize', update);
     window.addEventListener('scroll', update, true);
+    const visual = window.visualViewport;
+    visual?.addEventListener('resize', update);
+    visual?.addEventListener('scroll', update);
+    // The panel's real height decides where a `right` panel must shift to; it changes as content loads.
+    const observer =
+      typeof ResizeObserver === 'undefined' || !panelRef.current ? null : new ResizeObserver(update);
+    if (observer && panelRef.current) observer.observe(panelRef.current);
     return () => {
       window.removeEventListener('resize', update);
       window.removeEventListener('scroll', update, true);
+      visual?.removeEventListener('resize', update);
+      visual?.removeEventListener('scroll', update);
+      observer?.disconnect();
     };
-  }, [open, anchorRef, placement, width, minWidth, hasPoint, pointX, pointY]);
+  }, [open, anchorRef, positionRef, placement, width, minWidth, pointX, pointY]);
 
   useEffect(() => {
     if (!open) return;
@@ -168,6 +150,7 @@ export function Popover({
 
   return createPortal(
     <div
+      ref={panelRef}
       data-popover=""
       id={id}
       role={role}

@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { Link, MemoryRouter } from 'react-router';
 import { chatsApi } from '../../api/chats';
+import { modelsApi } from '../../api/settings';
 import { ApiError } from '../../api/client';
 import { renderWithProviders } from '../../test/render';
 import { Composer } from './Composer';
@@ -291,6 +292,83 @@ describe('Composer', () => {
     renderWithProviders(<Composer />, { route: '/chat/gone', path: '/chat/:chatId' });
     await waitFor(() => expect(chatsApi.get).toHaveBeenCalled());
     await waitFor(() => expect(screen.queryByPlaceholderText('Start a conversation...')).toBeNull());
+  });
+
+  it('does not replace an opened chat\'s model with the default pick while chat settings are active', async () => {
+    vi.spyOn(modelsApi, 'list').mockResolvedValue([{ id: 'm1' }, { id: 'm2' }] as never);
+    vi.spyOn(modelsApi, 'config').mockResolvedValue({ general: { text: 'm1' } } as never);
+    useSettingsStore.setState({ model: null, modelName: null, chatScoped: true });
+    renderWithProviders(<Composer />, { route: '/chat/c1', path: '/chat/:chatId' });
+    await waitFor(() => expect(modelsApi.config).toHaveBeenCalled());
+    await new Promise((r) => setTimeout(r, 50));
+    expect(useSettingsStore.getState().model).toBeNull();
+    useSettingsStore.setState({ chatScoped: false });
+  });
+
+  it('picks the default model once chat settings are left, if no model was applied', async () => {
+    vi.spyOn(modelsApi, 'list').mockResolvedValue([{ id: 'm1' }, { id: 'm2' }] as never);
+    vi.spyOn(modelsApi, 'config').mockResolvedValue({ general: { text: 'm1' } } as never);
+    useSettingsStore.setState({ model: null, modelName: null, chatScoped: true });
+    renderWithProviders(<Composer />, { route: '/chat/c1', path: '/chat/:chatId' });
+    await waitFor(() => expect(modelsApi.config).toHaveBeenCalled());
+    await new Promise((r) => setTimeout(r, 50));
+    expect(useSettingsStore.getState().model).toBeNull();
+    act(() => useSettingsStore.setState({ chatScoped: false })); // the chat page was left
+    await waitFor(() => expect(useSettingsStore.getState().model).toBe('m1'));
+  });
+
+  it('while the server is stopping, the button is disabled and says Stopping', () => {
+    useStreamStore.setState({ chatId: 'c1', live: null, pending: null, interrupted: null, controller: null, stopping: true });
+    renderWithProviders(<Composer />, { route: '/chat/c1', path: '/chat/:chatId' });
+    const button = screen.getByRole('button', { name: 'Stopping' }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    useStreamStore.setState({ chatId: null, stopping: false });
+  });
+
+  it('puts the sent text back after the server refuses it, but not over text typed meanwhile', async () => {
+    let refuse: () => void = () => undefined;
+    vi.spyOn(sendTurnModule, 'sendTurn').mockImplementation(async (a) => {
+      a.onAccepted?.();
+      refuse = () => a.onRefused?.();
+      return true;
+    });
+    renderWithProviders(<Composer />, { route: '/chat/c1', path: '/chat/:chatId' });
+    fireEvent.change(textarea(), { target: { value: 'my question' } });
+    fireEvent.keyDown(textarea(), { key: 'Enter' });
+    await waitFor(() => expect(textarea().value).toBe(''));
+    act(() => refuse());
+    expect(textarea().value).toBe('my question');
+    // a second refusal after the user typed something else leaves their new text alone
+    fireEvent.keyDown(textarea(), { key: 'Enter' });
+    await waitFor(() => expect(textarea().value).toBe(''));
+    fireEvent.change(textarea(), { target: { value: 'something else' } });
+    act(() => refuse());
+    expect(textarea().value).toBe('something else');
+  });
+
+  it('does not put a refused send\'s text into another chat the user moved to meanwhile', async () => {
+    vi.spyOn(chatsApi, 'get').mockResolvedValue({ id: 'x', title: 't', messages: [] } as never);
+    let refuse: () => void = () => undefined;
+    vi.spyOn(sendTurnModule, 'sendTurn').mockImplementation(async (a) => {
+      a.onAccepted?.();
+      refuse = () => a.onRefused?.();
+      return true;
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter initialEntries={['/chat/c1']}>
+          <Composer />
+          <Link to="/chat/c2">other chat</Link>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    fireEvent.change(textarea(), { target: { value: 'for chat one' } });
+    fireEvent.keyDown(textarea(), { key: 'Enter' });
+    await waitFor(() => expect(textarea().value).toBe(''));
+    fireEvent.click(screen.getByText('other chat'));
+    act(() => refuse());
+    expect(textarea().value).toBe('');
   });
 
   it('keeps the text and files when the send is refused', async () => {

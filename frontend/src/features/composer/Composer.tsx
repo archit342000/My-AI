@@ -9,7 +9,7 @@ import {
 } from 'react';
 import { useMatch, useNavigate } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { modelsApi, settingsKeys, skillsApi } from '../../api/settings';
+import { modelConfigQuery, modelsApi, settingsKeys, skillsApi } from '../../api/settings';
 import { Icon } from '../../components/icons/Icon';
 import { Popover } from '../../components/ui/Popover';
 import { showToast } from '../../components/ui/toast-store';
@@ -58,6 +58,7 @@ export function Composer() {
   const inputArea = useRef<HTMLDivElement>(null);
   const hasModel = useSettingsStore((s) => Boolean(s.model));
   const selectedModel = useSettingsStore((s) => s.model);
+  const chatScoped = useSettingsStore((s) => s.chatScoped);
   const researchMode = useSettingsStore((s) => s.modes.researchMode);
   const setModel = useSettingsStore((s) => s.setModel);
   const models = useQuery({
@@ -65,11 +66,7 @@ export function Composer() {
     queryFn: modelsApi.list,
     staleTime: 30_000,
   });
-  const modelConfig = useQuery({
-    queryKey: ['models', 'config'],
-    queryFn: modelsApi.config,
-    staleTime: 300_000,
-  });
+  const modelConfig = useQuery(modelConfigQuery);
   const skills = useQuery({
     queryKey: settingsKeys.skills,
     queryFn: skillsApi.list,
@@ -79,13 +76,18 @@ export function Composer() {
   // Legacy parity: with no stored (or a stale) selection, default to the configured model for the current mode.
   useEffect(() => {
     if (!models.data || !modelConfig.data) return;
-    if (selectedModel && models.data.some((m) => m.id === selectedModel)) return;
+    // An opened chat's own model (applied by `useChatSettings` in the same commit) must stay; read
+    // the store now, because the render-time value may be older than what the chat just applied.
+    const { chatScoped: inChat, model: currentModel } = useSettingsStore.getState();
+    if (inChat) return;
+    if (currentModel && models.data.some((m) => m.id === currentModel)) return;
     const preferred = researchMode
       ? modelConfig.data.research?.main
       : modelConfig.data.general?.text;
     const pick = models.data.find((m) => m.id === preferred) ?? models.data[0];
     if (pick) setModel(pick.id, pick.id);
-  }, [models.data, modelConfig.data, selectedModel, researchMode, setModel]);
+  // `chatScoped` stays a dependency so the effect runs again when chat settings end.
+  }, [models.data, modelConfig.data, selectedModel, chatScoped, researchMode, setModel]);
   const keyboard = useKeyboardOffset(window.matchMedia('(pointer: coarse)').matches);
   const temporaryChatId = useUiStore((s) => s.temporaryChatId);
   const temporary = !routeChatId && temporaryChatId !== null;
@@ -93,6 +95,13 @@ export function Composer() {
   // there is refused with an explanation.
   const openChatId = routeChatId ?? temporaryChatId;
   const streaming = useStreamStore((s) => openChatId !== null && s.chatId === openChatId);
+  const stopping = useStreamStore((s) => s.stopping);
+  // What was last sent, to put back if the server refuses it after the box was cleared.
+  const lastSent = useRef<{ chatId: string; text: string; attachments: Attachment[] } | null>(null);
+  const openChat = useRef(openChatId);
+  useEffect(() => {
+    openChat.current = openChatId;
+  }, [openChatId]);
   const detail = useChatDetail(routeChatId);
   // Staged files belong to the chat they were uploaded for: the open chat, the temporary chat, or the draft id
   // of the next new chat. The list shown is the open chat's own.
@@ -272,7 +281,8 @@ export function Composer() {
     const files: UploadedFile[] = toUploadedFiles(attachments);
     const isNew = !routeChatId && !temporary;
     const id = key;
-    // The text and files are cleared only once the turn is accepted; a refused send keeps them.
+    // The text and files are cleared once the turn is accepted here, and put back if the server then refuses it.
+    lastSent.current = { chatId: id, text, attachments };
     await sendTurn({
       queryClient,
       chatId: id,
@@ -285,6 +295,17 @@ export function Composer() {
         useAttachmentStore.getState().clear(key);
         // The files now belong to the chat just started: the next new chat gets a fresh draft id.
         if (isNew) useAttachmentStore.getState().renewDraft();
+      },
+      onRefused: () => {
+        const sent = lastSent.current;
+        // The text belongs to the chat it was sent in: not into another one opened since.
+        if (!sent || sent.chatId !== openChat.current) return;
+        // Only into an empty box: anything typed since stays.
+        setText((current) => (current === '' ? sent.text : current));
+        const store = useAttachmentStore.getState();
+        if ((store.lists[sent.chatId] ?? []).length === 0 && sent.attachments.length > 0) {
+          store.add(sent.chatId, sent.attachments);
+        }
       },
       navigate: isNew
         ? () => {
@@ -418,7 +439,7 @@ export function Composer() {
         >
           <Icon name="plus" size={20} />
         </button>
-        <ToolsMenu />
+        <ToolsMenu sheetAnchorRef={inputContainer} />
         <input
           ref={fileInput}
           type="file"
@@ -458,8 +479,9 @@ export function Composer() {
               id="send-btn"
               type="button"
               className="send-btn"
-              title="Stop"
-              aria-label="Stop generating"
+              title={stopping ? 'Stopping' : 'Stop'}
+              aria-label={stopping ? 'Stopping' : 'Stop generating'}
+              disabled={stopping}
               onClick={() => void stopTurn()}
             >
               <Icon name="close" size={18} strokeWidth={2.5} />

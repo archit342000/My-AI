@@ -11,6 +11,7 @@ import { ArtifactDrawer } from '../artifacts/ArtifactDrawer';
 import { MessageList } from './MessageList';
 import { reattachTurn } from './send-turn';
 import { useChatDetail } from './useChatQueries';
+import { useChatSettings } from './useChatSettings';
 
 /** Header pill with click-to-rename (legacy `#chat-title-display`). */
 function ChatTitle({ chatId, title }: { chatId: string; title: string }) {
@@ -33,20 +34,10 @@ function ChatTitle({ chatId, title }: { chatId: string; title: string }) {
 
   return (
     <div id="chat-title-header" className="chat-title-header">
-      <div
-        className="chat-header-content"
-        style={{
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          width: '100%',
-          maxWidth: 800,
-          position: 'relative',
-        }}
-      >
+      <div className="chat-header-content chat-title-row">
         {editing ? (
           <input
-            className="chat-title-display"
+            className="chat-title-display chat-title-input"
             autoFocus
             aria-label="Chat title"
             value={draft}
@@ -101,9 +92,19 @@ export function ChatPage() {
   const { chatId } = useParams();
   const navigate = useNavigate();
   const { data, error, isPending, refetch } = useChatDetail(chatId);
+  useChatSettings(chatId);
   const queryClient = useQueryClient();
   const streaming = useStreamStore((s) => s.chatId);
   const artifactsOpen = useUiStore((s) => s.artifactsOpen);
+
+  // A file request belongs to the chat it was made in: leaving the chat drops it.
+  useEffect(() => () => useUiStore.getState().clearRequestedArtifact(), [chatId]);
+
+  // Tell file links in the transcript that a files drawer exists on this page.
+  useEffect(() => {
+    useUiStore.getState().setFilesAvailable(true);
+    return () => useUiStore.getState().setFilesAvailable(false);
+  }, []);
 
   // Reattach to a turn the server is still generating (after reload or navigation).
   useEffect(() => {
@@ -138,7 +139,12 @@ export function ChatPage() {
   return (
     <>
       <ChatTitle chatId={data.id} title={data.title || 'Untitled chat'} />
-      <MessageList turns={turns} chatId={data.id} onChanged={() => void refetch()} />
+      <MessageList
+        turns={turns}
+        chatId={data.id}
+        onChanged={() => void refetch()}
+        resumeNeeded={Boolean(data.resume_needed)}
+      />
       {artifactsOpen ? <ArtifactDrawer scope={{ chatId: data.id }} /> : null}
     </>
   );

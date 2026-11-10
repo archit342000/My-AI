@@ -2,7 +2,83 @@ import { QueryClient } from '@tanstack/react-query';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { chatsApi } from '../../api/chats';
 import { useUiStore } from '../../state/ui-store';
-import { saveTemporaryChat, shouldDiscardTemporaryChat } from './temporary-chat';
+import { useStreamStore } from '../../state/stream-store';
+import {
+  discardTemporaryChat,
+  saveTemporaryChat,
+  shouldDiscardTemporaryChat,
+} from './temporary-chat';
+
+describe('discardTemporaryChat', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    useUiStore.setState({ temporaryChatId: null });
+    useStreamStore.setState({
+      chatId: null,
+      live: null,
+      pending: null,
+      interrupted: null,
+      controller: null,
+      stopping: false,
+    });
+  });
+
+  it('stops a turn that is still generating before it deletes the chat', async () => {
+    const order: string[] = [];
+    useUiStore.setState({ temporaryChatId: 't9' });
+    useStreamStore.setState({ chatId: 't9', controller: new AbortController() });
+    vi.spyOn(chatsApi, 'stop').mockImplementation(async () => {
+      order.push('stop');
+      // temporary mode is still on while the turn is being stopped (no Send over a busy store)
+      expect(useUiStore.getState().temporaryChatId).toBe('t9');
+      // the turn ends once the stop is answered
+      useStreamStore.getState().finish();
+      return new Response(null);
+    });
+    vi.spyOn(chatsApi, 'remove').mockImplementation(async () => {
+      order.push('delete');
+      return new Response(null);
+    });
+    await discardTemporaryChat(new QueryClient());
+    expect(order).toEqual(['stop', 'delete']);
+  });
+
+  it('a temporary chat started while the previous one is still being discarded is discarded too', async () => {
+    useUiStore.setState({ temporaryChatId: 'A' });
+    let releaseA: () => void = () => undefined;
+    const gateA = new Promise<void>((resolve) => (releaseA = resolve));
+    const remove = vi.spyOn(chatsApi, 'remove').mockImplementation(async (id: string) => {
+      if (id === 'A') await gateA;
+      return new Response(null);
+    });
+    const client = new QueryClient();
+    const first = discardTemporaryChat(client);
+    await vi.waitFor(() => expect(remove).toHaveBeenCalledWith('A')); // temporary mode is off, delete of A pending
+    expect(useUiStore.getState().temporaryChatId).toBeNull();
+    useUiStore.setState({ temporaryChatId: 'B' }); // the user starts another temporary chat
+    await discardTemporaryChat(client);
+    expect(remove).toHaveBeenCalledWith('B');
+    releaseA();
+    await first;
+  });
+
+  it('two discards at once delete the chat once', async () => {
+    useUiStore.setState({ temporaryChatId: 't9' });
+    const remove = vi.spyOn(chatsApi, 'remove').mockResolvedValue(new Response(null));
+    const client = new QueryClient();
+    await Promise.all([discardTemporaryChat(client), discardTemporaryChat(client)]);
+    expect(remove).toHaveBeenCalledTimes(1);
+  });
+
+  it('just deletes a temporary chat that is not generating', async () => {
+    useUiStore.setState({ temporaryChatId: 't9' });
+    const stop = vi.spyOn(chatsApi, 'stop');
+    const remove = vi.spyOn(chatsApi, 'remove').mockResolvedValue(new Response(null));
+    await discardTemporaryChat(new QueryClient());
+    expect(stop).not.toHaveBeenCalled();
+    expect(remove).toHaveBeenCalledWith('t9');
+  });
+});
 
 describe('saveTemporaryChat', () => {
   afterEach(() => {

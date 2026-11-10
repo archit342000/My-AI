@@ -41,10 +41,27 @@ describe('ChatPage', () => {
     expect(await screen.findByText('Untitled chat')).toBeTruthy();
   });
 
+  it('the rename field is a pill-styled input and the header row carries no inline style', async () => {
+    const { container } = renderWithProviders(<ChatPage />, { route: '/chat/c1', path: '/chat/:chatId' });
+    fireEvent.click(await screen.findByText('My chat'));
+    const field = screen.getByLabelText('Chat title');
+    expect(field).toHaveClass('chat-title-display', 'chat-title-input');
+    expect(field).toHaveFocus();
+    expect(container.querySelector('.chat-title-row')?.hasAttribute('style')).toBe(false);
+  });
+
   it('shows a not-found message for a 404', async () => {
     vi.spyOn(chatsApi, 'get').mockRejectedValue(new ApiError(404, {}, 'missing'));
     renderWithProviders(<ChatPage />, { route: '/chat/c1', path: '/chat/:chatId' });
     expect(await screen.findByRole('alert')).toHaveTextContent('This chat no longer exists.');
+  });
+
+  it('tells the transcript a files drawer exists while the chat page is open', async () => {
+    const { unmount } = renderWithProviders(<ChatPage />, { route: '/chat/c1', path: '/chat/:chatId' });
+    await screen.findByText('My chat');
+    expect(useUiStore.getState().filesAvailable).toBe(true);
+    unmount();
+    expect(useUiStore.getState().filesAvailable).toBe(false);
   });
 
   it('offers a way back from a missing chat', async () => {
