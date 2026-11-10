@@ -170,8 +170,18 @@ resizes. `usePlatformClass` (called by `RootLayout`) adds `is-ios` to `<html>` o
 touches that start outside a scroll area (`SCROLL_AREAS` in `lib/scroll-lock.ts`) so the page cannot rubber-band. The phone Playwright
 project simulates the keyboard by shrinking `visualViewport.height` (`e2e/mobile-keyboard.spec.ts`).
 
+## Files panel
+
+Above 1024px the open files drawer sits beside the chat: it publishes `--right-sidebar-width` so `main` (the transcript and the composer) narrows, as in
+the legacy page; at 1024px and below it overlays. The selected row is kept in view, leaving a file with unsaved edits (switching, closing, new file)
+asks first, and the file on screen stays until the next one has loaded. File actions: Rename, Move to folder, Download and Copy contents
+(the "More" menu; a file read from disk cannot be renamed or moved), New folder, and Delete folder (right-click a folder; the server only removes an
+empty one). Version history shows the current version, views a version, compares it with the current one (the server's line-by-line diff) and restores it
+after a confirmation; it needs a chat, so it is not offered for a file opened in a workspace.
+
 ## Known gaps
 
 - The legacy per-agent renderers (research, browsing) are not ported; sub-agent steps show as a labelled group of entries.
 - The code-execution WebSocket (live runs) is not wired; history is read-only.
+- Mermaid pop-out and file-link navigation are not implemented.
 - The file tree shows one level; nested folders are listed but not expandable.

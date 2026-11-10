@@ -8,6 +8,9 @@ interface UiState {
   sidebarWidth: number;
   setSidebarWidth: (width: number) => void;
   artifactsOpen: boolean;
+  /** The open files panel holds edits that are not saved (set by the panel; read by whatever closes it). */
+  artifactsDirty: boolean;
+  setArtifactsDirty: (dirty: boolean) => void;
   /** True while a page that has a files drawer is open (a file link can be followed there). */
   filesAvailable: boolean;
   setFilesAvailable: (available: boolean) => void;
@@ -83,6 +86,8 @@ export const useUiStore = create<UiState>((set) => ({
     set({ sidebarWidth: next });
   },
   artifactsOpen: false,
+  artifactsDirty: false,
+  setArtifactsDirty: (dirty) => set({ artifactsDirty: dirty }),
   filesAvailable: false,
   setFilesAvailable: (available) => set({ filesAvailable: available }),
   requestedArtifactPath: null,

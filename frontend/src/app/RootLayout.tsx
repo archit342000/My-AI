@@ -1,4 +1,5 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { IconButton } from '../components/ui/Button';
 import { pushModal } from '../lib/modal-stack';
 import { trapFocus } from '../lib/focus-trap';
@@ -25,6 +26,9 @@ export function RootLayout() {
   useThemeSync(themeMode);
   usePlatformClass();
   const toggleArtifacts = useUiStore((s) => s.toggleArtifacts);
+  const artifactsOpen = useUiStore((s) => s.artifactsOpen);
+  const artifactsDirty = useUiStore((s) => s.artifactsDirty);
+  const [confirmClose, setConfirmClose] = useState(false);
   const queryClient = useQueryClient();
   // Unsent files are deleted when the page closes, whichever route is open.
   useDraftCleanup();
@@ -108,7 +112,9 @@ export function RootLayout() {
               title="View Files / Artifacts"
               aria-label="View files and artifacts"
               disabled={path === '/'}
-              onClick={toggleArtifacts}
+              onClick={() =>
+                artifactsOpen && artifactsDirty ? setConfirmClose(true) : toggleArtifacts()
+              }
             >
               <svg
                 width="20"
@@ -129,6 +135,18 @@ export function RootLayout() {
           {path === '/' || path.startsWith('/chat/') ? <Composer /> : null}
         </main>
       </div>
+      <ConfirmDialog
+        open={confirmClose}
+        title="Discard unsaved changes?"
+        message="The open file has changes that are not saved. Closing the files panel drops them."
+        confirmLabel="Discard"
+        danger
+        onCancel={() => setConfirmClose(false)}
+        onConfirm={() => {
+          setConfirmClose(false);
+          toggleArtifacts();
+        }}
+      />
       <DialogHost />
       <ToastViewport />
     </>

@@ -1959,7 +1959,7 @@ input[type="range"].ui-slider__input::-moz-range-thumb {
 .artifact-tree {
   list-style: none;
   margin: 0;
-  padding: 0 var(--space-2) var(--space-2);
+  padding: var(--space-1) var(--space-2) var(--space-2);
   overflow-y: auto;
   min-height: 0;
 }
@@ -2041,6 +2041,11 @@ input[type="range"].ui-slider__input::-moz-range-thumb {
   min-height: 0;
   display: flex;
   flex-direction: column;
+}
+
+.artifact-viewer--loading {
+  opacity: 0.6;
+  transition: opacity 0.15s ease;
 }
 
 .artifact-viewer__head {
@@ -2918,6 +2923,71 @@ body {
   background: var(--danger, #b3261e);
   color: #fff;
   font-size: 0.875rem;
+}
+
+/* ───────────────────────── Version history ───────────────────────── */
+
+.versions__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.versions__item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.versions__label {
+  flex: 1 1 14rem;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  font-size: 0.85rem;
+}
+.versions__status {
+  margin: 0 0 var(--space-2);
+  color: var(--content-muted);
+}
+.versions__error {
+  margin: var(--space-3) 0 0;
+  color: var(--danger-text);
+}
+.versions__preview,
+.versions__lines {
+  margin: var(--space-3) 0 0;
+  max-height: 300px;
+  overflow: auto;
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--bg-chat-display);
+  font-size: 0.75rem;
+  white-space: pre-wrap;
+}
+.versions__diff {
+  min-width: 0;
+}
+.versions__line {
+  display: block;
+}
+.versions__line--added {
+  background: var(--success-subtle);
+  color: var(--success-text);
+}
+.versions__line--removed {
+  background: var(--danger-subtle);
+  color: var(--danger-text);
+}
+
+.artifact-panel__error {
+  margin: var(--space-2) var(--space-3);
+  color: var(--danger-text);
+  font-size: 0.85rem;
 }
 
 /* ───────────────────────── Sidebar lists (workspace folders, chat rows) ───────────────────────── */
