@@ -37,6 +37,8 @@ export function useAutoSave(
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const running = useRef<Promise<boolean> | null>(null);
   const alive = useRef(true);
+  /** Files that are gone: a save of one that fails is dropped, not kept for another try. */
+  const gone = useRef(new Set<string>());
   const saveRef = useRef(save);
   saveRef.current = save;
   const lostRef = useRef(onLost);
@@ -57,6 +59,10 @@ export function useAutoSave(
         return true;
       },
       () => {
+        if (gone.current.has(job.id)) {
+          if (alive.current) setState(pending.current ? 'unsaved' : 'saved');
+          return true;
+        }
         // Keep the text unless newer text is already waiting.
         pending.current ??= job;
         if (alive.current) setState('error');
@@ -81,7 +87,8 @@ export function useAutoSave(
 
   useEffect(() => {
     alive.current = true;
-    // The page is going away: the request is marked to outlive it.
+    // The page is going away: the request is marked to outlive it. (A save already in flight is
+    // waited for first, so the very last text may not go out if the page is torn down at once.)
     const onHide = () => void flush(true);
     window.addEventListener('pagehide', onHide);
     return () => {
@@ -95,11 +102,13 @@ export function useAutoSave(
   }, [flush]);
 
   const discard = useCallback((id: string) => {
+    gone.current.add(id);
     if (pending.current?.id !== id) return;
     pending.current = null;
     if (timer.current) clearTimeout(timer.current);
     timer.current = null;
-    setState('saved');
+    // A save still in flight sets the light itself when it ends.
+    if (!running.current) setState('saved');
   }, []);
 
   const flushNow = useCallback(() => flush(), [flush]);

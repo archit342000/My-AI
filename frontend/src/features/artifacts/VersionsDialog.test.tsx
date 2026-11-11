@@ -202,4 +202,22 @@ describe('VersionsDialog', () => {
     expect(screen.getByRole('button', { name: 'Compare with current' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Restore' })).toBeEnabled();
   });
+
+  it('an answer that arrives late does not replace the version picked after it', async () => {
+    setup();
+    let late: (value: { content: string }) => void = () => undefined;
+    vi.spyOn(artifactsApi, 'version').mockImplementation((_id, version) =>
+      version === 1
+        ? new Promise((resolve) => {
+            late = resolve;
+          })
+        : Promise.resolve({ content: 'second content' }),
+    );
+    await pick(1);
+    await pick(2);
+    expect(await screen.findByLabelText('Version 2')).toHaveTextContent('second content');
+    late({ content: 'first content' });
+    await waitFor(() => expect(screen.queryByText('first content')).toBeNull());
+    expect(screen.getByLabelText('Version 2')).toHaveTextContent('second content');
+  });
 });

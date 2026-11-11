@@ -17,7 +17,7 @@ const JS_HOOKS = new Set<string>([
   // State markers set by the stream and read by the markup/tests, not styled on their own.
   'bot',
   'streaming',
-  // Hooks the browser specs and the message actions find their buttons and text by.
+  // Hooks the message actions and their unit tests find buttons and text by (the buttons are styled by `action-btn`).
   'copy-msg-btn',
   'delete-msg-btn',
   'edit-msg-btn',

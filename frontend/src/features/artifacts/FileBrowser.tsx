@@ -144,8 +144,8 @@ export function FileBrowser({ ref, scope, full, onToggleFull }: FileBrowserProps
 
   const saveFile = useCallback(
     async (id: string, content: string, leaving: boolean) => {
-      // A request that must outlive the page may carry at most 64 KB, so larger text is sent the usual way.
-      if (leaving && content.length < 30_000) {
+      // A request that must outlive the page may carry at most 64 KB (counted in bytes), so larger text is sent the usual way.
+      if (leaving && new TextEncoder().encode(JSON.stringify(content)).length < 60_000) {
         await artifactsApi.update(id, scope, { content }, { keepalive: true });
       } else {
         await artifactsApi.update(id, scope, { content });
@@ -274,12 +274,10 @@ export function FileBrowser({ ref, scope, full, onToggleFull }: FileBrowserProps
     onError: (e) => showToast(message(e, "Couldn't create the file. Try again."), 'error'),
   });
   const remove = useMutation({
-    mutationFn: (id: string) => {
+    mutationFn: (id: string) => artifactsApi.remove(id, scope),
+    onSuccess: async (_res, id) => {
       // Text still waiting for this file has nowhere to go.
       auto.discard(id);
-      return artifactsApi.remove(id, scope);
-    },
-    onSuccess: async (_res, id) => {
       if (id === selected) setSelected(null);
       await refreshList();
     },
@@ -358,8 +356,10 @@ export function FileBrowser({ ref, scope, full, onToggleFull }: FileBrowserProps
   }
 
   async function runFile(path: string) {
-    if (!scope.chatId || !(await saved())) return;
+    if (!scope.chatId) return;
     const started = ++runToken.current;
+    // Another file opened while the save ran: there is nothing to run here any more.
+    if (!(await saved()) || runToken.current !== started) return;
     setRun({ state: 'running', text: '' });
     try {
       const text = await codeExecApi.runFile(scope.chatId, path);

@@ -132,4 +132,30 @@ describe('useAutoSave', () => {
     await act(() => vi.advanceTimersByTimeAsync(600));
     expect(save).not.toHaveBeenCalled();
   });
+  it('a save in flight for a file that is then deleted is dropped when it fails, not retried', async () => {
+    let fail: (reason: Error) => void = () => undefined;
+    const save = vi.fn(
+      () =>
+        new Promise<void>((_resolve, reject) => {
+          fail = reject;
+        }),
+    );
+    const { result } = renderHook(() => useAutoSave(save, { delay: 500 }));
+    act(() => result.current.schedule('f', 'text'));
+    let done: Promise<boolean> = Promise.resolve(false);
+    act(() => {
+      done = result.current.flush();
+    });
+    await act(() => vi.advanceTimersByTimeAsync(0));
+    act(() => result.current.discard('f'));
+    await act(async () => {
+      fail(new Error('gone'));
+      await done;
+    });
+    expect(result.current.state).toBe('saved');
+    await act(async () => {
+      expect(await result.current.flush()).toBe(true);
+    });
+    expect(save).toHaveBeenCalledTimes(1);
+  });
 });

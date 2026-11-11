@@ -67,6 +67,9 @@ export function VersionsDialog({
   // A window that is opened again starts from the list.
   useEffect(() => {
     if (!open) {
+      // An answer still on its way belongs to the window that was closed.
+      request.current += 1;
+      setLoading(false);
       setPicked(null);
       setShown(null);
       setError(null);
