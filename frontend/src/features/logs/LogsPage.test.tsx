@@ -1,3 +1,4 @@
+import { ApiError } from '../../api/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { renderWithProviders } from '../../test/render';
@@ -128,12 +129,26 @@ describe('LogsPage filter, count and states', () => {
 
   it('a log that cannot be loaded says why and offers to try again', async () => {
     signInAs(ADMIN);
-    const stream = vi.spyOn(logsApi, 'stream').mockRejectedValue(new Error('log file missing'));
+    // A network failure has raw browser text ("Failed to fetch"): the page shows its own plain sentence instead.
+    const stream = vi.spyOn(logsApi, 'stream').mockRejectedValue(new TypeError('Failed to fetch'));
     renderWithProviders(<LogsPage />);
-    expect(await screen.findByRole('alert')).toHaveTextContent('log file missing');
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('The log could not be loaded. Check your connection and try again.');
+    expect(alert).not.toHaveTextContent('Failed to fetch');
     stream.mockResolvedValue(['INFO back']);
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(await screen.findByText('1 entry')).toBeTruthy();
+  });
+
+  it('a server error on the log page shows the server\'s own plain message', async () => {
+    signInAs(ADMIN);
+    vi.spyOn(logsApi, 'stream').mockRejectedValue(
+      new ApiError(500, {}, 'Could not read the logs. Try again in a moment.'),
+    );
+    renderWithProviders(<LogsPage />);
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'The log could not be loaded. Could not read the logs. Try again in a moment.',
+    );
   });
 
   it('the database log waits for a chat id before it asks for rows', async () => {

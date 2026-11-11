@@ -909,3 +909,68 @@ def test_disk_only_artifacts_keep_their_old_answers_on_the_version_routes(method
         assert response.status_code == 200 and response.get_json()["versions"] == []
     else:
         assert response.status_code == 400  # the diff's usual "version not found" answer
+
+
+# ---- fixed plain messages for failures --------------------------------------------------------------------------
+
+SECRET = "/secret/place/db is locked"
+
+
+@pytest.mark.parametrize("method,url,body,patch_target,message", [
+    ("post", "/api/file_system/", {"chat_id": "c1", "content": "x"}, "backend.file_system.create_fs_file", "Could not create the file. Try again."),
+    ("post", "/api/file_system/directory", {"chat_id": "c1", "path": "d"}, "backend.file_system.manager.create_directory_tool", "Could not create the folder. Try again."),
+    ("delete", "/api/file_system/directory?chat_id=c1&path=d", None, "backend.file_system.manager.delete_directory_tool", "Could not delete the folder. Try again."),
+])
+def test_a_failing_file_or_folder_route_sends_a_fixed_message_without_the_exception_text(client, method, url, body, patch_target, message):
+    with patch(patch_target, new_callable=AsyncMock, side_effect=OSError(SECRET)), patch('backend.file_system.router.db'):
+        kwargs = {"json": body} if body is not None else {}
+        response = getattr(client, method)(url, **kwargs)
+    assert response.status_code == 500
+    assert response.get_json() == {"error": message}
+    assert "secret" not in response.get_data(as_text=True)
+
+
+@pytest.mark.parametrize("method,url,body,message", [
+    ("patch", "/api/file_system/disk:notes.txt", {"chat_id": "c1", "content": "x"}, "Could not save the file. Try again."),
+    ("delete", "/api/file_system/disk:notes.txt?chat_id=c1", None, "Could not delete the file. Try again."),
+])
+def test_a_failing_disk_file_save_or_delete_sends_a_fixed_message(client, method, url, body, message):
+    with patch('backend.file_system.utils.resolve_owner_and_physical_path', side_effect=OSError(SECRET)):
+        kwargs = {"json": body} if body is not None else {}
+        response = getattr(client, method)(url, **kwargs)
+    assert response.status_code == 500
+    assert response.get_json() == {"success": False, "error": message}  # the body keeps its `success` key
+    assert "secret" not in response.get_data(as_text=True)
+
+
+@pytest.mark.anyio
+async def test_a_failing_pdf_export_returns_a_fixed_message_and_logs_the_exception():
+    from backend.file_system import manager
+    with patch('backend.file_system.manager.export_fs_file_html', new_callable=AsyncMock, return_value=("<html></html>", "x.html")), \
+         patch('backend.file_system.manager.fitz') as fitz, patch('backend.file_system.manager.log_event') as events:
+        fitz.open.side_effect = OSError("/secret/place pdf engine crashed")
+        content, message = await manager.export_fs_file_pdf("fs1", "c1")
+    assert content is None and message == "Could not create the PDF. Try again."
+    assert events.call_args.args[0] == "file_system_export_pdf_error" and "crashed" in events.call_args.args[1]["error"]
+
+
+def test_the_pdf_export_route_sends_the_managers_fixed_message(client):
+    with patch('backend.file_system.router.db') as mock_db, \
+         patch('backend.file_system.manager.export_fs_file_pdf', new_callable=AsyncMock, return_value=(None, "Could not create the PDF. Try again.")):
+        mock_db.get_file_system_meta.return_value = {'chat_id': 'c1'}
+        resp = client.get('/api/file_system/fs1/export/pdf?chat_id=c1')
+    assert resp.status_code == 404 and resp.get_json() == {"error": "Could not create the PDF. Try again."}
+
+
+@pytest.mark.parametrize("method,url,body,event", [
+    ("post", "/api/file_system/", {"chat_id": "c1", "content": "x"}, "file_system_create_file_error"),
+    ("patch", "/api/file_system/disk:notes.txt", {"chat_id": "c1", "content": "x"}, "file_system_update_disk_file_error"),
+    ("delete", "/api/file_system/disk:notes.txt?chat_id=c1", None, "file_system_delete_disk_file_error"),
+])
+def test_failures_of_file_routes_log_the_detail(client, method, url, body, event):
+    with patch('backend.file_system.create_fs_file', new_callable=AsyncMock, side_effect=OSError(SECRET)), \
+         patch('backend.file_system.utils.resolve_owner_and_physical_path', side_effect=OSError(SECRET)), \
+         patch('backend.file_system.router.db'), patch('backend.file_system.router.log_event') as events:
+        kwargs = {"json": body} if body is not None else {}
+        assert getattr(client, method)(url, **kwargs).status_code == 500
+    assert events.call_args.args[0] == event and "is locked" in events.call_args.args[1]["error"]

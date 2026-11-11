@@ -212,3 +212,23 @@ def test_logs_routes_are_403_without_a_user():
     app.register_blueprint(logs_bp, url_prefix='/logs')
     assert app.test_client().get('/logs/db/tables').status_code == 403
 
+
+
+# ---- no raw exception text on the Logs page --------------------------------------------------------------------
+
+@pytest.mark.parametrize("url", ['/logs', '/logs/detail?path=a.json', '/logs/events', '/logs/app', '/logs/app/lines', '/logs/db/table/chats'])
+def test_a_failing_log_read_sends_a_fixed_plain_message_and_logs_the_detail(client, url, tmp_path):
+    secret = "/secret/place/chats.db is locked"
+    with patch('backend.logging.router.config.DATA_DIR', str(tmp_path)), \
+         patch('backend.logging.router.os.path.exists', return_value=True), \
+         patch('backend.logging.router.os.listdir', return_value=["2026_events.jsonl"]), \
+         patch('builtins.open', side_effect=OSError(secret)), \
+         patch('backend.logging.router.make_connection') as connect, \
+         patch('backend.logging.router._tail_file', side_effect=OSError(secret)), \
+         patch('backend.logging.router.log_event') as events:
+        connect.return_value.cursor.side_effect = OSError(secret)
+        res = client.get(url)
+    assert res.status_code == 500
+    assert res.json == {"error": "Could not read the logs. Try again in a moment."}
+    assert "secret" not in res.get_data(as_text=True)
+    assert events.call_args.args[0] == "logs_read_error" and secret in events.call_args.args[1]["error"]

@@ -317,7 +317,7 @@ class InferenceEngine:
                                 "attempt": attempts, 
                                 "chat_id": chat_id
                             })
-                            yield f"data: {json.dumps({'__redact__': True, 'message': 'Inference failed validation. Retrying...'})}\n\n"
+                            yield f"data: {json.dumps({'__redact__': True, 'message': 'Checking the answer again…'})}\n\n"
                             await asyncio.sleep(config.LLM_RETRY_DELAY)
                             continue
                     break
@@ -325,7 +325,7 @@ class InferenceEngine:
                 except Exception as e:
                     if attempts < max_attempts:
                         log_event("inference_stream_retry_error", {"error": str(e), "attempt": attempts, "chat_id": chat_id})
-                        yield f"data: {json.dumps({'__redact__': True, 'message': f'Error: {str(e)}. Retrying...'})}\n\n"
+                        yield f"data: {json.dumps({'__redact__': True, 'message': 'The model did not respond. Trying again…'})}\n\n"
                         await asyncio.sleep(config.LLM_RETRY_DELAY)
                         continue
                     log_event("inference_stream_error", {"error": str(e), "chat_id": chat_id})

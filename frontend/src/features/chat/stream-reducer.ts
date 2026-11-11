@@ -64,7 +64,7 @@ export function applyChunk(turn: LiveTurn, chunk: StreamChunk): LiveTurn {
     return {
       ...next,
       steps: next.snapshot,
-      // The server writes three dots; the app writes the ellipsis as one character.
+      // Older servers wrote three dots; the app shows the ellipsis as one character.
       redactNotice: (chunk.message ?? 'Correcting the formatting…').replace(/\.{3}$/, '…'),
       pendingRequest: null,
     };

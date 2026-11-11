@@ -92,11 +92,13 @@ async def test_run_exception(mock_manager, kwargs):
         yield "chunk"
     
     executor = TaskExecutor("chat1", dummy_gen, mock_manager, kwargs)
-    with patch("backend.task_manager.executor.response_cache") as mock_cache:
+    with patch("backend.task_manager.executor.response_cache") as mock_cache, patch("backend.task_manager.executor.log_event") as mock_log:
         with patch.object(executor, "_save_task_state"), \
              patch.object(executor, "_clear_task_state"):
             await executor.run()
-            mock_cache.append_chunk.assert_any_call("chat1", f"data: {json.dumps({'error': 'test error'})}\n\n")
+            mock_cache.append_chunk.assert_any_call("chat1", f"data: {json.dumps({'error': 'Something went wrong while answering. Try sending again.'})}\n\n")
+            assert not any('test error' in str(c) for c in mock_cache.append_chunk.call_args_list)
+            assert any(c.args[0] == 'task_executor_error' and 'test error' in c.args[1]['error'] for c in mock_log.call_args_list)
             mock_cache.append_chunk.assert_any_call("chat1", "[[ERROR]]")
 
 def test_save_task_state(mock_manager, kwargs):

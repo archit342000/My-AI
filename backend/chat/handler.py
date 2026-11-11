@@ -12,9 +12,10 @@ from .agent_handler import AgentHandler
 from .tool_handler import ToolHandler
 from backend.chat.models import SSEEvent, SSEEventType
 from backend.database import db, response_cache
-from backend.logging import log_event
+from backend.logging import log_event, error_detail
 from backend.task_manager import task_manager
 from backend import config
+from backend.error_handling import USER_STREAM_ERROR
 
 logger = logging.getLogger(__name__)
 
@@ -245,8 +246,9 @@ class ChatHandler:
             # TurnHandler handles persistence natively via _persist_final_state
         except Exception as e:
             logger.error(f"Terminal error in background turn for {self.chat_id}: {e}", exc_info=True)
+            log_event("chat_background_turn_error", {"chat_id": self.chat_id, "error": error_detail(e)})
             # Yield error to client if they are listening
-            yield f"data: {json.dumps({'error': 'An internal error occurred during generation.'})}\n\n"
+            yield f"data: {json.dumps({'error': USER_STREAM_ERROR})}\n\n"
 
     async def _run_orchestrated_stream(
         self, 
@@ -818,7 +820,8 @@ class ChatHandler:
                  yield f"data: {json.dumps({'type': 'state_sync', 'research_mode': 0, 'research_state': 'none'})}\n\n"
         except Exception as e:
             logger.error(f"Error executing tool calls: {e}", exc_info=True)
-            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+            log_event("chat_tool_execution_error", {"chat_id": self.chat_id, "error": error_detail(e)})
+            yield f"data: {json.dumps({'error': USER_STREAM_ERROR})}\n\n"
 
     def _try_resume_pending_tools(self, last_user_ptr, agent_parent_id, parent_type):
         """

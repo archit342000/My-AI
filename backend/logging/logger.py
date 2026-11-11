@@ -151,6 +151,14 @@ def log_embedding_call(payload, response_data, model, chat_id=None, duration_s=0
     except Exception as e:
         logging.error(f"Failed to log embedding call: {e}")
 
+ERROR_DETAIL_MAX_CHARS = 300
+
+
+def error_detail(error: BaseException) -> str:
+    """The exception for a log payload: its type and message, cut to a safe length (messages can echo document or database content)."""
+    return f"{type(error).__name__}: {error}"[:ERROR_DETAIL_MAX_CHARS]
+
+
 def log_event(event_type, data):
     """Logs general system events."""
     try:

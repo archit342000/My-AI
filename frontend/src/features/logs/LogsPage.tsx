@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router';
 import { PageTitle } from '../../app/PageTitle';
+import { ApiError } from '../../api/client';
 import { Icon } from '../../components/icons/Icon';
 import { Button } from '../../components/ui/Button';
 import { EmptyState } from '../../components/ui/EmptyState';
@@ -194,7 +195,8 @@ function LogsContent() {
         />
       ) : data.isError ? (
         <Notice tone="bad" actionLabel="Try again" onAction={() => void data.refetch()}>
-          The log could not be loaded. {data.error.message}
+          The log could not be loaded.{' '}
+          {data.error instanceof ApiError ? data.error.message : 'Check your connection and try again.'}
         </Notice>
       ) : data.isPending ? (
         <div className="loglist" role="status" aria-label="Loading the log">

@@ -3,6 +3,7 @@ import logging
 import asyncio
 from typing import AsyncGenerator, Any
 from backend.database import db
+from backend.logging import log_event, error_detail
 from backend.mcp_client import tavily_client
 from backend.tools.agents.search_web_agent.prompts import SEARCH_AGENT_SYSTEM_PROMPT
 from backend import config
@@ -94,7 +95,8 @@ async def flow_fn(
                     await asyncio.sleep((attempt + 1) * 1.0)
         
         if last_error:
-            error_msg = f"Search failed after {max_retries+1} attempts: {str(last_error)}"
+            log_event("search_web_agent_error", {"chat_id": chat_id, "error": error_detail(last_error), "attempts": max_retries + 1})
+            error_msg = f"Search failed after {max_retries+1} attempts. Try again or rephrase the request."
             agent.result = error_msg
             db.add_message(
                 chat_id=chat_id,
@@ -239,7 +241,8 @@ async def flow_fn(
 
     except Exception as e:
         logger.error(f"SearchWebAgent failed: {e}", exc_info=True)
-        error_msg = f"Search failed: {str(e)}"
+        log_event("search_web_agent_error", {"chat_id": chat_id, "error": error_detail(e)})
+        error_msg = "Search failed. Try again or rephrase the request."
         agent.result = error_msg
         try:
             db.add_message(
