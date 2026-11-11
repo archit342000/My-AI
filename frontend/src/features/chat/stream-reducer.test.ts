@@ -22,6 +22,20 @@ const tool = (id: string, result: string | null = null, agent: string | null = n
 });
 
 describe('applyChunk', () => {
+  it('ignores a turn chunk (durations are not shown yet) and a tool result with a duration still attaches', () => {
+    const base = applyChunk(emptyLiveTurn(), delta({ content: 'hi' }));
+    expect(applyChunk(base, { turn: { duration_ms: 46000 } })).toEqual(base);
+    const withTool = applyChunk(
+      base,
+      delta({ tool_calls: [{ index: 0, id: 't1', function: { name: 'x', arguments: '{}' } }] }),
+    );
+    const done = applyChunk(
+      withTool,
+      delta({ tool_result: { tool_call_id: 't1', content: 'ok', duration_ms: 250 } }),
+    );
+    expect(turnTools(done.steps)[0]?.result).toBe('ok');
+  });
+
   it('accumulates content and reasoning into one step each', () => {
     let t = emptyLiveTurn();
     t = applyChunk(t, delta({ content: 'Hel' }));

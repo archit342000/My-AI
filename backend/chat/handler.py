@@ -788,14 +788,15 @@ class ChatHandler:
                         chat_id=self.chat_id,
                         role="tool",
                         content=error_msg,
-                        parent_message_id=assistant_message_id,
+                        parent_id=assistant_message_id,
                         parent_type=parent_type,
                         tool_call_id=tool_call_id,
-                        name=tool_name
+                        name=tool_name,
+                        duration_ms=0  # refused: nothing ran
                     )
 
                     delta = {
-                        "choices": [{"delta": {"tool_result": tool_result_obj}}]
+                        "choices": [{"delta": {"tool_result": {**tool_result_obj, "duration_ms": 0}}}]
                     }
                     if parent_type and parent_type != "main":
                         delta["parent_type"] = parent_type

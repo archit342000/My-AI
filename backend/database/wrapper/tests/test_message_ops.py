@@ -218,3 +218,41 @@ def test_get_message_is_scoped_to_the_chat(temp_db):
     assert db.get_message("get_msg_a", reply_id)["role"] == "assistant"
     assert db.get_message("get_msg_b", user_id) is None  # another chat's id
     assert db.get_message("get_msg_a", 999999) is None
+
+
+def test_duration_ms_is_stored_on_main_and_sub_agent_tool_rows_and_defaults_to_null(temp_db):
+    db = temp_db
+    chat_id = "test_duration_rows"
+    db.ensure_chat_exists(chat_id, "u1")
+    anchor = db.add_message(chat_id=chat_id, role="assistant", content="calls")
+    timed = db.add_tool_result(chat_id=chat_id, tool_call_id="t1", name="x", content="out", duration_ms=1234)
+    untimed = db.add_tool_result(chat_id=chat_id, tool_call_id="t2", name="x", content="out")
+    sub = db.add_tool_result(chat_id=chat_id, tool_call_id="t3", name="x", content="out", parent_id=anchor, parent_type="helper", duration_ms=56)
+    rows = {m["id"]: m for m in db.get_messages(chat_id)}
+    assert rows[timed]["duration_ms"] == 1234 and rows[untimed]["duration_ms"] is None
+    sub_rows = db.get_messages(chat_id, parent_message_id=anchor, parent_type="helper")
+    assert [m["duration_ms"] for m in sub_rows if m["id"] == sub] == [56]
+
+
+def test_set_turn_duration_marks_the_last_assistant_row_after_the_message_and_refreshes_the_cache(temp_db):
+    db = temp_db
+    chat_id = "test_turn_duration"
+    db.ensure_chat_exists(chat_id, "u1")
+    first_user = db.add_message(chat_id=chat_id, role="user", content="q1")
+    first_reply = db.add_message(chat_id=chat_id, role="assistant", content="a1")
+    user = db.add_message(chat_id=chat_id, role="user", content="q2")
+    mid = db.add_message(chat_id=chat_id, role="assistant", content="calls tool")
+    db.add_tool_result(chat_id=chat_id, tool_call_id="t", name="x", content="out")
+    last = db.add_message(chat_id=chat_id, role="assistant", content="final")
+    assert [m["duration_ms"] for m in db.get_messages(chat_id)] == [None] * 6  # also fills the cache
+    assert db.set_turn_duration(chat_id, user, 46000) is True
+    rows = {m["id"]: m["duration_ms"] for m in db.get_messages(chat_id)}  # read after the write: cache was invalidated
+    assert rows[last] == 46000 and rows[mid] is None and rows[first_reply] is None and rows[first_user] is None
+
+
+def test_set_turn_duration_does_nothing_when_no_assistant_row_follows(temp_db):
+    db = temp_db
+    chat_id = "test_turn_duration_none"
+    db.ensure_chat_exists(chat_id, "u1")
+    user = db.add_message(chat_id=chat_id, role="user", content="q")
+    assert db.set_turn_duration(chat_id, user, 10) is False

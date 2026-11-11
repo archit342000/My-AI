@@ -32,7 +32,7 @@
     - **Mixin Composition:** `DatabaseWrapper` inherits from multiple specialized classes (e.g., `ChatOpsMixin`, `MessageOpsMixin`) to keep the codebase modular and manageable.
     - **Cache-Aside:** High-volume data is read from the cache first, falling back to the database on a miss.
     - **Thread Safety:** Uses a hierarchy of locks (Global -> Table -> Row) to ensure consistency in a multi-threaded environment.
-*   **Conventions:** Never write raw SQL outside of this directory; always use the `db` wrapper to maintain schema abstraction.
+*   **Conventions:** Never write raw SQL outside of this directory; always use the `db` wrapper to maintain schema abstraction. `messages.duration_ms` (tool call or turn time in milliseconds, nullable) is written by `add_message` / `add_tool_result` and `set_turn_duration`.
 *   **Testing:**
     - **Local:** Unit tests in `tests/` verify caching logic, connection management, schema initialization, and the database wrapper.
     - **Run Command:** `EMBEDDING_URL="http://mock" AI_URL="http://mock" ./venv/bin/python3 -m pytest backend/database/tests/`
