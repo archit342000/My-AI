@@ -15,6 +15,17 @@ export interface Artifact {
   timestamp?: number;
 }
 
+/** The files of a scope, with the folder the server names as the scope's root (see `artifactsApi.list`). */
+export type ArtifactList = Artifact[] & { root?: string };
+
+/**
+ * The list as a plain object for the query cache (an array with an extra property defeats React Query's
+ * structural sharing, so every refetch would look changed).
+ */
+export function fetchArtifactList(scope: ScopeRef): Promise<{ files: Artifact[]; root: string }> {
+  return artifactsApi.list(scope).then((list) => ({ files: Array.from(list), root: list.root ?? '' }));
+}
+
 export interface ArtifactVersion {
   version_number: number;
   author: string;
@@ -60,10 +71,14 @@ function workspaceQuery(scope: ScopeRef): string {
 }
 
 export const artifactsApi = {
+  /**
+   * The scope's files. The array also carries `root`: the leading folder the server says is the scope's own root
+   * (`workspace/` for a workspace, `""` for a chat, and for an older server that sends none), which the tree hides.
+   */
   list: (scope: ScopeRef) =>
-    apiJson<{ file_systems: Artifact[] }>(`/api/file_systems?${scopeQuery(scope)}`).then(
-      (r) => r.file_systems,
-    ),
+    apiJson<{ file_systems: Artifact[]; root?: string }>(
+      `/api/file_systems?${scopeQuery(scope)}`,
+    ).then((r): ArtifactList => Object.assign(r.file_systems, { root: r.root ?? '' })),
   get: (id: string, scope: ScopeRef) =>
     apiJson<Artifact & { content: string }>(
       `/api/file_systems/${encodeURIComponent(id)}?${scopeQuery(scope)}`,

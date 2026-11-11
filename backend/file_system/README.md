@@ -13,7 +13,7 @@
 | `fuzzy_matcher.py` | Utilities for exact and fuzzy text matching during file edits. | `_find_exact_match` |
 | `manager.py` | Core logic for path resolution, CRUD, versioning, and tool implementations. `create_fs_file` returns an error for a missing chat instead of creating one. | `ls_files_for_tool`, `replace_fs_text` |
 | `models.py` | Enum definitions for channel state. | `ChannelState` |
-| `router.py` | Flask API endpoints for frontend artifact interaction. A blueprint hook (`require_fs_owner`) checks every `chat_id` and `workspace_id` in the query, body and URL against the current user (foreign or unknown is 404, non-string is 400; a not-yet-existing chat passes only on the two create routes, which claim it). Listing without a chat or workspace is a 400. | `file_system_bp` |
+| `router.py` | Flask API endpoints for frontend artifact interaction. A blueprint hook (`require_fs_owner`) checks every `chat_id` and `workspace_id` in the query, body and URL against the current user (foreign or unknown is 404, non-string is 400; a not-yet-existing chat passes only on the two create routes, which claim it). Listing without a chat or workspace is a 400. The list also returns `root` (`workspace/` for a workspace-only scope, else empty) so a client can hide the mount level; paths and ids are unchanged. | `file_system_bp` |
 | `utils.py` | Path sanitization, ID generation, and ownership resolution helpers. | `resolve_owner_and_physical_path` |
 
 ## 🧩 Architectural Context

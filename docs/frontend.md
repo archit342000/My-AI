@@ -39,7 +39,7 @@ A React build missing from `dist/` returns 503 with the build command.
   global on purpose like the theme and `my_ai_artifact_width`, not per user). On a phone the drawer always starts closed and opening it is not
   remembered. `useSidebarResize` drives the handle (drag and arrow keys) and keeps `--sidebar-width` at the sidebar's real width. Deliberate
   differences from legacy: the signed-in email row in the footer (multi-user), a Logs link that is an in-app `NavLink`, and a files section on
-  the workspace page that is always shown (one "Files" section; the server's empty `workspace` placeholder folder is hidden there).
+  the workspace page that is always shown (one "Files" section; the `workspace/` level the server names as the list's `root` is hidden there, and every node keeps its full path).
 - **Staged files:** `state/attachment-store.ts` keeps the files staged for sending per chat (the open chat's id, the temporary chat's id,
   or a draft id for the next new chat), so a chip only shows in the chat it was uploaded for. Files staged for a new chat that is never
   sent are deleted when the user presses New Chat, leaves the landing page, discards a temporary chat or closes the page

@@ -30,6 +30,10 @@ Client code lives in `frontend/src/api/`.
   `POST /v1/chat/completions`, `GET /api/chats/<id>/stream` (re-attach), `POST /api/chats/<id>/resume`.
 - Payloads follow the OpenAI chunk format with the project's extensions: content and reasoning deltas, tool-call fragments,
   tool results, `event` activity labels, sub-agent deltas and `__redact__`. The reader and fixtures are described in `docs/frontend.md`.
+- File list root: `GET /api/file_systems?chat_id=|workspace_id=` also returns `"root"`, the leading folder that is the scope's own root so a client can hide it: `"workspace/"` for
+  a workspace-only scope (every file path there starts with it, and stays so: ids and paths are unchanged everywhere), `""` for a chat scope (where `workspace/` separates the
+  workspace's files from the chat's own) and for a chat that does not exist yet and names no workspace (one that does is listed as that workspace, with `"workspace/"`). The React client hides the root level in the Files panel; the legacy UI reads only `file_systems`
+  and keeps showing it (it is removed in a later release).
 - Errors during a stream are sent as `data: {"error": "<message>"}` and the stream ends. Never raise after the response has started.
 - A turn runs independently of the HTTP request: the client may disconnect and re-attach. Stop it with `POST /api/chats/<id>/stop`, which answers only after the turn's worker has exited (waiting at most `TASK_STOP_WAIT_SECONDS`, default 5) with `{"status": "success", "stopped": true}`; if the worker is still alive after the wait it still rolls back and answers `"stopped": false`. `DELETE /api/chats/<id>` and `DELETE /api/chats` (clear all, the caller's chats only) stop running turns first and answer `409 {"error": "The chat is still stopping its response; try again in a moment."}`, deleting nothing, when a turn has not ended within the wait.
 - `POST /v1/chat/completions` checks in this order: another user's chat is `404`; `uploadedFiles` that are not attached to the chat are
