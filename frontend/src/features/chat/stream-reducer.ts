@@ -3,6 +3,7 @@
  * extra events). Mirrors the legacy `sendMessage` read loop in `static/script.js`.
  * The turn is an ordered step list, the same shape `toTurns` builds from stored messages.
  */
+import type { AgentRun } from '../../api/types';
 import type { Step } from '../../lib/chat-model';
 import {
   CLARIFICATION_TOOL,
@@ -55,6 +56,8 @@ export interface StreamChunk {
   parent_type?: string;
   /** Sent once, after a turn that finished normally. */
   turn?: { duration_ms?: number };
+  /** A helper run starting, changing activity or ending (the helpers card is a follow-up). */
+  agent_run?: AgentRun;
   choices?: Array<{ delta?: Delta }>;
 }
 

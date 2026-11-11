@@ -13,7 +13,7 @@
 | `handler.py` | Core chat flow logic and background task management. | `ChatHandler`, `THINKING_PROFILES` |
 | `message_edit.py` | Merges an edited user message back into its stored content, keeping images and the attachment note. | `merge_edited_user_content` |
 | `router.py` | Flask API endpoints for chat management, completions, and persona CRUD. | `chat_bp`, `openai_bp`, `personas_bp` |
-| `tool_handler.py` | Dispatches and executes tool calls (pure or agent-based); times each call and stores and sends its `duration_ms`. | `ToolHandler` |
+| `tool_handler.py` | Dispatches and executes tool calls (pure or agent-based); times each call and stores and sends its `duration_ms`; sends an `agent_run` chunk when a helper starts (also one that cannot be resolved), changes activity and ends, and stores finished runs as the `agent_runs` collection. | `ToolHandler` |
 | `turn_handler.py` | Serializes turns and ensures state persistence; times a normally finished turn, stores it on the last assistant row and sends a `{"turn": {"duration_ms"}}` event. | `TurnHandler` |
 | `validators.py` | Enforces clipboard-first checks and parses LLM confirmations. | `validate_fs_agent_instruction`, `parse_confirmation_response` |
 
