@@ -113,7 +113,7 @@ describe('MessageList', () => {
     await waitFor(() => expect(onChanged).toHaveBeenCalled());
   });
 
-  it('Save & regenerate edits the message and resumes, without posting a new turn', async () => {
+  it('Save and resend edits the message and resumes, without posting a new turn', async () => {
     const edit = vi.spyOn(chatsApi, 'editMessage').mockResolvedValue({} as never);
     const resume = vi.spyOn(sendTurnModule, 'resumeTurn').mockResolvedValue(undefined);
     const send = vi.spyOn(sendTurnModule, 'sendTurn').mockResolvedValue(true);
@@ -125,7 +125,7 @@ describe('MessageList', () => {
     fireEvent.change(within(row).getByLabelText('Edit message', { selector: 'textarea' }), {
       target: { value: 'U1 edited' },
     });
-    fireEvent.click(within(row).getByRole('button', { name: /Save & regenerate/ }));
+    fireEvent.click(within(row).getByRole('button', { name: /Save and resend/ }));
     await waitFor(() => expect(resume).toHaveBeenCalledTimes(1));
     expect(edit).toHaveBeenCalledWith('c1', '1', 'U1 edited');
     expect(edit.mock.invocationCallOrder[0]).toBeLessThan(resume.mock.invocationCallOrder[0]!);
@@ -157,7 +157,7 @@ describe('MessageList', () => {
     );
     const row = document.querySelector('[data-message-id="1"]') as HTMLElement;
     fireEvent.click(within(row).getByRole('button', { name: 'Edit message' }));
-    fireEvent.click(within(row).getByRole('button', { name: /Save & regenerate/ }));
+    fireEvent.click(within(row).getByRole('button', { name: /Save and resend/ }));
     await waitFor(() =>
       expect(useToastStore.getState().toasts.some((t) => t.message === 'locked')).toBe(true),
     );
@@ -194,7 +194,7 @@ describe('MessageList', () => {
       expect((box as HTMLTextAreaElement).value).toBe('');
       const save = within(row).getByRole('button', { name: 'Save' }) as HTMLButtonElement;
       const regenerate = within(row).getByRole('button', {
-        name: /Save & regenerate/,
+        name: /Save and resend/,
       }) as HTMLButtonElement;
       expect(save.disabled).toBe(true);
       expect(regenerate.disabled).toBe(true);

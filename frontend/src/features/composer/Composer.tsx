@@ -18,7 +18,6 @@ import { useAttachmentStore } from '../../state/attachment-store';
 import type { UploadedFile } from '../../api/completions';
 import { useSettingsStore } from '../../state/settings-store';
 import { queryKeys } from '../../api/chats';
-import { saveTemporaryChat } from '../chat/temporary-chat';
 import { useUiStore } from '../../state/ui-store';
 import { useStreamStore } from '../../state/stream-store';
 import { sendTurn, stopTurn } from '../chat/send-turn';
@@ -121,19 +120,6 @@ export function Composer() {
     if (own) return;
     setText('');
   }, [routeChatId]);
-
-  async function saveTemporary() {
-    const cached = queryClient.getQueryData<{
-      messages: Array<{ role: string; content: string | null }>;
-    }>(queryKeys.chat(temporaryChatId ?? ''));
-    const first = cached?.messages.find((m) => m.role === 'user')?.content ?? '';
-    try {
-      const id = await saveTemporaryChat(queryClient, first);
-      if (id) navigate(`/chat/${id}`);
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : "Couldn't save the chat. Try again.", 'error');
-    }
-  }
 
   // The transcript pads its bottom by the composer's height, so the last message clears it (F-19).
   useEffect(() => {
@@ -374,17 +360,6 @@ export function Composer() {
           No connection. Everything here is saved; sending is paused until you are back online.
         </Notice>
       ) : null}
-      {temporary ? (
-        <Notice
-          className="temp-chat-banner"
-          actionLabel="Save chat"
-          onAction={() => void saveTemporary()}
-        >
-          <span id="temp-chat-banner">
-            Temporary chat. Nothing here is saved unless you save it.
-          </span>
-        </Notice>
-      ) : null}
       <HelpDialog
         open={helpOpen}
         onClose={() => {
@@ -400,11 +375,7 @@ export function Composer() {
       ) : null}
 
       <div
-        className={cx(
-          'input-container',
-          dragging && 'input-container--drop',
-          temporary && 'input-container--temporary',
-        )}
+        className={cx('input-container', dragging && 'input-container--drop')}
         ref={inputContainer}
       >
         {dragging ? (
@@ -495,7 +466,7 @@ export function Composer() {
               aria-label="Attach files"
               onClick={() => fileInput.current?.click()}
             >
-              <Icon name="plus" size={20} />
+              <Icon name="attach" size={19} />
             </button>
             <ToolsMenu sheetAnchorRef={inputContainer} />
             <ActiveTools />
@@ -524,7 +495,7 @@ export function Composer() {
                 aria-disabled={nothingToSend ? true : undefined}
                 onClick={() => void send()}
               >
-                <Icon name="send" size={18} />
+                <Icon name="send" size={20} />
               </button>
             )}
           </div>

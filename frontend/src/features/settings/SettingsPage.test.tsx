@@ -26,7 +26,7 @@ function Under() {
 
 function renderAt(entry: string) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  render(
+  return render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={[entry]}>
         <Routes>
@@ -76,6 +76,13 @@ describe('SettingsPage', () => {
     vi.spyOn(settingsApi, 'version').mockResolvedValue({ version: '9.9.9' });
   });
   afterEach(() => vi.restoreAllMocks());
+
+  it('marks the page while it is open, so the panels beside it step aside, and clears the mark after', () => {
+    const { unmount } = renderAt('/?settings=chat');
+    expect(document.documentElement.dataset.settings).toBe('open');
+    unmount();
+    expect(document.documentElement.dataset.settings).toBeUndefined();
+  });
 
   it('is a page with Back, its seven parts listed and all in one column', () => {
     renderAt('/chat/c1?settings=chat');

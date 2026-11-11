@@ -78,6 +78,7 @@ A React build missing from `dist/` returns 503 with the build command.
   fonts, tokens, then `ds/*` with `phone.css` after the screens. Guards: `lib/design-tokens.test.ts` (no raw colours, corners, shadows, layers or
   speeds; `styles/` holds only those three entries), `test/css-coverage.test.ts`, `test/inline-style.test.ts` and `test/wording.test.ts`
   (plain wording, one-character ellipsis). The typefaces (Sora, Instrument Sans, JetBrains Mono) are served by the app from `@fontsource-variable/*`.
+- **Icons:** the app's icons draw the design system's starting set (rule book 2.6) from `components/icons/icon-paths.ts`; the workspace registry only adds the icons a workspace can be given.
 - **Sizes:** phone up to 599px, tablet 600 to 1023px, computer from 1024px. Touch targets are 48px on a phone, 44px elsewhere.
 - Every model's HTML goes through `renderMarkdown` (DOMPurify). Do not inject unsanitised HTML.
 - The attachment `[System Note: ...]` the router appends to a user message is for the model: `src/lib/chat-model.ts` strips it from
@@ -145,7 +146,7 @@ Deleting a chat (or discarding a temporary one) stops its turn first (`stopIfStr
 to exit, so a slower exit still ends in the refusal toast with the reply and text kept. A stop request that never answers keeps the chat in "Stopping" until the browser gives up on it; a reload
 recovers. A chat whose stop was answered a moment ago (or that has a stopped row) is not reattached to, even if the refetch still says it is running. Each repeated attempt after a stop uses one of the user's turns per minute (the server counts a request refused as "in progress"), so a repeat that fails 5 times costs 5; and a turn another tab starts during that short window is attached when the chat next refetches.
 
-Settings is one page laid over the main area (`features/settings/SettingsPage.tsx`), opened with `?settings=<part>` on whatever page is
+Settings is a full-screen page (`features/settings/SettingsPage.tsx`; the navigation and Files panels step aside while it is open), opened with `?settings=<part>` on whatever page is
 underneath, so the chat stays mounted and its own settings are not reset (`/settings[/:section]` redirects there). Parts: Chat, Models,
 Personas, Skills, Memory, Agents, System. A change saves by itself and the header's light says "Saved" (`lib/save-light.ts`); only list
 items (personas, skills, memory, agents) and the GitHub token have a Save button. Outside a chat the Chat part edits the store's `defaults`

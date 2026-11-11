@@ -46,7 +46,7 @@ describe('VersionsDialog', () => {
     const rows = await within(window).findAllByRole('listitem');
     expect(rows).toHaveLength(2);
     expect(rows[1]?.textContent).toContain('Current');
-    expect(rows[1]?.textContent).toContain('assistant · fix typo');
+    expect(rows[1]?.textContent).toContain('My AI · fix typo');
     expect(rows[0]?.textContent).not.toContain('Current');
     expect(screen.getByText('Pick a version to read it.')).toBeTruthy();
   });
@@ -59,7 +59,7 @@ describe('VersionsDialog', () => {
     expect(screen.getByRole('button', { name: /^Version 1/ }).getAttribute('aria-current')).toBe(
       'true',
     );
-    expect(screen.getByText(/^user · 1[45] Nov 2023, \d\d:\d\d$/)).toBeTruthy();
+    expect(screen.getByText(/^You · 1[45] Nov 2023, \d\d:\d\d$/)).toBeTruthy();
   });
 
   it('the current version cannot be compared or restored, and says why', async () => {

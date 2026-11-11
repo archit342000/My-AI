@@ -47,7 +47,7 @@ describe('SidebarChats workspace rows', () => {
     mockData();
     renderWithProviders(<SidebarChats />);
     fireEvent.contextMenu(await screen.findByText('Loose chat'));
-    fireEvent.click(await screen.findByRole('menuitem', { name: /Move to workspace/ }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: /Move to a workspace/ }));
     const second = await screen.findByRole('menuitem', { name: 'Second' });
     const first = await screen.findByRole('menuitem', { name: longName });
     // Each shows its own icon's drawing; an unknown icon name would fall back to the folder.
@@ -102,7 +102,9 @@ describe('SidebarChats day groups, times and the row menu', () => {
     mockDated();
     renderWithProviders(<SidebarChats />);
     fireEvent.click(await screen.findByRole('button', { name: 'More for Written today' }));
-    expect(await screen.findByRole('menuitem', { name: /Move to workspace/ })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('menuitem', { name: /Move to a workspace/ }),
+    ).toBeInTheDocument();
     expect(screen.getByRole('menuitem', { name: 'Rename' })).toBeInTheDocument();
     expect(screen.getByRole('menuitem', { name: 'Delete' })).toBeInTheDocument();
   });

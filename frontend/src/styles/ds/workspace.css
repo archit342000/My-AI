@@ -12,7 +12,7 @@
   gap: var(--space-5);
   min-height: 0;
   overflow-y: auto;
-  padding: var(--space-5) max(var(--pad), calc((100% - 64rem) / 2)) var(--pad);
+  padding: var(--space-5) max(var(--pad), calc((100% - 60rem) / 2)) var(--pad);
   scrollbar-width: thin;
   scrollbar-color: var(--edge-strong) transparent;
 }
@@ -88,7 +88,7 @@
 
 .workspace-chat-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: var(--space-4);
 }
 .workspace-chat-card {

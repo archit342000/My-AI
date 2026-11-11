@@ -257,7 +257,7 @@
 .chat-list-item {
   display: flex;
   flex: 1;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 10px;
   min-width: 0;

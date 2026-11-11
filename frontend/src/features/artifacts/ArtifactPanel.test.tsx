@@ -109,6 +109,8 @@ describe('ArtifactPanel', () => {
       fireEvent.change(screen.getByLabelText('Search files'), { target: { value: 'APP' } });
       expect(screen.queryByRole('button', { name: /notes.md/ })).toBeNull();
       expect(screen.getByRole('button', { name: /app.py/ })).toBeTruthy();
+      // Each file says what kind it is at the end of its row.
+      expect(screen.getByRole('button', { name: /app.py/ }).textContent).toMatch(/py$/);
     });
 
     it('search finds words inside a file that has been opened and shows the line', async () => {
@@ -145,7 +147,7 @@ describe('ArtifactPanel', () => {
       expect(screen.getByRole('radio', { name: 'Preview' }).getAttribute('aria-checked')).toBe(
         'true',
       );
-      expect(screen.getByText('markdown')).toBeTruthy();
+      expect(screen.getByText('Markdown')).toBeTruthy();
       expect(await screen.findByText('v3')).toBeTruthy();
       expect(screen.getByText('Saved')).toBeTruthy();
     });

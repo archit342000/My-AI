@@ -5,12 +5,12 @@ import type { IconName } from '../../components/icons/icon-paths';
 /** The parts of the settings page, in the order they are listed. */
 export const SETTINGS_SECTIONS = [
   { id: 'chat', label: 'Chat', icon: 'message-square', admin: false },
-  { id: 'models', label: 'Models', icon: 'cpu', admin: true },
+  { id: 'models', label: 'Models', icon: 'chip', admin: true },
   { id: 'personas', label: 'Personas', icon: 'user', admin: false },
   { id: 'skills', label: 'Skills', icon: 'zap', admin: false },
-  { id: 'memory', label: 'Memory', icon: 'brain', admin: false },
-  { id: 'agents', label: 'Agents', icon: 'users', admin: true },
-  { id: 'system', label: 'System', icon: 'settings', admin: false },
+  { id: 'memory', label: 'Memory', icon: 'bookmark', admin: false },
+  { id: 'agents', label: 'Agents', icon: 'nodes', admin: true },
+  { id: 'system', label: 'System', icon: 'sliders', admin: false },
 ] as const satisfies ReadonlyArray<{ id: string; label: string; icon: IconName; admin: boolean }>;
 
 export type SettingsSectionId = (typeof SETTINGS_SECTIONS)[number]['id'];

@@ -375,11 +375,14 @@
 .katex {
   font-size: 1.05em;
 }
+/* A formula on its own line sits in a quiet box, like the other content pieces. */
 .katex-display {
   margin: 0;
   overflow-x: auto;
   overflow-y: hidden;
-  padding: var(--space-2) 0;
+  padding: 18px var(--space-4);
+  border-radius: var(--r-ctl);
+  background: var(--well);
   scrollbar-width: thin;
   scrollbar-color: var(--edge-strong) transparent;
 }

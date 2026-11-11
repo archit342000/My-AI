@@ -75,20 +75,22 @@ describe('ChatSection', () => {
     expect(store().sampling.thinking_budget_tokens).toBe(500);
   });
 
-  it('temperature and top P stay with the model until set, and can go back', () => {
+  it('temperature and top P stay with the model while their boxes are empty, and can go back', () => {
     renderWithProviders(<ChatSection />);
     expect(store().sampling.temperature).toBeUndefined();
-    expect(screen.queryByRole('slider', { name: 'Temperature' })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Set temperature' }));
-    expect(store().sampling.temperature).toBe(1);
-    fireEvent.change(screen.getByRole('slider', { name: 'Temperature' }), {
-      target: { value: '0.4' },
-    });
+    const temperature = screen.getByRole('spinbutton', { name: 'Temperature' });
+    expect(temperature).toHaveAttribute('placeholder', 'model default');
+    expect(temperature).toHaveValue(null);
+    fireEvent.change(temperature, { target: { value: '0.4' } });
     expect(store().sampling.temperature).toBe(0.4);
-    fireEvent.click(screen.getByRole('button', { name: 'Use the model default' }));
+    fireEvent.change(temperature, { target: { value: '9' } });
+    expect(store().sampling.temperature).toBe(2);
+    fireEvent.change(temperature, { target: { value: '' } });
     expect(store().sampling.temperature).toBeUndefined();
-    fireEvent.click(screen.getByRole('button', { name: 'Set top p' }));
-    expect(store().sampling.top_p).toBe(1);
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Top P' }), {
+      target: { value: '0.9' },
+    });
+    expect(store().sampling.top_p).toBe(0.9);
   });
 
   it('away from a chat there is one set of values: what every new chat starts with', () => {

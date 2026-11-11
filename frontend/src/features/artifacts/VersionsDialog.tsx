@@ -15,6 +15,7 @@ import { showToast } from '../../components/ui/toast-store';
 import { Window } from '../../components/ui/Window';
 import { diffRows, diffSummary } from '../../lib/diff-lines';
 import { fullDateTime, whenLabel } from '../../lib/format-time';
+import { authorLabel } from '../../lib/labels';
 
 const LINE_CLASS = {
   added: 'versions__line versions__line--added',
@@ -127,7 +128,7 @@ export function VersionsDialog({
   }
 
   const who = (v: ArtifactVersion) =>
-    [v.author, fullDateTime(v.timestamp)].filter(Boolean).join(' · ');
+    [authorLabel(v.author), fullDateTime(v.timestamp)].filter(Boolean).join(' · ');
   const comparing = shown?.kind === 'diff' && shown.version === picked;
 
   return (
@@ -179,7 +180,7 @@ export function VersionsDialog({
                     </time>
                   </span>
                   <span className="versions__item-note">
-                    {[v.author, v.comment].filter(Boolean).join(' · ')}
+                    {[authorLabel(v.author), v.comment].filter(Boolean).join(' · ')}
                   </span>
                 </button>
               </li>

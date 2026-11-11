@@ -65,6 +65,14 @@ export function SettingsPage() {
   const closeRef = useRef(close);
   closeRef.current = close;
 
+  // Settings is a full-screen page (rule book Part 11): the panels beside it step aside while it is open.
+  useEffect(() => {
+    document.documentElement.dataset.settings = 'open';
+    return () => {
+      delete document.documentElement.dataset.settings;
+    };
+  }, []);
+
   useEffect(() => {
     resetSaveLight();
     // Focus moves into the page (so Tab starts at Back) without ringing a button nobody pressed.

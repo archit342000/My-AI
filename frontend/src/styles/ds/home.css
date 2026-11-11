@@ -75,11 +75,6 @@
     var(--shadow),
     0 0 0 3px var(--accent-soft);
 }
-/* A temporary chat is marked on the box itself. */
-.input-container--temporary {
-  border-style: dashed;
-  border-color: var(--edge-strong);
-}
 .input-container--drop {
   border-style: solid;
   border-color: var(--accent);
@@ -322,7 +317,15 @@
   }
 }
 
-/* The temporary-chat notice sits above the message box. */
+/* A temporary chat: a strip across the top of the page, and a dashed edge round the panel. */
 .temp-chat-banner {
-  align-self: stretch;
+  position: relative;
+  z-index: var(--z-page);
+  flex: none;
+  margin: var(--space-3) var(--pad) 0;
+}
+@media (min-width: 600px) {
+  :root main:has(> .temp-chat-banner) {
+    border: 1px dashed var(--edge-strong);
+  }
 }

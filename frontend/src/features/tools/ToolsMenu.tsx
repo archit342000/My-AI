@@ -46,7 +46,7 @@ export function ToolsMenu({ sheetAnchorRef }: { sheetAnchorRef?: RefObject<HTMLE
           setOpen((value) => !value);
         }}
       >
-        <Icon name="tool" size={20} />
+        <Icon name="tool" size={19} />
       </button>
       <Popover
         open={open}

@@ -1,7 +1,7 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useMatch } from 'react-router';
 import { modelsApi, personasApi, settingsKeys, SETTINGS_STALE_MS } from '../../../api/settings';
-import { Button } from '../../../components/ui/Button';
 import { SegmentedControl } from '../../../components/ui/SegmentedControl';
 import { Select } from '../../../components/ui/Select';
 import { Slider } from '../../../components/ui/Slider';
@@ -16,48 +16,53 @@ import { SettingRow, SettingsSection, SubHead } from '../forms';
 const PROFILES = ['general', 'precision', 'none'];
 const PROFILE_OPTIONS = PROFILES.map((p) => ({ value: p, label: thinkingProfileLabel(p) }));
 
-/** Starting value when a sampling setting leaves "model default". */
-const TEMPERATURE_START = 1;
-const TOP_P_START = 1;
-
 /**
- * A sampling value the model can decide itself: unset means "model default". Shows a Set button
- * while unset and a slider with a way back while set.
+ * A sampling value the model can decide itself: an empty box means "model default" (the value is
+ * then left out of what is sent), a number sets it.
  */
-function OptionalSlider({
-  label,
+function OptionalNumber({
+  id,
+  labelId,
+  hintId,
   value,
-  start,
   min,
   max,
   step,
   onChange,
 }: {
-  label: string;
+  id: string;
+  labelId: string;
+  hintId: string | undefined;
   value: number | undefined;
-  start: number;
   min: number;
   max: number;
   step: number;
   onChange: (value: number | undefined) => void;
 }) {
-  if (value === undefined) {
-    return (
-      <div className="set-optional">
-        <span className="ui-hint">Model default</span>
-        <Button size="sm" variant="secondary" onClick={() => onChange(start)}>
-          Set {label.toLowerCase()}
-        </Button>
-      </div>
-    );
-  }
+  // While the box is focused it shows what is being typed ("0." on the way to "0.4").
+  const [typed, setTyped] = useState<string | null>(null);
   return (
-    <div className="set-optional set-optional--set">
-      <Slider label={label} value={value} min={min} max={max} step={step} onChange={onChange} />
-      <Button size="sm" variant="link" onClick={() => onChange(undefined)}>
-        Use the model default
-      </Button>
-    </div>
+    <input
+      id={id}
+      className="ui-input set-num"
+      type="number"
+      inputMode="decimal"
+      aria-labelledby={labelId}
+      aria-describedby={hintId}
+      placeholder="model default"
+      min={min}
+      max={max}
+      step={step}
+      value={typed ?? (value === undefined ? '' : String(value))}
+      onChange={(e) => {
+        const text = e.target.value;
+        setTyped(text);
+        if (text.trim() === '') return onChange(undefined);
+        const n = Number(text);
+        if (Number.isFinite(n)) onChange(Math.min(max, Math.max(min, n)));
+      }}
+      onBlur={() => setTyped(null)}
+    />
   );
 }
 
@@ -187,12 +192,11 @@ export function ChatSection() {
           />
         )}
       </SettingRow>
-      <SettingRow label="Temperature" hint="Lower is steadier, higher is more varied." wide>
-        {() => (
-          <OptionalSlider
-            label="Temperature"
+      <SettingRow label="Temperature" hint="Lower is steadier, higher is more varied.">
+        {(ids) => (
+          <OptionalNumber
+            {...ids}
             value={sampling.temperature}
-            start={TEMPERATURE_START}
             min={0}
             max={2}
             step={0.05}
@@ -200,19 +204,14 @@ export function ChatSection() {
           />
         )}
       </SettingRow>
-      <SettingRow
-        label="Top P"
-        hint="Narrows the choice of each next word. Most people leave this alone."
-        wide
-      >
-        {() => (
-          <OptionalSlider
-            label="Top P"
+      <SettingRow label="Top P" hint="Leave empty to use the model's own setting.">
+        {(ids) => (
+          <OptionalNumber
+            {...ids}
             value={sampling.top_p}
-            start={TOP_P_START}
             min={0}
             max={1}
-            step={0.01}
+            step={0.05}
             onChange={(v) => apply(() => store().setSampling({ top_p: v }))}
           />
         )}

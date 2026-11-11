@@ -23,6 +23,7 @@ import { Sidebar } from './Sidebar';
 import { DialogHost } from '../features/settings/DialogHost';
 import { useHomeBeneath } from '../hooks/useHomeBeneath';
 import { SettingsPage } from '../features/settings/SettingsPage';
+import { TemporaryNote } from '../features/composer/TemporaryNote';
 import { sectionFromSearch } from '../features/settings/settings-nav';
 import { Composer } from '../features/composer/Composer';
 
@@ -121,6 +122,7 @@ export function RootLayout() {
             </div>
           </header>
           <TickRule className="main-rule" />
+          <TemporaryNote />
           <PageTitleSlot.Provider value={titleSlot}>
             <Outlet />
           </PageTitleSlot.Provider>

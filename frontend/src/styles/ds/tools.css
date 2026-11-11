@@ -136,6 +136,10 @@
 .code-run__outcome {
   flex: none;
 }
+.code-run__when {
+  flex: none;
+  color: var(--muted);
+}
 .code-run__language {
   flex: none;
   font-family: var(--mono);

@@ -92,23 +92,22 @@ export function SidebarChats() {
         icon: 'plus',
         onSelect: () => setPending({ op: 'move-new', target }),
       });
+      // The order of the design's reference: rename, move, and the destructive one last.
       return [
-        {
-          type: 'submenu',
-          id: 'move',
-          label: 'Move to workspace',
-          icon: 'grid',
-          searchable: (workspaces.data ?? []).length > 8,
-          items: submenu,
-        },
-        { type: 'separator', id: 'sep-actions' },
         {
           id: 'rename',
           label: 'Rename',
           icon: 'edit',
           onSelect: () => setPending({ op: 'rename', target }),
         },
-        { type: 'separator', id: 'sep-danger' },
+        {
+          type: 'submenu',
+          id: 'move',
+          label: 'Move to a workspace',
+          icon: 'folder',
+          searchable: (workspaces.data ?? []).length > 8,
+          items: submenu,
+        },
         {
           id: 'delete',
           label: 'Delete',
@@ -261,6 +260,7 @@ export function SidebarChats() {
         label={menu ? targetName(menu.target) : 'Chat actions'}
         point={menu ? { x: menu.x, y: menu.y } : null}
         items={menu ? menuItems(menu.target) : []}
+        minWidth={248}
         onClose={() => setMenu(null)}
       />
       <PromptDialog
@@ -435,13 +435,13 @@ function WorkspaceFolder({ workspace, chats }: { workspace: Workspace; chats: Ch
             toggle();
           }}
         >
-          <Icon name="chevron-right" size={12} strokeWidth={2.5} className="folder-chevron" />
+          <Icon name="chevron-right" size={14} className="folder-chevron" />
         </span>
         <div className="folder-title">
           {workspaceEmoji(workspace.icon) ? (
             <span className="folder-emoji">{workspaceEmoji(workspace.icon)}</span>
           ) : (
-            <Icon name={iconName} size={14} strokeWidth={2.5} className="folder-icon" />
+            <Icon name={iconName} size={18} className="folder-icon" />
           )}
           <span className="folder-name">{workspace.name}</span>
         </div>

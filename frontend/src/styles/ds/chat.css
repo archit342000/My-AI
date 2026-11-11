@@ -180,7 +180,12 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 12px;
+  gap: 0 1ch;
+}
+/* "MODEL · 14:02": one typewriter label, the two parts set apart by a dot. */
+.bot-time::before {
+  margin-right: 1ch;
+  content: '·';
 }
 .bot-model-label,
 .bot-time {
@@ -202,21 +207,9 @@
   display: flex;
   gap: 2px;
   margin: -4px 0 0 -8px;
-  opacity: 0;
-  transition: opacity var(--t-base) var(--ease-spring);
 }
 .user-message .message-actions-container {
   margin: -2px -8px 0 0;
-}
-.message-row:hover .message-actions-container,
-.message-row:focus-within .message-actions-container,
-.message-row:last-child .message-actions-container {
-  opacity: 1;
-}
-@media (hover: none) {
-  .message-actions-container {
-    opacity: 1;
-  }
 }
 .action-btn {
   display: inline-flex;

@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import type { CodeRun } from '../../api/filesystem';
 import { Icon } from '../../components/icons/Icon';
-import { fullDateTime } from '../../lib/format-time';
+import { clockTime, fullDateTime, toDate } from '../../lib/format-time';
+import { languageLabel } from '../../lib/labels';
 
 type Tone = 'ok' | 'bad' | 'warn';
 
@@ -21,10 +22,14 @@ function took(ms: number): string {
 }
 
 /** The history stores SQLite UTC times ("2026-11-10 08:06:20"): shown as the reader's own date and time. */
-function RunTime({ value }: { value: string }) {
-  // SQLite times have no zone and are UTC; a value that already names a zone is used as it is.
+/** SQLite times have no zone and are UTC; a value that already names a zone is used as it is. */
+function runIso(value: string): string {
   const hasZone = /(Z|[+-]\d{2}:?\d{2})$/i.test(value);
-  const iso = `${value.replace(' ', 'T')}${hasZone ? '' : 'Z'}`;
+  return `${value.replace(' ', 'T')}${hasZone ? '' : 'Z'}`;
+}
+
+function RunTime({ value }: { value: string }) {
+  const iso = runIso(value);
   const shown = fullDateTime(iso);
   if (!shown) return <span className="dat keep code-run__meta">{value}</span>;
   return (
@@ -42,6 +47,7 @@ export function RunCard({ run, defaultOpen = false }: { run: CodeRun; defaultOpe
   const [open, setOpen] = useState(defaultOpen);
   const { label, tone } = outcome(run);
   const firstLine = run.code.split('\n').find((line) => line.trim()) ?? '';
+  const started = run.created_at ? toDate(runIso(run.created_at)) : null;
   return (
     <article className={open ? 'code-run code-run--open' : 'code-run'}>
       <button
@@ -52,7 +58,8 @@ export function RunCard({ run, defaultOpen = false }: { run: CodeRun; defaultOpe
       >
         <Icon name="chevron-right" size={14} className="code-run__chevron" />
         <span className={`led ${tone}`} aria-hidden="true" />
-        <span className="code-run__language">{run.language}</span>
+        {started ? <span className="dat keep code-run__when">{clockTime(started)}</span> : null}
+        <span className="code-run__language">{languageLabel(run.language)}</span>
         <span className="code-run__line">{firstLine.trim()}</span>
         <span className="dat keep code-run__outcome">{label}</span>
       </button>

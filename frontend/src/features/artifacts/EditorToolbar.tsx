@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { IconButton } from '../../components/ui/Button';
 import { Chip } from '../../components/ui/Chip';
+import { languageLabel } from '../../lib/labels';
 import { Menu, type MenuEntry } from '../../components/ui/Menu';
 import { SegmentedControl } from '../../components/ui/SegmentedControl';
 import { StatusLight } from '../../components/ui/StatusLight';
@@ -56,9 +57,9 @@ export function EditorToolbar(p: EditorToolbarProps): ReactNode {
           onClick={p.onBack}
         />
         <span className="fb-name" title={p.path}>
-          {p.path}
+          {p.path.split('/').pop()}
         </span>
-        {p.language ? <Chip>{p.language}</Chip> : null}
+        {p.language ? <Chip>{languageLabel(p.language)}</Chip> : null}
         {p.version !== null ? <Chip tint>v{p.version}</Chip> : null}
         <StatusLight
           className="fb-state"

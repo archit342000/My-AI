@@ -235,7 +235,7 @@ test('a long model name stays inside its row, and the edit box fits in one row o
   const edit = await settled(page.locator('.edit-box'));
   expect(edit.right).toBeLessThanOrEqual(390);
   const ys = await Promise.all(
-    ['Cancel', 'Save', 'Save & regenerate'].map(async (label) =>
+    ['Cancel', 'Save', 'Save and resend'].map(async (label) =>
       Math.round(
         (await rect(page.locator('.edit-box').getByRole('button', { name: label, exact: true }))).y,
       ),

@@ -176,8 +176,8 @@ export function WorkspacePage() {
               return (
                 <Link key={c.id} to={`/chat/${c.id}`} className="workspace-chat-card">
                   {when ? (
-                    <time className="dat keep" title={fullDateTime(c.timestamp)}>
-                      {when}
+                    <time className="dat" title={fullDateTime(c.timestamp)}>
+                      {/^\d\d:\d\d$/.test(when) ? `Today · ${when}` : when}
                     </time>
                   ) : null}
                   <span className="workspace-chat-card__title">{c.title || 'Untitled chat'}</span>

@@ -37,6 +37,12 @@ export function FileTree(props: FileTreeProps) {
   );
 }
 
+/** "login.spec.ts" gives "ts": the kind of file, shown at the end of its row. */
+function extensionOf(name: string): string {
+  const dot = name.lastIndexOf('.');
+  return dot > 0 && dot < name.length - 1 ? name.slice(dot + 1).toLowerCase() : '';
+}
+
 function Rows({ nodes, ...rest }: FileTreeProps) {
   const { selected, collapsed, onToggleFolder, onOpenFile, onMenu, onDeleteKey } = rest;
   return nodes.map((node) => {
@@ -74,7 +80,7 @@ function Rows({ nodes, ...rest }: FileTreeProps) {
               }}
             >
               <Icon name="chevron-right" size={14} className="fb-row__chevron" />
-              <Icon name="folder" size={16} />
+              <Icon name="folder" size={18} />
               <span className="fb-row__name">{node.name}</span>
               <span className="dat keep fb-row__count">{countFiles(node)}</span>
             </button>
@@ -106,8 +112,11 @@ function Rows({ nodes, ...rest }: FileTreeProps) {
               if (e.key === 'Delete') onDeleteKey(node);
             }}
           >
-            <Icon name="file-text" size={16} />
+            <Icon name="file" size={18} />
             <span className="fb-row__name">{node.name}</span>
+            {extensionOf(node.name) ? (
+              <span className="dat keep fb-row__count">{extensionOf(node.name)}</span>
+            ) : null}
           </button>
           {more}
         </div>

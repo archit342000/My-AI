@@ -69,7 +69,7 @@ describe('RunCard outcome', () => {
 
   it('is one line until it is opened: language, first line of code and how it ended', () => {
     render(<RunCard run={run({ code: '\n# sum\nprint(1)', execution_time_ms: 2500 })} />);
-    const head = screen.getByRole('button', { name: /python/ });
+    const head = screen.getByRole('button', { name: /Python/ });
     expect(head.getAttribute('aria-expanded')).toBe('false');
     expect(head).toHaveTextContent('# sum');
     expect(head).toHaveTextContent('Passed');

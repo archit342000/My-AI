@@ -18,7 +18,7 @@ export function CodeHistoryDialog({ open, onClose }: { open: boolean; onClose: (
   const runs = history.data ?? [];
   const count =
     history.data && runs.length > 0 ? (
-      <span className="dat keep">
+      <span className="dat">
         {runs.length} {runs.length === 1 ? 'run' : 'runs'}
       </span>
     ) : undefined;

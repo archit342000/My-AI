@@ -106,7 +106,7 @@ function UserTurn({
               Save
             </Button>
             <Button variant="primary" disabled={!draft.trim()} onClick={() => void save(true)}>
-              Save &amp; regenerate
+              Save and resend
             </Button>
           </div>
         </div>
@@ -211,9 +211,9 @@ function BotBody({
     <>
       {hasLabel && model ? (
         <div className="bot-message-footer">
-          <span className="bot-model-label dat keep">{displayName(model)}</span>
+          <span className="bot-model-label dat">{displayName(model)}</span>
           {when ? (
-            <time className="bot-time dat keep" dateTime={when.toISOString()}>
+            <time className="bot-time dat" dateTime={when.toISOString()}>
               {clockTime(when)}
             </time>
           ) : null}

@@ -25,6 +25,13 @@
     scale: 0.99;
   }
 }
+/* A full-screen page: the navigation panel and the Files panel step aside while it is open. */
+@media (min-width: 600px) {
+  :root[data-settings='open'] #sidebar,
+  :root[data-settings='open'] .artifact-drawer {
+    display: none;
+  }
+}
 .set-head {
   display: flex;
   flex: none;
@@ -194,19 +201,10 @@
 .set-row > .ui-button {
   flex: none;
 }
-.set-optional {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
-  gap: var(--space-2) var(--space-3);
-}
-.set-optional--set {
-  flex-direction: column;
-  align-items: stretch;
-}
-.set-optional--set > .ui-button {
-  align-self: flex-end;
+/* A number that may be left empty ("model default"). */
+.set-num {
+  width: 9.5rem;
+  text-align: left;
 }
 
 /* ── Lists you can add to: personas, skills, memory, models ── */
