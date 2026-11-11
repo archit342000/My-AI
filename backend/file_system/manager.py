@@ -10,6 +10,7 @@ import aiofiles
 
 from backend.logging import log_event
 from backend.database import db
+from backend import config
 
 from .channel import FileSystemChannelManager
 from .utils import (
@@ -27,6 +28,8 @@ from .utils import (
 from .fuzzy_matcher import _find_exact_match, MultipleMatchesError, MatchNotFoundError
 
 logger = logging.getLogger(__name__)
+
+_BINARY_PLACEHOLDER = "[Binary File] This file contains binary content and cannot be displayed in the text editor."
 
 def get_all_file_systems_for_chat(chat_id: str) -> List[Dict[str, Any]]:
     """Helper to get both chat-local and workspace-shared file_systems for a chat."""
@@ -226,13 +229,46 @@ async def get_fs_file_content(file_system_id: str, chat_id: str = None, workspac
             _, _, physical_path = resolve_owner_and_physical_path(chat_id, virtual_path, workspace_id=workspace_id)
             if os.path.exists(physical_path) and os.path.isfile(physical_path):
                 if is_binary_file(physical_path):
-                    return "[Binary File] This file contains binary content and cannot be displayed in the text editor."
+                    return _BINARY_PLACEHOLDER
                 async with aiofiles.open(physical_path, mode='r', encoding='utf-8', errors='replace') as f:
                     return await f.read()
         except Exception as e:
             logger.error(f"Error reading physical file for disk fallback {virtual_path}: {e}")
             
     return None
+
+async def search_fs_contents(file_systems: List[Dict[str, Any]], query: str, limit: int) -> Dict[str, Any]:
+    """
+    Search the current contents of the given file rows (a scope's files, as the list route builds them) for `query` (case-insensitive plain text, one hit per matching line).
+
+    Returns `{"results": [{"file_system_id", "path", "line_number", "line"}], "truncated": bool}`: hits in file then
+    line order, at most `limit`; `truncated` is true when at least one more hit exists. Lines are cut to
+    `FILE_SEARCH_MAX_LINE_CHARS` (starting at the match when it lies beyond the cut). Unreadable files and the binary-file placeholder are skipped.
+    """
+    needle = query.lower()
+    results: List[Dict[str, Any]] = []
+    for file_system in file_systems:
+        content = await get_fs_file_content(
+            file_system['id'], chat_id=file_system.get('chat_id'), workspace_id=file_system.get('workspace_id'))
+        if not content or content == _BINARY_PLACEHOLDER:
+            continue
+        # Split on "\n" only, as the editor numbers lines (str.splitlines also splits on form feeds and similar).
+        for line_number, line in enumerate(content.split("\n"), start=1):
+            line = line.rstrip("\r")
+            index = line.lower().find(needle)
+            if index < 0:
+                continue
+            if len(results) >= limit:
+                return {"results": results, "truncated": True}
+            results.append({
+                "file_system_id": file_system['id'],
+                "path": file_system['filename'],
+                "line_number": line_number,
+                # A long line is cut to the maximum; when the match lies beyond the cut the text starts at the match.
+                "line": line[index if index >= config.FILE_SEARCH_MAX_LINE_CHARS else 0:][:config.FILE_SEARCH_MAX_LINE_CHARS],
+            })
+    return {"results": results, "truncated": False}
+
 
 async def update_fs_file_content(
     file_system_id: str,
