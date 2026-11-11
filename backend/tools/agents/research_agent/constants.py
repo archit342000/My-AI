@@ -26,3 +26,10 @@ EVENT_RESEARCH_COMPLETE = "Research complete! The full report has been audited a
 
 # --- Approval Signal (used in MCQ creation and approval check) ---
 PLAN_APPROVAL_SIGNAL = "Yes, proceed"
+
+# --- Section tag and failure marker (used by the agent and by progress.py) ---
+SECTION_TAG_FORMAT = "[Section {}] "  # prefix of every event of one section: SECTION_TAG_FORMAT.format(index)
+EVENT_FAILURE_MARKER = "❌"            # failure events start with it, or carry it right after the section tag
+
+# --- Phases of a research run (the `phase` of a progress snapshot) ---
+PROGRESS_PHASES = ("scouting", "planning", "awaiting_approval", "executing", "synthesizing", "done", "failed")

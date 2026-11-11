@@ -2,12 +2,13 @@ import json
 import asyncio
 import uuid
 import logging
-from typing import AsyncGenerator, Dict, Any, List
+from typing import AsyncGenerator, Dict, Any, List, Optional
 
 from backend.tools.time_utils import get_current_date
 from backend.inference import ManualChunkEmitter
 from backend.database import db
 from backend import config
+from backend.logging import log_event
 from backend.auth.rate_limit import SearchLimitReached, check_search_limit
 from backend.error_handling import CircuitOpenError
 from .prompts import (
@@ -31,8 +32,9 @@ from .constants import (
     EVENT_WRITER_START, EVENT_WRITER_DONE,
     EVENT_SUMMARY_START, EVENT_SUMMARY_DONE,
     EVENT_SYNTHESIS_START, EVENT_SYNTHESIS_POST,
-    EVENT_RESEARCH_COMPLETE, PLAN_APPROVAL_SIGNAL,
+    EVENT_RESEARCH_COMPLETE, PLAN_APPROVAL_SIGNAL, SECTION_TAG_FORMAT, EVENT_FAILURE_MARKER,
 )
+from .progress import build_progress
 from .schemas import (
     SCOUT_JSON_SCHEMA,
     PLAN_GENERATOR_JSON_SCHEMA,
@@ -162,6 +164,35 @@ class ResearchAgent:
         async for chunk in self.emitter.stream_message(event=content, parent_type=p_type):
             yield chunk
 
+    async def _publish_progress(self, phase: str, plan: Optional[Dict] = None):
+        """
+        Store the run's progress snapshot (the `research_progress` collection, overwritten) and stream it as one
+        `research_progress` chunk. Progress is display data: any failure here (the broad catch is deliberate) is logged
+        and never stops the research.
+        """
+        try:
+            history = db.get_messages(self.chat_id, parent_message_id=self.parent_message_id, parent_type=self.AGENT_NAME)
+            colls = db.get_collections(self.chat_id, parent_message_id=self.parent_message_id, parent_type=self.AGENT_NAME)
+            if plan is None:
+                plan_coll = next((c for c in colls if c.get("collection_type") == "research_plan"), None)
+                plan = self._safe_json_loads(plan_coll["items"], None) if plan_coll else None
+            visited_coll = next((c for c in colls if c.get("collection_type") == "visited_urls"), None)
+            visited = self._safe_json_loads(visited_coll["items"], []) if visited_coll else []
+            snapshot = build_progress(plan, history, visited, phase)
+            db.add_collection(
+                chat_id=self.chat_id,
+                parent_message_id=self.parent_message_id,
+                parent_type=self.AGENT_NAME,
+                collection_type="research_progress",
+                items=snapshot,
+                overwrite=True
+            )
+        except Exception as e:
+            log_event("research_progress_error", {"chat_id": self.chat_id, "phase": phase, "error": str(e)})
+            logger.error(f"Failed to publish research progress ({phase}): {e}")
+            return
+        yield "data: " + json.dumps({"parent_type": self.AGENT_NAME, "research_progress": snapshot}) + "\n\n"
+
     async def _run_json_inference(
         self,
         agent: Any,
@@ -274,6 +305,8 @@ class ResearchAgent:
         scout_context = self._safe_json_loads(scout_coll["items"], "") if scout_coll else ""
 
         if not has_scout_finalized:
+            async for chunk in self._publish_progress("scouting", active_plan):
+                yield chunk
             try:
                 async for chunk in self._run_scout(topic, agent_handler):
                     if isinstance(chunk, dict) and chunk.get("type") == "scout_context":
@@ -292,6 +325,8 @@ class ResearchAgent:
                 logger.error(f"Scout phase crashed: {e}", exc_info=True)
                 async for chunk in self._emit_event(f"❌ Scout phase failed: {str(e)[:200]}"):
                     yield chunk
+                async for chunk in self._publish_progress("failed", active_plan):
+                    yield chunk
                 db.update_chat(self.chat_id, research_state='failed')
                 return
             
@@ -301,6 +336,8 @@ class ResearchAgent:
 
         # Phase 1: Plan Generation (Strategy -> UI Review -> Approval)
         if not has_plan_approved:
+            async for chunk in self._publish_progress("planning", active_plan):
+                yield chunk
             try:
                 async for chunk in self._run_planner(topic, scout_context, agent_handler):
                     yield chunk
@@ -308,12 +345,16 @@ class ResearchAgent:
                 logger.error(f"Planner phase crashed: {e}", exc_info=True)
                 async for chunk in self._emit_event(f"❌ Planner phase failed: {str(e)[:200]}"):
                     yield chunk
+                async for chunk in self._publish_progress("failed", active_plan):
+                    yield chunk
                 db.update_chat(self.chat_id, research_state='failed')
                 return
             
             # Re-check approval after run
             db_history = db.get_messages(self.chat_id, parent_message_id=self.parent_message_id, parent_type=self.AGENT_NAME)
             if not any(m.get("role") == "event" and EVENT_PLAN_APPROVED in m.get("content", "") for m in db_history):
+                async for chunk in self._publish_progress("awaiting_approval"):
+                    yield chunk
                 return
             
             # Reload plan after successful approval
@@ -325,6 +366,8 @@ class ResearchAgent:
             logger.error("No active plan found for execution phase.")
             async for chunk in self._emit_event("❌ Research plan is missing or corrupted. Cannot proceed."):
                 yield chunk
+            async for chunk in self._publish_progress("failed", active_plan):
+                yield chunk
             return
 
         # 1.5 Validate the plan (4.1, 6.4)
@@ -332,6 +375,8 @@ class ResearchAgent:
         if not is_valid:
             logger.error(f"Plan validation failed: {reason}")
             async for chunk in self._emit_event(f"❌ Research plan validation failed: {reason}"):
+                yield chunk
+            async for chunk in self._publish_progress("failed", active_plan):
                 yield chunk
             return
 
@@ -343,10 +388,14 @@ class ResearchAgent:
             logger.error(f"Executor phase crashed: {e}", exc_info=True)
             async for chunk in self._emit_event(f"❌ Execution phase failed: {str(e)[:200]}"):
                 yield chunk
+            async for chunk in self._publish_progress("failed", active_plan):
+                yield chunk
             db.update_chat(self.chat_id, research_state='failed')
             return
 
         # Phase 3: Assembly & Audit (Detective -> Surgeon -> Synthesis)
+        async for chunk in self._publish_progress("synthesizing", active_plan):
+            yield chunk
         try:
             async for chunk in self._run_synthesis(active_plan, agent_handler):
                 yield chunk
@@ -354,7 +403,20 @@ class ResearchAgent:
             logger.error(f"Synthesis phase crashed: {e}", exc_info=True)
             async for chunk in self._emit_event(f"❌ Synthesis phase failed: {str(e)[:200]}"):
                 yield chunk
+            async for chunk in self._publish_progress("failed", active_plan):
+                yield chunk
             db.update_chat(self.chat_id, research_state='failed')
+            return
+        # Synthesis also returns normally when it pauses for the user or halts on a missing report: only a stored
+        # completion event means done, a halting failure event means failed, and a pause publishes nothing more.
+        final_events = [m for m in db.get_messages(self.chat_id, parent_message_id=self.parent_message_id, parent_type=self.AGENT_NAME)
+                        if m.get("role") == "event"]
+        if any(EVENT_RESEARCH_COMPLETE in (m.get("content") or "") for m in final_events):
+            async for chunk in self._publish_progress("done", active_plan):
+                yield chunk
+        elif final_events and (final_events[-1].get("content") or "").startswith(EVENT_FAILURE_MARKER):
+            async for chunk in self._publish_progress("failed", active_plan):
+                yield chunk
 
     async def _run_scout(self, topic: str, agent: Any) -> AsyncGenerator[str, None]:
         """
@@ -764,7 +826,11 @@ class ResearchAgent:
             }
             
             pending_indices = [i for i in range(len(sections)) if i not in completed_indices]
-            
+
+            # Progress after every completed section (and once before the first one starts)
+            async for chunk in self._publish_progress("executing", plan):
+                yield chunk
+
             if not pending_indices:
                 async for chunk in self._emit_event(EVENT_ALL_SECTIONS_DONE): yield chunk
                 break
@@ -795,7 +861,7 @@ class ResearchAgent:
     async def _run_single_section(self, current_idx, current_section, plan, sections, accumulated_summaries_text, agent) -> AsyncGenerator[str, None]:
         """Runs the state machine for a single research section with a unified global history."""
         state = SectionState(current_idx)
-        prefix = f"[Section {current_idx}] "
+        prefix = SECTION_TAG_FORMAT.format(current_idx)
         
         while True:
             db_history = db.get_messages(self.chat_id, parent_message_id=self.parent_message_id, parent_type=self.AGENT_NAME)
@@ -804,6 +870,8 @@ class ResearchAgent:
             if not state.has_initial_search:
                 # STATE 0: Start of Section -> Run Initial Searches
                 async for chunk in self._emit_event(f"{prefix}{EVENT_SECTION_START_PREFIX}{current_idx}", parent_type=self.AGENT_NAME): yield chunk
+                async for chunk in self._publish_progress("executing", plan):
+                    yield chunk
                 async for chunk in self._emit_event(f"{prefix}{EVENT_INITIAL_SEARCHES_PREFIX}{current_idx}...", parent_type=self.AGENT_NAME): yield chunk
                 
                 search_payload = ""
@@ -839,6 +907,8 @@ class ResearchAgent:
                     items=search_payload
                 )
                 async for chunk in self._emit_event(f"{prefix}{EVENT_INITIAL_SEARCHES_DONE}", parent_type=self.AGENT_NAME): yield chunk
+                async for chunk in self._publish_progress("executing", plan):  # pages read has grown
+                    yield chunk
                 continue 
                 
             elif not state.has_reflection:
@@ -895,6 +965,8 @@ class ResearchAgent:
                     )
                         
                 async for chunk in self._emit_event(f"{prefix}{EVENT_GAP_SEARCHES_DONE}", parent_type=self.AGENT_NAME): yield chunk
+                async for chunk in self._publish_progress("executing", plan):
+                    yield chunk
                 continue
                 
             elif not state.has_triage:
@@ -1044,7 +1116,7 @@ class ResearchAgent:
         state.has_writer = False
         state.has_summary = False
         
-        prefix = f"[Section {state.index}] "
+        prefix = SECTION_TAG_FORMAT.format(state.index)
         
         # Traverse in descending order to find the latest completed state for this section
         for m in reversed(section_history):
@@ -1108,7 +1180,7 @@ class ResearchAgent:
         today_date = get_current_date()
         messages = [{"role": "system", "content": RESEARCH_EXECUTOR_SYSTEM_PROMPT.format(today_date=today_date)}]
         
-        prefix = f"[Section {current_idx}] "
+        prefix = SECTION_TAG_FORMAT.format(current_idx)
 
         # 1. Reflection Phase
         initial_search_coll = next((c for c in colls if c.get("collection_type") == f"section_{current_idx}_initial_searches"), None)
@@ -1534,6 +1606,7 @@ async def flow_fn(agent: Any, agent_name: str, topic: str, **kwargs):
     """
     Unified entry point for the Research Agent.
     """
+    research_agent = None
     try:
         research_agent = ResearchAgent(
             chat_id=agent.chat_id,
@@ -1557,7 +1630,11 @@ async def flow_fn(agent: Any, agent_name: str, topic: str, **kwargs):
             )
         except Exception as db_err:
             logger.error(f"Failed to log research agent failure event: {db_err}")
-            
+
+        if research_agent is not None:
+            async for chunk in research_agent._publish_progress("failed"):
+                yield chunk
+
         try:
             db.update_chat(agent.chat_id, research_state='failed')
         except Exception as db_err:

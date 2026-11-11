@@ -190,3 +190,20 @@ def test_woven_history_detailed(temp_db):
     
     # Cleanup sse chunks from cache
     cache_system.delete_sse_chunks(chat_id)
+
+def test_research_progress_collection_under_a_tool_call_reaches_the_assistant_message_and_keeps_only_the_latest(temp_db):
+    import json
+    db = temp_db
+    chat_id = "test_research_progress_history"
+    db.ensure_chat_exists(chat_id, "u1")
+    db.add_message(chat_id=chat_id, role="user", content="research this")
+    db.add_message(chat_id=chat_id, role="assistant", content="starting",
+                   tool_calls=[{"id": "tc_research", "type": "function", "function": {"name": "research", "arguments": "{}"}}])
+    for done in (1, 2):  # the agent overwrites the same collection as it goes
+        db.add_collection(chat_id=chat_id, parent_message_id="tc_research", parent_type="research",
+                          collection_type="research_progress", items={"phase": "executing", "steps_done": done, "steps_total": 3}, overwrite=True)
+    assistant = next(m for m in db.get_woven_history(chat_id) if m.get("role") == "assistant")
+    progress = [c for c in assistant["collections"] if c["collection_type"] == "research_progress"]
+    assert len(progress) == 1
+    items = progress[0]["items"]
+    assert (json.loads(items) if isinstance(items, str) else items)["steps_done"] == 2
