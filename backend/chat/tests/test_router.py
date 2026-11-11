@@ -31,6 +31,12 @@ def client(app):
     return app.test_client()
 
 @pytest.fixture(autouse=True)
+def no_expiry_sweep():
+    """Listing chats runs the expired temporary chat sweep, which has its own tests (test_cleanup.py and the ones below)."""
+    with patch('backend.chat.router.purge_expired_temporary_chats') as sweep:
+        yield sweep
+
+@pytest.fixture(autouse=True)
 def free_turn_slot():
     """The completion tests share the real task_manager singleton, whose turn claim is only released
     when a response is closed; keep it out of unrelated tests. Tests that exercise the claim patch
@@ -1628,3 +1634,121 @@ def test_clear_all_stops_a_turn_that_started_after_the_first_pass(mock_db, mock_
     assert client.delete('/api/chats/').status_code == 200
     assert [c.args[0] for c in mock_task_manager.stop_task_and_wait.call_args_list] == ["c1", "c2"]
     mock_db.delete_all_chats.assert_called_once()
+
+
+
+# ---- temporary chats --------------------------------------------------------------------------------------------
+
+def _completion_body(**extra):
+    return {"chatId": "tmp1", "model": "m", "messages": [{"role": "user", "content": "hi"}], **extra}
+
+
+@pytest.fixture
+def completion_mocks():
+    with patch('backend.chat.router.db') as mock_db, patch('backend.chat.router.ChatHandler') as handler, \
+         patch('backend.chat.router.log_event'):
+        mock_db.get_messages.return_value = []
+        mock_db.get_file.return_value = None
+
+        async def stream(*a, **k):
+            yield "data: x\n\n"
+        handler.return_value.initiate_chat.side_effect = stream
+        yield mock_db, handler
+
+
+def test_the_first_send_of_a_temporary_chat_marks_it_and_the_handler_does_not_get_the_flag(client, completion_mocks):
+    mock_db, handler = completion_mocks
+    assert client.post('/v1/chat/completions', json=_completion_body(temporary=True)).status_code == 200
+    mock_db.mark_chat_temporary.assert_called_once_with("tmp1")
+    assert "temporary" not in handler.return_value.initiate_chat.call_args.kwargs
+
+
+def test_a_send_without_the_flag_never_marks_the_chat(client, completion_mocks):
+    mock_db, _ = completion_mocks
+    client.post('/v1/chat/completions', json=_completion_body())
+    mock_db.mark_chat_temporary.assert_not_called()
+
+
+@pytest.mark.parametrize("bad", ["yes", 1, [], {}, None])
+def test_a_non_boolean_temporary_is_a_400_and_writes_nothing(client, completion_mocks, bad):
+    mock_db, handler = completion_mocks
+    with patch('backend.chat.router.claim_chat') as claim:
+        response = client.post('/v1/chat/completions', json=_completion_body(temporary=bad))
+    assert response.status_code == 400 and "temporary" in response.json["error"]
+    claim.assert_not_called(); mock_db.update_chat.assert_not_called(); handler.assert_not_called()
+
+
+def test_another_users_chat_is_404_before_the_flag_is_looked_at(app, login_as, user_b, owned_by_user_a, completion_mocks):
+    owned_by_user_a.get_chat_owner.return_value = "someone-else"
+    mock_db, _ = completion_mocks
+    response = app.test_client().post('/v1/chat/completions', json=_completion_body(temporary=True))
+    assert response.status_code == 404
+    mock_db.update_chat.assert_not_called()
+
+
+def test_saving_a_temporary_chat_clears_the_flag(client):
+    with patch('backend.chat.router.db') as mock_db:
+        mock_db.get_chat.return_value = {"id": "tmp1"}
+        response = client.patch('/api/chats/tmp1', json={"title": "Kept", "is_temporary": False})
+    assert response.status_code == 200
+    mock_db.update_chat.assert_any_call(chat_id="tmp1", is_temporary=0)
+    mock_db.rename_chat.assert_called_with(chat_id="tmp1", new_title="Kept")
+
+
+@pytest.mark.parametrize("bad", [True, "false", 0, None])
+def test_any_other_is_temporary_value_on_patch_is_a_400_and_creates_no_chat(client, bad):
+    with patch('backend.chat.router.db') as mock_db, patch('backend.chat.router.claim_chat') as claim:
+        response = client.patch('/api/chats/brand-new', json={"is_temporary": bad})
+    assert response.status_code == 400
+    claim.assert_not_called(); mock_db.update_chat.assert_not_called()
+
+
+def test_saving_another_users_temporary_chat_is_404(app, login_as, user_b, owned_by_user_a):
+    owned_by_user_a.get_chat_owner.return_value = "someone-else"
+    owned_by_user_a.ensure_chat_exists.return_value = "someone-else"
+    with patch('backend.chat.router.db') as mock_db:
+        response = app.test_client().patch('/api/chats/tmp1', json={"is_temporary": False})
+    assert response.status_code == 404
+    mock_db.update_chat.assert_not_called()
+
+
+def test_listing_chats_sweeps_the_callers_expired_temporary_chats_first(client, no_expiry_sweep):
+    with patch('backend.chat.router.db') as mock_db:
+        mock_db.get_listed_chats.return_value = [{"id": "kept"}]
+        order = []
+        no_expiry_sweep.side_effect = lambda *a, **k: order.append("sweep")
+        mock_db.get_listed_chats.side_effect = lambda user_id: order.append("list") or [{"id": "kept"}]
+        response = client.get('/api/chats')
+    assert response.status_code == 200 and order == ["sweep", "list"]
+    assert no_expiry_sweep.call_args.args[0] == "user-a" and callable(no_expiry_sweep.call_args.args[1])
+
+
+def test_the_full_delete_sets_up_rag_only_for_a_chat_that_has_files(client):
+    with patch('backend.chat.router.db') as mock_db, patch('backend.models.get_embedding_model') as embed, patch('backend.rag.RAGProvider'), \
+         patch('backend.files.manager.FileManager') as file_manager, patch('backend.chat.router.task_manager') as tm, \
+         patch('backend.chat.router.FileSystemChannelManager'), patch('backend.database.response_cache'):
+        tm.stop_task_and_wait.return_value = True
+        mock_db.get_chat_files.return_value = []
+        assert client.delete('/api/chats/c1').status_code == 200
+        embed.assert_not_called()
+        mock_db.get_chat_files.return_value = [{"id": "f1"}]
+        assert client.delete('/api/chats/c1').status_code == 200
+        embed.assert_called_once()
+        file_manager.return_value.delete_file.assert_called_once_with("f1")
+
+
+def test_an_unsaved_temporary_chat_is_still_served_to_its_owner(client):
+    with patch('backend.chat.router.ChatHandler') as handler:
+        handler.return_value.get_history.return_value = {"messages": [], "resume_needed": False}
+        assert client.get('/api/chats/tmp1').status_code == 200
+
+
+def test_a_rag_setup_failure_keeps_the_chat_instead_of_orphaning_its_files(client):
+    with patch('backend.chat.router.db') as mock_db, patch('backend.models.get_embedding_model', side_effect=RuntimeError("model down")), \
+         patch('backend.rag.RAGProvider'), patch('backend.files.manager.FileManager'), patch('backend.chat.router.task_manager') as tm, \
+         patch('backend.chat.router.FileSystemChannelManager'), patch('backend.database.response_cache'):
+        tm.stop_task_and_wait.return_value = True
+        mock_db.get_chat_files.return_value = [{"id": "f1"}]
+        response = client.delete('/api/chats/c1')
+    assert response.status_code == 500
+    mock_db.delete_chat.assert_not_called()

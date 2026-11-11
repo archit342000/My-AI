@@ -170,3 +170,15 @@ def test_task_stop_wait_seconds_defaults_to_five_and_reads_the_environment(clean
     finally:
         monkeypatch.undo()
         importlib.reload(c)
+
+
+def test_temporary_chat_ttl_defaults_to_a_day_and_reads_the_environment():
+    import backend.config
+    with patch.dict(os.environ, {}, clear=False):
+        os.environ.pop("TEMPORARY_CHAT_TTL_SECONDS", None)
+        importlib.reload(backend.config)
+        assert backend.config.TEMPORARY_CHAT_TTL_SECONDS == 86400
+    with patch.dict(os.environ, {"TEMPORARY_CHAT_TTL_SECONDS": "120"}):
+        importlib.reload(backend.config)
+        assert backend.config.TEMPORARY_CHAT_TTL_SECONDS == 120
+    importlib.reload(backend.config)

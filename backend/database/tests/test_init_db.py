@@ -1214,3 +1214,25 @@ def test_assign_owners_updates_only_null_rows():
     conn.commit()
     assert dict(conn.execute("SELECT id, user_id FROM workspaces")) == {"mine": "someone-else", "orphan": admin}
     conn.close()
+
+
+def test_chats_is_temporary_column_on_a_fresh_db_and_added_to_an_older_chats_table():
+    init_db()
+    init_db()  # idempotent
+    conn = make_connection()
+    cols = {r[1]: r for r in conn.execute("PRAGMA table_info(chats)").fetchall()}
+    conn.close()
+    assert "is_temporary" in cols and cols["is_temporary"][4] == "0"  # default 0
+
+
+def test_is_temporary_is_added_to_an_older_chats_schema_with_zero_on_existing_rows():
+    conn = make_connection()
+    conn.execute("CREATE TABLE chats (id TEXT PRIMARY KEY, title TEXT, timestamp REAL)")
+    conn.execute("INSERT INTO chats (id, title, timestamp) VALUES ('c1', 't', 1.0)")
+    conn.commit()
+    conn.close()
+    init_db()
+    init_db()
+    conn = make_connection()
+    assert conn.execute("SELECT is_temporary FROM chats WHERE id = 'c1'").fetchall() == [(0,)]
+    conn.close()

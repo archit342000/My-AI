@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { resumeStream } from './completions';
+import { buildCompletionBody, resumeStream, type CompletionOptions } from './completions';
 import { contentChunk, sseResponse, sseText } from '../test/fixtures/sse';
 
 afterEach(() => vi.unstubAllGlobals());
@@ -30,5 +30,33 @@ describe('resumeStream', () => {
       for await (const chunk of resumeStream('c1', {}, new AbortController().signal)) void chunk;
     };
     await expect(run()).rejects.toThrow('No user message found to resume from.');
+  });
+});
+
+
+describe('buildCompletionBody temporary flag', () => {
+  const base: CompletionOptions = {
+    model: 'm',
+    modelName: 'M',
+    messages: [],
+    chatId: 'c1',
+    sampling: {} as CompletionOptions['sampling'],
+    modes: {
+      researchMode: false,
+      userPreferences: false,
+      visionEnabled: false,
+      fileSystemMode: false,
+      browsingMode: false,
+      gitMode: false,
+      codeExecutionMode: false,
+    },
+    personaId: null,
+    folder: null,
+  };
+
+  it('sends temporary: true only for a temporary chat', () => {
+    expect(buildCompletionBody({ ...base, temporary: true }).temporary).toBe(true);
+    expect(JSON.parse(JSON.stringify(buildCompletionBody(base)))).not.toHaveProperty('temporary');
+    expect(JSON.parse(JSON.stringify(buildCompletionBody({ ...base, temporary: false })))).not.toHaveProperty('temporary');
   });
 });

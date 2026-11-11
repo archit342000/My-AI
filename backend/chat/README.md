@@ -11,6 +11,7 @@
 | `__init__.py` | Package entry point and export aggregator. | `ChatHandler`, `TurnHandler`, `AgentHandler`, `ToolHandler`, `chat_bp`, `personas_bp` |
 | `agent_handler.py` | Orchestrates sub-agents with isolated contexts. | `AgentHandler` |
 | `handler.py` | Core chat flow logic and background task management. | `ChatHandler`, `THINKING_PROFILES` |
+| `cleanup.py` | Removal of unsaved temporary chats older than `TEMPORARY_CHAT_TTL_SECONDS`, run on the owner's chat-list request. | `purge_expired_temporary_chats` |
 | `message_edit.py` | Merges an edited user message back into its stored content, keeping images and the attachment note. | `merge_edited_user_content` |
 | `router.py` | Flask API endpoints for chat management, completions, and persona CRUD. | `chat_bp`, `openai_bp`, `personas_bp` |
 | `tool_handler.py` | Dispatches and executes tool calls (pure or agent-based). | `ToolHandler` |
