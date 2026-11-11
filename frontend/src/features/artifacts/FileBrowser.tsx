@@ -143,8 +143,16 @@ export function FileBrowser({ ref, scope, full, onToggleFull }: FileBrowserProps
   });
 
   const saveFile = useCallback(
-    async (id: string, content: string) => {
-      await artifactsApi.update(id, scope, { content });
+    async (id: string, content: string, leaving: boolean) => {
+      // A request that must outlive the page may carry at most 64 KB, so larger text is sent the usual way.
+      if (leaving && content.length < 30_000) {
+        await artifactsApi.update(id, scope, { content }, { keepalive: true });
+      } else {
+        await artifactsApi.update(id, scope, { content });
+      }
+      // What is on screen comes from the saved copy again, so a later change made elsewhere (by the
+      // model, say) is shown instead of being hidden behind the typed text.
+      setDraft((d) => (d && d.id === id && d.text === content ? null : d));
       // The saved text is now what the server has: no reload, so nothing typed since is replaced.
       queryClient.setQueryData<Artifact & { content: string }>(['artifact', id, key], (old) =>
         old ? { ...old, content } : old,
@@ -155,7 +163,10 @@ export function FileBrowser({ ref, scope, full, onToggleFull }: FileBrowserProps
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [queryClient, key],
   );
-  const auto = useAutoSave(saveFile);
+  const runToken = useRef(0);
+  const auto = useAutoSave(saveFile, {
+    onLost: () => showToast("Couldn't save your last changes to a file", 'error'),
+  });
   useImperativeHandle(ref, () => ({ flush: auto.flush }), [auto.flush]);
 
   /** Saves what is unsaved; says so and returns false when that fails (the file then stays open). */
@@ -168,6 +179,7 @@ export function FileBrowser({ ref, scope, full, onToggleFull }: FileBrowserProps
   async function openFile(id: string | null) {
     if (id === selected) return;
     if (!(await saved())) return;
+    runToken.current += 1;
     setRun(null);
     setSuggesting(false);
     setSelected(id);
@@ -215,6 +227,7 @@ export function FileBrowser({ ref, scope, full, onToggleFull }: FileBrowserProps
     useUiStore.getState().clearRequestedArtifact();
     if (hit) void openFile(hit.id);
     else showToast(`File not found: ${requestedPath}`, 'error');
+    // Runs once per requested path and list state; `openFile` is recreated every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [requestedPath, list.data, list.isFetching, list.isError]);
 
@@ -261,7 +274,11 @@ export function FileBrowser({ ref, scope, full, onToggleFull }: FileBrowserProps
     onError: (e) => showToast(message(e, "Couldn't create the file. Try again."), 'error'),
   });
   const remove = useMutation({
-    mutationFn: (id: string) => artifactsApi.remove(id, scope),
+    mutationFn: (id: string) => {
+      // Text still waiting for this file has nowhere to go.
+      auto.discard(id);
+      return artifactsApi.remove(id, scope);
+    },
     onSuccess: async (_res, id) => {
       if (id === selected) setSelected(null);
       await refreshList();
@@ -342,11 +359,15 @@ export function FileBrowser({ ref, scope, full, onToggleFull }: FileBrowserProps
 
   async function runFile(path: string) {
     if (!scope.chatId || !(await saved())) return;
+    const started = ++runToken.current;
     setRun({ state: 'running', text: '' });
     try {
       const text = await codeExecApi.runFile(scope.chatId, path);
+      // Another file was opened (or run) meanwhile: this result belongs to nothing on screen.
+      if (runToken.current !== started) return;
       setRun({ state: text.startsWith('Error:') ? 'failed' : 'done', text });
     } catch (err) {
+      if (runToken.current !== started) return;
       setRun({ state: 'failed', text: message(err, 'The file could not be run.') });
     }
   }

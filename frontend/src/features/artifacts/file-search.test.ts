@@ -50,3 +50,11 @@ describe('searchFiles', () => {
     expect(text.startsWith('…')).toBe(true);
   });
 });
+
+describe('searchFiles, long lines', () => {
+  it('keeps the searched words in view on a long, deeply indented line', () => {
+    const long = `${' '.repeat(60)}${'x'.repeat(200)} needle ${'y'.repeat(200)}`;
+    const [hit] = searchFiles(items, new Map([['a', long]]), 'needle');
+    expect(hit?.line?.text).toContain('needle');
+  });
+});

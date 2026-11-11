@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router';
 import { artifactsApi, artifactsKey, codeExecApi } from '../../api/filesystem';
@@ -401,6 +401,20 @@ describe('ArtifactPanel', () => {
       );
       expect(await screen.findByText('Saved')).toBeTruthy();
       expect(editorText()).toBe('# Changed');
+    });
+
+    it('once saved, a change made elsewhere to the same file is shown, not hidden by the typed text', async () => {
+      vi.spyOn(artifactsApi, 'update').mockResolvedValue({} as never);
+      const { client } = renderWithProviders(<ArtifactPanel scope={{ chatId: 'c' }} />);
+      await typeInNotes('# Changed');
+      expect(await screen.findByText('Saved', {}, { timeout: 3000 })).toBeTruthy();
+      act(() => {
+        client.setQueryData(
+          ['artifact', 'f1', artifactsKey({ chatId: 'c' })[1]],
+          (old: object | undefined) => (old ? { ...old, content: '# From the model' } : old),
+        );
+      });
+      await waitFor(() => expect(editorText()).toBe('# From the model'));
     });
 
     it('opening a file changes nothing, so nothing is saved', async () => {

@@ -28,10 +28,13 @@ export function IconPickerDialog({
 }) {
   const grid = useRef<HTMLDivElement>(null);
   const [picked, setPicked] = useState<string>(() => workspaceIconName(current));
+  // Save with nothing chosen changes nothing (an icon from before the picker is then kept as it is).
+  const [touched, setTouched] = useState(false);
   // The grid scrolls inside the pop-up: start from the current icon and bring it into view.
   useEffect(() => {
     if (!open) return;
     setPicked(workspaceIconName(current));
+    setTouched(false);
     grid.current?.querySelector('[aria-pressed="true"]')?.scrollIntoView?.({ block: 'nearest' });
   }, [open, current]);
   return (
@@ -46,7 +49,10 @@ export function IconPickerDialog({
             variant="ghost"
             className="icon-picker__reset"
             disabled={picked === DEFAULT_WORKSPACE_ICON}
-            onClick={() => setPicked(DEFAULT_WORKSPACE_ICON)}
+            onClick={() => {
+              setPicked(DEFAULT_WORKSPACE_ICON);
+              setTouched(true);
+            }}
           >
             Back to the folder
           </Button>
@@ -55,7 +61,9 @@ export function IconPickerDialog({
           </Button>
           <Button
             variant="primary"
-            onClick={() => onPick(picked === DEFAULT_WORKSPACE_ICON ? null : picked)}
+            onClick={() =>
+              touched ? onPick(picked === DEFAULT_WORKSPACE_ICON ? null : picked) : onCancel()
+            }
           >
             Save
           </Button>
@@ -71,7 +79,10 @@ export function IconPickerDialog({
             aria-label={spoken(name)}
             aria-pressed={picked === name}
             className="icon-picker__item"
-            onClick={() => setPicked(name)}
+            onClick={() => {
+              setPicked(name);
+              setTouched(true);
+            }}
           >
             <Icon name={name as IconName} size={22} />
           </button>

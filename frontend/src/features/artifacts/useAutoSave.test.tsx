@@ -8,7 +8,7 @@ describe('useAutoSave', () => {
 
   it('saves once after a pause in typing, with the newest text', async () => {
     const save = vi.fn(async () => undefined);
-    const { result } = renderHook(() => useAutoSave(save, 500));
+    const { result } = renderHook(() => useAutoSave(save, { delay: 500 }));
     act(() => result.current.schedule('f', 'a'));
     act(() => result.current.schedule('f', 'ab'));
     expect(result.current.state).toBe('unsaved');
@@ -16,20 +16,20 @@ describe('useAutoSave', () => {
     expect(save).not.toHaveBeenCalled();
     await act(() => vi.advanceTimersByTimeAsync(1));
     expect(save).toHaveBeenCalledTimes(1);
-    expect(save).toHaveBeenCalledWith('f', 'ab');
+    expect(save).toHaveBeenCalledWith('f', 'ab', false);
     expect(result.current.state).toBe('saved');
   });
 
   it('flush saves at once and reports that nothing is left', async () => {
     const save = vi.fn(async () => undefined);
-    const { result } = renderHook(() => useAutoSave(save, 500));
+    const { result } = renderHook(() => useAutoSave(save, { delay: 500 }));
     act(() => result.current.schedule('f', 'text'));
     let ok = false;
     await act(async () => {
       ok = await result.current.flush();
     });
     expect(ok).toBe(true);
-    expect(save).toHaveBeenCalledWith('f', 'text');
+    expect(save).toHaveBeenCalledWith('f', 'text', false);
     await act(() => vi.advanceTimersByTimeAsync(1000));
     expect(save).toHaveBeenCalledTimes(1);
   });
@@ -46,7 +46,7 @@ describe('useAutoSave', () => {
   it('one save at a time: text typed during a save goes out after it, and flush waits for both', async () => {
     const releases: Array<() => void> = [];
     const save = vi.fn(() => new Promise<void>((resolve) => releases.push(resolve)));
-    const { result } = renderHook(() => useAutoSave(save, 500));
+    const { result } = renderHook(() => useAutoSave(save, { delay: 500 }));
     act(() => result.current.schedule('f', 'one'));
     await act(() => vi.advanceTimersByTimeAsync(500));
     expect(save).toHaveBeenCalledTimes(1);
@@ -63,7 +63,7 @@ describe('useAutoSave', () => {
       await Promise.resolve();
     });
     await act(() => vi.advanceTimersByTimeAsync(0));
-    expect(save).toHaveBeenLastCalledWith('f', 'two');
+    expect(save).toHaveBeenLastCalledWith('f', 'two', false);
     expect(done).toBe(false);
     await act(async () => {
       releases[1]?.();
@@ -77,7 +77,7 @@ describe('useAutoSave', () => {
     const save = vi
       .fn<(id: string, content: string) => Promise<void>>()
       .mockRejectedValueOnce(new Error('offline'));
-    const { result } = renderHook(() => useAutoSave(save, 500));
+    const { result } = renderHook(() => useAutoSave(save, { delay: 500 }));
     act(() => result.current.schedule('f', 'text'));
     await act(async () => {
       expect(await result.current.flush()).toBe(false);
@@ -87,16 +87,49 @@ describe('useAutoSave', () => {
     await act(async () => {
       expect(await result.current.flush()).toBe(true);
     });
-    expect(save).toHaveBeenLastCalledWith('f', 'text');
+    expect(save).toHaveBeenLastCalledWith('f', 'text', false);
     expect(result.current.state).toBe('saved');
   });
 
   it('saves what is waiting when the screen goes away', async () => {
     const save = vi.fn(async () => undefined);
-    const { result, unmount } = renderHook(() => useAutoSave(save, 500));
+    const { result, unmount } = renderHook(() => useAutoSave(save, { delay: 500 }));
     act(() => result.current.schedule('f', 'last words'));
     unmount();
     await vi.advanceTimersByTimeAsync(0);
-    expect(save).toHaveBeenCalledWith('f', 'last words');
+    expect(save).toHaveBeenCalledWith('f', 'last words', false);
+  });
+
+  it('says so when the screen went away and the last text could not be saved', async () => {
+    const save = vi.fn(async () => {
+      throw new Error('offline');
+    });
+    const onLost = vi.fn();
+    const { result, unmount } = renderHook(() => useAutoSave(save, { delay: 500, onLost }));
+    act(() => result.current.schedule('f', 'last words'));
+    unmount();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(onLost).toHaveBeenCalledTimes(1);
+  });
+
+  it('marks the save as one that must outlive the page when the page is hidden', async () => {
+    const save = vi.fn(async () => undefined);
+    const { result } = renderHook(() => useAutoSave(save, { delay: 500 }));
+    act(() => result.current.schedule('f', 'text'));
+    window.dispatchEvent(new Event('pagehide'));
+    await act(() => vi.advanceTimersByTimeAsync(0));
+    expect(save).toHaveBeenCalledWith('f', 'text', true);
+  });
+
+  it('forgets text waiting for a file that was deleted', async () => {
+    const save = vi.fn(async () => undefined);
+    const { result } = renderHook(() => useAutoSave(save, { delay: 500 }));
+    act(() => result.current.schedule('f', 'text'));
+    act(() => result.current.discard('other'));
+    expect(result.current.state).toBe('unsaved');
+    act(() => result.current.discard('f'));
+    expect(result.current.state).toBe('saved');
+    await act(() => vi.advanceTimersByTimeAsync(600));
+    expect(save).not.toHaveBeenCalled();
   });
 });

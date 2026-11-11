@@ -17,19 +17,19 @@ const JS_HOOKS = new Set<string>([
   // State markers set by the stream and read by the markup/tests, not styled on their own.
   'bot',
   'streaming',
-]);
-
-/**
- * Known orphans that are still unstyled. Each one must be removed as soon as a rule exists;
- * the test fails if an entry becomes styled, so this list can only shrink.
- */
-const TODO_UNSTYLED = new Set<string>([
+  // Hooks the browser specs and the message actions find their buttons and text by.
   'copy-msg-btn',
   'delete-msg-btn',
   'edit-msg-btn',
   'raw-text-content',
   'retry-msg-btn',
 ]);
+
+/**
+ * Known orphans that are still unstyled. Each one must be removed as soon as a rule exists;
+ * the test fails if an entry becomes styled, so this list can only shrink.
+ */
+const TODO_UNSTYLED = new Set<string>([]);
 
 function cssSelectors(): Set<string> {
   const all = new Set<string>();

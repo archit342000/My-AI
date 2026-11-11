@@ -47,6 +47,20 @@ describe('WorkspacePage', () => {
     useUiStore.setState({ newChatWorkspaceId: null });
   });
 
+  it('chats that cannot be loaded are a problem to retry, not an empty workspace', async () => {
+    vi.spyOn(chatsApi, 'listWorkspaces').mockResolvedValue(ws as never);
+    const list = vi.spyOn(chatsApi, 'list').mockRejectedValue(new Error('down'));
+    renderWithProviders(<WorkspacePage />, {
+      route: '/workspace/w1',
+      path: '/workspace/:workspaceId',
+    });
+    expect(await screen.findByText('The chats here could not be loaded.')).toBeTruthy();
+    expect(screen.queryByText('Nothing in this workspace yet')).toBeNull();
+    list.mockResolvedValue([] as never);
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByText('Nothing in this workspace yet')).toBeTruthy();
+  });
+
   it('unknown workspace id shows not-found', async () => {
     vi.spyOn(chatsApi, 'listWorkspaces').mockResolvedValue([] as never);
     vi.spyOn(chatsApi, 'list').mockResolvedValue([] as never);

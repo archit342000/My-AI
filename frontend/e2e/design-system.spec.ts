@@ -1,11 +1,18 @@
 import { expect, test, type Page } from '@playwright/test';
 
-// Every screen, at computer, tablet and phone widths, day and night: the page never scrolls sideways,
-// nothing is logged as an error, and no words sit on the bare sphere without their fade behind them.
+// The screens that need no saved data (home, every part of settings, logs, the two dead ends), at
+// computer, tablet and phone widths, day and night: the page never scrolls sideways, nothing is
+// logged as an error, and no words sit on the bare sphere without their fade behind them.
 
 const SCREENS = [
   { name: 'home', path: '/' },
   { name: 'settings', path: '/?settings=chat' },
+  { name: 'settings, models', path: '/?settings=models' },
+  { name: 'settings, personas', path: '/?settings=personas' },
+  { name: 'settings, skills', path: '/?settings=skills' },
+  { name: 'settings, memory', path: '/?settings=memory' },
+  { name: 'settings, agents', path: '/?settings=agents' },
+  { name: 'settings, system', path: '/?settings=system' },
   { name: 'logs', path: '/logs' },
   { name: 'page not found', path: '/no-such-page' },
   { name: 'chat not found', path: '/chat/no-such-chat' },
@@ -77,7 +84,7 @@ for (const theme of THEMES) {
         await page.setViewportSize({ width: size.width, height: size.height });
         await page.goto(screen.path);
         await expect(page.locator('#app-root')).toBeVisible();
-        await expect(page.locator('.ui-skeleton')).toHaveCount(0);
+        await expect(page.locator('.skel')).toHaveCount(0);
 
         const sideways = await page.evaluate(
           () => document.documentElement.scrollWidth - document.documentElement.clientWidth,

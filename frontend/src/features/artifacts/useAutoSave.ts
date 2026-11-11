@@ -13,6 +13,14 @@ export interface AutoSave {
   schedule: (id: string, content: string) => void;
   /** Saves anything waiting now. Resolves true when nothing is left unsaved. */
   flush: () => Promise<boolean>;
+  /** Forgets text waiting for a file that is gone (deleted), so it is not sent or retried. */
+  discard: (id: string) => void;
+}
+
+export interface AutoSaveOptions {
+  delay?: number;
+  /** The screen went away and the last text could not be saved. */
+  onLost?: () => void;
 }
 
 /**
@@ -21,8 +29,8 @@ export interface AutoSave {
  * flushes too. A failed save keeps the text and is tried again on the next change or flush.
  */
 export function useAutoSave(
-  save: (id: string, content: string) => Promise<void>,
-  delay = 800,
+  save: (id: string, content: string, leaving: boolean) => Promise<void>,
+  { delay = 800, onLost }: AutoSaveOptions = {},
 ): AutoSave {
   const [state, setState] = useState<SaveState>('saved');
   const pending = useRef<Job | null>(null);
@@ -31,8 +39,10 @@ export function useAutoSave(
   const alive = useRef(true);
   const saveRef = useRef(save);
   saveRef.current = save;
+  const lostRef = useRef(onLost);
+  lostRef.current = onLost;
 
-  const flush = useCallback(async (): Promise<boolean> => {
+  const flush = useCallback(async (leaving = false): Promise<boolean> => {
     if (timer.current) clearTimeout(timer.current);
     timer.current = null;
     // One save at a time: wait for the one in flight, then send the newest text.
@@ -41,7 +51,7 @@ export function useAutoSave(
     if (!job) return true;
     pending.current = null;
     if (alive.current) setState('saving');
-    const run = saveRef.current(job.id, job.content).then(
+    const run = saveRef.current(job.id, job.content, leaving).then(
       () => {
         if (alive.current) setState(pending.current ? 'unsaved' : 'saved');
         return true;
@@ -71,14 +81,27 @@ export function useAutoSave(
 
   useEffect(() => {
     alive.current = true;
-    const onHide = () => void flush();
+    // The page is going away: the request is marked to outlive it.
+    const onHide = () => void flush(true);
     window.addEventListener('pagehide', onHide);
     return () => {
       window.removeEventListener('pagehide', onHide);
       alive.current = false;
-      void flush();
+      // The screen closed with text still waiting: save it, and say so if that fails.
+      void flush().then((ok) => {
+        if (!ok) lostRef.current?.();
+      });
     };
   }, [flush]);
 
-  return { state, schedule, flush };
+  const discard = useCallback((id: string) => {
+    if (pending.current?.id !== id) return;
+    pending.current = null;
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = null;
+    setState('saved');
+  }, []);
+
+  const flushNow = useCallback(() => flush(), [flush]);
+  return { state, schedule, flush: flushNow, discard };
 }

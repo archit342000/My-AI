@@ -165,7 +165,10 @@ describe('design tokens', () => {
         ...declarations(css, 'transition-duration'),
       ].filter((value) => SECONDS.test(value.replace(/var\([^)]*\)/g, '')));
       expect(transitions, `${name}: transitions`).toEqual([]);
-      const animations = declarations(css, 'animation').filter(
+      const animations = [
+        ...declarations(css, 'animation'),
+        ...declarations(css, 'animation-duration'),
+      ].filter(
         (value) => SECONDS.test(value.replace(/var\([^)]*\)/g, '')) && !/\binfinite\b/.test(value),
       );
       expect(animations, `${name}: animations that run once`).toEqual([]);

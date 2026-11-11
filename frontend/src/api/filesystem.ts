@@ -80,10 +80,12 @@ export const artifactsApi = {
     id: string,
     scope: ScopeRef,
     body: { content?: string; title?: string; folder?: string },
+    options: { keepalive?: boolean } = {},
   ) =>
     apiJson<unknown>(`/api/file_systems/${encodeURIComponent(id)}`, {
       method: 'PATCH',
       json: { ...scopeBody(scope), ...body },
+      keepalive: options.keepalive,
     }),
   remove: (id: string, scope: ScopeRef) =>
     apiRequest(`/api/file_systems/${encodeURIComponent(id)}?${scopeQuery(scope)}`, {

@@ -9,6 +9,7 @@ const SRC = resolve(__dirname, '..');
 function sources(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {
     const path = join(dir, name);
+    // features/dev is the developer preview page: sample labels there are not app wording.
     if (statSync(path).isDirectory()) return name === 'dev' ? [] : sources(path);
     return /\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name) && !name.includes('.generated.')
       ? [path]
@@ -63,7 +64,9 @@ describe('wording', () => {
     // Two or more capitalised words in a label, title or button text ("New Chat", "Save Changes").
     const titled =
       /(label|title|confirmLabel|actionLabel|placeholder)=["'][A-Z][a-z]+( [A-Z][a-z]+)+["']/;
+    const child = />\s*[A-Z][a-z]+( [A-Z][a-z]+)+\s*<\/(Button|button|MenuItem)>/;
     const proper = /My AI|GitHub|Top P/;
     expect(offences(titled).filter((l) => !proper.test(l))).toEqual([]);
+    expect(offences(child).filter((l) => !proper.test(l))).toEqual([]);
   });
 });

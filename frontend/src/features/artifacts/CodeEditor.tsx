@@ -51,13 +51,13 @@ const look = EditorView.theme(
     '.cm-scroller': {
       overflow: 'auto',
       fontFamily: 'var(--mono)',
-      fontSize: '13px',
+      fontSize: 'var(--text-code)',
       lineHeight: '21px',
       scrollbarWidth: 'thin',
       scrollbarColor: 'color-mix(in srgb, var(--code-fg) 28%, transparent) transparent',
     },
     '.cm-content': { padding: '14px 0', caretColor: 'var(--code-fg)' },
-    '.cm-line': { padding: '0 16px' },
+    '.cm-line': { padding: '0 var(--space-4)' },
     '.cm-gutters': {
       backgroundColor: 'transparent',
       color: 'var(--code-line-no)',

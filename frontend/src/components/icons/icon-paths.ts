@@ -46,6 +46,7 @@ export type WorkspaceIconName = keyof typeof WORKSPACE_ICON_PATHS;
 export type IconName = UiIconName | WorkspaceIconName;
 
 export function iconPaths(name: IconName): string | undefined {
-  if (name in UI_ICON_PATHS) return UI_ICON_PATHS[name as UiIconName];
+  if (Object.hasOwn(UI_ICON_PATHS, name)) return UI_ICON_PATHS[name as UiIconName];
+  if (!Object.hasOwn(WORKSPACE_ICON_PATHS, name)) return undefined;
   return (WORKSPACE_ICON_PATHS as Record<string, { paths: string } | undefined>)[name]?.paths;
 }

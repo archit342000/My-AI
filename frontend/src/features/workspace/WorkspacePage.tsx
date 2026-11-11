@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { Notice } from '../../components/ui/Notice';
 import { Link, useNavigate, useParams } from 'react-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { GonePage } from '../../app/DeadEnds';
@@ -66,9 +67,10 @@ export function WorkspacePage() {
       apiRequest(`/api/chats/workspaces/${encodeURIComponent(workspaceId)}`, { method: 'DELETE' }),
     onSuccess: async () => {
       showToast('Workspace deleted', 'success');
+      // Leave first: refreshing the list while still here would flash "no longer exists".
+      navigate('/', { replace: true });
       await queryClient.invalidateQueries({ queryKey: queryKeys.workspaces });
       await queryClient.invalidateQueries({ queryKey: queryKeys.chats });
-      navigate('/', { replace: true });
     },
     onError: (e) =>
       showToast(
@@ -183,7 +185,11 @@ export function WorkspacePage() {
               );
             })}
           </div>
-        ) : chats.isPending ? null : (
+        ) : chats.isPending ? null : chats.isError ? (
+          <Notice tone="bad" actionLabel="Try again" onAction={() => void chats.refetch()}>
+            The chats here could not be loaded.
+          </Notice>
+        ) : (
           <EmptyState
             className="workspace-empty"
             title="Nothing in this workspace yet"

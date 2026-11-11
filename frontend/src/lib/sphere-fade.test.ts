@@ -1,5 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fadePadding, fadePatches, measureWords } from './sphere-fade';
+
+afterEach(() => vi.restoreAllMocks());
 
 describe('fadePadding', () => {
   it('grows with the lettering between fixed limits', () => {
@@ -34,6 +36,21 @@ describe('measureWords', () => {
     document.body.appendChild(host);
     // jsdom has no layout: every box is empty, but each control is still measured once.
     expect(measureWords(host)).toHaveLength(2);
+    host.remove();
+  });
+
+  it('measures each line of text, but not text inside the fade layer', () => {
+    const line = { left: 1, top: 2, width: 30, height: 10 } as DOMRect;
+    const selected: string[] = [];
+    vi.spyOn(document, 'createRange').mockReturnValue({
+      selectNodeContents: (node: Node) => selected.push(node.nodeValue ?? ''),
+      getClientRects: () => [line],
+    } as unknown as Range);
+    const host = document.createElement('div');
+    host.innerHTML = '<div class="fade-layer"><i>x</i></div><p>Hello</p><p>there</p>';
+    document.body.appendChild(host);
+    expect(measureWords(host)).toEqual([line, line]);
+    expect(selected).toEqual(['Hello', 'there']);
     host.remove();
   });
 });

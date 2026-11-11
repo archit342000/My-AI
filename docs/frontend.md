@@ -73,8 +73,8 @@ A React build missing from `dist/` returns 503 with the build command.
 ## Conventions
 
 - **Look:** the app follows the Console at Rest design system (rule book, shared values and reference demo in the design repository
-  `console-at-rest`). Colours, lettering, spacing, corners, shadows, layers and speeds come only from `styles/tokens.css` (refresh with
-  `node scripts/sync-design-tokens.cjs <checkout>`); the sheets in `styles/ds/` use those names and nothing else. Load order in `main.tsx`:
+  `console-at-rest`). Colours, lettering, corners, shadows, layers and speeds come only from `styles/tokens.css` (refresh with
+  `node scripts/sync-design-tokens.cjs <checkout>`); spacing uses the named steps where one fits (the reference page's in-between sizes such as 6, 10 and 14px are not named yet and are written out). Load order in `main.tsx`:
   fonts, tokens, then `ds/*` with `phone.css` after the screens. Guards: `lib/design-tokens.test.ts` (no raw colours, corners, shadows, layers or
   speeds; `styles/` holds only those three entries), `test/css-coverage.test.ts`, `test/inline-style.test.ts` and `test/wording.test.ts`
   (plain wording, one-character ellipsis). The typefaces (Sora, Instrument Sans, JetBrains Mono) are served by the app from `@fontsource-variable/*`.
@@ -173,18 +173,18 @@ project simulates the keyboard by shrinking `visualViewport.height` (`e2e/mobile
 
 ## Files panel
 
-One browser (`features/artifacts/FileBrowser.tsx`: tree, search by name, editor, preview, run output) is used beside a chat
+One browser (`features/artifacts/FileBrowser.tsx`: tree, search, editor, preview, run output) is used beside a chat
 (`ArtifactDrawer`, an `<aside aria-label="Files">`), on the workspace page and full screen. `ArtifactPanel` moves the same DOM box between
-those places, so the open file, undo history, scroll positions and width survive. From 1024px the drawer sits beside the chat and publishes
-`--right-sidebar-width` so `main` narrows; on a tablet it overlays; on a phone it takes the screen. Edits save by themselves after a short
+those places, so the open file, undo history, scroll positions and width survive. From 1024px the drawer is a third panel of the frame beside the chat
+(its width is `--artifact-width`), so `main` narrows; on a tablet it overlays; on a phone it takes the screen. Edits save by themselves after a short
 pause (`useAutoSave`); switching file or closing saves first and stays put if that fails, so there is no "discard changes?" prompt. File
 actions: Rename, Move (a place picker), Download, Copy, New file or folder, Delete (the server only removes an empty folder; a file read
 from disk cannot be renamed or moved). Version history is a two-pane window: pick a version, see it or its difference from the current one,
-restore after a confirmation. Run and version history need a chat, so they are not offered for a file opened in a workspace.
+restore after a confirmation. Run and version history need a chat: for a file opened in a workspace they are shown switched off, with the reason.
 
 ## Known gaps
 
 - Per-agent renderers (research, browsing) do not exist; sub-agent steps show as a labelled group of entries.
 - The code-execution WebSocket (live runs) is not wired; history is read-only.
-- File search matches names only (the server has no content search).
+- File search matches names, and text only in files opened so far (the server has no content search).
 - The previous vanilla UI in `static/` (served at `/legacy/`) keeps its old look until it is removed (`docs/release.md`).

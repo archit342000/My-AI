@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   artifactsApi,
@@ -73,32 +73,41 @@ export function VersionsDialog({
     }
   }, [open]);
 
+  // Only the newest request may change what is shown: an older answer that arrives late is dropped.
+  const request = useRef(0);
+
   async function view(version: number) {
+    const mine = ++request.current;
     setPicked(version);
     setError(null);
     setLoading(true);
     try {
       const v = await artifactsApi.version(artifactId, version, scope);
+      if (request.current !== mine) return;
       setShown({ kind: 'content', version, content: v.content });
     } catch (e) {
+      if (request.current !== mine) return;
       setShown(null);
       setError(e instanceof Error ? e.message : 'That version could not be loaded. Try again.');
     } finally {
-      setLoading(false);
+      if (request.current === mine) setLoading(false);
     }
   }
 
   async function compare(version: number) {
     if (current === null) return;
+    const mine = ++request.current;
     setError(null);
     setLoading(true);
     try {
       const diff = await artifactsApi.diff(artifactId, version, current, scope);
+      if (request.current !== mine) return;
       setShown({ kind: 'diff', version, diff });
     } catch (e) {
+      if (request.current !== mine) return;
       setError(e instanceof Error ? e.message : 'The versions could not be compared. Try again.');
     } finally {
-      setLoading(false);
+      if (request.current === mine) setLoading(false);
     }
   }
 

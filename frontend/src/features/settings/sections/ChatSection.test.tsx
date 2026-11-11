@@ -135,7 +135,9 @@ describe('ChatSection', () => {
         },
       ),
     );
-    fireEvent.click(screen.getAllByRole('switch', { name: /Use what it remembers about you/ })[1]!);
+    const memory = screen.getAllByRole('switch', { name: /Use what it remembers about you/ })[1];
+    if (!memory) throw new Error('the memory switch is missing');
+    fireEvent.click(memory);
     expect(store().defaults.sampling.max_tokens).toBe(2048);
     expect(store().defaults.sampling.thinking_budget_tokens).toBe(300);
     expect(store().defaults.sampling.thinking_profile).toBe('precision');

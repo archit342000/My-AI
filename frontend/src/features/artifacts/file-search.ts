@@ -13,9 +13,9 @@ const SNIPPET_MAX = 160;
 function firstLine(content: string, needle: string): SearchHit['line'] {
   const lines = content.split('\n');
   for (let i = 0; i < lines.length; i++) {
-    const at = (lines[i] ?? '').toLowerCase().indexOf(needle);
-    if (at === -1) continue;
     const raw = (lines[i] ?? '').trim();
+    const at = raw.toLowerCase().indexOf(needle);
+    if (at === -1) continue;
     // A very long line is cut around the match, so the words searched for stay in view.
     const start = Math.max(0, Math.min(at - 40, raw.length - SNIPPET_MAX));
     const text =

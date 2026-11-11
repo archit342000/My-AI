@@ -24,6 +24,15 @@ describe('IconPickerDialog', () => {
     expect(onPick).toHaveBeenCalledWith('rocket');
   });
 
+  it('Save with nothing chosen changes nothing, so an older icon is kept as it is', () => {
+    const onPick = vi.fn();
+    const onCancel = vi.fn();
+    render(<IconPickerDialog open current="🚀" onPick={onPick} onCancel={onCancel} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(onPick).not.toHaveBeenCalled();
+    expect(onCancel).toHaveBeenCalled();
+  });
+
   it('Cancel keeps nothing', () => {
     const onPick = vi.fn();
     const onCancel = vi.fn();

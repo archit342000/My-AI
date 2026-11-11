@@ -10,7 +10,7 @@ export function ConfirmDialog({
   open,
   title,
   message,
-  confirmLabel = 'Confirm',
+  confirmLabel,
   danger = false,
   onConfirm,
   onCancel,
@@ -18,7 +18,8 @@ export function ConfirmDialog({
   open: boolean;
   title: string;
   message: ReactNode;
-  confirmLabel?: string;
+  /** Names the action ("Delete chat"), never a bare Confirm or OK. */
+  confirmLabel: string;
   danger?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
