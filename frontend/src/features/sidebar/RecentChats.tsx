@@ -204,7 +204,7 @@ export function SidebarChats() {
           <div className="sidebar-section-label sec">
             <span className="sidebar-text">Workspaces</span>
           </div>
-          <div id="folder-list" className="folder-list custom-scroll">
+          <div id="folder-list" className="folder-list">
             {workspaces.data.map((ws) => (
               <WorkspaceFolder
                 key={ws.id}

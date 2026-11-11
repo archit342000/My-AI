@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { Badge } from '../../components/ui/Badge';
 import { Checkbox } from '../../components/ui/Checkbox';
 import { Chip } from '../../components/ui/Chip';
 import { Kbd } from '../../components/ui/Kbd';
@@ -128,7 +127,6 @@ export function PrimitivesDemo() {
             Web search
           </Chip>
           <Tag>Python</Tag>
-          <Badge tone="accent">v3</Badge>
           <span className="ui-count">3</span>
           <span className="ui-count ui-count--quiet">12</span>
           <Kbd keys={['Ctrl', 'K']} />
@@ -210,14 +208,7 @@ export function PrimitivesDemo() {
       </section>
 
       <section className="ui-demo__section">
-        <h2>Badges and empty state</h2>
-        <div className="ui-demo__row">
-          <Badge>Default</Badge>
-          <Badge tone="success">Loaded</Badge>
-          <Badge tone="warning">Loading</Badge>
-          <Badge tone="danger">Error</Badge>
-          <Badge tone="accent">New</Badge>
-        </div>
+        <h2>Empty state</h2>
         <EmptyState
           title="No workspaces yet"
           description="Group related chats and files in a workspace."

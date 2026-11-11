@@ -287,7 +287,7 @@
   border: 1px solid var(--edge);
   border-radius: var(--r-panel);
   background: color-mix(in srgb, var(--glass-strong) 55%, transparent);
-  animation: msg-in 0.3s var(--ease-spring) both;
+  animation: msg-in var(--t-slow) var(--ease-spring) both;
 }
 .crud-form .ui-field,
 .agent .ui-field,
@@ -405,7 +405,7 @@
   flex-direction: column;
   gap: var(--space-3);
   padding: 14px 0 var(--space-1);
-  animation: msg-in 0.3s var(--ease-spring) both;
+  animation: msg-in var(--t-slow) var(--ease-spring) both;
 }
 .speed-panel__head {
   display: flex;
@@ -471,6 +471,34 @@
 .facts dd {
   margin: 0;
   font-weight: 500;
+}
+
+/* ── A narrow settings column (tablet with the side panel open): a wide control goes under its name ── */
+
+.set-content {
+  container: set-content / inline-size;
+}
+@container set-content (max-width: 520px) {
+  .set-row--wide {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    padding: 14px 0;
+  }
+  .set-row--wide > .set-row__control {
+    width: 100%;
+  }
+  .set-row--wide > .set-row__control > .ui-segmented {
+    flex: 1;
+  }
+  .set-row--wide > .set-row__control > .ui-segmented {
+    flex-wrap: nowrap;
+  }
+  .set-row--wide .ui-segmented__item {
+    flex: 1;
+    justify-content: center;
+    padding: 0 var(--space-1);
+  }
 }
 
 /* ── Phone: tabs across the top; a wide control goes under its name, full width ── */

@@ -14,7 +14,7 @@ test('a temporary chat answers, is not listed, and can be saved', async ({ page 
   await expect(
     page.locator('.chat-list-item', { hasText: 'NOTHINK temporary question' }),
   ).toHaveCount(0);
-  await page.locator('#save-temp-chat-btn').click();
+  await page.getByRole('button', { name: 'Save chat' }).click();
   await expect(page.locator('#temp-chat-banner')).toHaveCount(0);
   await expect(
     page.locator('.chat-list-item', { hasText: 'NOTHINK temporary question' }),

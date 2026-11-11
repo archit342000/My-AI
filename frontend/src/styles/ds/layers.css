@@ -397,3 +397,34 @@
     width: calc(100vw - var(--space-5));
   }
 }
+
+/* ── The help window: commands and what they do ── */
+
+.help-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.help-list__item {
+  display: grid;
+  grid-template-columns: minmax(6rem, auto) 1fr;
+  align-items: baseline;
+  gap: var(--space-3);
+}
+.help-list__name {
+  color: var(--accent-text);
+  font-family: var(--mono);
+  font-size: var(--text-code);
+}
+.help-list__desc {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.help-list__note {
+  margin: var(--space-4) 0 0;
+  color: var(--muted);
+  font-size: var(--text-small);
+}

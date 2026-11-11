@@ -25,12 +25,12 @@ A React build missing from `dist/` returns 503 with the build command.
 |------|----------|
 | `src/api/` | Typed `fetch` client, SSE reader, endpoint modules per area |
 | `src/app/` | User gate, router, root layout (holds the one composer for `/` and `/chat/:chatId`), sidebar |
-| `src/components/` | Shared UI: `ui/` (Modal, Toast, Menu, Popover, ConfirmDialog), `icons/`, `markdown/`, `background/` |
+| `src/components/` | Shared UI: `ui/` (Button, Field, Select, Toggle, Slider, Tabs, Menu, Popover, Sheet, Modal, Window, ConfirmDialog, Toast, Notice, Skeleton, EmptyState, DeadEnd), `icons/`, `markdown/`, `background/` |
 | `src/features/` | `chat/`, `composer/`, `sidebar/`, `artifacts/`, `workspace/`, `settings/`, `tools/`, `logs/`, `home/`, `dev/` |
 | `src/lib/` | Pure logic with unit tests: markdown pipeline, chat model, popover placement, scroll, particles, theme |
 | `public/` | Files copied as-is to the `dist/` root: `theme-init.js`, loaded from `index.html` before the app |
 | `src/state/` | Zustand stores: UI, settings, stream, modal, current user |
-| `src/styles/` | `tokens.css` (the Console at Rest shared values, a synced copy: never edit), `fonts.css`, `legacy.css` and `components.css` (class names shared with the legacy UI), `bridge.css` (legacy variable names pointed at the shared values; temporary) |
+| `src/styles/` | `tokens.css` (the Console at Rest shared values, a synced copy: never edit), `fonts.css`, and `ds/` (the app's own sheets, one per area: base, controls, layers, frame, home, chat, content, files, workspace, settings, logs, tools, states, phone, dev) |
 | `scripts/` | Generators for icon and tool-label data from `static/js/`; `sync-design-tokens.cjs` copies `tokens.css` from the design repository |
 
 ## State
@@ -45,7 +45,7 @@ A React build missing from `dist/` returns 503 with the build command.
   sent are deleted when the user presses New Chat, leaves the landing page, discards a temporary chat or closes the page
   (`features/composer/draft-cleanup.ts`, `useDraftCleanup`); a draft in an existing chat is kept. Files can be picked, dropped on the
   page area or pasted; `/help` opens a list of commands and skills.
-- **Theme:** `public/theme-init.js` (loaded from `index.html` before the app) sets the `dark` class, `data-theme` and `data-glass` on `<html>` from `my_ai_theme_mode`, `my_ai_glass_mode`, the OS setting and whether the browser can blur, before first paint; `useThemeSync` keeps them in step after mount. A unit test keeps the script in step with `resolveDark` and `resolveGlass`. It tolerates blocked storage and missing APIs on purpose: it runs before the app and must never stop the page from loading. `data-theme` is always explicit (`tokens.css` reads it; legacy selectors read `dark`). Panels: `glassMode` is `auto`, `frosted` or `solid`; `auto` is solid only where blur is unsupported, and solid removes every `backdrop-filter`. Less motion: `tokens.css` removes all CSS animation and the particle canvas draws one still frame. Only `html` carries the page colour: a `body` background would paint above the fixed particle canvas.
+- **Theme:** `public/theme-init.js` (loaded from `index.html` before the app) sets the `dark` class, `data-theme` and `data-glass` on `<html>` from `my_ai_theme_mode`, `my_ai_glass_mode`, the OS setting and whether the browser can blur, before first paint; `useThemeSync` keeps them in step after mount. A unit test keeps the script in step with `resolveDark` and `resolveGlass`. It tolerates blocked storage and missing APIs on purpose: it runs before the app and must never stop the page from loading. `data-theme` is always explicit and is what every sheet reads (the `dark` class is still set but no style reads it). Panels: `glassMode` is `auto`, `frosted` or `solid`; `auto` is solid only where blur is unsupported, and solid removes every `backdrop-filter`. Less motion: `tokens.css` removes all CSS animation and the particle canvas draws one still frame. Only `html` carries the page colour: a `body` background would paint above the fixed particle canvas.
 - **Server state:** TanStack Query. Query keys live in `api/chats.ts`, `api/settings.ts` and `api/filesystem.ts`.
 - **UI state:** Zustand. Stream state (`state/stream-store.ts`) holds the in-flight turn.
 - **Browser state:** `localStorage` keys keep the legacy names and formats (`my_ai_selected_model`,
@@ -66,17 +66,19 @@ A React build missing from `dist/` returns 503 with the build command.
   the user in `state/user-store.ts`, calls `initUserStorage` and `settings-store.hydrate()` (the only place that reads
   storage), then renders the app. A 401 shows "Your session has expired." with a Reload button (full page from the gate,
   banner from `RootLayout` for a later request); a 403 shows a toast and still throws `ApiError`.
-- **Admin gating:** the UI hides what the server refuses for a user (`useIsAdmin()`): the Logs link and page, the runner
-  settings and the agent, model and stealth links in System Settings, the four admin dialogs in `DialogHost`, the Git Agent
-  toggle (a user's `gitMode` stays off), the "Git agent" section of System Settings (GitHub token, allowed git commands) and the browser
-  portal button. This is convenience only; the server enforces it.
+- **Admin gating:** the UI hides what the server refuses for a user (`useIsAdmin()`): the Logs link and page, the System link, the
+  admin-only parts of Settings (model loading, agents, runner, git agent: GitHub token and allowed git commands), the Git agent toggle
+  (a user's `gitMode` stays off) and the browser portal button. This is convenience only; the server enforces it.
 
 ## Conventions
 
-- Keep legacy class names so the shared stylesheet still applies.
-- Colours, lettering, spacing, corners, shadows, layers and speeds come from `styles/tokens.css` (design repository `console-at-rest`; refresh with
-  `node scripts/sync-design-tokens.cjs <checkout>`). Load order in `main.tsx`: fonts, legacy, components, tokens, bridge. The typefaces (Sora,
-  Instrument Sans, JetBrains Mono) are served by the app from `@fontsource-variable/*`. `bridge.css` uses `color-mix()`: Chrome 111, Firefox 113, Safari 16.2 or newer.
+- **Look:** the app follows the Console at Rest design system (rule book, shared values and reference demo in the design repository
+  `console-at-rest`). Colours, lettering, spacing, corners, shadows, layers and speeds come only from `styles/tokens.css` (refresh with
+  `node scripts/sync-design-tokens.cjs <checkout>`); the sheets in `styles/ds/` use those names and nothing else. Load order in `main.tsx`:
+  fonts, tokens, then `ds/*` with `phone.css` after the screens. Guards: `lib/design-tokens.test.ts` (no raw colours, corners, shadows, layers or
+  speeds; `styles/` holds only those three entries), `test/css-coverage.test.ts`, `test/inline-style.test.ts` and `test/wording.test.ts`
+  (plain wording, one-character ellipsis). The typefaces (Sora, Instrument Sans, JetBrains Mono) are served by the app from `@fontsource-variable/*`.
+- **Sizes:** phone up to 599px, tablet 600 to 1023px, computer from 1024px. Touch targets are 48px on a phone, 44px elsewhere.
 - Every model's HTML goes through `renderMarkdown` (DOMPurify). Do not inject unsanitised HTML.
 - The attachment `[System Note: ...]` the router appends to a user message is for the model: `src/lib/chat-model.ts` strips it from
   user bubbles and the edit box and shows its files as chips. The stored message keeps it.
@@ -84,14 +86,14 @@ A React build missing from `dist/` returns 503 with the build command.
   `lib/model-options.ts`; the raw id until the config is loaded). Action rows, the Stopped notice and inline errors render inside the
   answer column. The files button is dimmed (still clickable) while the open chat has no files; links in answers use the accent
   colour in both themes. These last two differ from the legacy UI on purpose.
-- Dialogs use `Modal`, which handles Escape (top of stack only), focus trap, focus restore and scroll lock.
-  Management lists (`CrudDialog`: skills, personas, memory) show the form's own title and put Cancel then Save in the modal footer;
-  the form gets the dialog's `formId` and reports `setCanSave`. The persona form offers only the flags the server stores. Number inputs (`.ui-input[type=number]`) hide the native spinner everywhere; typing is the way to change them.
-  The browser portal's iframe sits on a neutral surface token (not black) while it loads. Log rows are expanded by a stable key
-  (`rowKeys`); identical id-less rows are told apart by their order from the end, so when the oldest of several identical rows falls
-  off the row limit the rest shift (known limit).
-  While a form is open, Escape, the backdrop and the close button return to the list (so typed text is not lost by accident), the
-  back chevron steps up one level (form, list, parent dialog), and focus moves to the first control of the new view.
+- **Layers:** `Modal` (small dialogs), `Window` (tool windows: browser, code run history, version history, thought process), `Sheet` and
+  `Popover` (a menu is a sheet from the bottom on a phone). All handle Escape (top of the stack only), focus trap, focus restore and scroll
+  lock. On a phone, Back closes the newest layer first (`lib/back-layer.ts`, one history step shared by every open layer; the settings page
+  is left out because it navigates with `replace`). Number inputs hide the native spinner. Log rows are expanded by a stable key (`rowKeys`);
+  identical id-less rows are told apart by their order from the end, so when the oldest falls off the row limit the rest shift (known limit).
+- **Awkward states:** loading shows `Skeleton` placeholders in the shape of what is coming; an empty list shows `EmptyState` (a dotted
+  drawing, one line, one action); not found, gone, signed out, no access and a crash show `DeadEnd` screens from `app/DeadEnds.tsx`
+  (`ErrorBoundary` catches render errors); offline is said in the composer.
 - Generated files (`*.generated.ts`) come from `scripts/`. Do not edit them by hand.
 
 ## Streaming
@@ -143,50 +145,46 @@ Deleting a chat (or discarding a temporary one) stops its turn first (`stopIfStr
 to exit, so a slower exit still ends in the refusal toast with the reply and text kept. A stop request that never answers keeps the chat in "Stopping" until the browser gives up on it; a reload
 recovers. A chat whose stop was answered a moment ago (or that has a stopped row) is not reattached to, even if the refetch still says it is running. Each repeated attempt after a stop uses one of the user's turns per minute (the server counts a request refused as "in progress"), so a repeat that fails 5 times costs 5; and a turn another tab starts during that short window is attached when the chat next refetches.
 
-System Settings: "New chat defaults" (thinking profile, user preferences, max tokens, thinking budget) edit the store's `defaults` through
-`setDefaults`, so the next new chat starts from them while an open chat keeps its own values. "Delete all chats" (any user, behind a
+Settings is one page laid over the main area (`features/settings/SettingsPage.tsx`), opened with `?settings=<part>` on whatever page is
+underneath, so the chat stays mounted and its own settings are not reset (`/settings[/:section]` redirects there). Parts: Chat, Models,
+Personas, Skills, Memory, Agents, System. A change saves by itself and the header's light says "Saved" (`lib/save-light.ts`); only list
+items (personas, skills, memory, agents) and the GitHub token have a Save button. Outside a chat the Chat part edits the store's `defaults`
+(`setDefaults`), so the next new chat starts from them; in an open chat it edits that chat's values. "Delete all chats" (any user, behind a
 confirmation) stops a turn that is generating, deletes the caller's chats, discards a temporary chat and returns to the empty home page. The
-Git agent section (admin) keeps the GitHub token write-only: it is sent once, never read back, and only "Configured" or "Not configured" is shown;
-the allowed git commands are saved on each change with the full list. The memory dialog has a text search, a tag filter and a sort (newest or
-oldest); the skills dialog has a text search (client-side, `lib/list-filter.ts`).
+GitHub token is write-only: sent once, never read back, shown only as "Configured" or "Not configured". Memory has a text search, a tag
+filter and a sort; skills have a text search (client-side, `lib/list-filter.ts`).
 
-**Dropped from legacy:** "Reset app" (it cleared the saved connection settings, which no longer exist under Cloudflare Access, together with the saved
-model and theme and then reloaded). The model and theme can be changed in their own dialogs; nothing else in it is needed.
+The thought box is a timeline: one box per assistant turn with collapsible entries in the order they happened (Reasoning, `Call: <tool>`, `Tool Result: <tool>`, event dividers, and a labelled group per sub-agent run, which also shows that agent's text). Built by `lib/thought-timeline.ts` from the turn's steps, drawn by `ThoughtBox`, `TimelineEntry` and `ThoughtFullView` (a window with every entry open). The header says "Thinking…" with the newest event or running tool for as long as the turn streams, and "Thought process" after. Whether a box is open is kept in `state/thought-store.ts` by `chatId:ordinal` (the number of user turns up to the one it answers), so it stays open when the live reply is replaced by the saved one; deleting a turn forgets the chat's open boxes. A turn with nothing to show has no box. The retry notice is fixed text with a spinner; the server's message is not shown.
 
-The thought box is the legacy timeline: one box per assistant turn with collapsible entries in the order they happened (Reasoning, `Call: <tool>`, `Tool Result: <tool>`, event dividers, and a labelled group per sub-agent run, which also shows that agent's text). Built by `lib/thought-timeline.ts` from the turn's steps, drawn by `ThoughtBox`, `TimelineEntry` and `ThoughtFullView` (a dialog with every entry open). The header says "Thinking..." with the newest event or running tool for as long as the turn streams, and "Thought Process" after. Whether a box is open is kept in `state/thought-store.ts` by `chatId:ordinal` (the number of user turns up to the one it answers), so it stays open when the live reply is replaced by the saved one; deleting a turn forgets the chat's open boxes. A turn with nothing to show has no box. The retry notice is fixed text with a spinner; the server's message is not shown.
+## Phones
 
-## Mobile
+Phone rules (599px and below) live in `src/styles/ds/phone.css` and beside each screen's own rules, and are checked at 390px by
+`e2e/mobile-layout.spec.ts` (the `phone` Playwright project). The side panel becomes an opaque drawer that starts closed and closes when
+a layer opens; menus open as sheets from the bottom; windows, the files panel and the settings page take the whole screen with opaque
+backgrounds; every control is at least 48px. Toasts sit above the composer (`--composer-h`).
 
-Phone rules live in the last block of `src/styles/components.css` ("Phone layout", 768px and below) and are checked at 390px by
-`e2e/mobile-layout.spec.ts` (the `phone` Playwright project). The top of every page is one opaque 5rem band that the menu button
-(legacy 3.5rem square, hidden while the drawer is open) and the files button sit in, so messages never show beside or behind
-them. The drawer is opaque, keeps all three actions (New Chat, Temporary Chat, New Workspace) and closes when a dialog opens.
-The files button is on every page with a composer and dimmed on the home page. Toasts sit above the composer (`--composer-h`),
-dialogs take the screen less an 8px margin, and a reply without a thought box stacks avatar-over-answer at the full column width.
-The drawer and the title band are opaque (no blur) on phones; other surfaces keep their blur, as the legacy UI does.
-
-## Mobile
-
-The viewport meta (`index.html`) is the legacy one: `interactive-widget=resizes-content` (the layout resizes with the on-screen keyboard
+The viewport meta (`index.html`) is `interactive-widget=resizes-content` (the layout resizes with the on-screen keyboard
 where the browser supports it), `maximum-scale=1.0, user-scalable=no` and `viewport-fit=cover`. Where the keyboard only overlays the page
 (iOS Safari), `useKeyboardOffset` raises the composer by the covered height and publishes it as `--keyboard-offset` on `<html>`; the
 transcript pads its bottom by it and `useAutoFollow` scrolls a pinned reader to the end again when the window or visual viewport
-resizes. `usePlatformClass` (called by `RootLayout`) adds `is-ios` to `<html>` on iOS and iPadOS, which the legacy stylesheet keys on, and blocks
+resizes. `usePlatformClass` (called by `RootLayout`) adds `is-ios` to `<html>` on iOS and iPadOS and blocks
 touches that start outside a scroll area (`SCROLL_AREAS` in `lib/scroll-lock.ts`) so the page cannot rubber-band. The phone Playwright
 project simulates the keyboard by shrinking `visualViewport.height` (`e2e/mobile-keyboard.spec.ts`).
 
 ## Files panel
 
-Above 1024px the open files drawer sits beside the chat: it publishes `--right-sidebar-width` so `main` (the transcript and the composer) narrows, as in
-the legacy page; at 1024px and below it overlays. The selected row is kept in view, leaving a file with unsaved edits (switching, closing, new file)
-asks first, and the file on screen stays until the next one has loaded. File actions: Rename, Move to folder, Download and Copy contents
-(the "More" menu; a file read from disk cannot be renamed or moved), New folder, and Delete folder (right-click a folder; the server only removes an
-empty one). Version history shows the current version, views a version, compares it with the current one (the server's line-by-line diff) and restores it
-after a confirmation; it needs a chat, so it is not offered for a file opened in a workspace.
+One browser (`features/artifacts/FileBrowser.tsx`: tree, search by name, editor, preview, run output) is used beside a chat
+(`ArtifactDrawer`, an `<aside aria-label="Files">`), on the workspace page and full screen. `ArtifactPanel` moves the same DOM box between
+those places, so the open file, undo history, scroll positions and width survive. From 1024px the drawer sits beside the chat and publishes
+`--right-sidebar-width` so `main` narrows; on a tablet it overlays; on a phone it takes the screen. Edits save by themselves after a short
+pause (`useAutoSave`); switching file or closing saves first and stays put if that fails, so there is no "discard changes?" prompt. File
+actions: Rename, Move (a place picker), Download, Copy, New file or folder, Delete (the server only removes an empty folder; a file read
+from disk cannot be renamed or moved). Version history is a two-pane window: pick a version, see it or its difference from the current one,
+restore after a confirmation. Run and version history need a chat, so they are not offered for a file opened in a workspace.
 
 ## Known gaps
 
-- The legacy per-agent renderers (research, browsing) are not ported; sub-agent steps show as a labelled group of entries.
+- Per-agent renderers (research, browsing) do not exist; sub-agent steps show as a labelled group of entries.
 - The code-execution WebSocket (live runs) is not wired; history is read-only.
-- Mermaid pop-out and file-link navigation are not implemented.
-- The file tree shows one level; nested folders are listed but not expandable.
+- File search matches names only (the server has no content search).
+- The previous vanilla UI in `static/` (served at `/legacy/`) keeps its old look until it is removed (`docs/release.md`).

@@ -3,15 +3,37 @@
  * Console at Rest: only shared values from tokens.css. See the rule book in the console-at-rest repository.
  */
 
-html {
-  background-color: var(--bg);
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
 }
 
+/* The app is one screen: the panels inside it scroll, the page itself never does. */
+html,
 body {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+html {
+  /* The sphere is drawn on a fixed canvas behind everything; the page colour sits under it. */
+  background-color: var(--bg);
+}
+body {
+  margin: 0;
+  padding: 0;
+  background: transparent;
   color: var(--fg);
   font-family: var(--font);
   font-size: var(--text-body);
   line-height: 1.6;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+.hidden {
+  display: none !important;
 }
 
 ::selection {
@@ -111,7 +133,7 @@ body {
   inset: 0;
   width: 100%;
   height: 100%;
-  transition: opacity 1.2s ease;
+  transition: opacity var(--t-greet) ease;
   touch-action: none;
 }
 /* Reading strength is the default; an open screen (home, sign-in, a dead end) asks for full strength. */
@@ -162,7 +184,4 @@ body {
 }
 .font-mono {
   font-family: var(--mono);
-}
-.font-heading {
-  font-family: var(--display);
 }

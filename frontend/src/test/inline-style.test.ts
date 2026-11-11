@@ -44,7 +44,10 @@ describe('inline style ratchet', () => {
     const over = [...counts.entries()]
       .filter(([file, n]) => n > (BASELINE[file] ?? 0))
       .map(([file, n]) => `${file}: ${n} > ${BASELINE[file] ?? 0}`);
-    expect(over, 'Move these styles to components.css or mark them // dynamic-style').toEqual([]);
+    expect(
+      over,
+      "Move these styles to the area's sheet in styles/ds or mark them // dynamic-style",
+    ).toEqual([]);
   });
 
   it('baseline is lowered as files are cleaned up', () => {

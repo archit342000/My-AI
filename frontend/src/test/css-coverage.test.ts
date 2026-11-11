@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { classNamesInSource, classSelectorsInCss, listFiles, readSrc, SRC_DIR } from './source-scan';
+import {
+  classNamesInSource,
+  classSelectorsInCss,
+  listFiles,
+  readSrc,
+  SRC_DIR,
+} from './source-scan';
 
 /**
  * Guard: every class name written in TSX must have a CSS rule, so elements never fall back to
@@ -60,7 +66,7 @@ describe('css coverage', () => {
       .filter((name) => !css.has(name) && !JS_HOOKS.has(name) && !TODO_UNSTYLED.has(name))
       .map((name) => `${name} (${usage.get(name)!.join(', ')})`)
       .sort();
-    expect(orphans, `Unstyled classes: add a rule to styles/components.css`).toEqual([]);
+    expect(orphans, `Unstyled classes: add a rule to the area's sheet in styles/ds`).toEqual([]);
   });
 
   it('TODO_UNSTYLED only lists classes that are still unstyled and still used', () => {

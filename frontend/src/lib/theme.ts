@@ -7,7 +7,7 @@ export function resolveDark(mode: ThemeMode, prefersDark: boolean): boolean {
 }
 
 /**
- * Applies the resolved theme to <html>: the `dark` class (legacy selectors) and `data-theme`
+ * Applies the resolved theme to <html>: the `dark` class (read by the diagram renderer) and `data-theme`
  * (the shared values in tokens.css). Always set explicitly, so "system" does not rely on the
  * media-query fallback in tokens.css.
  */
@@ -33,7 +33,7 @@ export function supportsBackdropBlur(): boolean {
   );
 }
 
-/** Applies the resolved panel mode as `data-glass` on <html> (read by tokens.css and bridge.css). */
+/** Applies the resolved panel mode as `data-glass` on <html> (read by tokens.css). */
 export function applyGlass(glass: ResolvedGlass): void {
   document.documentElement.dataset.glass = glass;
 }

@@ -42,7 +42,7 @@ export function ResumeBanner({ chatId }: { chatId: string }) {
       <div className="resume-banner-actions">
         <button
           type="button"
-          className="btn-secondary resume-dismiss"
+          className="ui-button ui-button--ghost resume-dismiss"
           disabled={busy}
           onClick={() => void dismiss()}
         >
@@ -50,7 +50,7 @@ export function ResumeBanner({ chatId }: { chatId: string }) {
         </button>
         <button
           type="button"
-          className="resume-confirm"
+          className="ui-button ui-button--primary resume-confirm"
           onClick={() => void resumeTurn(queryClient, chatId)}
         >
           Resume

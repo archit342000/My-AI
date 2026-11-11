@@ -756,41 +756,6 @@ input[type='range'].ui-slider__input {
   pointer-events: none;
   animation: fade var(--t-fast) ease-out;
 }
-
-/* ── Tags, chips and counts ── */
-
-.ui-badge {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  gap: 6px;
-  min-height: 24px;
-  padding: 0 var(--space-2);
-  border-radius: 8px 8px 8px 2px;
-  background: var(--well);
-  color: var(--muted);
-  font-family: var(--mono);
-  font-size: var(--text-label);
-  letter-spacing: 0.04em;
-  line-height: 1;
-  white-space: nowrap;
-}
-.ui-badge--success {
-  background: color-mix(in srgb, var(--ok) 14%, transparent);
-  color: var(--ok);
-}
-.ui-badge--warning {
-  background: color-mix(in srgb, var(--warn) 16%, transparent);
-  color: var(--warn);
-}
-.ui-badge--danger {
-  background: color-mix(in srgb, var(--bad) 12%, transparent);
-  color: var(--bad);
-}
-.ui-badge--accent {
-  background: var(--accent-soft);
-  color: var(--accent-text);
-}
 /* A count: blue means new, grey is just a number. */
 .ui-count {
   display: inline-flex;
@@ -800,7 +765,7 @@ input[type='range'].ui-slider__input {
   min-width: 20px;
   height: 20px;
   padding: 0 6px;
-  border-radius: 10px 10px 10px 3px;
+  border-radius: var(--r-sm);
   background: var(--accent);
   color: var(--accent-fg);
   font-family: var(--mono);

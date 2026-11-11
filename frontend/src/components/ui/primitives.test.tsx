@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import { Badge } from './Badge';
 import { Button, IconButton } from './Button';
 import { EmptyState } from './EmptyState';
 import { Field, Input, Textarea } from './Field';
@@ -427,12 +426,7 @@ describe('Field, Input and Textarea', () => {
   });
 });
 
-describe('Badge and EmptyState', () => {
-  it('Badge applies its tone class', () => {
-    render(<Badge tone="warning">loading</Badge>);
-    expect(screen.getByText('loading')).toHaveClass('ui-badge', 'ui-badge--warning');
-  });
-
+describe('EmptyState', () => {
   it('EmptyState shows title, description and action', () => {
     render(
       <EmptyState

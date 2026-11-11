@@ -494,6 +494,12 @@
   border-radius: var(--r-panel);
   background: color-mix(in srgb, var(--glass-strong) 55%, transparent);
 }
+.resume-banner {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+}
 .clarify__question {
   min-width: 0;
 }

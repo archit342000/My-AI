@@ -29,5 +29,5 @@ if a release must be fully reverted.
 ## Legacy UI retirement
 
 The vanilla UI in `static/` stays at `/legacy/` for one release after 5.0.0, selectable with `FRONTEND=legacy`. In the next release:
-remove `static/`, the `/legacy` routes in `app.py`, the root `package.json`/`build_cm6.mjs` bundle, `src/styles/legacy.css` coupling if no longer needed,
+remove `static/`, the `/legacy` routes in `app.py`, the root `package.json`/`build_cm6.mjs` bundle,
 and the `FRONTEND` switch; then update `docs/architecture.md` and `docs/frontend.md`.

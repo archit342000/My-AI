@@ -17,7 +17,7 @@ function prettyArgs(args: string): string {
 /**
  * One entry of the thought box: reasoning, a tool call, a tool result, a sub-agent's text or a
  * group of a sub-agent's entries, collapsed unless `defaultOpen`. The `expanded` class on
- * `.activity-item` drives the animated body (see components.css, "Tool activity").
+ * `.activity-item` drives the animated body (see styles/ds/chat.css).
  */
 export function TimelineEntry({
   item,
