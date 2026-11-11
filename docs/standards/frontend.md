@@ -34,7 +34,9 @@ Applies to `frontend/`. Layout, state placement and run commands are in `docs/fr
 
 ## Styling and accessibility
 
-- CSS Custom Properties for colors, spacing, radii and z-index. No hardcoded hex values or magic pixel sizes in components.
+- Colours, lettering, spacing, corners, shadows, layers and speeds come from the shared values in `src/styles/tokens.css` (a synced copy of the
+  `console-at-rest` design repository; never edit it; add a missing value to that repository first, then re-sync). No hardcoded hex values or magic pixel sizes in components.
+  `bridge.css` keeps legacy variable names working until each screen is converted; new code does not use those names.
 - Reuse the shared UI primitives (`Modal`, `Toast`, `Menu`, `Popover`, `ConfirmDialog`) instead of building new ones.
 - Interactive elements are real `<button>`/`<a>` elements with an accessible name. Icon-only buttons need `aria-label`.
 - Everything must be keyboard operable; keep focus visible.

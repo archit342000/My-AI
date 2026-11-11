@@ -1,0 +1,112 @@
+/*
+ * Bridge: legacy variable names, pointed at the shared values in tokens.css.
+ *
+ * Screens that are not converted yet still read these names (from legacy.css and components.css).
+ * Loaded last (main.tsx), so one declaration here wins in both themes. Only var(), color-mix() and
+ * numbers that tokens.css already defines: never a new colour. Remove a line when nothing reads the
+ * name any more; the file goes away with legacy.css.
+ *
+ * Five names are shared by both worlds and now carry the shared values everywhere, also on screens not
+ * converted yet: --accent, --glass-blur, --scrim, --ease-spring, --ease-liquid (the new blue, lighter
+ * frosting and veil are meant to show at once). tokens.css also sets data-theme on <html>, which
+ * switches on two old light-theme rules for the file editor's active line in legacy.css.
+ *
+ * Not bridged on purpose: legacy corners (--radius-*), layers (--z-*) and the old spacing aliases.
+ * Changing them would restyle screens that are not converted yet; each screen moves to the shared
+ * names when it is converted.
+ *
+ * One mirrored value: --accent-rgb repeats --accent as three numbers, because the legacy sheet builds
+ * colours with rgba(var(--accent-rgb), a). A unit test (lib/design-tokens.test.ts) keeps it equal to
+ * --accent in both themes.
+ *
+ * color-mix() needs Chrome 111, Firefox 113 or Safari 16.2 (see docs/frontend.md).
+ */
+
+:root {
+  /* Paper and ink */
+  --bg-base: var(--bg);
+  --bg-primary: var(--bg);
+  --bg-dark: var(--bg);
+  --content-primary: var(--fg);
+  --content-muted: var(--muted);
+  --content-ghost: color-mix(in srgb, var(--muted) 55%, transparent);
+  --text-user-message: var(--fg);
+
+  /* Lettering */
+  --font-heading: var(--display);
+  --font-body: var(--font);
+  --font-mono: var(--mono);
+  --font-serif: var(--font);
+
+  /* Blue */
+  --accent-hover: color-mix(in srgb, var(--accent) 86%, var(--fg));
+  --accent-light: var(--led);
+  --accent-subtle: var(--accent-soft);
+  --accent-border: color-mix(in srgb, var(--accent) 22%, transparent);
+  --accent-glow: color-mix(in srgb, var(--accent) 28%, transparent);
+  /* --accent as numbers, for the legacy rgba(var(--accent-rgb), a) uses */
+  --accent-rgb: 11, 107, 203;
+  --color-primary-400: var(--led);
+  --color-primary-500: var(--accent);
+  --color-primary-600: var(--accent-hover);
+  --focus-ring: var(--accent);
+
+  /* Meaning */
+  --color-emerald: var(--ok);
+  --color-amber: var(--warn);
+  --color-rose: var(--bad);
+  --color-rose-500: var(--bad);
+  --danger: var(--bad-solid);
+  --danger-hover: color-mix(in srgb, var(--bad-solid) 86%, var(--fg));
+  --danger-text: var(--bad);
+  --danger-subtle: color-mix(in srgb, var(--bad) 12%, transparent);
+  --success-text: var(--ok);
+  --success-subtle: color-mix(in srgb, var(--ok) 14%, transparent);
+  --warning-text: var(--warn);
+  --warning-subtle: color-mix(in srgb, var(--warn) 16%, transparent);
+
+  /* Surfaces and lines */
+  --glass-bg: var(--glass);
+  --glass-surface: var(--glass);
+  --glass-border: var(--edge);
+  --glass-blur-sidebar: var(--glass-blur);
+  --bg-sidebar: var(--glass);
+  --bg-header: color-mix(in srgb, var(--bg) 40%, transparent);
+  --bg-input: var(--glass-strong);
+  --bg-chat-display: var(--well);
+  --border-header: var(--edge);
+  --border-chat-display: var(--edge);
+  --border-user-message: var(--edge);
+  --border-subtle: var(--edge);
+  --sidebar-border-color: var(--edge);
+  --surface-secondary: var(--well);
+  --surface-elevated: var(--pop);
+  --surface-hover: var(--well);
+  --surface-pressed: color-mix(in srgb, var(--fg) 10%, transparent);
+  --off-track: var(--edge-strong);
+
+  /* Shadows */
+  --surface-shadow: var(--shadow);
+  --surface-shadow-intense: var(--shadow-lift);
+  --shadow-user-message: none;
+}
+
+:root[data-theme='dark'] {
+  --accent-rgb: 26, 115, 209;
+}
+
+/* Solid panels: no blur anywhere, and the legacy see-through surfaces become solid too. */
+:root[data-glass='solid'] *,
+:root[data-glass='solid'] *::before,
+:root[data-glass='solid'] *::after,
+/* Two legacy rules set an !important blur behind an id, which outranks the universal rule above. */
+:root[data-glass='solid'] #model-switch-overlay,
+:root[data-glass='solid'] #thought-full-view-modal .modal-header {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+:root[data-glass='solid'] {
+  --bg-header: var(--bg);
+  --bg-chat-display: var(--glass-open);
+}

@@ -1,0 +1,184 @@
+/* Synced from console-at-rest v1.2 @ fa07a6c. Do not edit: run scripts/sync-design-tokens.cjs. */
+/*
+ * Console at Rest: shared values
+ * The single source of every colour, size, corner, shadow and speed.
+ * Rule book: RULEBOOK.md. Living reference: console-at-rest.html.
+ *
+ * Use: load this file once, then use only these names. Never write a raw
+ * colour, radius, shadow or duration in an app. If a value is missing, add
+ * it here first (see RULEBOOK.md, "Adding a new building block").
+ *
+ * Night mode: follows the device unless the page sets data-theme="light"
+ * or data-theme="dark" on <html>.
+ */
+
+:root {
+  /* ---- Paper and ink ---- */
+  --bg: #F4F2EE;                 /* the page itself: warm off-white, never pure white */
+  --fg: #171A21;                 /* main text */
+  --muted: #4A4F5A;              /* secondary text, hints, icons at rest */
+
+  /* ---- Blue (Azure). The only brand colour. Actions and selection only. ---- */
+  --accent: #0B6BCB;             /* filled buttons, switches that are on, selected marks */
+  --accent-fg: #FFFFFF;          /* text and icons on --accent */
+  --accent-text: #08539E;        /* blue text and icons on a tint or on paper */
+  --accent-soft: rgba(11, 107, 203, 0.12);   /* tint: quiet buttons, selected rows, highlights */
+  --led: #2F8AE5;                /* status light, progress, chart line, list dots */
+  --dot-1: #0B6BCB; --dot-2: #2F8AE5; --dot-3: #084F99; --dot-4: #5FA8EE; --dot-5: #8FC2F4;  /* sphere dots */
+
+  /* ---- Meaning. Never decoration. ---- */
+  --ok: #197A4C;                 /* done, connected, went well */
+  --warn: #9A5B00;               /* check this, slow, offline */
+  --bad: #C0322B;                /* failed, destructive text, error outlines */
+  --bad-solid: #C0322B;          /* filled destructive button (white text) */
+
+  /* ---- Surfaces ---- */
+  --frost: 0.9;                              /* 0 = clear, 1 = solid. The app default. */
+  --glass: rgba(255, 255, 255, 0.52);        /* floating panel: side panel, bars */
+  --glass-open: rgba(255, 255, 255, calc(0.08 + 0.62 * var(--frost)));  /* the big content panel */
+  --glass-strong: rgba(255, 255, 255, 0.85); /* cards, inputs, chips, the message box */
+  --pop: rgba(255, 255, 255, 0.97);          /* menus, pop-ups, brief messages */
+  --well: rgba(23, 26, 33, 0.06);            /* sunken areas, hover on plain things, tracks */
+  --scrim: rgba(23, 26, 33, 0.28);           /* the veil behind a pop-up */
+  --glass-blur: blur(14px) saturate(140%);   /* frosting on floating pieces only */
+  --panel-blur: blur(calc(var(--frost) * 4px)) saturate(140%);  /* the big panel: light on purpose */
+
+  /* ---- Lines ---- */
+  --edge: rgba(23, 26, 33, 0.08);            /* panel and card edges, dividers */
+  --edge-strong: rgba(23, 26, 33, 0.2);      /* input edges, outline buttons, switch that is off */
+  --tick: rgba(23, 26, 33, 0.22);            /* the tick rule */
+
+  /* ---- Code ---- */
+  --code-bg: #171A21;
+  --code-fg: #E8ECF5;
+  --code-keyword: #8FC2F4; --code-string: #E3C99A; --code-comment: #8B93A5; --code-line-no: #6F778A;
+
+  /* ---- Shadows: none, resting, lifted. Plain grey. ---- */
+  --shadow: 0 1px 2px rgba(20, 25, 40, 0.05), 0 10px 28px -6px rgba(20, 25, 40, 0.12);
+  --shadow-lift: 0 2px 4px rgba(20, 25, 40, 0.08), 0 14px 30px -8px rgba(20, 25, 40, 0.22);
+
+  /* ---- Background ---- */
+  --stars: 0;                    /* star field strength: 0 by day, 1 at night */
+  --sphere-open: 0.95;           /* sphere strength on open screens */
+  --sphere-read: 0.5;            /* sphere strength behind reading */
+  --sphere-phone: 0.6;           /* multiply both by this on a phone */
+  --fade: 0.92;                  /* strength of the patch behind words that sit on the sphere */
+  --fade-blur: 10px;             /* how far that patch is softened; it must show no edge */
+  --panel-under-open: 45%;       /* extra background colour mixed into a public page's reading panel */
+
+  /* ---- Lettering ---- */
+  --display: "Sora", "Segoe UI", system-ui, sans-serif;               /* headings, app name */
+  --font: "Instrument Sans", "Segoe UI", system-ui, sans-serif;       /* everything read or pressed */
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;  /* labels, figures, code */
+
+  --text-hero: clamp(2.6rem, 8.5vw, 6.5rem);   /* portfolio headline. Sora 700, -0.055em, 1.12 */
+  --text-greeting: clamp(3rem, 9vw, 5rem);     /* greeting. Sora 700, -0.05em, 1.1 */
+  --text-page: clamp(26px, 4vw, 36px);         /* page title. Sora 600, -0.03em */
+  --text-popup: 24px;                          /* pop-up title. Sora 600, -0.02em */
+  --text-section: 22px;                        /* section title on a page. Sora 600, -0.02em */
+  --text-heading: 18px;                        /* block heading, bar title. Sora 600, -0.01em */
+  --text-body: 15px;                           /* reading text. Instrument Sans 400, line height 1.6 */
+  --text-small: 13px;                          /* hints and small print */
+  --text-label: 12px;                          /* typewriter label. JetBrains Mono, capitals, 0.08em */
+  --text-code: 13px;                           /* code. JetBrains Mono, line height 1.65 */
+
+  /* ---- Spacing: eight steps and nothing in between ---- */
+  --space-1: 4px;  --space-2: 8px;  --space-3: 12px; --space-4: 16px;
+  --space-5: 24px; --space-6: 36px; --space-7: 48px; --space-8: 72px;
+  --pad: 36px;                   /* side padding of a page; 16px on a phone */
+
+  /* ---- Corners: three rounded, bottom left squared off ---- */
+  --r-sm: 10px 10px 10px 3px;    /* chips, menu items, rows, tips */
+  --r-ctl: 12px 12px 12px 3px;   /* buttons, inputs, code boxes, notices */
+  --r-panel: 16px 16px 16px 4px; /* panels, cards, pop-ups, menus */
+  --r-sheet: 22px 22px 0 0;      /* a sheet rising from the bottom of a phone */
+
+  /* ---- Sizes ---- */
+  --touch: 44px;                 /* smallest thing you can press; 48px on a phone */
+  --measure: 44rem;              /* widest a reading column gets */
+  --side: 252px;                 /* navigation panel, open */
+  --rail: 70px;                  /* navigation panel, collapsed */
+
+  /* ---- Movement ---- */
+  --ease-spring: cubic-bezier(0.2, 0.8, 0.2, 1);      /* the main curve: fast start, gentle settle */
+  --ease-liquid: cubic-bezier(0.22, 1, 0.36, 1);      /* large entrances: greeting, hero */
+  --ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);      /* small things that pop: menus, the switch knob */
+  --t-fast: 0.15s;               /* hover, press */
+  --t-base: 0.2s;                /* most changes */
+  --t-slow: 0.3s;                /* panels, menus, sheets */
+  --t-enter: 0.4s;               /* a message or pop-up arriving */
+  --t-greet: 0.8s;               /* the greeting; also day/night colour change */
+
+  /* ---- Layers ---- */
+  --z-background: 0;             /* paper, sphere, stars */
+  --z-page: 1;                   /* panels and pages */
+  --z-float: 10;                 /* bars and panels that float */
+  --z-menu: 20;                  /* menus, tips, small pop-ups */
+  --z-popup: 30;                 /* pop-ups, sheets, windows */
+  --z-top: 40;                   /* brief messages, the whole-screen wait */
+}
+
+/* ---- Night. Equal to day, not an afterthought. Neutral near-black: blue appears only on actions, selection and the sphere. ---- */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #070708; --fg: #F4F5F7; --muted: #A9ADB6;
+    --accent: #1A73D1; --accent-fg: #FFFFFF; --accent-text: #C7E2FB;
+    --accent-soft: rgba(95, 168, 238, 0.18); --led: #5FA8EE;
+    --dot-1: #5FA8EE; --dot-2: #2F8AE5; --dot-3: #8FC2F4; --dot-4: #1A73D1; --dot-5: #D9ECFD;
+    --ok: #4ADE9A; --warn: #F2B84B; --bad: #FF8A80; --bad-solid: #C0322B;
+    --glass: rgba(255, 255, 255, 0.055);
+    --glass-open: rgba(20, 20, 23, calc(0.06 + 0.5 * var(--frost)));
+    --glass-strong: rgba(255, 255, 255, 0.085);
+    --pop: rgba(19, 19, 22, 0.98);
+    --well: rgba(255, 255, 255, 0.05); --scrim: rgba(0, 0, 0, 0.66);
+    --edge: rgba(255, 255, 255, 0.13); --edge-strong: rgba(255, 255, 255, 0.3); --tick: rgba(255, 255, 255, 0.28);
+    --code-bg: rgba(0, 0, 0, 0.5); --code-fg: #E4E7EE;
+    --shadow: 0 10px 28px -6px rgba(0, 0, 0, 0.75); --shadow-lift: 0 16px 36px -8px rgba(0, 0, 0, 0.9);
+    --stars: 1; --sphere-open: 1; --sphere-read: 0.6;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #070708; --fg: #F4F5F7; --muted: #A9ADB6;
+  --accent: #1A73D1; --accent-fg: #FFFFFF; --accent-text: #C7E2FB;
+  --accent-soft: rgba(95, 168, 238, 0.18); --led: #5FA8EE;
+  --dot-1: #5FA8EE; --dot-2: #2F8AE5; --dot-3: #8FC2F4; --dot-4: #1A73D1; --dot-5: #D9ECFD;
+  --ok: #4ADE9A; --warn: #F2B84B; --bad: #FF8A80; --bad-solid: #C0322B;
+  --glass: rgba(255, 255, 255, 0.055);
+  --glass-open: rgba(20, 20, 23, calc(0.06 + 0.5 * var(--frost)));
+  --glass-strong: rgba(255, 255, 255, 0.085);
+  --pop: rgba(19, 19, 22, 0.98);
+  --well: rgba(255, 255, 255, 0.05); --scrim: rgba(0, 0, 0, 0.66);
+  --edge: rgba(255, 255, 255, 0.13); --edge-strong: rgba(255, 255, 255, 0.3); --tick: rgba(255, 255, 255, 0.28);
+  --code-bg: rgba(0, 0, 0, 0.5); --code-fg: #E4E7EE;
+  --shadow: 0 10px 28px -6px rgba(0, 0, 0, 0.75); --shadow-lift: 0 16px 36px -8px rgba(0, 0, 0, 0.9);
+  --stars: 1; --sphere-open: 1; --sphere-read: 0.6;
+  color-scheme: dark;
+}
+
+/* ---- Phones ---- */
+@media (max-width: 599px) {
+  :root { --pad: 16px; --touch: 48px; --text-greeting: 2.75rem; --text-hero: 2.6rem; --text-page: 26px; }
+}
+
+/* ---- Devices that cannot blur: same colours, solid ---- */
+:root[data-glass="solid"] { --glass: #FBFAF8; --glass-open: #FAF9F6; --glass-strong: #FFFFFF; --pop: #FFFFFF; --glass-blur: none; --panel-blur: none; }
+:root[data-glass="solid"][data-theme="dark"] { --glass: #111113; --glass-open: #0E0E10; --glass-strong: #1B1B1F; --pop: #151518; }
+
+/* ---- People who ask for less motion get none ---- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+
+/* ---- The named movements ---- */
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes fadeScale { from { opacity: 0; transform: scale(0.98); } to { opacity: 1; transform: scale(1); } }
+@keyframes msgIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes popOverIn { from { opacity: 0; transform: translateY(10px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes modalIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes sheetIn { from { transform: translateY(100%); } to { transform: translateY(0); } }
+@keyframes greetIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes checkPop { 0% { transform: scale(0); opacity: 0; } 50% { transform: scale(1.3); } 100% { transform: scale(1); opacity: 1; } }
+@keyframes dotBounce { 0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); } 40% { opacity: 1; transform: scale(1.3); } }
+@keyframes led { 50% { box-shadow: 0 0 0 6px transparent; opacity: 0.5; } }
+@keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }

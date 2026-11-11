@@ -12,6 +12,7 @@ import { Slider } from '../../components/ui/Slider';
 import { Toggle } from '../../components/ui/Toggle';
 import { Tooltip } from '../../components/ui/Tooltip';
 import { showToast } from '../../components/ui/toast-store';
+import { FoundationsDemo } from './FoundationsDemo';
 
 const MODELS: SelectOption[] = [
   { value: 'qwen', label: 'Qwen 3.5 4B', group: 'Local', dot: 'success' },
@@ -49,6 +50,8 @@ export function PrimitivesDemo() {
 
   return (
     <div className="ui-demo">
+      <FoundationsDemo />
+
       <section className="ui-demo__section">
         <h2>Buttons and icon buttons</h2>
         <div className="ui-demo__row">

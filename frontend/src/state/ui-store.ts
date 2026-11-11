@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 
 export type ThemeMode = 'light' | 'dark' | 'system';
+/** Panels: frosted glass, solid, or decided by what the browser can do. */
+export type GlassMode = 'auto' | 'frosted' | 'solid';
 
 interface UiState {
   sidebarCollapsed: boolean;
@@ -31,10 +33,13 @@ interface UiState {
   toggleArtifacts: () => void;
   setArtifactsOpen: (open: boolean) => void;
   setThemeMode: (mode: ThemeMode) => void;
+  glassMode: GlassMode;
+  setGlassMode: (mode: GlassMode) => void;
 }
 
+// Device preferences: global on purpose, not per user (see docs/frontend.md).
 const THEME_KEY = 'my_ai_theme_mode';
-// Device preferences, like the theme: global on purpose, not per user (see docs/frontend.md).
+const GLASS_KEY = 'my_ai_glass_mode';
 const SIDEBAR_WIDTH_KEY = 'my_ai_sidebar_width';
 const SIDEBAR_COLLAPSED_KEY = 'my_ai_sidebar_collapsed';
 
@@ -74,6 +79,11 @@ function readTheme(): ThemeMode {
   return stored === 'light' || stored === 'dark' || stored === 'system' ? stored : 'system';
 }
 
+function readGlass(): GlassMode {
+  const stored = typeof localStorage === 'undefined' ? null : localStorage.getItem(GLASS_KEY);
+  return stored === 'frosted' || stored === 'solid' || stored === 'auto' ? stored : 'auto';
+}
+
 export const useUiStore = create<UiState>((set) => ({
   // Legacy: the sidebar starts closed on phones (<= 768px).
   sidebarCollapsed: readSidebarCollapsed(),
@@ -94,6 +104,7 @@ export const useUiStore = create<UiState>((set) => ({
   openArtifact: (path) => set({ artifactsOpen: true, requestedArtifactPath: path }),
   clearRequestedArtifact: () => set({ requestedArtifactPath: null }),
   themeMode: readTheme(),
+  glassMode: readGlass(),
   temporaryChatId: null,
   setTemporaryChatId: (id) => set({ temporaryChatId: id }),
   newChatWorkspaceId: null,
@@ -118,5 +129,9 @@ export const useUiStore = create<UiState>((set) => ({
   setThemeMode: (mode) => {
     localStorage.setItem(THEME_KEY, mode);
     set({ themeMode: mode });
+  },
+  setGlassMode: (mode) => {
+    localStorage.setItem(GLASS_KEY, mode);
+    set({ glassMode: mode });
   },
 }));

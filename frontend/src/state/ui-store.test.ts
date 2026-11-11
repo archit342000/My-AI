@@ -109,3 +109,30 @@ describe('ui-store file requests', () => {
     expect(useUiStore.getState().requestedArtifactPath).toBeNull();
   });
 });
+
+describe('panel mode (glass)', () => {
+  afterEach(() => {
+    localStorage.clear();
+    vi.resetModules();
+  });
+
+  async function load() {
+    vi.resetModules();
+    return (await import('./ui-store')).useUiStore;
+  }
+
+  it('defaults to auto, also for an unknown stored value', async () => {
+    expect((await load()).getState().glassMode).toBe('auto');
+    localStorage.setItem('my_ai_glass_mode', 'purple');
+    expect((await load()).getState().glassMode).toBe('auto');
+  });
+
+  it('reads and remembers the choice under the device key', async () => {
+    localStorage.setItem('my_ai_glass_mode', 'solid');
+    const store = await load();
+    expect(store.getState().glassMode).toBe('solid');
+    store.getState().setGlassMode('frosted');
+    expect(store.getState().glassMode).toBe('frosted');
+    expect(localStorage.getItem('my_ai_glass_mode')).toBe('frosted');
+  });
+});
