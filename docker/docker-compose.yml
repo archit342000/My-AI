@@ -44,6 +44,7 @@ services:
       - PLAYWRIGHT_MCP_API_KEY
       - HF_TOKEN
       - CODE_RUNNER_API_KEY
+    restart: unless-stopped
 
   bastion_ssh:
     build:
