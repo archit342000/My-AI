@@ -1,7 +1,7 @@
 import pytest
 import json
 from unittest.mock import ANY, MagicMock, patch, AsyncMock
-from backend.chat.tool_handler import ToolHandler
+from backend.chat.tool_handler import ToolHandler, _activity_from_chunk, _agent_run_chunk, _run_failed
 
 @pytest.fixture
 def mock_db():
@@ -117,9 +117,9 @@ async def test_handle_tool_calls_agent_tool_no_result(mock_db_instance, mock_reg
     async for chunk in tool_handler.handle_tool_calls(tool_calls):
         chunks.append(chunk)
         
-    assert len(chunks) == 2
-    assert chunks[0] == "chunk1"
-    assert "completed execution successfully" in chunks[1]
+    plain = [c for c in chunks if '"agent_run"' not in c and c != "\n\n"]
+    assert plain[0] == "chunk1" and len(plain) == 2  # the agent's chunk and the tool result (agent_run lines and line ends are separate)
+    assert "completed execution successfully" in chunks[-1]
     mock_db_instance.add_tool_result.assert_called_once()
     assert "completed execution successfully" in mock_db_instance.add_tool_result.call_args.kwargs['content']
 
@@ -147,9 +147,9 @@ async def test_handle_tool_calls_agent_tool_with_result(mock_db_instance, mock_r
     async for chunk in tool_handler.handle_tool_calls(tool_calls):
         chunks.append(chunk)
         
-    assert len(chunks) == 2
-    assert chunks[0] == "chunk1"
-    assert '\\"key\\": \\"value\\"' in chunks[1]
+    assert len([c for c in chunks if '"agent_run"' not in c and c != "\n\n"]) == 2
+    assert "chunk1" in chunks
+    assert '\\"key\\": \\"value\\"' in chunks[-1]
     mock_db_instance.add_tool_result.assert_called_once()
     assert '{"key": "value"}' in mock_db_instance.add_tool_result.call_args.kwargs['content']
 
@@ -166,8 +166,8 @@ async def test_handle_tool_calls_agent_tool_unresolved(mock_db_instance, mock_re
     async for chunk in tool_handler.handle_tool_calls(tool_calls):
         chunks.append(chunk)
         
-    assert len(chunks) == 1
-    assert "could not be resolved" in chunks[0]
+    assert len([c for c in chunks if '"agent_run"' not in c]) == 1
+    assert "could not be resolved" in chunks[-1]
     mock_db_instance.add_tool_result.assert_called_once()
     assert "could not be resolved" in mock_db_instance.add_tool_result.call_args.kwargs['content']
 
@@ -584,7 +584,7 @@ async def test_refusals_and_unresolved_calls_also_carry_a_duration(mock_db_insta
     with patch('backend.chat.tool_handler.time', _clock(1.0, 1.5)):
         chunks = [c async for c in tool_handler.handle_tool_calls([{"id": "t1", "function": {"name": name, "arguments": args}}])]
     assert mock_db_instance.add_tool_result.call_args.kwargs["duration_ms"] == 500
-    assert _delta(chunks[0])["duration_ms"] == 500
+    assert _delta(chunks[-1])["duration_ms"] == 500
 
 
 @pytest.mark.anyio
@@ -606,3 +606,225 @@ async def test_a_call_skipped_as_already_done_sends_and_stores_nothing(mock_db_i
     chunks = [c async for c in tool_handler.handle_tool_calls([{"id": "t1", "function": {"name": "x", "arguments": "{}"}}])]
     assert chunks == []
     mock_db_instance.add_tool_result.assert_not_called()
+
+
+# ---- helper runs (agent_run) -----------------------------------------------------------------------------------
+
+
+
+def _line(delta, parent_type="helper", **extra):
+    return "data: " + json.dumps({"parent_type": parent_type, "choices": [{"delta": delta}], **extra}) + "\n\n"
+
+
+def test_activity_comes_from_the_helpers_own_event_text_or_the_tool_it_called():
+    assert _activity_from_chunk(_line({"role": "event", "content": "  Searching the web  "}), "helper") == "Searching the web"
+    call = {"id": "c", "function": {"name": "visit_page", "arguments": "{}"}}
+    assert _activity_from_chunk(_line({"tool_calls": [call]}), "helper") == "Using visit_page"
+    assert len(_activity_from_chunk(_line({"role": "event", "content": "x" * 500}), "helper")) == 120
+
+
+@pytest.mark.parametrize("line", [
+    _line({"role": "event", "content": "other agent"}, parent_type="nested"),                      # another helper's own chunk
+    _line({"role": "event", "content": "main"}, parent_type="main"),
+    _line({"tool_result": {"name": "n", "content": "c"}}),                                      # a result
+    "data: " + json.dumps({"parent_type": "helper", "agent_run": {"id": "x"}}) + "\n\n",         # a run line (nested handler)
+    _line({"content": "plain answer text"}),                                                    # not activity
+    _line({"role": "event", "content": "   "}),
+    "data: not json\n\n", "event: ping\n\n", "", None,
+])
+def test_activity_ignores_other_agents_results_run_lines_and_garbage(line):
+    assert _activity_from_chunk(line, "helper") is None
+
+
+@pytest.mark.parametrize("result,failed", [
+    ("Error: Daily web search limit reached.", True), ("error: lowercase too", True), ("Search failed. Try again.", True),
+    ("Mock Agent failed. Try again.", True), ("Visit page failed. Try again.", True), ("Browsing agent failed during execution. Try again.", True),
+    ("Here is the answer.\nError: appears later", False), ("The search did not fail", False), ("", False), (None, False), ("Searching… done", False),
+    ("Checkout failed for order 42", False), ("3 results failed to load, the rest is fine", False), ("Search failed after 3 attempts. Try again.", True),
+    ("Browsing agent failed during execution. Try again.", True), ("Visit page agent failed to return a response.", True),
+])
+def test_run_failed_reads_the_first_line_only(result, failed):
+    assert _run_failed(result) is failed
+
+
+def test_the_agent_run_line_is_a_data_line_tagged_with_the_callers_parent_type():
+    line = _agent_run_chunk("research", {"id": "t1", "name": "search_web", "state": "running"})
+    assert line.startswith("data: ") and line.endswith("\n\n")
+    assert json.loads(line[6:]) == {"parent_type": "research", "agent_run": {"id": "t1", "name": "search_web", "state": "running"}}
+
+
+def _agent_setup(handler, mock_registry, chunks, result="the answer", raises=None):
+    mock_registry.get_tool.return_value = {"type": "agent"}
+    mock_registry.resolve_implementation.return_value = object()
+    handler.agent_handler = MagicMock()
+    handler.agent_handler.result = result
+
+    async def run(*a, **k):
+        for c in chunks:
+            yield c
+        if raises:
+            raise raises
+    handler.agent_handler.execute_agent.side_effect = run
+
+
+def _runs(chunks):
+    return [json.loads(c[6:])["agent_run"] for c in chunks if c.startswith("data: ") and '"agent_run"' in c]
+
+
+@pytest.mark.anyio
+@patch('backend.database.db')
+async def test_a_helper_run_sends_start_activity_updates_and_a_done_end_with_the_duration(mock_db, mock_registry, tool_handler):
+    mock_db.get_messages.return_value = []
+    call = {"id": "c", "function": {"name": "visit_page", "arguments": "{}"}}
+    _agent_setup(tool_handler, mock_registry, [_line({"role": "event", "content": "Searching"}, "search_web"), _line({"role": "event", "content": "Searching"}, "search_web"),
+                                               _line({"tool_calls": [call]}, "search_web"), _line({"content": "text"}, "search_web")])
+    with patch('backend.chat.tool_handler.time', _clock(5.0, 43.0)):
+        chunks = [c async for c in tool_handler.handle_tool_calls([{"id": "t1", "function": {"name": "search_web", "arguments": "{}"}}])]
+    runs = _runs(chunks)
+    assert [(r["state"], r["activity"]) for r in runs] == [("running", None), ("running", "Searching"), ("running", "Using visit_page"), ("done", "Using visit_page")]
+    assert all(r["id"] == "t1" and r["name"] == "search_web" and r["parent_id"] is None for r in runs)  # top-level run: no parent
+    assert runs[0]["duration_ms"] is None and runs[-1]["duration_ms"] == 38000 and isinstance(runs[0]["started_at"], float)
+    assert mock_db.add_tool_result.call_args.kwargs["duration_ms"] == 38000  # the same number as the tool result's
+    assert chunks[-1].startswith("data: ") and "tool_result" in chunks[-1]  # the result still comes last
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("result", ["Error: Daily web search limit reached.", "Search failed. Try again."])
+@patch('backend.database.db')
+async def test_a_helper_whose_result_reads_as_a_failure_ends_failed(mock_db, mock_registry, tool_handler, result):
+    mock_db.get_messages.return_value = []
+    _agent_setup(tool_handler, mock_registry, [], result=result)
+    chunks = [c async for c in tool_handler.handle_tool_calls([{"id": "t1", "function": {"name": "search_web", "arguments": "{}"}}])]
+    assert _runs(chunks)[-1]["state"] == "failed"
+
+
+@pytest.mark.anyio
+@patch('backend.database.db')
+async def test_a_helper_that_raises_ends_failed_and_the_exception_still_propagates(mock_db, mock_registry, tool_handler):
+    mock_db.get_messages.return_value = []
+    _agent_setup(tool_handler, mock_registry, [_line({"role": "event", "content": "Working"}, "search_web")], raises=RuntimeError("boom"))
+    seen = []
+    with pytest.raises(RuntimeError):
+        async for c in tool_handler.handle_tool_calls([{"id": "t1", "function": {"name": "search_web", "arguments": "{}"}}]):
+            seen.append(c)
+    runs = _runs(seen)
+    assert runs[0]["state"] == "running" and runs[-1]["state"] == "failed" and isinstance(runs[-1]["duration_ms"], int)
+
+
+@pytest.mark.anyio
+@patch('backend.database.db')
+async def test_an_unresolved_helper_implementation_sends_a_failed_run_and_pure_tools_send_none(mock_db, mock_registry, tool_handler):
+    mock_db.get_messages.return_value = []
+    mock_registry.get_tool.return_value = {"type": "agent"}
+    mock_registry.resolve_implementation.return_value = None
+    chunks = [c async for c in tool_handler.handle_tool_calls([{"id": "t1", "function": {"name": "ghost", "arguments": "{}"}}])]
+    runs = _runs(chunks)
+    assert [r["state"] for r in runs] == ["running", "failed"] and runs[0]["started_at"] == runs[1]["started_at"]  # an explicit start, then the end
+    mock_registry.get_tool.return_value = {"type": "function"}
+    mock_registry.resolve_implementation.return_value = AsyncMock(return_value="ok")
+    chunks = [c async for c in tool_handler.handle_tool_calls([{"id": "t2", "function": {"name": "get_time", "arguments": "{}"}}])]
+    assert _runs(chunks) == []
+
+
+@pytest.mark.anyio
+@patch('backend.database.db')
+async def test_a_nested_run_carries_its_outer_runs_id_and_the_callers_parent_type(mock_db, mock_registry):
+    mock_db.get_messages.return_value = []
+    nested = ToolHandler("chat_123", MagicMock(), parent_message_id="outer-call", parent_type="research")
+    nested._user_id = "user-a"
+    _agent_setup(nested, mock_registry, [])
+    chunks = [c async for c in nested.handle_tool_calls([{"id": "inner", "function": {"name": "search_web", "arguments": "{}"}}])]
+    for line in (c for c in chunks if '"agent_run"' in c):
+        payload = json.loads(line[6:])
+        assert payload["parent_type"] == "research" and payload["agent_run"]["parent_id"] == "outer-call"
+
+
+@pytest.mark.anyio
+@patch('backend.database.db')
+async def test_finished_runs_are_stored_in_one_collection_merged_by_id_across_handlers(mock_db, mock_registry, tool_handler):
+    stored = {}
+    mock_db.get_messages.return_value = []
+    mock_db.get_collections.side_effect = lambda *a, **k: [{"collection_type": "agent_runs", "items": json.dumps(stored["items"])}] if "items" in stored else []
+    mock_db.add_collection.side_effect = lambda **kw: stored.update(items=kw["items"], kw=kw)
+    _agent_setup(tool_handler, mock_registry, [])
+    [c async for c in tool_handler.handle_tool_calls([{"id": "t1", "function": {"name": "search_web", "arguments": "{}"}}])]
+    [c async for c in tool_handler.handle_tool_calls([{"id": "t2", "function": {"name": "visit_page", "arguments": "{}"}}])]
+    assert [r["id"] for r in stored["items"]] == ["t1", "t2"] and all(r["state"] == "done" for r in stored["items"])
+    kw = stored["kw"]
+    assert kw["collection_type"] == "agent_runs" and kw["overwrite"] is True and kw["parent_message_id"] == 100 and kw["parent_type"] == "main"
+    # a resumed turn (a new handler for the same anchor) adds to the stored list; a repeated id replaces its own record
+    again = ToolHandler("chat_123", MagicMock(), parent_message_id=100)
+    again._user_id = "user-a"
+    _agent_setup(again, mock_registry, [])
+    mock_db.get_messages.return_value = []
+    [c async for c in again.handle_tool_calls([{"id": "t3", "function": {"name": "search_web", "arguments": "{}"}}])]
+    assert [r["id"] for r in stored["items"]] == ["t1", "t2", "t3"]
+
+
+@pytest.mark.anyio
+@patch('backend.database.db')
+async def test_a_failing_run_store_is_logged_and_does_not_stop_the_turn(mock_db, mock_registry, tool_handler):
+    import sqlite3
+    mock_db.get_messages.return_value = []
+    mock_db.get_collections.side_effect = sqlite3.OperationalError("locked")
+    _agent_setup(tool_handler, mock_registry, [])
+    with patch('backend.chat.tool_handler.log_event') as events:
+        chunks = [c async for c in tool_handler.handle_tool_calls([{"id": "t1", "function": {"name": "search_web", "arguments": "{}"}}])]
+    assert _runs(chunks)[-1]["state"] == "done" and "tool_result" in chunks[-1]
+    assert any(c.args[0] == "agent_run_store_error" for c in events.call_args_list)
+
+
+@pytest.mark.anyio
+@patch('backend.database.db')
+async def test_a_plain_text_agent_chunk_is_ended_so_the_next_data_line_stays_whole(mock_db, mock_registry, tool_handler):
+    mock_db.get_messages.return_value = []
+    _agent_setup(tool_handler, mock_registry, ["Search failed after 3 attempts."], result="Search failed after 3 attempts.")
+    chunks = [c async for c in tool_handler.handle_tool_calls([{"id": "t1", "function": {"name": "search_web", "arguments": "{}"}}])]
+    stream = "".join(chunks)
+    assert "Search failed after 3 attempts.\n\ndata: " in stream  # the raw text line is closed before the end-of-run line
+    assert [r["state"] for r in _runs([l + "\n\n" for l in stream.split("\n\n") if l.startswith("data: ")])] == ["running", "failed"]
+
+
+@pytest.mark.parametrize("line", [
+    _line({"tool_calls": ["not a dict"]}), _line({"tool_calls": [None]}), _line({"tool_calls": [{"function": "x"}]}),
+    _line({"tool_calls": []}), "data: [1, 2]\n\n", "data: {\"parent_type\": \"helper\", \"choices\": [5]}\n\n",
+])
+def test_a_malformed_chunk_never_breaks_the_activity_reader(line):
+    assert _activity_from_chunk(line, "helper") is None
+
+
+@pytest.mark.anyio
+@patch('backend.database.db')
+async def test_a_malformed_helper_chunk_does_not_turn_a_working_helper_into_a_failed_run(mock_db, mock_registry, tool_handler):
+    mock_db.get_messages.return_value = []
+    _agent_setup(tool_handler, mock_registry, [_line({"tool_calls": ["junk"]}, "search_web")])
+    chunks = [c async for c in tool_handler.handle_tool_calls([{"id": "t1", "function": {"name": "search_web", "arguments": "{}"}}])]
+    assert _runs(chunks)[-1]["state"] == "done"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("error", [RuntimeError("db down"), OSError("disk"), ValueError("bad")])
+@patch('backend.database.db')
+async def test_any_failure_storing_a_run_is_logged_and_never_aborts_the_turn(mock_db, mock_registry, tool_handler, error):
+    mock_db.get_messages.return_value = []
+    mock_db.get_collections.return_value = []
+    mock_db.add_collection.side_effect = error
+    _agent_setup(tool_handler, mock_registry, [])
+    with patch('backend.chat.tool_handler.log_event') as events:
+        chunks = [c async for c in tool_handler.handle_tool_calls([{"id": "t1", "function": {"name": "search_web", "arguments": "{}"}}])]
+    assert _runs(chunks)[-1]["state"] == "done" and "tool_result" in chunks[-1]
+    assert any(c.args[0] == "agent_run_store_error" for c in events.call_args_list)
+
+
+@pytest.mark.anyio
+@patch('backend.database.db')
+async def test_a_nested_run_is_stored_under_the_outer_tool_call_with_the_callers_parent_type(mock_db, mock_registry):
+    mock_db.get_messages.return_value = []
+    mock_db.get_collections.return_value = []
+    nested = ToolHandler("chat_123", MagicMock(), parent_message_id="outer-call", parent_type="research")
+    nested._user_id = "user-a"
+    _agent_setup(nested, mock_registry, [])
+    [c async for c in nested.handle_tool_calls([{"id": "inner", "function": {"name": "search_web", "arguments": "{}"}}])]
+    kw = mock_db.add_collection.call_args.kwargs
+    assert kw["collection_type"] == "agent_runs" and kw["parent_message_id"] == "outer-call" and kw["parent_type"] == "research"
+    assert kw["items"][0]["id"] == "inner" and kw["items"][0]["parent_id"] == "outer-call"

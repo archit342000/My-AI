@@ -74,6 +74,7 @@ class AgentHandler:
         Executes a specific agent flow with standardized orchestration.
         """
         log_event("agent_start", {"chat_id": self.chat_id, "agent": agent_name})
+        self.result = None  # a helper that sets no result must not inherit the previous run's
         
         # Standardize iteration to allow capturing return values from async generators
         it = flow_fn(agent=self, agent_name=agent_name, **kwargs).__aiter__()
