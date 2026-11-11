@@ -4,6 +4,8 @@ import {
   statusOf,
   timelineOf,
   toolCount,
+  toolDetail,
+  toolFailed,
   toolSummary,
   type TimelineItem,
 } from './thought-timeline';
@@ -27,7 +29,7 @@ const tool = (name: string, result: string | null, agent: string | null = null):
 describe('timelineOf', () => {
   it('keeps the order of the steps', () => {
     const items = timelineOf([reasoning('a'), tool('web_search', 'r'), reasoning('b'), event('e')]);
-    expect(items.map((i) => i.kind)).toEqual(['reasoning', 'call', 'result', 'reasoning', 'event']);
+    expect(items.map((i) => i.kind)).toEqual(['reasoning', 'tool', 'reasoning', 'event']);
   });
 
   it('leaves the main agent text out: it is the bubble', () => {
@@ -36,17 +38,17 @@ describe('timelineOf', () => {
     ]);
   });
 
-  it('gives a tool with a result a call and a result entry, and a running tool only the call', () => {
-    const [call, result] = timelineOf([tool('t', 'done')]);
-    expect(call).toMatchObject({ kind: 'call', name: 't', running: false });
-    expect(result).toMatchObject({ kind: 'result', name: 't', result: 'done' });
+  it('gives a tool one entry with its answer, and no answer while it runs', () => {
+    expect(timelineOf([tool('t', 'done')])).toEqual([
+      expect.objectContaining({ kind: 'tool', name: 't', result: 'done' }),
+    ]);
     expect(timelineOf([tool('t', null)])).toEqual([
-      expect.objectContaining({ kind: 'call', running: true }),
+      expect.objectContaining({ kind: 'tool', result: null }),
     ]);
   });
 
-  it('keeps an empty-string result as a result', () => {
-    expect(timelineOf([tool('t', '')]).map((i) => i.kind)).toEqual(['call', 'result']);
+  it('keeps an empty-string answer as an answer', () => {
+    expect(timelineOf([tool('t', '')])).toEqual([expect.objectContaining({ result: '' })]);
   });
 
   it('groups consecutive steps of one sub-agent, labelled with its name', () => {
@@ -62,8 +64,7 @@ describe('timelineOf', () => {
     expect(group).toMatchObject({ kind: 'group', label: 'Browsing agent' });
     expect(group?.kind === 'group' ? group.items.map((i) => i.kind) : []).toEqual([
       'reasoning',
-      'call',
-      'result',
+      'tool',
       'text',
     ]);
   });
@@ -108,20 +109,19 @@ describe('statusOf', () => {
 
 describe('toolCount and toolSummary', () => {
   const call = (key: string): TimelineItem => ({
-    kind: 'call',
+    kind: 'tool',
     key,
     name: 't',
     args: '',
-    running: false,
+    result: '',
   });
   const items: TimelineItem[] = [
     { kind: 'reasoning', key: 'r', text: 'x' },
     call('a'),
-    { kind: 'result', key: 'ar', name: 't', result: '' },
     { kind: 'group', key: 'g', label: 'Research agent', items: [call('b'), call('c')] },
   ];
 
-  it('counts calls, also inside sub-agent groups, and not their results', () => {
+  it('counts calls, also inside sub-agent groups', () => {
     expect(toolCount(items)).toBe(3);
     expect(toolCount([])).toBe(0);
   });
@@ -130,5 +130,31 @@ describe('toolCount and toolSummary', () => {
     expect(toolSummary(items)).toBe('3 tools used');
     expect(toolSummary([call('a')])).toBe('1 tool used');
     expect(toolSummary([{ kind: 'reasoning', key: 'r', text: 'x' }])).toBe('');
+  });
+});
+
+describe('toolDetail', () => {
+  it('gives the first plain value of the arguments, on one line', () => {
+    expect(toolDetail('{"path":"tests/login.spec.ts","lines":3}')).toBe('tests/login.spec.ts');
+    expect(toolDetail('{"deep":{"a":1},"count":20}')).toBe('20');
+    expect(toolDetail('{"code":"print(1)\\nprint(2)"}')).toBe('print(1)');
+  });
+
+  it('is empty for no arguments, or ones still arriving', () => {
+    expect(toolDetail('{}')).toBe('');
+    expect(toolDetail('{"path":"te')).toBe('');
+    expect(toolDetail('')).toBe('');
+    expect(toolDetail('[1,2]')).toBe('');
+    expect(toolDetail('null')).toBe('');
+  });
+});
+
+describe('toolFailed', () => {
+  it('reads the usual failure wording, and nothing else', () => {
+    expect(toolFailed('Error: no network')).toBe(true);
+    expect(toolFailed('{"error": "bad path"}')).toBe(true);
+    expect(toolFailed('3 files, 0 errors')).toBe(false);
+    expect(toolFailed('')).toBe(false);
+    expect(toolFailed(null)).toBe(false);
   });
 });

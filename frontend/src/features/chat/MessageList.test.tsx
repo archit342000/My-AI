@@ -578,11 +578,8 @@ describe('MessageList thought box', () => {
     );
     expect(container.querySelector('.tool-summary')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: /Thought process/ }));
-    expect(container.querySelector('.thought-timeline-wrapper')?.textContent).toContain(
-      'Call: List files',
-    );
-    expect(container.querySelector('.thought-timeline-wrapper')?.textContent).toContain(
-      'Result: List files',
+    expect(container.querySelector('.thought-timeline-wrapper .tool-item')?.textContent).toContain(
+      'List files',
     );
   });
 

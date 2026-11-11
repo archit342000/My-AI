@@ -103,7 +103,8 @@
   position: relative;
   flex: 1;
   min-width: 0;
-  overflow-y: auto;
+  /* Only ever scrolls up and down: nothing inside may drag the page sideways. */
+  overflow: hidden auto;
   padding: var(--space-5) var(--pad) 56px;
   scrollbar-width: thin;
   scrollbar-color: var(--edge-strong) transparent;
@@ -255,11 +256,19 @@
   gap: 4px 10px;
   font-weight: 500;
 }
+/* A long entry (a memory is a whole sentence) wraps onto up to three lines, then is cut; it never pushes the row wider. */
+.crud-title > .ui-tooltip-anchor {
+  min-width: 0;
+  max-width: 100%;
+}
 .crud-title__name {
+  display: -webkit-box;
   min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
 }
 .crud-title__name.font-mono {
   font-size: 13.5px;
@@ -479,6 +488,13 @@
   container: set-content / inline-size;
 }
 @container set-content (max-width: 520px) {
+  /* The filters of a list share one row under the search box. */
+  .crud-toolbar > .ui-input {
+    flex-basis: 100%;
+  }
+  .crud-toolbar > .ui-select {
+    flex: 1 1 8rem;
+  }
   .set-row--wide {
     flex-direction: column;
     align-items: stretch;

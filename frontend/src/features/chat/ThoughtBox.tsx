@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Icon } from '../../components/icons/Icon';
-import { IconButton } from '../../components/ui/Button';
+import { Button } from '../../components/ui/Button';
 import { cx } from '../../lib/cx';
 import { useThoughtStore } from '../../state/thought-store';
 import { toolSummary, type TimelineItem } from '../../lib/thought-timeline';
@@ -55,20 +55,22 @@ export function ThoughtBox({
           </span>
           {detail ? <span className="thought-status-line">{detail}</span> : null}
         </button>
-        <div className="thought-actions">
-          <IconButton
-            icon="expand"
-            size="sm"
-            className="thought-full-view-btn"
-            label="Open bigger view"
-            disabled={items.length === 0}
-            onClick={() => setFullView(true)}
-          />
-        </div>
       </div>
       {expanded ? (
         <div className="thought-timeline-wrapper thought-body">
           <div className="activity-feed">
+            {items.length > 0 ? (
+              <div className="thought-actions">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="thought-full-view-btn"
+                  onClick={() => setFullView(true)}
+                >
+                  Open bigger
+                </Button>
+              </div>
+            ) : null}
             {items.map((item) => (
               <TimelineEntry key={item.key} item={item} />
             ))}

@@ -387,3 +387,25 @@ test('with solid panels nothing on a phone screen blurs what is behind it', asyn
   await expect(page.getByRole('region', { name: 'Settings' })).toBeVisible();
   expect(await blurred()).toEqual([]);
 });
+
+test('a long memory wraps inside its row: the settings page never scrolls sideways', async ({
+  page,
+}) => {
+  const long =
+    'Always read all the provided context fully before answering. Summarising or omitting in the name of efficiency is a catastrophic failure.';
+  await page.route('**/api/tools/preferences', (route) =>
+    route.fulfill({
+      json: { preferences: [{ id: 'p1', content: long, tag: 'personal_info', timestamp: 1 }] },
+    }),
+  );
+  await page.goto('/?settings=memory');
+  const row = page.locator('.crud-row', { hasText: 'Always read all' });
+  await expect(row).toBeVisible();
+  const content = page.locator('.set-content');
+  expect(await content.evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(0);
+  expect(await overflow(page)).toBeLessThanOrEqual(0);
+  const box = await rect(row);
+  expect(box.right).toBeLessThanOrEqual(390);
+  // The edit and delete buttons stay on screen beside the text.
+  expect((await rect(row.getByRole('button').last())).right).toBeLessThanOrEqual(390);
+});
