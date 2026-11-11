@@ -159,11 +159,11 @@ export interface CodeRun {
 export const codeExecApi = {
   history: (chatId: string) =>
     apiJson<CodeRun[]>(`/api/tools/code-execution/history/${encodeURIComponent(chatId)}`),
-  /** Runs a saved file of the chat and returns what it printed (or the runner's own error text). */
-  runFile: (chatId: string, path: string) =>
+  /** Runs a saved file of the chat or workspace and returns what it printed (or the runner's own error text). */
+  runFile: (scope: ScopeRef, path: string) =>
     apiJson<{ result: string }>('/api/tools/code-execution/run-file', {
       method: 'POST',
-      json: { chat_id: chatId, path },
+      json: { ...scopeBody(scope), path },
     }).then((r) => r.result),
 };
 

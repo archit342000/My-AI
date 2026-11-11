@@ -621,7 +621,7 @@ describe('ArtifactPanel', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Run' }));
       const output = await screen.findByRole('region', { name: 'Run output' });
       await waitFor(() => expect(within(output).getByText('Finished')).toBeTruthy());
-      expect(runFile).toHaveBeenCalledWith('c', 'app.py');
+      expect(runFile).toHaveBeenCalledWith({ chatId: 'c' }, 'app.py');
       expect(output).toHaveTextContent('1');
       fireEvent.click(within(output).getByRole('button', { name: 'Close the output' }));
       expect(screen.queryByRole('region', { name: 'Run output' })).toBeNull();

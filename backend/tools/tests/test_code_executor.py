@@ -502,3 +502,71 @@ def test_the_http_timeout_covers_compile_time_plus_the_run(name, runner_env):
     asyncio.run(RUNNER_CALLS[name]())
     assert req.post.call_args.kwargs["timeout"] >= 15 + 30 + 5  # compile 15 s + the run's default 30 s + margin
 
+
+
+# ---- workspace runs (no chat) --------------------------------------------------------------------------------
+
+def test_run_owner_is_the_chat_owner_then_the_workspace_owner_then_none():
+    with patch('backend.tools.implementations.code_executor.db') as db:
+        db.get_chat_owner.return_value = "chat-owner"
+        db.get_workspace_owner.return_value = "ws-owner"
+        assert code_executor._run_owner("c1", None) == "chat-owner"
+        assert code_executor._run_owner("c1", "w1") == "chat-owner"  # a chat wins when both are given
+        assert code_executor._run_owner(None, "w1") == "ws-owner"
+        assert code_executor._run_owner(None, None) is None
+        db.get_workspace_owner.assert_called_once_with("w1")
+
+
+def test_resolve_run_target_passes_the_workspace_to_the_resolver(tmp_path):
+    (tmp_path / "main.py").write_text("print(1)")
+    with patch('backend.tools.implementations.code_executor.resolve_owner_and_physical_path') as resolve:
+        resolve.side_effect = lambda chat_id, path, **kw: (chat_id, kw.get("workspace_id"), str(tmp_path / path) if path else str(tmp_path))
+        assert code_executor.resolve_run_target(None, "main.py", workspace_id="w1") == (str(tmp_path / "main.py"), str(tmp_path))
+        assert all(c.kwargs == {"workspace_id": "w1"} and c.args[0] is None for c in resolve.call_args_list)
+
+
+def test_run_file_without_chat_or_workspace_is_still_the_missing_context_error():
+    assert asyncio.run(code_executor.run_file(path="main.py")) == "Error: Missing chat context."
+
+
+def test_a_workspace_run_takes_the_slot_of_the_workspace_owner_and_keeps_no_history(runner_env):
+    db, req, slot_log, _ = runner_env
+    db.get_workspace_owner.return_value = "ws-owner"
+    result = asyncio.run(code_executor.run_file(path="main.py", workspace_id="w1", tool_call_id="tc"))
+    assert "Exit Code" in result
+    assert slot_log == [("enter", "ws-owner"), ("exit", "ws-owner")]
+    db.get_chat_owner.assert_not_called()
+    db.add_code_execution_record.assert_not_called()  # run history is chat-only
+    req.post.assert_called_once()
+
+
+def test_a_workspace_run_whose_workspace_has_no_owner_is_refused_without_calling_the_runner(runner_env):
+    db, req, _, _ = runner_env
+    db.get_workspace_owner.return_value = None
+    result = asyncio.run(code_executor.run_file(path="main.py", workspace_id="w1", tool_call_id="tc"))
+    assert result == code_executor.RUNNER_UNAVAILABLE_MESSAGE
+    req.post.assert_not_called()
+
+
+def test_dangerous_code_in_a_workspace_run_is_refused_without_asking_or_running(runner_env):
+    _, req, _, _ = runner_env
+    with patch('backend.tools.implementations.code_executor.classify_code', return_value="dangerous"), \
+         patch('backend.tools.implementations.code_executor.request_clarification') as ask:
+        result = asyncio.run(code_executor.run_file(path="main.py", workspace_id="w1", tool_call_id="tc"))
+    assert result == "Error: This file needs your confirmation before it runs. Run it from a chat to confirm."
+    ask.assert_not_called(); req.post.assert_not_called()
+
+
+def test_a_chat_run_still_records_history(runner_env):
+    db, req, _, _ = runner_env
+    asyncio.run(code_executor.run_file(path="main.py", chat_id="c1", tool_call_id="tc"))
+    db.add_code_execution_record.assert_called_once()
+
+
+def test_dangerous_code_in_a_chat_run_still_asks_the_person(runner_env):
+    _, req, _, _ = runner_env
+    with patch('backend.tools.implementations.code_executor.classify_code', return_value="dangerous"), \
+         patch('backend.tools.implementations.code_executor.request_clarification', return_value="No, cancel") as ask:
+        result = asyncio.run(code_executor.run_file(path="main.py", chat_id="c1", tool_call_id="tc"))
+    ask.assert_called_once()
+    assert result == "Execution cancelled by user." and not req.post.called

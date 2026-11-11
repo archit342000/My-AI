@@ -2,7 +2,7 @@ from flask import Blueprint, request, jsonify, Response
 import json
 import logging
 from backend.auth.context import admin_required, current_user_id
-from backend.auth.ownership import require_chat_owner
+from backend.auth.ownership import require_chat_owner, require_workspace_owner
 from backend.tools.callbacks import callback_registry
 from backend.logging import log_event
 from backend.utils import read_json_object
@@ -437,27 +437,35 @@ async def api_run_file():
         return err
     path = data.get("path")
     chat_id = data.get("chat_id")
+    workspace_id = data.get("workspace_id") if not chat_id else None
     stdin = data.get("stdin", "")
     args = data.get("args", [])
     sql_target = data.get("sql_target", "sqlite")
-    
-    if not path or not chat_id:
-        return jsonify({"error": "Missing path or chat_id"}), 400
-    if not isinstance(chat_id, str):
-        return jsonify({"error": "Invalid chat_id"}), 400
-    denied = require_chat_owner(chat_id)
+
+    if not path or not (chat_id or workspace_id):
+        return jsonify({"error": "Missing path, chat_id or workspace_id"}), 400
+    if chat_id:
+        if not isinstance(chat_id, str):
+            return jsonify({"error": "Invalid chat_id"}), 400
+        denied = require_chat_owner(chat_id)
+    else:
+        # "default" means "no workspace" in the file system, so it names nothing to run in.
+        if not isinstance(workspace_id, str) or workspace_id == "default":
+            return jsonify({"error": "Invalid workspace_id"}), 400
+        denied = require_workspace_owner(workspace_id)
     if denied:
         return denied
+    scope_log = {"chat_id": chat_id} if chat_id else {"workspace_id": workspace_id}
 
     try:
-        resolve_run_target(chat_id, path)
+        resolve_run_target(chat_id, path, workspace_id=workspace_id)
     except FileNotFoundError:
         return jsonify({"error": "File not found"}), 404
     except ValueError:
         return jsonify({"error": "Invalid file path"}), 400
     except Exception as e:
         logger.error(f"Error resolving file for direct run: {e}", exc_info=True)
-        log_event("tools_run_file_error", {"chat_id": chat_id, "path": path[:200], "error": str(e)})
+        log_event("tools_run_file_error", {**scope_log, "path": path[:200], "error": str(e)})
         return jsonify({"error": "Failed to run file"}), 500
 
     try:
@@ -467,12 +475,13 @@ async def api_run_file():
             args=args,
             sql_target=sql_target,
             chat_id=chat_id,
+            workspace_id=workspace_id,
             tool_call_id=f"direct_{uuid.uuid4().hex[:12]}"
         )
         return jsonify({"result": result})
     except Exception as e:
         logger.error(f"Error running file directly: {e}", exc_info=True)
-        log_event("tools_run_file_error", {"chat_id": chat_id, "path": path[:200], "error": str(e)})
+        log_event("tools_run_file_error", {**scope_log, "path": path[:200], "error": str(e)})
         return jsonify({"error": "Failed to run file"}), 500
 
 

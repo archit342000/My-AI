@@ -24,6 +24,16 @@ Client code lives in `frontend/src/api/`.
 - Validate before acting, and fail with `400` (not a partial write).
 - Routes that read a JSON body use `read_json_object` (`backend/utils.py`): a missing, malformed or non-object body is `400 {"error": "Request body must be a JSON object"}` (the personas and skills routes add `"success": false`), never Flask's HTML 400/415 page or a 500. Pass `required=False` only when every field is optional: an absent body (nothing, `null`, `[]`) is then accepted as `{}`, while a malformed or non-object body is still a 400.
 
+## Workspace files: versions and running a file
+
+A workspace file has no chat, so these routes take `workspace_id` in place of `chat_id` (a chat still works as before; passing neither is `400`):
+- `GET /api/file_systems/<id>/versions`, `GET /api/file_systems/<id>/versions/<n>`, `GET /api/file_systems/<id>/current-version`
+  (query string) and `POST /api/file_systems/<id>/versions/<n>/restore` and `POST /api/file_systems/<id>/diff` (query string or JSON body).
+  Restoring writes the workspace file on disk. An unknown file or another user's workspace is `404`.
+- `POST /api/tools/code-execution/run-file` with `{"path", "workspace_id"}` runs the workspace file with the same runner limits. The workspace
+  must belong to the caller (`404` otherwise); `"default"` is `400`. A workspace run keeps no run history, and code the safety check marks
+  dangerous is refused (the result is an `Error:` text asking the person to run it from a chat to confirm), because there is no chat to ask in.
+
 ## Streaming (SSE)
 
 - Streaming endpoints return `text/event-stream`; each event is `data: <json>\n\n`. Generation endpoints:
