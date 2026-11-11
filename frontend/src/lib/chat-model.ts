@@ -29,7 +29,15 @@ export type Step =
     };
 
 export type Turn =
-  | { kind: 'user'; id: string; text: string; images: string[]; files: UploadedFile[] }
+  | {
+      kind: 'user';
+      id: string;
+      text: string;
+      images: string[];
+      files: UploadedFile[];
+      /** When it was sent, as the server stored it. */
+      time?: number | string | null;
+    }
   | {
       kind: 'assistant';
       /** First stored message id of the turn (stable React key). */
@@ -38,6 +46,8 @@ export type Turn =
       messageIds: string[];
       steps: Step[];
       model: string | null;
+      /** When the reply was written (its last stored message). */
+      time?: number | string | null;
     };
 
 /** The answer: main-agent text steps, one paragraph each. */
@@ -83,7 +93,9 @@ const ABSENT = new Set(['', 'None', 'null', 'undefined']);
 
 /** True when a stored field carries no value. */
 export function isAbsent(value: unknown): boolean {
-  return value === null || value === undefined || (typeof value === 'string' && ABSENT.has(value.trim()));
+  return (
+    value === null || value === undefined || (typeof value === 'string' && ABSENT.has(value.trim()))
+  );
 }
 
 function clean(value: unknown): string {
@@ -125,9 +137,7 @@ interface RawToolCall {
 }
 
 /** Parses the tool calls stored on an assistant message: a list, or a JSON string of one. */
-export function parseToolCalls(
-  raw: unknown,
-): Array<{ id: string; name: string; args: string }> {
+export function parseToolCalls(raw: unknown): Array<{ id: string; name: string; args: string }> {
   if (isAbsent(raw)) return [];
   let calls: unknown = raw;
   if (typeof raw === 'string') {
@@ -283,11 +293,19 @@ export function toTurns(messages: StoredMessage[]): Turn[] {
       // The note is for the model: show its files as chips, keep it out of the text and edit box.
       const { text, noteFiles } = splitAttachmentNote(rawText);
       const stored = parseAttachments(m.attachments);
-      turns.push({ kind: 'user', id, text, images, files: stored.length > 0 ? stored : noteFiles });
+      turns.push({
+        kind: 'user',
+        id,
+        text,
+        images,
+        files: stored.length > 0 ? stored : noteFiles,
+        time: m.timestamp ?? null,
+      });
     } else if (m.role === 'assistant') {
       const turn = open(id);
       if (!turn.messageIds.includes(id)) turn.messageIds.push(id);
       if (!isAbsent(m.model)) turn.model = String(m.model);
+      if (!isAbsent(m.timestamp)) turn.time = m.timestamp;
       const own = assistantSteps(m, null, results);
       turn.steps.push(...withSubAgentSteps(own, m.sub_agent_history ?? [], results));
     } else if (m.role === 'event') {

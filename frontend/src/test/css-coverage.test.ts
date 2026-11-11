@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { classNamesInSource, classSelectorsInCss, listFiles, readSrc, SRC_DIR } from './source-scan';
+import {
+  classNamesInSource,
+  classSelectorsInCss,
+  listFiles,
+  readSrc,
+  SRC_DIR,
+} from './source-scan';
 
 /**
  * Guard: every class name written in TSX must have a CSS rule, so elements never fall back to
@@ -11,22 +17,19 @@ const JS_HOOKS = new Set<string>([
   // State markers set by the stream and read by the markup/tests, not styled on their own.
   'bot',
   'streaming',
+  // Hooks the message actions and their unit tests find buttons and text by (the buttons are styled by `action-btn`).
+  'copy-msg-btn',
+  'delete-msg-btn',
+  'edit-msg-btn',
+  'raw-text-content',
+  'retry-msg-btn',
 ]);
 
 /**
  * Known orphans that are still unstyled. Each one must be removed as soon as a rule exists;
  * the test fails if an entry becomes styled, so this list can only shrink.
  */
-const TODO_UNSTYLED = new Set<string>([
-  'chat-row',
-  'copy-msg-btn',
-  'delete-msg-btn',
-  'edit-msg-btn',
-  'message-text-wrapper',
-  'raw-text-content',
-  'retry-msg-btn',
-  'title-text',
-]);
+const TODO_UNSTYLED = new Set<string>([]);
 
 function cssSelectors(): Set<string> {
   const all = new Set<string>();
@@ -54,8 +57,8 @@ describe('css coverage', () => {
   const usage = tsxClassNames();
 
   it('finds class names in both sources (scanner sanity)', () => {
-    expect(css.has('btn-primary')).toBe(true);
-    expect(usage.has('btn-primary')).toBe(true);
+    expect(css.has('ui-button')).toBe(true);
+    expect(usage.has('ui-button')).toBe(true);
   });
 
   it('every TSX class name has a CSS rule', () => {
@@ -63,7 +66,7 @@ describe('css coverage', () => {
       .filter((name) => !css.has(name) && !JS_HOOKS.has(name) && !TODO_UNSTYLED.has(name))
       .map((name) => `${name} (${usage.get(name)!.join(', ')})`)
       .sort();
-    expect(orphans, `Unstyled classes: add a rule to styles/components.css`).toEqual([]);
+    expect(orphans, `Unstyled classes: add a rule to the area's sheet in styles/ds`).toEqual([]);
   });
 
   it('TODO_UNSTYLED only lists classes that are still unstyled and still used', () => {

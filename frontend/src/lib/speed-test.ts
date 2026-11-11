@@ -92,7 +92,7 @@ export function applySpeedEvent(state: SpeedTestState, raw: unknown): SpeedTestS
 
   const delta = event.choices?.[0]?.delta;
   if (delta && 'content' in delta && !next.generating) {
-    next = { ...next, generating: true, status: 'Streaming Generation...' };
+    next = { ...next, generating: true, status: 'Writing the answer…' };
   }
 
   if (event.timings && !next.timingsSeen) {

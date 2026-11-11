@@ -141,6 +141,42 @@ test('the three typefaces come from the app, and no font host is contacted', asy
   expect(fontHosts).toEqual([]);
 });
 
+test('at night the sphere is at full strength on home and dimmed behind a chat, with stars', async ({
+  page,
+}) => {
+  // Waits for the canvases, then reads how strongly each one shows.
+  const strength = async () => {
+    await expect(page.locator('#bg-night')).toHaveCount(1);
+    return page.evaluate(() => ({
+      sphere: Number(getComputedStyle(document.getElementById('bg-stars') as Element).opacity),
+      stars: Number(getComputedStyle(document.getElementById('bg-night') as Element).opacity),
+    }));
+  };
+  await setTheme(page, 'dark');
+  await page.route(/\/api\/chats\/theme1$/, (r) =>
+    r.fulfill({ json: { id: 'theme1', title: 't', is_running: false, messages: [] } }),
+  );
+  await page.goto('/');
+  await expect(page.locator('#root > *').first()).toBeVisible();
+  await expect.poll(async () => (await strength()).sphere).toBe(1);
+  expect((await strength()).stars).toBe(1);
+  await page.goto('/chat/theme1');
+  await expect.poll(async () => (await strength()).sphere).toBeCloseTo(0.6, 2);
+});
+
+test('by day there are no stars', async ({ page }) => {
+  await setTheme(page, 'light');
+  await page.goto('/');
+  await expect(page.locator('#bg-night')).toHaveCount(1);
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        Number(getComputedStyle(document.getElementById('bg-night') as Element).opacity),
+      ),
+    )
+    .toBe(0);
+});
+
 test('less motion: the particle canvas is drawn once and stands still', async ({ page }) => {
   const snapshot = () =>
     page.evaluate(() => {
@@ -177,12 +213,14 @@ for (const mode of ['light', 'dark'] as const) {
     });
   }
 
-  test(`${mode} theme: the logs page has no canvas and an opaque page background`, async ({
+  test(`${mode} theme: the logs page keeps the sphere, dimmed, on an opaque page background`, async ({
     page,
   }) => {
     await setTheme(page, mode);
     await page.goto('/logs');
-    await expect(page.locator('#bg-stars')).toHaveCount(0);
+    await expect(page.locator('#bg-stars')).toHaveCount(1);
+    const dim = await page.evaluate(() => document.documentElement.dataset.dim);
+    expect(dim).not.toBe('open');
     const html = await page.evaluate(
       () => getComputedStyle(document.documentElement).backgroundColor,
     );

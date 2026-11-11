@@ -19,3 +19,23 @@ describe('display labels (F-29)', () => {
     expect(titleCase('   ')).toBe('');
   });
 });
+
+describe('languageLabel', () => {
+  it('gives a language its proper name, and a tidy fallback for one it does not know', async () => {
+    const { languageLabel } = await import('./labels');
+    expect(languageLabel('typescript')).toBe('TypeScript');
+    expect(languageLabel('JSON')).toBe('JSON');
+    expect(languageLabel('py')).toBe('Python');
+    expect(languageLabel('objective_c')).toBe('Objective c');
+  });
+});
+
+describe('authorLabel', () => {
+  it("names the model and the person in the app's words, and leaves other names alone", async () => {
+    const { authorLabel } = await import('./labels');
+    expect(authorLabel('assistant')).toBe('My AI');
+    expect(authorLabel('user')).toBe('You');
+    expect(authorLabel('Dana')).toBe('Dana');
+    expect(authorLabel(null)).toBe('');
+  });
+});

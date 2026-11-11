@@ -1,0 +1,218 @@
+/*
+ * Logs page.
+ * Console at Rest: only shared values from tokens.css. See the rule book in the console-at-rest repository.
+ */
+
+.logs-page {
+  position: relative;
+  z-index: var(--z-page);
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 18px;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-5) max(var(--pad), calc((100% - 60rem) / 2)) 28px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--edge-strong) transparent;
+}
+.logs-page > * {
+  flex: none;
+}
+.logs-denied {
+  margin: auto;
+}
+
+/* ── Which log, the filter, how many, refresh ── */
+
+.logs-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.logs-filter,
+.logs-chat-id {
+  flex: 1;
+  min-width: 160px;
+}
+.logs-limit {
+  flex: none;
+  width: 8.5rem;
+}
+.logs-table-pick {
+  flex: none;
+  width: 14rem;
+}
+.logs-levels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.logs-level {
+  cursor: pointer;
+  font: inherit;
+  font-size: 14px;
+  transition: background-color var(--t-base) var(--ease-spring);
+}
+.logs-level[aria-pressed='true'] {
+  border-color: transparent;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-weight: 500;
+}
+
+/* ── Entries: one line each, folding open in place ── */
+
+.loglist {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--edge);
+  border-radius: var(--r-ctl);
+  background: color-mix(in srgb, var(--glass-strong) 55%, transparent);
+  list-style: none;
+}
+.log-row + .log-row {
+  border-top: 1px solid var(--edge);
+}
+/* An opened entry reads as one block: one tint behind its line and its detail. */
+.log-row--open {
+  background: var(--well);
+}
+.log-row__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: 46px;
+  padding: 0 var(--space-3);
+  border: 0;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--t-base) var(--ease-spring);
+}
+.log-row:not(.log-row--open) > .log-row__head:hover {
+  background: var(--well);
+}
+.log-row__chevron {
+  flex: none;
+  color: var(--muted);
+  transition: transform var(--t-base) var(--ease-spring);
+}
+.log-row__head[aria-expanded='true'] > .log-row__chevron {
+  transform: rotate(90deg);
+}
+.log-row__head > .led,
+.log-row__head > .dat {
+  flex: none;
+}
+.log-row__what {
+  flex: none;
+  max-width: 40%;
+  overflow: hidden;
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.log-row__detail {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.log-row__body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-1) 14px 14px 36px;
+}
+.logs-json {
+  align-self: stretch;
+  max-height: 24rem;
+  margin: 0;
+  overflow: auto;
+  padding: var(--space-3) 14px;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--bg) 70%, transparent);
+  color: var(--fg);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  scrollbar-width: thin;
+  scrollbar-color: var(--edge-strong) transparent;
+}
+.logs-count {
+  margin: 0;
+}
+
+/* While loading: rows of the same height as the real ones. */
+@keyframes log-wait {
+  50% {
+    opacity: 0.45;
+  }
+}
+.log-row--placeholder {
+  position: relative;
+  height: 46px;
+}
+.log-row--placeholder::after {
+  position: absolute;
+  top: 17px;
+  left: 36px;
+  width: min(60%, 28rem);
+  height: 12px;
+  border-radius: 6px;
+  background: var(--well);
+  content: '';
+  animation: log-wait 1.4s ease-in-out infinite;
+}
+
+@media (max-width: 599px) {
+  .logs-page {
+    padding: var(--space-4) var(--pad) var(--space-5);
+  }
+  .logs-tools > .ui-segmented {
+    flex: 1 0 100%;
+  }
+  .logs-tools > .ui-segmented > .ui-segmented__item {
+    flex: 1;
+    min-height: var(--touch);
+  }
+  .log-row__head {
+    flex-wrap: wrap;
+    row-gap: 0;
+    padding: var(--space-2) var(--space-3);
+  }
+  .log-row__what {
+    flex: 1;
+    max-width: none;
+  }
+  .log-row__detail {
+    flex-basis: 100%;
+    padding-left: var(--space-5);
+  }
+  .log-row__body {
+    padding-left: var(--space-3);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .log-row--placeholder::after {
+    animation: none;
+  }
+}

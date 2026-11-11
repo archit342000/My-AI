@@ -1,23 +1,35 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
-import { Modal } from '../../components/ui/Modal';
+import { Button, IconButton } from '../../components/ui/Button';
+import { Chip } from '../../components/ui/Chip';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { showToast } from '../../components/ui/toast-store';
-import { Button, IconButton } from '../../components/ui/Button';
 import { Tooltip } from '../../components/ui/Tooltip';
 
-/** What a form needs from the dialog's footer (see `CrudDialog`). */
+/** What a form needs from the list it belongs to (see `CrudList`). */
 export interface FormFooter {
   formId: string;
   setCanSave: (canSave: boolean) => void;
 }
 
-/** Generic list with add/edit/delete used by preferences, skills and personas. */
-export function CrudDialog<T>({
-  open,
-  onClose,
-  onBack,
-  title,
-  noun = 'item',
+export interface CrudRow {
+  id: string;
+  title: string;
+  /** Shows the title in the typewriter face (a skill's /name). */
+  mono?: boolean;
+  /** A small tinted label after the title (a tag, "Default"). */
+  tag?: string;
+  /** One line under the title. */
+  subtitle?: string;
+  /** The whole text, shown as a tip on the title. */
+  fullText?: string;
+}
+
+/**
+ * The add / edit / delete list of the settings page (personas, skills, memory): rows with a pencil and
+ * a bin, a form that opens in place under the list, and a "New ..." button. Deleting always confirms.
+ */
+export function CrudList<T>({
+  noun,
   items,
   describe,
   renderForm,
@@ -25,152 +37,134 @@ export function CrudDialog<T>({
   emptyText,
   toolbar,
   filtering = false,
+  loading = false,
 }: {
-  open: boolean;
-  onClose: () => void;
-  onBack?: () => void;
-  title: string;
-  /** Singular name of an item, used in the delete confirmation title ("Delete skill"). */
-  noun?: string;
+  /** Singular name of an item, used in "New persona" and "Delete this persona?". */
+  noun: string;
   items: T[];
-  /** Maps an item to its id, list title, optional one-line subtitle and optional full text (tooltip). */
-  describe: (item: T) => { id: string; title: string; subtitle?: string; fullText?: string };
+  describe: (item: T) => CrudRow;
   /**
-   * Form for one item; call `onDone` after a successful save to return to the list. The dialog's
-   * footer holds Cancel and Save: give the `<form>` the `formId` so Save submits it, and report
-   * through `setCanSave` whether the form may be submitted right now.
+   * Form for one item; call `onDone` after a successful save to close it. The list draws Cancel and
+   * Save: give the `<form>` the `formId` so Save submits it, and report through `setCanSave`
+   * whether the form may be submitted right now.
    */
   renderForm: (initial: T | null, onDone: () => void, footer: FormFooter) => ReactNode;
   onDelete: (item: T) => Promise<void>;
   emptyText: string;
   /** Search and filter controls shown above the list. */
   toolbar?: ReactNode;
-  /** True while the toolbar narrows the list: an empty list then reads "No matches". */
+  /** True while the toolbar narrows the list: an empty list then says nothing matches. */
   filtering?: boolean;
+  loading?: boolean;
 }) {
-  const [editing, setEditing] = useState<{ item: T | null } | null>(null);
+  const [editing, setEditing] = useState<{ item: T | null; key: string } | null>(null);
   const [toDelete, setToDelete] = useState<T | null>(null);
   const [canSave, setCanSave] = useState(true);
-  // A dialog closed from outside (a parent or the store) starts at the list again when it reopens.
-  useEffect(() => {
-    if (!open) {
-      setEditing(null);
-      setToDelete(null);
-    }
-  }, [open]);
   const formId = useId();
-  const content = useRef<HTMLDivElement>(null);
-  const wasInForm = useRef(false);
-  const inForm = editing !== null;
-  // Swapping the list for a form (or back) unmounts the focused control, which would drop focus to the
-  // page and let Tab leave the dialog: move it to the first control of the new view.
+  const form = useRef<HTMLDivElement>(null);
+  const add = useRef<HTMLButtonElement>(null);
+  const editingKey = editing?.key ?? null;
+  const wasEditing = useRef<string | null>(null);
+  // Opening the form moves to its first field; closing it returns to the New button.
   useEffect(() => {
-    // Only a real change of view moves focus (not the first run, nor StrictMode's second one).
-    if (wasInForm.current === inForm) return;
-    wasInForm.current = inForm;
-    content.current
-      ?.querySelector<HTMLElement>('input, textarea, select, button:not([disabled])')
-      ?.focus();
-  }, [inForm]);
+    if (wasEditing.current === editingKey) return;
+    const closed = editingKey === null;
+    wasEditing.current = editingKey;
+    if (closed) add.current?.focus();
+    else form.current?.querySelector<HTMLElement>('input, textarea, select')?.focus();
+  }, [editingKey]);
   const toDeleteTitle = toDelete ? describe(toDelete).title : '';
 
   return (
-    <Modal
-      open={open}
-      // While a form is open, Escape, the backdrop and the close button return to the list (like
-      // Cancel) instead of dropping what was typed together with the whole dialog.
-      onClose={editing ? () => setEditing(null) : onClose}
-      onBack={editing ? () => setEditing(null) : onBack}
-      title={editing ? `${editing.item ? 'Edit' : 'New'} ${noun}` : title}
-      maxWidth={680}
-      footer={
-        editing ? (
-          <>
-            <Button variant="secondary" onClick={() => setEditing(null)}>
+    <div className="crud">
+      {toolbar ? <div className="crud-toolbar">{toolbar}</div> : null}
+      {items.length === 0 && !loading ? (
+        <p className="ui-hint crud-none">{filtering ? 'Nothing matches.' : emptyText}</p>
+      ) : null}
+      {loading ? (
+        <p className="ui-hint crud-none" role="status">
+          Loading
+        </p>
+      ) : null}
+      <ul className="crud-list">
+        {items.map((item) => {
+          const d = describe(item);
+          const title = (
+            <span className={d.mono ? 'crud-title__name font-mono' : 'crud-title__name'}>
+              {d.title}
+            </span>
+          );
+          return (
+            <li key={d.id} className="crud-row">
+              <div className="crud-text">
+                <div className="crud-title">
+                  {d.fullText ? <Tooltip content={d.fullText}>{title}</Tooltip> : title}
+                  {d.tag ? <Chip tint>{d.tag}</Chip> : null}
+                </div>
+                {d.subtitle ? <div className="ui-hint crud-text__sub">{d.subtitle}</div> : null}
+              </div>
+              <IconButton
+                icon="edit"
+                label={`Edit ${d.title}`}
+                onClick={() => setEditing({ item, key: d.id })}
+              />
+              <IconButton
+                icon="trash"
+                label={`Delete ${d.title}`}
+                onClick={() => setToDelete(item)}
+              />
+            </li>
+          );
+        })}
+      </ul>
+      {editing ? (
+        <div
+          ref={form}
+          className="crud-form"
+          role="group"
+          aria-label={editing.item ? `Edit ${noun}` : `New ${noun}`}
+        >
+          {/* Keyed, so opening another item starts its form afresh. */}
+          <div key={editing.key}>
+            {renderForm(editing.item, () => setEditing(null), { formId, setCanSave })}
+          </div>
+          <div className="crud-form__foot">
+            <Button variant="ghost" onClick={() => setEditing(null)}>
               Cancel
             </Button>
             <Button variant="primary" type="submit" form={formId} disabled={!canSave}>
               Save
             </Button>
-          </>
-        ) : undefined
-      }
-    >
-      <div ref={content}>
-        {editing ? (
-          renderForm(editing.item, () => setEditing(null), { formId, setCanSave })
-        ) : (
-          <>
-            <Button
-              variant="primary"
-              size="sm"
-              className="crud-add"
-              onClick={() => setEditing({ item: null })}
-            >
-              Add
-            </Button>
-            {toolbar ? <div className="crud-toolbar">{toolbar}</div> : null}
-            {items.length === 0 ? (
-              <p className="crud-empty">{filtering ? 'No matches' : emptyText}</p>
-            ) : null}
-            <ul className="crud-list">
-              {items.map((item) => {
-                const d = describe(item);
-                return (
-                  <li key={d.id} className="crud-row">
-                    <button
-                      type="button"
-                      className="crud-row__main"
-                      onClick={() => setEditing({ item })}
-                    >
-                      {d.fullText ? (
-                        <Tooltip content={d.fullText}>
-                          <span className="crud-row__title">{d.title}</span>
-                        </Tooltip>
-                      ) : (
-                        <span className="crud-row__title">{d.title}</span>
-                      )}
-                      {d.subtitle ? <span className="crud-row__subtitle">{d.subtitle}</span> : null}
-                    </button>
-                    <IconButton
-                      icon="edit"
-                      label={`Edit ${d.title}`}
-                      size="sm"
-                      onClick={() => setEditing({ item })}
-                    />
-                    <IconButton
-                      icon="trash"
-                      label={`Delete ${d.title}`}
-                      size="sm"
-                      tone="danger"
-                      onClick={() => setToDelete(item)}
-                    />
-                  </li>
-                );
-              })}
-            </ul>
-          </>
-        )}
-      </div>
+          </div>
+        </div>
+      ) : (
+        <Button ref={add} variant="quiet" onClick={() => setEditing({ item: null, key: 'new' })}>
+          New {noun}
+        </Button>
+      )}
       <ConfirmDialog
         open={toDelete !== null}
-        title={`Delete ${noun}`}
-        message={`Delete "${toDeleteTitle}"? This cannot be undone.`}
-        confirmLabel="Delete"
+        title={`Delete this ${noun}?`}
+        message={`"${toDeleteTitle}" will be removed. This cannot be undone.`}
+        confirmLabel={`Delete ${noun}`}
         danger
         onCancel={() => setToDelete(null)}
         onConfirm={() => {
           const target = toDelete;
           setToDelete(null);
-          if (target) {
-            Promise.resolve()
-              .then(() => onDelete(target))
-              .catch((e: unknown) =>
-                showToast(e instanceof Error ? e.message : 'Delete failed', 'error'),
-              );
-          }
+          if (!target) return;
+          // An item that is open in the form goes away with it.
+          if (editing?.item === target) setEditing(null);
+          Promise.resolve()
+            .then(() => onDelete(target))
+            .catch((e: unknown) =>
+              showToast(
+                e instanceof Error ? e.message : `The ${noun} could not be deleted`,
+                'error',
+              ),
+            );
         }}
       />
-    </Modal>
+    </div>
   );
 }

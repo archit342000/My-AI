@@ -47,7 +47,9 @@ describe('useChatHasNoFiles', () => {
   });
 
   it('a folder without an id is a folder, as in the panel', async () => {
-    vi.spyOn(artifactsApi, 'list').mockResolvedValue([{ id: '', type: 'file', filename: 'workspace' }] as never);
+    vi.spyOn(artifactsApi, 'list').mockResolvedValue([
+      { id: '', type: 'file', filename: 'workspace' },
+    ] as never);
     const { result } = renderHook(() => useChatHasNoFiles(), { wrapper: at('/chat/c1') });
     await waitFor(() => expect(result.current).toBe(true));
   });

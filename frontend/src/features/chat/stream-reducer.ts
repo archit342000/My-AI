@@ -4,7 +4,11 @@
  * The turn is an ordered step list, the same shape `toTurns` builds from stored messages.
  */
 import type { Step } from '../../lib/chat-model';
-import { CLARIFICATION_TOOL, parseClarification, type ClarificationRequest } from '../../lib/clarification';
+import {
+  CLARIFICATION_TOOL,
+  parseClarification,
+  type ClarificationRequest,
+} from '../../lib/clarification';
 
 export interface LiveTurn {
   steps: Step[];
@@ -60,7 +64,8 @@ export function applyChunk(turn: LiveTurn, chunk: StreamChunk): LiveTurn {
     return {
       ...next,
       steps: next.snapshot,
-      redactNotice: chunk.message ?? 'Correcting formatting...',
+      // The server writes three dots; the app writes the ellipsis as one character.
+      redactNotice: (chunk.message ?? 'Correcting the formatting…').replace(/\.{3}$/, '…'),
       pendingRequest: null,
     };
   }
@@ -79,7 +84,8 @@ export function applyChunk(turn: LiveTurn, chunk: StreamChunk): LiveTurn {
   }
   let steps = next.steps;
   let pendingRequest = next.pendingRequest;
-  if (delta.reasoning_content) steps = appendText(steps, 'reasoning', delta.reasoning_content, agent);
+  if (delta.reasoning_content)
+    steps = appendText(steps, 'reasoning', delta.reasoning_content, agent);
   if (delta.content) steps = appendText(steps, 'text', delta.content, agent);
   if (delta.tool_calls?.length) {
     // The server repeats a `request_clarification` call (same id) once its callback is registered: that chunk
@@ -117,7 +123,9 @@ function isRepeatedRequest(steps: Step[], d: ToolCallDelta): boolean {
  */
 function insertionIndex(steps: Step[], agent: string | null): number {
   if (agent === null) return steps.length;
-  const running = steps.findIndex((s) => s.kind === 'tool' && s.agent === null && s.result === null);
+  const running = steps.findIndex(
+    (s) => s.kind === 'tool' && s.agent === null && s.result === null,
+  );
   if (running === -1) return steps.length;
   let end = running + 1;
   while (end < steps.length && steps[end]?.agent !== null) end++;

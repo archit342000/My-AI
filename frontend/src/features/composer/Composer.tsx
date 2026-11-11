@@ -18,25 +18,24 @@ import { useAttachmentStore } from '../../state/attachment-store';
 import type { UploadedFile } from '../../api/completions';
 import { useSettingsStore } from '../../state/settings-store';
 import { queryKeys } from '../../api/chats';
-import { saveTemporaryChat } from '../chat/temporary-chat';
 import { useUiStore } from '../../state/ui-store';
 import { useStreamStore } from '../../state/stream-store';
 import { sendTurn, stopTurn } from '../chat/send-turn';
+import { rippleSphere } from '../../lib/sphere-signal';
+import { cx } from '../../lib/cx';
+import { Notice } from '../../components/ui/Notice';
+import { useOnline } from '../../hooks/useOnline';
+import { ActiveTools } from '../tools/ActiveTools';
 import { useChatDetail } from '../chat/useChatQueries';
 import { useKeyboardOffset } from '../../hooks/useKeyboardOffset';
 import { rovingTarget } from '../../lib/roving';
 import { matchSlashCommands, slashCommandsFor, type SlashCommand } from './slash';
-import {
-  allReady,
-  nextToUpload,
-  toUploadedFiles,
-  type Attachment,
-} from './attachments';
+import { allReady, nextToUpload, toUploadedFiles, type Attachment } from './attachments';
 import { AttachmentChip } from './AttachmentChip';
 import { HelpDialog } from './HelpDialog';
 import { filesIn, useFileDrop } from './useFileDrop';
 import { ToolsMenu } from '../tools/ToolsMenu';
-import { useModalStore } from '../../state/modal-store';
+import { useOpenSettings } from '../settings/settings-nav';
 
 const MAX_TEXTAREA_PX = 200;
 const NO_ATTACHMENTS: Attachment[] = [];
@@ -46,6 +45,8 @@ export function Composer() {
   // The composer lives in the layout (one instance across routes), so it reads the id from the URL.
   const routeChatId = useMatch('/chat/:chatId')?.params.chatId;
   const navigate = useNavigate();
+  const openSettings = useOpenSettings();
+  const online = useOnline();
   const queryClient = useQueryClient();
   const [text, setText] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
@@ -86,7 +87,7 @@ export function Composer() {
       : modelConfig.data.general?.text;
     const pick = models.data.find((m) => m.id === preferred) ?? models.data[0];
     if (pick) setModel(pick.id, pick.id);
-  // `chatScoped` stays a dependency so the effect runs again when chat settings end.
+    // `chatScoped` stays a dependency so the effect runs again when chat settings end.
   }, [models.data, modelConfig.data, selectedModel, chatScoped, researchMode, setModel]);
   const keyboard = useKeyboardOffset(window.matchMedia('(pointer: coarse)').matches);
   const temporaryChatId = useUiStore((s) => s.temporaryChatId);
@@ -119,19 +120,6 @@ export function Composer() {
     if (own) return;
     setText('');
   }, [routeChatId]);
-
-  async function saveTemporary() {
-    const cached = queryClient.getQueryData<{
-      messages: Array<{ role: string; content: string | null }>;
-    }>(queryKeys.chat(temporaryChatId ?? ''));
-    const first = cached?.messages.find((m) => m.role === 'user')?.content ?? '';
-    try {
-      const id = await saveTemporaryChat(queryClient, first);
-      if (id) navigate(`/chat/${id}`);
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Could not save chat', 'error');
-    }
-  }
 
   // The transcript pads its bottom by the composer's height, so the last message clears it (F-19).
   useEffect(() => {
@@ -180,7 +168,10 @@ export function Composer() {
             // The chip is gone: drop the file too, then refresh the list (its chat is rejudged).
             void deleteFile(uploaded.file_id)
               .catch((err: unknown) =>
-                showToast(err instanceof Error ? err.message : 'Could not remove file', 'error'),
+                showToast(
+                  err instanceof Error ? err.message : "Couldn't remove the file. Try again.",
+                  'error',
+                ),
               )
               .then(refreshChatList);
             return;
@@ -190,7 +181,8 @@ export function Composer() {
         })
         .catch((err: unknown) => {
           if (store.takeDoomed(item.key)) return; // nobody is waiting for it
-          const message = err instanceof Error ? err.message : 'Upload failed';
+          const message =
+            err instanceof Error ? err.message : "Couldn't upload the file. Try again.";
           store.update(listKey, item.key, { status: 'error', error: message });
           showToast(message, 'error');
         })
@@ -208,7 +200,7 @@ export function Composer() {
   const nothingToSend = text.trim().length === 0 && attachments.length === 0;
   // Only a running upload or a missing model disables the button; with an empty box it stays blue (as in the
   // legacy UI) and a click does nothing. Another chat that is generating is explained by the refusal toast.
-  const sendBlocked = !hasModel || !ready;
+  const sendBlocked = !hasModel || !ready || !online;
   const canSend = !streaming && !sendBlocked && !nothingToSend;
 
   function onFiles(event: ChangeEvent<HTMLInputElement>) {
@@ -218,24 +210,27 @@ export function Composer() {
   }
 
   /** Stages files for the open chat (picked, dropped or pasted); every file gets its chip at once and the queue uploads them two at a time. */
-  const addFiles = useCallback((files: File[]) => {
-    if (files.length === 0) return;
-    useAttachmentStore.getState().add(
-      key,
-      files.map<Attachment>((file) => ({
-        key: `${file.name}-${Date.now()}-${Math.random()}`,
-        name: file.name,
-        size: file.size,
-        mimeType: file.type,
-        file,
-        chatId: key,
-        status: 'queued',
-        progress: 0,
-        uploaded: null,
-        error: null,
-      })),
-    );
-  }, [key]);
+  const addFiles = useCallback(
+    (files: File[]) => {
+      if (files.length === 0) return;
+      useAttachmentStore.getState().add(
+        key,
+        files.map<Attachment>((file) => ({
+          key: `${file.name}-${Date.now()}-${Math.random()}`,
+          name: file.name,
+          size: file.size,
+          mimeType: file.type,
+          file,
+          chatId: key,
+          status: 'queued',
+          progress: 0,
+          uploaded: null,
+          error: null,
+        })),
+      );
+    },
+    [key],
+  );
 
   const { dragging } = useFileDrop(inputArea, addFiles);
 
@@ -253,7 +248,10 @@ export function Composer() {
     } else if (chip.uploaded) {
       void deleteFile(chip.uploaded.file_id)
         .catch((err: unknown) =>
-          showToast(err instanceof Error ? err.message : 'Could not remove file', 'error'),
+          showToast(
+            err instanceof Error ? err.message : "Couldn't remove the file. Try again.",
+            'error',
+          ),
         )
         .then(refreshChatList);
     }
@@ -270,7 +268,7 @@ export function Composer() {
     const content = text.trim();
     if (content === '/skills') {
       setText('');
-      useModalStore.getState().show('skills');
+      openSettings('skills');
       return;
     }
     if (content === '/help') {
@@ -291,6 +289,8 @@ export function Composer() {
       isNewChat: isNew,
       temporary,
       onAccepted: () => {
+        // Something was sent: a wave runs through the sphere.
+        rippleSphere();
         setText('');
         useAttachmentStore.getState().clear(key);
         // The files now belong to the chat just started: the next new chat gets a fresh draft id.
@@ -355,19 +355,10 @@ export function Composer() {
       ref={inputArea}
       style={{ transform: keyboard ? `translateY(-${keyboard}px)` : undefined }} // dynamic-style
     >
-      {temporary ? (
-        <div id="temp-chat-banner" className="temp-chat-banner">
-          <Icon name="clock" size={14} strokeWidth={2.5} />
-          <span>Temporary chat — not saved to history</span>
-          <button
-            id="save-temp-chat-btn"
-            type="button"
-            className="temp-chat-save-btn"
-            onClick={() => void saveTemporary()}
-          >
-            Save Chat
-          </button>
-        </div>
+      {!online ? (
+        <Notice tone="warn" className="offline-notice">
+          No connection. Everything here is saved; sending is paused until you are back online.
+        </Notice>
       ) : null}
       <HelpDialog
         open={helpOpen}
@@ -377,31 +368,33 @@ export function Composer() {
         }}
         commands={commands}
       />
-      {dragging ? (
-        <div className="composer-drop-hint" role="status">
-          Drop files to attach
-        </div>
-      ) : null}
-      {attachments.length > 0 ? (
-        <div className="composer-chips" aria-label="Attached files">
-          {attachments.map((a) => (
-            <AttachmentChip
-              key={a.key}
-              item={a}
-              onRemove={() => remove(a.key)}
-              onRetry={() => retry(a.key)}
-            />
-          ))}
-        </div>
-      ) : null}
-
       {!hasModel ? (
         <div className="composer-hint" role="note">
-          Choose a model in Chat Settings
+          Choose a model in Settings first
         </div>
       ) : null}
 
-      <div className="input-container" ref={inputContainer}>
+      <div
+        className={cx('input-container', dragging && 'input-container--drop')}
+        ref={inputContainer}
+      >
+        {dragging ? (
+          <div className="composer-drop-hint" role="status">
+            Drop files to attach
+          </div>
+        ) : null}
+        {attachments.length > 0 ? (
+          <div className="composer-chips" aria-label="Attached files">
+            {attachments.map((a) => (
+              <AttachmentChip
+                key={a.key}
+                item={a}
+                onRemove={() => remove(a.key)}
+                onRetry={() => retry(a.key)}
+              />
+            ))}
+          </div>
+        ) : null}
         <Popover
           open={slashOpen}
           anchorRef={inputContainer}
@@ -429,17 +422,6 @@ export function Composer() {
             </div>
           ))}
         </Popover>
-        <button
-          id="attach-btn"
-          type="button"
-          className="input-action-btn"
-          title="Attach files"
-          aria-label="Attach files"
-          onClick={() => fileInput.current?.click()}
-        >
-          <Icon name="plus" size={20} />
-        </button>
-        <ToolsMenu sheetAnchorRef={inputContainer} />
         <input
           ref={fileInput}
           type="file"
@@ -459,7 +441,8 @@ export function Composer() {
           aria-controls={slashOpen ? listId : undefined}
           aria-autocomplete="list"
           aria-activedescendant={slashOpen ? `${listId}-${active}` : undefined}
-          placeholder="Start a conversation..."
+          placeholder={online ? 'Start a conversation…' : 'Waiting for a connection…'}
+          disabled={!online}
           onChange={(e) => {
             setText(e.target.value);
             setActiveIndex(0);
@@ -473,33 +456,49 @@ export function Composer() {
             addFiles(pasted);
           }}
         />
-        <div id="send-btn-wrapper">
-          {streaming ? (
+        <div className="composer-row">
+          <div className="composer-left">
             <button
-              id="send-btn"
+              id="attach-btn"
               type="button"
-              className="send-btn"
-              title={stopping ? 'Stopping' : 'Stop'}
-              aria-label={stopping ? 'Stopping' : 'Stop generating'}
-              disabled={stopping}
-              onClick={() => void stopTurn()}
+              className="ui-icon-button"
+              title="Attach files"
+              aria-label="Attach files"
+              onClick={() => fileInput.current?.click()}
             >
-              <Icon name="close" size={18} strokeWidth={2.5} />
+              <Icon name="attach" size={19} />
             </button>
-          ) : (
-            <button
-              id="send-btn"
-              type="button"
-              className="send-btn"
-              title="Send"
-              aria-label="Send message"
-              disabled={sendBlocked}
-              aria-disabled={nothingToSend ? true : undefined}
-              onClick={() => void send()}
-            >
-              <Icon name="send" size={18} />
-            </button>
-          )}
+            <ToolsMenu sheetAnchorRef={inputContainer} />
+            <ActiveTools />
+          </div>
+          <div id="send-btn-wrapper">
+            {streaming ? (
+              <button
+                id="send-btn"
+                type="button"
+                className="ui-button ui-button--primary send-btn"
+                title={stopping ? 'Stopping' : 'Stop'}
+                aria-label={stopping ? 'Stopping' : 'Stop generating'}
+                disabled={stopping}
+                onClick={() => void stopTurn()}
+              >
+                <span className="send-btn__stop" aria-hidden="true" />
+              </button>
+            ) : (
+              <button
+                id="send-btn"
+                type="button"
+                className="ui-button ui-button--primary send-btn"
+                title="Send"
+                aria-label="Send message"
+                disabled={sendBlocked}
+                aria-disabled={nothingToSend ? true : undefined}
+                onClick={() => void send()}
+              >
+                <Icon name="send" size={20} />
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>

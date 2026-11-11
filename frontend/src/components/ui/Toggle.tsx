@@ -10,7 +10,14 @@ export interface ToggleProps {
 }
 
 /** On/off switch (role=switch) with a label and an optional description beneath it. */
-export function Toggle({ id, checked, onChange, label, description, disabled = false }: ToggleProps) {
+export function Toggle({
+  id,
+  checked,
+  onChange,
+  label,
+  description,
+  disabled = false,
+}: ToggleProps) {
   const generated = useId();
   const labelId = `${generated}-label`;
   const descriptionId = `${generated}-description`;

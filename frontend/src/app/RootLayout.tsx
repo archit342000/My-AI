@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { IconButton } from '../components/ui/Button';
+import { TickRule } from '../components/ui/TickRule';
+import { isPhoneWidth } from '../lib/breakpoints';
 import { pushModal } from '../lib/modal-stack';
 import { trapFocus } from '../lib/focus-trap';
 import { useQueryClient } from '@tanstack/react-query';
@@ -15,9 +16,15 @@ import { useUiStore } from '../state/ui-store';
 import { useUserStore } from '../state/user-store';
 import { discardNewChatDraft } from '../features/composer/draft-cleanup';
 import { useDraftCleanup } from '../features/composer/useDraftCleanup';
-import { useChatHasNoFiles } from '../features/artifacts/useChatHasNoFiles';
+import { FilesButton } from './FilesButton';
+import { HeaderStatus } from './HeaderStatus';
+import { PageTitleSlot } from './page-header-context';
 import { Sidebar } from './Sidebar';
 import { DialogHost } from '../features/settings/DialogHost';
+import { useHomeBeneath } from '../hooks/useHomeBeneath';
+import { SettingsPage } from '../features/settings/SettingsPage';
+import { TemporaryNote } from '../features/composer/TemporaryNote';
+import { sectionFromSearch } from '../features/settings/settings-nav';
 import { Composer } from '../features/composer/Composer';
 
 /** App frame: animated background, sidebar, routed main area, toasts. */
@@ -26,14 +33,14 @@ export function RootLayout() {
   const glassMode = useUiStore((s) => s.glassMode);
   useThemeSync(themeMode, glassMode);
   usePlatformClass();
-  const toggleArtifacts = useUiStore((s) => s.toggleArtifacts);
-  const artifactsOpen = useUiStore((s) => s.artifactsOpen);
-  const artifactsDirty = useUiStore((s) => s.artifactsDirty);
-  const [confirmClose, setConfirmClose] = useState(false);
+  // The place in the header where the open page puts its title.
+  const [titleSlot, setTitleSlot] = useState<HTMLElement | null>(null);
   const queryClient = useQueryClient();
   // Unsent files are deleted when the page closes, whichever route is open.
   useDraftCleanup();
-  const path = useLocation().pathname;
+  const location = useLocation();
+  const path = location.pathname;
+  useHomeBeneath();
   const previousPath = useRef(path);
   // Leaving the landing page abandons a temporary chat. Keyed on the path only, so starting a chat
   // (which changes the id) never discards it.
@@ -49,21 +56,20 @@ export function RootLayout() {
   }, [path, queryClient]);
   // On phones the sidebar overlays the page, so close it after navigating.
   useEffect(() => {
-    if (window.innerWidth <= 768) useUiStore.getState().setSidebarCollapsed(true);
+    if (isPhoneWidth()) useUiStore.getState().setSidebarCollapsed(true);
   }, [path]);
   // A dialog opened from the drawer covers the page, so the drawer closes (phone widths only).
-  const dialogOpen = useModalStore((s) => s.open !== null);
+  const settingsOpen = sectionFromSearch(location.search) !== null;
+  const dialogOpen = useModalStore((s) => s.open !== null) || settingsOpen;
   useEffect(() => {
-    if (dialogOpen && window.innerWidth <= 768) useUiStore.getState().setSidebarCollapsed(true);
+    if (dialogOpen && isPhoneWidth()) useUiStore.getState().setSidebarCollapsed(true);
   }, [dialogOpen]);
-  const onLogs = useLocation().pathname.startsWith('/logs');
-  const noFiles = useChatHasNoFiles();
   const sidebarCollapsed = useUiStore((s) => s.sidebarCollapsed);
   const sessionExpired = useUserStore((s) => s.sessionExpired);
   // On phones the sidebar is a drawer: Escape closes it (through the modal stack, so it stays
   // the top-most layer) and the scrim or the top bar button closes it.
   useEffect(() => {
-    if (sidebarCollapsed || window.innerWidth > 768) return undefined;
+    if (sidebarCollapsed || !isPhoneWidth()) return undefined;
     const drawer = document.getElementById('sidebar');
     const releaseTrap = drawer ? trapFocus(drawer) : undefined;
     const releaseModal = pushModal(() => useUiStore.getState().setSidebarCollapsed(true));
@@ -78,76 +84,54 @@ export function RootLayout() {
       {sessionExpired ? (
         <div className="session-banner" role="alert">
           <span>Your session has expired.</span>
-          <button type="button" className="btn-secondary" onClick={() => window.location.reload()}>
+          <button
+            type="button"
+            className="ui-button ui-button--secondary ui-button--sm"
+            onClick={() => window.location.reload()}
+          >
             Reload
           </button>
         </div>
       ) : null}
-      {/* The logs page has an opaque surface; the particle canvas would only compete with the data (F-52). */}
-      {onLogs ? null : <AmbientBackground />}
+      <AmbientBackground />
       <div id="app-root">
-        <IconButton
-          className="mobile-topbar"
-          icon="menu"
-          label={sidebarCollapsed ? 'Open sidebar' : 'Close sidebar'}
-          tooltip={false}
-          aria-expanded={!sidebarCollapsed}
-          hidden={!sidebarCollapsed}
-          onClick={() => useUiStore.getState().toggleSidebar()}
-        />
         {sidebarCollapsed ? null : (
           <button
             type="button"
             className="sidebar-scrim"
-            aria-label="Close sidebar"
+            aria-label="Close the panel"
             onClick={() => useUiStore.getState().setSidebarCollapsed(true)}
           />
         )}
         <Sidebar />
         <main>
-          {onLogs || path.startsWith('/workspace/') ? null : (
-            <button
-              id="nav-files-btn"
-              type="button"
-              className={`btn-secondary glass top-right-btn${noFiles ? ' top-right-btn--empty' : ''}`}
-              title="View Files / Artifacts"
-              aria-label="View files and artifacts"
-              disabled={path === '/'}
-              onClick={() =>
-                artifactsOpen && artifactsDirty ? setConfirmClose(true) : toggleArtifacts()
-              }
-            >
-              <svg
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.5"
-                aria-hidden="true"
-              >
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                <polyline points="14 2 14 8 20 8" />
-              </svg>
-            </button>
-          )}
-          <Outlet />
+          <header className="main-head">
+            <IconButton
+              className="mobile-topbar"
+              icon="menu"
+              label={sidebarCollapsed ? 'Open the panel' : 'Close the panel'}
+              tooltip={false}
+              aria-expanded={!sidebarCollapsed}
+              hidden={!sidebarCollapsed}
+              onClick={() => useUiStore.getState().toggleSidebar()}
+            />
+            <div className="main-title" ref={setTitleSlot} />
+            <div className="main-head__right">
+              <HeaderStatus onSphere={path === '/'} />
+              <FilesButton />
+            </div>
+          </header>
+          <TickRule className="main-rule" />
+          <TemporaryNote />
+          <PageTitleSlot.Provider value={titleSlot}>
+            <Outlet />
+          </PageTitleSlot.Provider>
           {/* One composer for the landing page and chats, so a route change never remounts it. */}
           {path === '/' || path.startsWith('/chat/') ? <Composer /> : null}
+          {/* Settings lie over the page: what is underneath stays as it was (a chat keeps its own values). */}
+          {settingsOpen ? <SettingsPage /> : null}
         </main>
       </div>
-      <ConfirmDialog
-        open={confirmClose}
-        title="Discard unsaved changes?"
-        message="The open file has changes that are not saved. Closing the files panel drops them."
-        confirmLabel="Discard"
-        danger
-        onCancel={() => setConfirmClose(false)}
-        onConfirm={() => {
-          setConfirmClose(false);
-          toggleArtifacts();
-        }}
-      />
       <DialogHost />
       <ToastViewport />
     </>

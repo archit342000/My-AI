@@ -79,7 +79,7 @@ describe('speed test reducer', () => {
 
   it('shows the first generated token as streaming', () => {
     const state = applySpeedEvent(emptySpeedTest(), { choices: [{ delta: { content: 'hi' } }] });
-    expect(state.status).toBe('Streaming Generation...');
+    expect(state.status).toBe('Writing the answer…');
   });
 
   it('keeps an error event as a warning and carries on', () => {

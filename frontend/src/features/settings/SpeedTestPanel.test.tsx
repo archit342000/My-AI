@@ -15,15 +15,16 @@ const turn = [
 ];
 
 function chooseModel() {
-  fireEvent.click(screen.getByRole('combobox', { name: 'Speed test target' }));
+  fireEvent.click(screen.getByRole('combobox', { name: 'Model to test' }));
   fireEvent.click(screen.getByRole('option', { name: /^A\b/ }));
 }
 
 async function startRun() {
   chooseModel();
-  fireEvent.click(screen.getByRole('button', { name: 'Run speed test' }));
-  fireEvent.click(await screen.findByRole('button', { name: 'Run' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Run' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Run the test' }));
 }
+const light = () => document.querySelector('.speed-panel__head .statline') as HTMLElement;
 
 describe('SpeedTestPanel', () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -36,21 +37,22 @@ describe('SpeedTestPanel', () => {
     renderWithProviders(<SpeedTestPanel models={models} />);
     chooseModel();
     // The number box commits on blur.
-    const box = screen.getByRole('spinbutton', { name: 'Target context (tokens) value' });
+    const box = screen.getByRole('spinbutton', { name: 'Fill its memory to value' });
     fireEvent.change(box, { target: { value: '8000' } });
     fireEvent.blur(box);
-    fireEvent.click(screen.getByRole('button', { name: 'Run speed test' }));
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(screen.getByText(/unloads every loaded model/)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Run' }));
-    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Completed: done'));
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(screen.getByText(/Every loaded model is unloaded first/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Run the test' }));
+    await waitFor(() => expect(light()).toHaveTextContent('Done · A'));
+    expect(screen.getByText('Completed: done')).toBeTruthy();
     const init = (fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1];
     expect(JSON.parse(String(init.body))).toEqual({ model: 'A', target_context_threshold: 8000 });
-    const figures = document.querySelector('.speed-test__figures') as HTMLElement;
-    expect(within(figures).getByText('1,100')).toBeTruthy();
-    expect(within(figures).getByText('500 ms')).toBeTruthy();
-    expect(within(figures).getByText('2000.00 tok/s')).toBeTruthy();
-    expect(within(figures).getByText('50.00 tok/s')).toBeTruthy();
+    const figures = document.querySelector('.facts') as HTMLElement;
+    expect(within(figures).getByText('1,100 of 8,000 tokens')).toBeTruthy();
+    expect(within(figures).getByText('0.5 s')).toBeTruthy();
+    expect(within(figures).getByText('2,000 tokens a second')).toBeTruthy();
+    expect(within(figures).getByText('50.0 tokens a second')).toBeTruthy();
     expect(document.querySelectorAll('.speed-chart__dot')).toHaveLength(1);
   });
 
@@ -59,7 +61,7 @@ describe('SpeedTestPanel', () => {
     vi.stubGlobal('fetch', fetchMock);
     renderWithProviders(<SpeedTestPanel models={models} />);
     chooseModel();
-    fireEvent.click(screen.getByRole('button', { name: 'Run speed test' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Run' }));
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(fetchMock).not.toHaveBeenCalled();
   });
@@ -75,11 +77,9 @@ describe('SpeedTestPanel', () => {
     expect(screen.queryByRole('button', { name: 'Stop' })).toBeNull();
     await startRun();
     fireEvent.click(await screen.findByRole('button', { name: 'Stop' }));
-    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Stopped'));
+    await waitFor(() => expect(light()).toHaveTextContent('Stopped · A'));
     expect(screen.queryByRole('button', { name: 'Stop' })).toBeNull();
-    expect(
-      (screen.getByRole('button', { name: 'Run speed test' }) as HTMLButtonElement).disabled,
-    ).toBe(false);
+    expect(screen.getByRole('button', { name: 'Run' })).toBeEnabled();
   });
 
   it('a failed run shows the server error and Run is usable again', async () => {
@@ -91,10 +91,9 @@ describe('SpeedTestPanel', () => {
     );
     renderWithProviders(<SpeedTestPanel models={models} />);
     await startRun();
-    expect(await screen.findByText('Model not found')).toBeTruthy();
-    expect(
-      (screen.getByRole('button', { name: 'Run speed test' }) as HTMLButtonElement).disabled,
-    ).toBe(false);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Model not found');
+    expect(light()).toHaveTextContent('Did not finish · A');
+    expect(screen.getByRole('button', { name: 'Run' })).toBeEnabled();
   });
 
   it('lists stream warnings of a run that carried on', async () => {

@@ -71,23 +71,22 @@ test('a box opened while the turn streams stays open on the saved reply, and the
   await page.locator('#chat-textarea').fill('List the files');
   await page.keyboard.press('Enter');
 
-  // Live: the header says Thinking... until the stream ends; open the box now.
+  // Live: the header says Thinking… until the stream ends; open the box now.
   const live = page.locator('[data-live="true"]');
   await expect(live.locator('.thought-header-title')).toContainText(/thinking/i);
   await live.locator('.thought-toggle').click();
   await expect(live.locator('.thought-container.expanded')).toHaveCount(1);
 
-  // Saved: the live row is gone, the same box is still open and says Thought Process.
+  // Saved: the live row is gone, the same box is still open and says Thought process.
   await expect(page.locator('[data-live="true"]')).toHaveCount(0);
   const saved = page.locator('.bot-message').last();
   await expect(saved).toContainText('There are 3 files.');
   await expect(saved.locator('.thought-container.expanded')).toHaveCount(1);
   await expect(saved.locator('.thought-header-title')).toHaveText(/thought process/i);
+  // Thoughts are plain text on the line; the tool call is one row between them.
+  await expect(saved.locator('.thought-timeline-wrapper .timeline-reasoning')).toHaveCount(2);
   await expect(saved.locator('.thought-timeline-wrapper .activity-type')).toHaveText([
-    'Reasoning',
-    'Call: List Files',
-    'Tool Result: List Files',
-    'Reasoning',
+    'List files',
   ]);
   await expect(page.locator('.tool-summary')).toHaveCount(0);
 
@@ -95,7 +94,8 @@ test('a box opened while the turn streams stays open on the saved reply, and the
   const fullView = saved.locator('.thought-full-view-btn');
   await fullView.click();
   const dialog = page.getByRole('dialog');
-  await expect(dialog.locator('.activity-type')).toHaveCount(4);
+  await expect(dialog.locator('.activity-type')).toHaveCount(1);
+  await expect(dialog.locator('.timeline-reasoning')).toHaveCount(2);
   await page.keyboard.press('Escape');
   await expect(dialog).toHaveCount(0);
   await expect(fullView).toBeFocused();

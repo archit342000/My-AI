@@ -7,30 +7,53 @@ import { discardNewChatDraft } from '../features/composer/draft-cleanup';
 import { PromptDialog } from '../components/ui/PromptDialog';
 import { showToast } from '../components/ui/toast-store';
 import { Icon } from '../components/icons/Icon';
-import { IconButton } from '../components/ui/Button';
+import { Button, IconButton } from '../components/ui/Button';
 import { Tooltip } from '../components/ui/Tooltip';
 import { cx } from '../lib/cx';
+import { rippleSphere } from '../lib/sphere-signal';
 import { useSidebarResize } from './useSidebarResize';
 import { useUiStore } from '../state/ui-store';
 import { SidebarChats } from '../features/sidebar/RecentChats';
-import { useModalStore } from '../state/modal-store';
+import { useOpenSettings } from '../features/settings/settings-nav';
 import { useIsAdmin, useUserStore } from '../state/user-store';
 
+/** The app's mark: two dotted rings, the dot sphere in small. Pressing it sends a ripple through the sphere. */
+function AppMark() {
+  return (
+    <svg
+      width="24"
+      height="24"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="9" strokeWidth="2.2" strokeDasharray="0.1 4.6" />
+      <circle cx="12" cy="12" r="4.6" strokeWidth="2" strokeDasharray="0.1 4.8" />
+      <circle cx="12" cy="12" r="0.6" strokeWidth="2" />
+    </svg>
+  );
+}
+
 /**
- * Left navigation rail. Settings buttons are wired in phase 5.
+ * The navigation panel (rule book 5.3): the app mark, the three start actions, workspaces and
+ * chats, and Settings, System and Logs at the foot. Collapsed, it is a rail of icons with name tags.
+ * On a phone it is a drawer.
  */
 export function Sidebar() {
   const collapsed = useUiStore((s) => s.sidebarCollapsed);
   const toggle = useUiStore((s) => s.toggleSidebar);
   const navigate = useNavigate();
-  const showDialog = useModalStore((s) => s.show);
   const queryClient = useQueryClient();
+  const openSettings = useOpenSettings();
   const temporaryChatId = useUiStore((s) => s.temporaryChatId);
   const isAdmin = useIsAdmin();
   const user = useUserStore((s) => s.user);
   const aside = useRef<HTMLElement>(null);
+  const newWorkspaceRef = useRef<HTMLButtonElement>(null);
   const { resizing, handleProps } = useSidebarResize(aside);
-  // Legacy dims the temporary-chat button inside a saved chat: a temporary chat starts on the landing page.
+  // A temporary chat starts on the home page: inside a saved chat the button is dimmed.
   const inChat = useMatch('/chat/:chatId') !== null;
 
   function toggleTemporary() {
@@ -60,7 +83,10 @@ export function Sidebar() {
       await queryClient.invalidateQueries({ queryKey: queryKeys.workspaces });
       navigate(`/workspace/${ws.id}`);
     } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Failed to create workspace', 'error');
+      showToast(
+        err instanceof Error ? err.message : 'The workspace could not be created. Try again.',
+        'error',
+      );
     }
   }
 
@@ -68,177 +94,138 @@ export function Sidebar() {
     <aside
       id="sidebar"
       ref={aside}
+      aria-label="Chats"
       className={cx(collapsed ? 'sidebar-collapsed' : 'sidebar-expanded', resizing && 'resizing')}
     >
       <div className="resize-handle" id="sidebar-resizer" {...handleProps} />
 
       <div className="sidebar-header">
-        <div className="sidebar-brand">
-          <svg
-            className="sidebar-logo-icon"
-            width="22"
-            height="22"
-            viewBox="0 0 32 32"
-            fill="none"
-            aria-hidden="true"
-          >
-            <defs>
-              <linearGradient id="brand-grad" x1="0" y1="0" x2="1" y2="1">
-                <stop offset="0" stopColor="var(--accent)" />
-                <stop offset="1" stopColor="var(--accent-hover)" />
-              </linearGradient>
-            </defs>
-            <path d="M16 2L26 12L16 30L6 12Z" fill="url(#brand-grad)" opacity="0.9" />
-            <path d="M16 2L26 12H6Z" fill="white" opacity="0.3" />
-            <circle cx="16" cy="12" r="2.5" fill="white" opacity="0.9" />
-          </svg>
-          <span className="sidebar-brand-text font-heading sidebar-text">My AI</span>
-        </div>
         <button
-          id="sidebar-toggle"
           type="button"
-          className="sidebar-icon-btn"
-          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          onClick={toggle}
+          className="sidebar-brand"
+          aria-label="My AI"
+          onClick={() => rippleSphere()}
         >
-          <Icon name={collapsed ? 'chevron-right' : 'chevron-left'} size={18} strokeWidth={2.5} />
+          <AppMark />
+          <span className="sidebar-text">My AI</span>
         </button>
+        <IconButton
+          id="sidebar-toggle"
+          icon="panel"
+          label={collapsed ? 'Expand the panel' : 'Collapse the panel'}
+          aria-expanded={!collapsed}
+          onClick={toggle}
+        />
+      </div>
+
+      <div className="sidebar-actions">
+        {collapsed ? (
+          <IconButton id="new-chat-btn" icon="plus" label="New chat" onClick={newChat} />
+        ) : (
+          <Button
+            id="new-chat-btn"
+            variant="quiet"
+            className="sidebar-action-btn"
+            onClick={newChat}
+          >
+            <Icon name="plus" size={16} strokeWidth={2.2} />
+            <span className="sidebar-text">New chat</span>
+          </Button>
+        )}
+        <IconButton
+          id="temp-chat-btn"
+          icon="temp-chat"
+          label="Temporary chat"
+          aria-pressed={Boolean(temporaryChatId)}
+          className={cx(inChat && 'temp-chat-btn--dim')}
+          onClick={toggleTemporary}
+        />
+        <IconButton
+          id="new-folder-btn"
+          ref={newWorkspaceRef}
+          icon="new-workspace"
+          label="New workspace"
+          onClick={() => setCreating(true)}
+        />
       </div>
 
       <div className="sidebar-content">
-        <div className="sidebar-actions">
-          {collapsed ? (
-            <>
-              <IconButton id="new-chat-btn" icon="plus" label="New chat" onClick={newChat} />
-              <IconButton
-                id="temp-chat-btn"
-                icon="clock"
-                label="Temporary chat"
-                aria-pressed={Boolean(temporaryChatId)}
-                className={cx(temporaryChatId && 'ui-icon-button--active', inChat && 'temp-chat-btn--dim')}
-                onClick={toggleTemporary}
-              />
-              <IconButton id="new-folder-btn" icon="grid-plus" label="New workspace" onClick={() => setCreating(true)} />
-            </>
-          ) : (
-            <>
-              <button
-                id="new-chat-btn"
-                type="button"
-                className="btn-primary sidebar-action-btn"
-                title="New Chat"
-                onClick={newChat}
-              >
-                <Icon name="plus" size={18} strokeWidth={2.5} />
-                <span className="sidebar-text">New Chat</span>
-              </button>
-              <button
-                id="temp-chat-btn"
-                type="button"
-                className={cx('sidebar-icon-btn', temporaryChatId && 'active', inChat && 'temp-chat-btn--dim')}
-                title="Temporary Chat"
-                aria-label="Temporary Chat"
-                aria-pressed={Boolean(temporaryChatId)}
-                onClick={toggleTemporary}
-              >
-                <Icon name="clock" size={18} />
-                <span className="nav-tooltip">Temporary Chat</span>
-              </button>
-              <button
-                id="new-folder-btn"
-                type="button"
-                className="sidebar-icon-btn"
-                title="New Workspace"
-                aria-label="New Workspace"
-                onClick={() => setCreating(true)}
-              >
-                <Icon name="grid-plus" size={18} />
-                <span className="nav-tooltip">New Workspace</span>
-              </button>
-            </>
-          )}
-        </div>
-
         <SidebarChats />
       </div>
       <PromptDialog
         open={creating}
-        title="Create Workspace"
-        message="Enter a name for the new workspace:"
-        confirmLabel="Create"
+        anchorRef={newWorkspaceRef}
+        title="New workspace"
+        message="Name"
+        confirmLabel="Create workspace"
         onCancel={() => setCreating(false)}
         onSubmit={(v) => void createWorkspace(v)}
       />
 
       <div className="sidebar-footer">
-        {collapsed ? (
-          <>
-            <IconButton id="settings-trigger" icon="settings" label="Settings" onClick={() => showDialog('chat-settings')} />
-            <IconButton
-              id="system-settings-trigger"
-              icon="monitor"
-              label="System settings"
-              onClick={() => showDialog('system-settings')}
-            />
-            {isAdmin ? (
-              <Tooltip content="Logs">
-                <NavLink
-                  to="/logs"
-                  className={({ isActive }) => cx('ui-icon-button sidebar-rail__link', isActive && 'active')}
-                  aria-label="Logs"
-                >
-                  <Icon name="logs" size={16} />
-                </NavLink>
-              </Tooltip>
-            ) : null}
-          </>
-        ) : (
-          <>
-            <button
-              id="settings-trigger"
-              type="button"
-              className="sidebar-footer-btn"
-              title="Chat Settings"
-              aria-label="Settings"
-              onClick={() => showDialog('chat-settings')}
-            >
-              <Icon name="settings" size={18} />
-              <span className="sidebar-text">Settings</span>
-              <span className="nav-tooltip">Settings</span>
-            </button>
-            <button
-              id="system-settings-trigger"
-              type="button"
-              className="sidebar-footer-btn"
-              title="System Settings"
-              aria-label="System settings"
-              onClick={() => showDialog('system-settings')}
-            >
-              <Icon name="monitor" size={18} />
-              <span className="sidebar-text">System</span>
-              <span className="nav-tooltip">System Settings</span>
-            </button>
-            {isAdmin ? (
-              <NavLink
-                to="/logs"
-                className={({ isActive }) => cx('sidebar-footer-btn', isActive && 'active')}
-                title="View Logs"
-                aria-label="Logs"
-              >
-                <Icon name="logs" size={18} />
-                <span className="sidebar-text">Logs</span>
-                <span className="nav-tooltip">Logs</span>
-              </NavLink>
-            ) : null}
-            {user ? (
-              <div className="sidebar-user sidebar-text" title={`Signed in as ${user.email} (${user.role})`}>
-                {user.email}
-              </div>
-            ) : null}
-          </>
-        )}
+        <FootItem
+          id="settings-trigger"
+          icon="sliders"
+          label="Settings"
+          collapsed={collapsed}
+          onClick={() => openSettings('chat')}
+        />
+        <FootItem
+          id="system-settings-trigger"
+          icon="chip"
+          label="System"
+          collapsed={collapsed}
+          onClick={() => openSettings('system')}
+        />
+        {isAdmin ? <FootItem icon="list" label="Logs" collapsed={collapsed} to="/logs" /> : null}
+        {user && !collapsed ? (
+          <div
+            className="sidebar-user sidebar-text"
+            title={`Signed in as ${user.email} (${user.role})`}
+          >
+            {user.email}
+          </div>
+        ) : null}
       </div>
     </aside>
   );
+}
+
+/** One of the entries at the foot of the panel: a link, or a button. In the rail it shows its name as a tip. */
+function FootItem({
+  id,
+  icon,
+  label,
+  collapsed,
+  to,
+  onClick,
+}: {
+  id?: string;
+  icon: 'sliders' | 'chip' | 'list';
+  label: string;
+  collapsed: boolean;
+  to?: string;
+  onClick?: () => void;
+}) {
+  const content = (
+    <>
+      <Icon name={icon} size={18} />
+      <span className="sidebar-text">{label}</span>
+    </>
+  );
+  const item = to ? (
+    <NavLink
+      to={to}
+      id={id}
+      aria-label={label}
+      className={({ isActive }) => cx('nav-item', isActive && 'active')}
+    >
+      {content}
+    </NavLink>
+  ) : (
+    <button type="button" id={id} className="nav-item" aria-label={label} onClick={onClick}>
+      {content}
+    </button>
+  );
+  return collapsed ? <Tooltip content={label}>{item}</Tooltip> : item;
 }

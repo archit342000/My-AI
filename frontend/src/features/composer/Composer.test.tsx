@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { Link, MemoryRouter } from 'react-router';
+import { Link, MemoryRouter, useLocation } from 'react-router';
 import { chatsApi } from '../../api/chats';
 import { modelsApi } from '../../api/settings';
 import { ApiError } from '../../api/client';
@@ -18,13 +18,20 @@ import type { UploadedFile } from '../../api/completions';
 import { chatListInvalidated } from '../../test/invalidation';
 import * as sendTurnModule from '../chat/send-turn';
 
-const textarea = () => screen.getByPlaceholderText('Start a conversation...') as HTMLTextAreaElement;
-const sendBtn = () => screen.getByRole('button', { name: /Send message|Stop generating/ }) as HTMLButtonElement;
+const textarea = () => screen.getByPlaceholderText('Start a conversation…') as HTMLTextAreaElement;
+const sendBtn = () =>
+  screen.getByRole('button', { name: /Send message|Stop generating/ }) as HTMLButtonElement;
 
 describe('Composer', () => {
   beforeEach(() => {
     useSettingsStore.setState({ model: 'm1', modelName: 'Model 1' });
-    useStreamStore.setState({ chatId: null, live: null, pending: null, interrupted: null, controller: null });
+    useStreamStore.setState({
+      chatId: null,
+      live: null,
+      pending: null,
+      interrupted: null,
+      controller: null,
+    });
     useToastStore.setState({ toasts: [] });
     useModalStore.setState({ open: null });
   });
@@ -46,15 +53,15 @@ describe('Composer', () => {
 
   it('uses the legacy placeholder', () => {
     renderWithProviders(<Composer />);
-    expect(screen.getByPlaceholderText('Start a conversation...')).toBeTruthy();
+    expect(screen.getByPlaceholderText('Start a conversation…')).toBeTruthy();
   });
 
-  it('the attach and tools buttons are plain composer action buttons', () => {
+  it('the attach and tools buttons are the shared icon button', () => {
     renderWithProviders(<Composer />);
     const attach = screen.getByRole('button', { name: 'Attach files' });
     expect(attach.id).toBe('attach-btn');
-    expect(attach.className).toBe('input-action-btn');
-    expect(document.getElementById('tools-button')?.className).toBe('input-action-btn');
+    expect(attach.className).toBe('ui-icon-button');
+    expect(document.getElementById('tools-button')?.className).toBe('ui-icon-button');
   });
 
   it('send is disabled while a file uploads, and enabled again once it is ready', async () => {
@@ -62,7 +69,10 @@ describe('Composer', () => {
     vi.spyOn(files, 'uploadFile').mockImplementation(
       () => new Promise((resolve) => (finish = resolve as typeof finish)),
     );
-    const { container } = renderWithProviders(<Composer />, { route: '/chat/c1', path: '/chat/:chatId' });
+    const { container } = renderWithProviders(<Composer />, {
+      route: '/chat/c1',
+      path: '/chat/:chatId',
+    });
     fireEvent.change(container.querySelector('input[type=file]') as HTMLInputElement, {
       target: { files: [new File(['abc'], 'a.txt', { type: 'text/plain' })] },
     });
@@ -90,14 +100,18 @@ describe('Composer', () => {
     expect(send).not.toHaveBeenCalled();
     fireEvent.keyDown(textarea(), { key: 'Enter' });
     await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
-    expect(send.mock.calls[0]![0]).toMatchObject({ chatId: 'c1', text: 'line one', isNewChat: false });
+    expect(send.mock.calls[0]![0]).toMatchObject({
+      chatId: 'c1',
+      text: 'line one',
+      isNewChat: false,
+    });
     expect(textarea().value).toBe('');
   });
 
   it('explains why send is disabled when no model is set (F4)', () => {
     useSettingsStore.setState({ model: null } as never);
     renderWithProviders(<Composer />);
-    expect(screen.getByText('Choose a model in Chat Settings')).toBeTruthy();
+    expect(screen.getByText('Choose a model in Settings first')).toBeTruthy();
   });
 
   it('does not send on the Safari composition-ending Enter (keyCode 229, isComposing false)', () => {
@@ -141,11 +155,40 @@ describe('Composer', () => {
     expect(document.activeElement).toBe(textarea());
   });
 
-  it('/skills opens the skills dialog', () => {
+  it('offline: the box waits for a connection and says nothing is lost; it comes back by itself', () => {
+    const online = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
     renderWithProviders(<Composer />);
+    const box = () => screen.getByRole('combobox') as HTMLTextAreaElement;
+    expect(box()).toBeDisabled();
+    expect(box().placeholder).toBe('Waiting for a connection…');
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'No connection. Everything here is saved; sending is paused until you are back online.',
+    );
+    expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled();
+    online.mockReturnValue(true);
+    act(() => {
+      window.dispatchEvent(new Event('online'));
+    });
+    expect(box()).toBeEnabled();
+    expect(box().placeholder).toBe('Start a conversation…');
+    expect(screen.queryByText(/No connection/)).toBeNull();
+  });
+
+  it('/skills opens the settings page at Skills and clears the box', () => {
+    function Address() {
+      const location = useLocation();
+      return <output data-testid="address">{location.pathname + location.search}</output>;
+    }
+    renderWithProviders(
+      <>
+        <Composer />
+        <Address />
+      </>,
+    );
     fireEvent.change(textarea(), { target: { value: '/skills' } });
     fireEvent.keyDown(textarea(), { key: 'Enter' });
-    expect(useModalStore.getState().open).toBe('skills');
+    expect(screen.getByTestId('address').textContent).toBe('/?settings=skills');
+    expect(textarea().value).toBe('');
   });
 
   it('slash autocomplete lists matching commands and fills the box on click', () => {
@@ -163,18 +206,32 @@ describe('Composer', () => {
   });
 
   it('attaches a file, shows progress, marks it ready and sends it with the turn', async () => {
-    vi.spyOn(files, 'uploadFile').mockResolvedValue({ file_id: 'f1', name: 'a.txt', size: 3, mime_type: 'text/plain' });
+    vi.spyOn(files, 'uploadFile').mockResolvedValue({
+      file_id: 'f1',
+      name: 'a.txt',
+      size: 3,
+      mime_type: 'text/plain',
+    });
     const send = vi.spyOn(sendTurnModule, 'sendTurn').mockResolvedValue(true);
-    const { container } = renderWithProviders(<Composer />, { route: '/chat/c1', path: '/chat/:chatId' });
+    const { container } = renderWithProviders(<Composer />, {
+      route: '/chat/c1',
+      path: '/chat/:chatId',
+    });
     const input = container.querySelector('input[type=file]') as HTMLInputElement;
-    fireEvent.change(input, { target: { files: [new File(['abc'], 'a.txt', { type: 'text/plain' })] } });
+    fireEvent.change(input, {
+      target: { files: [new File(['abc'], 'a.txt', { type: 'text/plain' })] },
+    });
     await waitFor(() => expect(screen.getByText('a.txt')).toBeTruthy());
-    await waitFor(() => expect(sendBtn().disabled).toBe(true), { timeout: 2000 }).catch(() => undefined);
+    await waitFor(() => expect(sendBtn().disabled).toBe(true), { timeout: 2000 }).catch(
+      () => undefined,
+    );
     fireEvent.change(textarea(), { target: { value: 'see file' } });
     await waitFor(() => expect(sendBtn().disabled).toBe(false));
     fireEvent.click(sendBtn());
     await waitFor(() => expect(send).toHaveBeenCalled());
-    expect(send.mock.calls[0]![0].files).toEqual([{ file_id: 'f1', name: 'a.txt', size: 3, mime_type: 'text/plain' }]);
+    expect(send.mock.calls[0]![0].files).toEqual([
+      { file_id: 'f1', name: 'a.txt', size: 3, mime_type: 'text/plain' },
+    ]);
   });
 
   describe('sidebar chat list and chip removal', () => {
@@ -246,7 +303,10 @@ describe('Composer', () => {
     it('removing a chip mid-upload deletes the file once the upload lands', async () => {
       let resolveUpload: (u: typeof uploaded) => void = () => undefined;
       vi.spyOn(files, 'uploadFile').mockImplementation(
-        () => new Promise((res) => { resolveUpload = res; }),
+        () =>
+          new Promise((res) => {
+            resolveUpload = res;
+          }),
       );
       const del = vi.spyOn(files, 'deleteFile').mockResolvedValue(undefined);
       const { container, client } = renderInChat();
@@ -262,7 +322,10 @@ describe('Composer', () => {
     it('a chip removed mid-upload whose upload then fails shows no toast', async () => {
       let rejectUpload: (e: Error) => void = () => undefined;
       vi.spyOn(files, 'uploadFile').mockImplementation(
-        () => new Promise((_res, rej) => { rejectUpload = rej; }),
+        () =>
+          new Promise((_res, rej) => {
+            rejectUpload = rej;
+          }),
       );
       const del = vi.spyOn(files, 'deleteFile').mockResolvedValue(undefined);
       const { container } = renderInChat();
@@ -277,8 +340,13 @@ describe('Composer', () => {
 
   it('a failed upload shows "failed" and a toast, and blocks sending until removed', async () => {
     vi.spyOn(files, 'uploadFile').mockRejectedValue(new Error('too big'));
-    const { container } = renderWithProviders(<Composer />, { route: '/chat/c1', path: '/chat/:chatId' });
-    fireEvent.change(container.querySelector('input[type=file]') as HTMLInputElement, { target: { files: [new File(['x'], 'big.bin')] } });
+    const { container } = renderWithProviders(<Composer />, {
+      route: '/chat/c1',
+      path: '/chat/:chatId',
+    });
+    fireEvent.change(container.querySelector('input[type=file]') as HTMLInputElement, {
+      target: { files: [new File(['x'], 'big.bin')] },
+    });
     await waitFor(() => expect(screen.getByRole('button', { name: 'Retry big.bin' })).toBeTruthy());
     expect(useToastStore.getState().toasts.some((t) => t.message === 'too big')).toBe(true);
     fireEvent.change(textarea(), { target: { value: 'x' } });
@@ -291,10 +359,10 @@ describe('Composer', () => {
     vi.spyOn(chatsApi, 'get').mockRejectedValue(new ApiError(404, {}, 'missing'));
     renderWithProviders(<Composer />, { route: '/chat/gone', path: '/chat/:chatId' });
     await waitFor(() => expect(chatsApi.get).toHaveBeenCalled());
-    await waitFor(() => expect(screen.queryByPlaceholderText('Start a conversation...')).toBeNull());
+    await waitFor(() => expect(screen.queryByPlaceholderText('Start a conversation…')).toBeNull());
   });
 
-  it('does not replace an opened chat\'s model with the default pick while chat settings are active', async () => {
+  it("does not replace an opened chat's model with the default pick while chat settings are active", async () => {
     vi.spyOn(modelsApi, 'list').mockResolvedValue([{ id: 'm1' }, { id: 'm2' }] as never);
     vi.spyOn(modelsApi, 'config').mockResolvedValue({ general: { text: 'm1' } } as never);
     useSettingsStore.setState({ model: null, modelName: null, chatScoped: true });
@@ -318,7 +386,14 @@ describe('Composer', () => {
   });
 
   it('while the server is stopping, the button is disabled and says Stopping', () => {
-    useStreamStore.setState({ chatId: 'c1', live: null, pending: null, interrupted: null, controller: null, stopping: true });
+    useStreamStore.setState({
+      chatId: 'c1',
+      live: null,
+      pending: null,
+      interrupted: null,
+      controller: null,
+      stopping: true,
+    });
     renderWithProviders(<Composer />, { route: '/chat/c1', path: '/chat/:chatId' });
     const button = screen.getByRole('button', { name: 'Stopping' }) as HTMLButtonElement;
     expect(button.disabled).toBe(true);
@@ -346,7 +421,7 @@ describe('Composer', () => {
     expect(textarea().value).toBe('something else');
   });
 
-  it('does not put a refused send\'s text into another chat the user moved to meanwhile', async () => {
+  it("does not put a refused send's text into another chat the user moved to meanwhile", async () => {
     vi.spyOn(chatsApi, 'get').mockResolvedValue({ id: 'x', title: 't', messages: [] } as never);
     let refuse: () => void = () => undefined;
     vi.spyOn(sendTurnModule, 'sendTurn').mockImplementation(async (a) => {
@@ -431,7 +506,13 @@ describe('Composer', () => {
   });
 
   it('shows Stop only in the chat that is generating; another chat can still send', () => {
-    useStreamStore.setState({ chatId: 'other', live: null, pending: null, interrupted: null, controller: null });
+    useStreamStore.setState({
+      chatId: 'other',
+      live: null,
+      pending: null,
+      interrupted: null,
+      controller: null,
+    });
     renderWithProviders(<Composer />, { route: '/chat/c1', path: '/chat/:chatId' });
     fireEvent.change(textarea(), { target: { value: 'hi' } });
     expect(screen.queryByRole('button', { name: 'Stop generating' })).toBeNull();
@@ -439,7 +520,13 @@ describe('Composer', () => {
   });
 
   it('while streaming the send button becomes Stop and calls stopTurn', () => {
-    useStreamStore.setState({ chatId: 'c1', live: null, pending: null, interrupted: null, controller: null });
+    useStreamStore.setState({
+      chatId: 'c1',
+      live: null,
+      pending: null,
+      interrupted: null,
+      controller: null,
+    });
     const stop = vi.spyOn(sendTurnModule, 'stopTurn').mockResolvedValue(undefined);
     renderWithProviders(<Composer />, { route: '/chat/c1', path: '/chat/:chatId' });
     fireEvent.click(screen.getByRole('button', { name: 'Stop generating' }));
@@ -450,13 +537,21 @@ describe('Composer', () => {
     const { container } = renderWithProviders(<Composer />);
     const input = container.querySelector('input[type=file]') as HTMLInputElement;
     const click = vi.spyOn(input, 'click');
-    fireEvent.click(screen.getByRole('button', { name: /Attach files|attach/i }).closest('button') ?? document.getElementById('attach-btn')!);
+    fireEvent.click(
+      screen.getByRole('button', { name: /Attach files|attach/i }).closest('button') ??
+        document.getElementById('attach-btn')!,
+    );
     expect(click).toHaveBeenCalled();
   });
 });
 
 describe('Composer staged files per chat', () => {
-  const uploaded = (id: string, name: string) => ({ file_id: id, name, size: 3, mime_type: 'text/plain' });
+  const uploaded = (id: string, name: string) => ({
+    file_id: id,
+    name,
+    size: 3,
+    mime_type: 'text/plain',
+  });
   const attach = (container: HTMLElement, name: string) =>
     fireEvent.change(container.querySelector('input[type=file]') as HTMLInputElement, {
       target: { files: [new File(['abc'], name, { type: 'text/plain' })] },
@@ -477,7 +572,13 @@ describe('Composer staged files per chat', () => {
 
   beforeEach(() => {
     useSettingsStore.setState({ model: 'm1', modelName: 'Model 1' });
-    useStreamStore.setState({ chatId: null, live: null, pending: null, interrupted: null, controller: null });
+    useStreamStore.setState({
+      chatId: null,
+      live: null,
+      pending: null,
+      interrupted: null,
+      controller: null,
+    });
     vi.spyOn(chatsApi, 'get').mockResolvedValue({ id: 'x', title: 't', messages: [] } as never);
   });
   afterEach(() => {
@@ -515,9 +616,22 @@ describe('Composer staged files per chat', () => {
     });
     const view = renderWithLinks('/chat/a');
     attach(view.container, 'a.txt');
-    await waitFor(() => expect(upload).toHaveBeenCalledWith(expect.any(File), 'a', expect.any(Function)));
+    await waitFor(() =>
+      expect(upload).toHaveBeenCalledWith(expect.any(File), 'a', expect.any(Function)),
+    );
     useAttachmentStore.getState().add('b', [
-      { key: 'kb', name: 'b.txt', size: 1, mimeType: 'text/plain', file: new File(['x'], 'b.txt'), chatId: 'b', status: 'ready', progress: 1, uploaded: uploaded('f2', 'b.txt'), error: null },
+      {
+        key: 'kb',
+        name: 'b.txt',
+        size: 1,
+        mimeType: 'text/plain',
+        file: new File(['x'], 'b.txt'),
+        chatId: 'b',
+        status: 'ready',
+        progress: 1,
+        uploaded: uploaded('f2', 'b.txt'),
+        error: null,
+      },
     ]);
     await waitFor(() => expect(sendBtn().disabled).toBe(false));
     fireEvent.change(textarea(), { target: { value: 'go' } });
@@ -569,10 +683,14 @@ describe('Composer drop and paste', () => {
 
   it('a pasted file gets a chip, and pasted text still goes into the box', async () => {
     renderWithProviders(<Composer />, { route: '/chat/c1', path: '/chat/:chatId' });
-    fireEvent.paste(textarea(), { clipboardData: { files: [new File(['a'], 'pasted.png')], types: ['Files'] } });
+    fireEvent.paste(textarea(), {
+      clipboardData: { files: [new File(['a'], 'pasted.png')], types: ['Files'] },
+    });
     await waitFor(() => expect(screen.getByText('pasted.png')).toBeTruthy());
     // Text: no files in the clipboard, so the default paste is not prevented.
-    const notPrevented = fireEvent.paste(textarea(), { clipboardData: { files: [], types: ['text/plain'] } });
+    const notPrevented = fireEvent.paste(textarea(), {
+      clipboardData: { files: [], types: ['text/plain'] },
+    });
     expect(notPrevented).toBe(true);
   });
 
@@ -583,7 +701,9 @@ describe('Composer drop and paste', () => {
       </main>,
       { route: '/chat/c1', path: '/chat/:chatId' },
     );
-    fireEvent.dragEnter(screen.getByTestId('zone'), { dataTransfer: { types: ['text/plain'], files: [] } });
+    fireEvent.dragEnter(screen.getByTestId('zone'), {
+      dataTransfer: { types: ['text/plain'], files: [] },
+    });
     expect(screen.queryByText('Drop files to attach')).toBeNull();
   });
 });

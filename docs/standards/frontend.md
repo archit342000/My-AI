@@ -36,8 +36,11 @@ Applies to `frontend/`. Layout, state placement and run commands are in `docs/fr
 
 - Colours, lettering, spacing, corners, shadows, layers and speeds come from the shared values in `src/styles/tokens.css` (a synced copy of the
   `console-at-rest` design repository; never edit it; add a missing value to that repository first, then re-sync). No hardcoded hex values or magic pixel sizes in components.
-  `bridge.css` keeps legacy variable names working until each screen is converted; new code does not use those names.
-- Reuse the shared UI primitives (`Modal`, `Toast`, `Menu`, `Popover`, `ConfirmDialog`) instead of building new ones.
+  The app's own sheets live in `src/styles/ds/`, one per area; the rule book in that repository decides how a screen looks and reads
+  (one corner shape, three layers of glass, plain wording). `src/lib/design-tokens.test.ts` and `src/test/wording.test.ts` enforce the checkable parts.
+- Reuse the shared UI primitives in `src/components/ui/` (`Button`, `Field`, `Modal`, `Window`, `Sheet`, `Popover`, `Menu`, `Toast`,
+  `ConfirmDialog`, `Skeleton`, `EmptyState`, `DeadEnd`) instead of building new ones.
+- Check a changed screen at phone, tablet and computer widths, day and night, with solid panels and with less motion.
 - Interactive elements are real `<button>`/`<a>` elements with an accessible name. Icon-only buttons need `aria-label`.
 - Everything must be keyboard operable; keep focus visible.
 

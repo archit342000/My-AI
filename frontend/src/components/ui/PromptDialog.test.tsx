@@ -26,11 +26,18 @@ describe('PromptDialog (F-33)', () => {
     const onSubmit = vi.fn();
     const onCancel = vi.fn();
     render(
-      <PromptDialog open title="Rename" message="Title" initialValue="a" onSubmit={onSubmit} onCancel={onCancel} />,
+      <PromptDialog
+        open
+        title="Rename"
+        message="Title"
+        initialValue="a"
+        onSubmit={onSubmit}
+        onCancel={onCancel}
+      />,
     );
     const input = screen.getByRole('textbox');
     fireEvent.change(input, { target: { value: 'Renamed' } });
-    fireEvent.click(screen.getByRole('button', { name: 'OK' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     expect(onSubmit).toHaveBeenCalledWith('Renamed');
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(onCancel).toHaveBeenCalled();

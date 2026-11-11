@@ -6,19 +6,30 @@ import { Menu, type MenuEntry } from '../../components/ui/Menu';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { IconPickerDialog } from './IconPickerDialog';
 import { PromptDialog } from '../../components/ui/PromptDialog';
+import { SkeletonLines } from '../../components/ui/Skeleton';
 import { useUiStore } from '../../state/ui-store';
 import { showToast } from '../../components/ui/toast-store';
 import { Icon } from '../../components/icons/Icon';
-import { iconPaths, type IconName } from '../../components/icons/icon-paths';
+import { workspaceEmoji, workspaceIconName } from '../../lib/workspace-icon';
 import { isWorkspaceExpanded, setWorkspaceExpanded } from '../../lib/workspace-prefs';
 import type { ChatSummary, Workspace } from '../../api/types';
 import { useChatList, useWorkspaceList } from '../chat/useChatQueries';
 import { stopIfStreaming } from '../chat/send-turn';
+import { dayGroup, whenLabel } from '../../lib/format-time';
 
 type Target = { kind: 'chat'; chat: ChatSummary } | { kind: 'workspace'; workspace: Workspace };
 type Pending = { op: 'rename' | 'delete' | 'icon' | 'move-new'; target: Target } | null;
 
-const MenuCtx = createContext<(t: Target, x: number, y: number) => void>(() => undefined);
+/** The chat list is grouped by day (rule book 5.3). */
+const DAY_GROUPS = [
+  { key: 'today', label: 'Today' },
+  { key: 'earlier', label: 'Earlier' },
+] as const;
+
+/** Opens the menu for a row at a point; `from` is the row, which later anchors the rename pop-up. */
+const MenuCtx = createContext<(t: Target, x: number, y: number, from: HTMLElement | null) => void>(
+  () => undefined,
+);
 
 /** Sidebar lists: workspaces with their chats, then recent chats outside any workspace. */
 export function SidebarChats() {
@@ -29,6 +40,8 @@ export function SidebarChats() {
   const activeChat = useMatch('/chat/:chatId');
   const [menu, setMenu] = useState<{ target: Target; x: number; y: number } | null>(null);
   const [pending, setPending] = useState<Pending>(null);
+  // The row whose menu was opened: the rename and new-workspace pop-ups attach to it.
+  const anchorRef = useRef<HTMLElement | null>(null);
 
   async function run(action: () => Promise<unknown>, failure: string) {
     try {
@@ -49,9 +62,12 @@ export function SidebarChats() {
           id: `move-${w.id}`,
           type: 'item' as const,
           label: w.name,
-          icon: workspaceIconName(w),
+          icon: workspaceIconName(w.icon),
           onSelect: () =>
-            void run(() => chatsApi.patch(chat.id, { workspace_id: w.id }), 'Move failed'),
+            void run(
+              () => chatsApi.patch(chat.id, { workspace_id: w.id }),
+              'The chat could not be moved. Try again.',
+            ),
         }));
       const submenu: MenuEntry[] = [...destinations];
       if (chat.workspace_id) {
@@ -62,34 +78,36 @@ export function SidebarChats() {
           label: 'Remove from workspace',
           icon: 'close',
           onSelect: () =>
-            void run(() => chatsApi.patch(chat.id, { workspace_id: null }), 'Move failed'),
+            void run(
+              () => chatsApi.patch(chat.id, { workspace_id: null }),
+              'The chat could not be moved. Try again.',
+            ),
         });
       }
       if (submenu.length) submenu.push({ type: 'separator', id: 'move-sep-new' });
       submenu.push({
         id: 'move-new',
         type: 'item',
-        label: 'New workspace…',
+        label: 'New workspace',
         icon: 'plus',
         onSelect: () => setPending({ op: 'move-new', target }),
       });
+      // The order of the design's reference: rename, move, and the destructive one last.
       return [
-        {
-          type: 'submenu',
-          id: 'move',
-          label: 'Move to workspace',
-          icon: 'grid',
-          searchable: (workspaces.data ?? []).length > 8,
-          items: submenu,
-        },
-        { type: 'separator', id: 'sep-actions' },
         {
           id: 'rename',
           label: 'Rename',
           icon: 'edit',
           onSelect: () => setPending({ op: 'rename', target }),
         },
-        { type: 'separator', id: 'sep-danger' },
+        {
+          type: 'submenu',
+          id: 'move',
+          label: 'Move to a workspace',
+          icon: 'folder',
+          searchable: (workspaces.data ?? []).length > 8,
+          items: submenu,
+        },
         {
           id: 'delete',
           label: 'Delete',
@@ -116,13 +134,13 @@ export function SidebarChats() {
       { type: 'separator', id: 'sep-actions' },
       {
         id: 'uncategorize',
-        label: 'Uncategorize all chats',
+        label: 'Move all chats out',
         icon: 'close',
         onSelect: () =>
           void run(async () => {
             for (const c of (chats.data ?? []).filter((x) => x.workspace_id === workspace.id))
               await chatsApi.patch(c.id, { workspace_id: null });
-          }, 'Failed to uncategorize'),
+          }, 'The chats could not be moved out. Try again.'),
       },
       { type: 'separator', id: 'sep-danger' },
       {
@@ -136,7 +154,7 @@ export function SidebarChats() {
   }
 
   function targetName(t: Target): string {
-    return t.kind === 'chat' ? t.chat.title || 'Untitled Chat' : t.workspace.name;
+    return t.kind === 'chat' ? t.chat.title || 'Untitled chat' : t.workspace.name;
   }
 
   async function confirmDelete(t: Target) {
@@ -145,10 +163,13 @@ export function SidebarChats() {
       await run(async () => {
         await stopIfStreaming(t.chat.id, Boolean(t.chat.is_running));
         return chatsApi.remove(t.chat.id);
-      }, 'Delete failed');
+      }, 'It could not be deleted. Try again.');
       if (activeChat?.params.chatId === t.chat.id) navigate('/', { replace: true });
     } else {
-      await run(() => chatsApi.deleteWorkspace(t.workspace.id), 'Delete failed');
+      await run(
+        () => chatsApi.deleteWorkspace(t.workspace.id),
+        'It could not be deleted. Try again.',
+      );
     }
   }
 
@@ -156,21 +177,33 @@ export function SidebarChats() {
     const name = value.trim();
     if (!name || name === targetName(t)) return;
     if (t.kind === 'chat')
-      await run(() => chatsApi.patch(t.chat.id, { title: name }), 'Rename failed');
-    else await run(() => chatsApi.renameWorkspace(t.workspace.id, name), 'Rename failed');
+      await run(
+        () => chatsApi.patch(t.chat.id, { title: name }),
+        'The name could not be changed. Try again.',
+      );
+    else
+      await run(
+        () => chatsApi.renameWorkspace(t.workspace.id, name),
+        'The name could not be changed. Try again.',
+      );
   }
   const temporaryChatId = useUiStore((s) => s.temporaryChatId);
   const all = (chats.data ?? []).filter((c) => c.id !== temporaryChatId);
   const loose = all.filter((c) => !c.workspace_id);
 
   return (
-    <MenuCtx.Provider value={(target, x, y) => setMenu({ target, x, y })}>
+    <MenuCtx.Provider
+      value={(target, x, y, from) => {
+        anchorRef.current = from;
+        setMenu({ target, x, y });
+      }}
+    >
       {workspaces.data && workspaces.data.length > 0 ? (
         <div id="folders-sidebar-section" className="sidebar-section">
-          <div className="sidebar-section-label">
+          <div className="sidebar-section-label sec">
             <span className="sidebar-text">Workspaces</span>
           </div>
-          <div id="folder-list" className="folder-list custom-scroll">
+          <div id="folder-list" className="folder-list">
             {workspaces.data.map((ws) => (
               <WorkspaceFolder
                 key={ws.id}
@@ -183,29 +216,58 @@ export function SidebarChats() {
       ) : null}
 
       <div id="recent-chats-sidebar-section" className="sidebar-section">
-        <div className="sidebar-section-label">
-          <span className="sidebar-text">Recent Chats</span>
-        </div>
         <div id="chat-history-list" className="chat-history-scroll">
-          {loose.map((c) => (
-            <ChatLink key={c.id} chat={c} />
-          ))}
+          {/* Loading, a problem and "nothing yet" each have their own line: never a blank panel. */}
+          {chats.isPending ? (
+            <SkeletonLines
+              className="side-state sidebar-text"
+              label="Loading your chats"
+              widths={['70%', '85%', '60%', '78%', '66%']}
+            />
+          ) : chats.isError ? (
+            <div className="side-state sidebar-text" role="alert">
+              <p className="ui-hint">Couldn't load your chats.</p>
+              <button
+                type="button"
+                className="ui-button ui-button--ghost ui-button--sm"
+                onClick={() => void chats.refetch()}
+              >
+                Try again
+              </button>
+            </div>
+          ) : all.length === 0 ? (
+            <p className="ui-hint side-state sidebar-text">
+              No chats yet. Start one and it will appear here.
+            </p>
+          ) : null}
+          {DAY_GROUPS.map(({ key, label }) => {
+            const rows = loose.filter((c) => dayGroup(c.timestamp) === key);
+            if (rows.length === 0) return null;
+            return (
+              <div key={key} className="sidebar-list" role="group" aria-label={label}>
+                <div className="sidebar-section-label sec">
+                  <span className="sidebar-text">{label}</span>
+                </div>
+                {rows.map((c) => (
+                  <ChatLink key={c.id} chat={c} />
+                ))}
+              </div>
+            );
+          })}
         </div>
       </div>
       <Menu
         label={menu ? targetName(menu.target) : 'Chat actions'}
         point={menu ? { x: menu.x, y: menu.y } : null}
         items={menu ? menuItems(menu.target) : []}
+        minWidth={248}
         onClose={() => setMenu(null)}
       />
       <PromptDialog
         open={pending?.op === 'rename'}
-        title={pending?.target.kind === 'workspace' ? 'Rename Workspace' : 'Rename Chat'}
-        message={
-          pending?.target.kind === 'workspace'
-            ? 'Enter new name for workspace:'
-            : 'Enter a new title:'
-        }
+        anchorRef={anchorRef}
+        title={pending?.target.kind === 'workspace' ? 'Rename workspace' : 'Rename chat'}
+        message="Name"
         initialValue={pending ? targetName(pending.target) : ''}
         confirmLabel="Rename"
         onCancel={() => setPending(null)}
@@ -217,9 +279,10 @@ export function SidebarChats() {
       />
       <PromptDialog
         open={pending?.op === 'move-new'}
-        title="Move to Workspace"
-        message="Name of the new workspace:"
-        confirmLabel="Move"
+        anchorRef={anchorRef}
+        title="Move to a new workspace"
+        message="Name of the new workspace"
+        confirmLabel="Create and move"
         onCancel={() => setPending(null)}
         onSubmit={(v) => {
           const t = pending?.target;
@@ -228,7 +291,7 @@ export function SidebarChats() {
             void run(async () => {
               const ws = await chatsApi.createWorkspace(v.trim());
               await chatsApi.patch(t.chat.id, { workspace_id: ws.id });
-            }, 'Move failed');
+            }, 'The chat could not be moved. Try again.');
           }
         }}
       />
@@ -240,18 +303,23 @@ export function SidebarChats() {
           const t = pending?.target;
           setPending(null);
           if (t?.kind === 'workspace')
-            void run(() => chatsApi.setWorkspaceIcon(t.workspace.id, icon), 'Icon update failed');
+            void run(
+              () => chatsApi.setWorkspaceIcon(t.workspace.id, icon),
+              'The icon could not be changed. Try again.',
+            );
         }}
       />
       <ConfirmDialog
         open={pending?.op === 'delete'}
-        title={pending?.target.kind === 'workspace' ? 'Delete Workspace' : 'Delete Chat'}
+        title={
+          pending?.target.kind === 'workspace' ? 'Delete this workspace?' : 'Delete this chat?'
+        }
         message={
           pending?.target.kind === 'workspace'
-            ? `Delete the workspace "${pending ? targetName(pending.target) : ''}"? The chats inside will be moved to uncategorized.`
-            : `Delete "${pending ? targetName(pending.target) : ''}"? This cannot be undone.`
+            ? `"${pending ? targetName(pending.target) : ''}" will be deleted. Its chats are kept and move out of the workspace.`
+            : `"${pending ? targetName(pending.target) : ''}" will be deleted. This cannot be undone.`
         }
-        confirmLabel="Delete"
+        confirmLabel={pending?.target.kind === 'workspace' ? 'Delete workspace' : 'Delete chat'}
         danger
         onCancel={() => setPending(null)}
         onConfirm={() => {
@@ -293,20 +361,17 @@ function useLongPress(open: (x: number, y: number) => void) {
 }
 
 /** The workspace's own icon when it names a known one, else the generic grid. */
-function workspaceIconName(workspace: Workspace): IconName {
-  return workspace.icon && iconPaths(workspace.icon as IconName)
-    ? (workspace.icon as IconName)
-    : 'grid';
-}
-
 function WorkspaceFolder({ workspace, chats }: { workspace: Workspace; chats: ChatSummary[] }) {
   const openMenu = useContext(MenuCtx);
   const queryClient = useQueryClient();
   const [dragOver, setDragOver] = useState(false);
   const navigate = useNavigate();
-  const press = useLongPress((x, y) => openMenu({ kind: 'workspace', workspace }, x, y));
+  const header = useRef<HTMLDivElement>(null);
+  const press = useLongPress((x, y) =>
+    openMenu({ kind: 'workspace', workspace }, x, y, header.current),
+  );
   const [expanded, setExpanded] = useState(() => isWorkspaceExpanded(workspace.name));
-  const iconName = workspaceIconName(workspace);
+  const iconName = workspaceIconName(workspace.icon);
 
   function toggle() {
     const next = !expanded;
@@ -336,16 +401,22 @@ function WorkspaceFolder({ workspace, chats }: { workspace: Workspace; chats: Ch
               queryClient.invalidateQueries({ queryKey: queryKeys.workspaces }),
             ]),
           )
-          .catch((err) => showToast(err instanceof Error ? err.message : 'Move failed', 'error'));
+          .catch((err) =>
+            showToast(
+              err instanceof Error ? err.message : 'The chat could not be moved. Try again.',
+              'error',
+            ),
+          );
       }}
     >
       <div
+        ref={header}
         className={`folder-header${dragOver ? ' drag-over' : ''}`}
         {...press}
         onClick={() => navigate(`/workspace/${workspace.id}`)}
         onContextMenu={(e) => {
           e.preventDefault();
-          openMenu({ kind: 'workspace', workspace }, e.clientX, e.clientY);
+          openMenu({ kind: 'workspace', workspace }, e.clientX, e.clientY, e.currentTarget);
         }}
         role="button"
         tabIndex={0}
@@ -364,13 +435,13 @@ function WorkspaceFolder({ workspace, chats }: { workspace: Workspace; chats: Ch
             toggle();
           }}
         >
-          <Icon name="chevron-right" size={12} strokeWidth={2.5} className="folder-chevron" />
+          <Icon name="chevron-right" size={14} className="folder-chevron" />
         </span>
         <div className="folder-title">
-          {workspace.icon && !iconPaths(workspace.icon as IconName) ? (
-            <span className="folder-emoji">{workspace.icon}</span>
+          {workspaceEmoji(workspace.icon) ? (
+            <span className="folder-emoji">{workspaceEmoji(workspace.icon)}</span>
           ) : (
-            <Icon name={iconName} size={14} strokeWidth={2.5} className="folder-icon" />
+            <Icon name={iconName} size={18} className="folder-icon" />
           )}
           <span className="folder-name">{workspace.name}</span>
         </div>
@@ -389,22 +460,40 @@ function WorkspaceFolder({ workspace, chats }: { workspace: Workspace; chats: Ch
 
 function ChatLink({ chat }: { chat: ChatSummary }) {
   const openMenu = useContext(MenuCtx);
-  const press = useLongPress((x, y) => openMenu({ kind: 'chat', chat }, x, y));
+  const row = useRef<HTMLDivElement>(null);
+  const press = useLongPress((x, y) => openMenu({ kind: 'chat', chat }, x, y, row.current));
+  const title = chat.title || 'Untitled chat';
+  const when = whenLabel(chat.timestamp);
   return (
-    <NavLink
-      draggable
-      onDragStart={(e) => e.dataTransfer.setData('text/plain', chat.id)}
-      to={`/chat/${chat.id}`}
-      {...press}
-      onContextMenu={(e) => {
-        e.preventDefault();
-        openMenu({ kind: 'chat', chat }, e.clientX, e.clientY);
-      }}
-      className={({ isActive }) => `chat-list-item${isActive ? ' active' : ''}`}
-    >
-      <div className="chat-list-item-title">
-        <span className="chat-list-item-text">{chat.title || 'Untitled Chat'}</span>
-      </div>
-    </NavLink>
+    <div className="chat-row" ref={row}>
+      <NavLink
+        draggable
+        onDragStart={(e) => e.dataTransfer.setData('text/plain', chat.id)}
+        to={`/chat/${chat.id}`}
+        {...press}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          openMenu({ kind: 'chat', chat }, e.clientX, e.clientY, row.current);
+        }}
+        className={({ isActive }) => `chat-list-item${isActive ? ' active' : ''}`}
+      >
+        <div className="chat-list-item-title">
+          <span className="chat-list-item-text">{title}</span>
+        </div>
+        {when ? <span className="chat-list-item-when dat keep">{when}</span> : null}
+      </NavLink>
+      <button
+        type="button"
+        className="chat-row__more ui-icon-button ui-icon-button--sm"
+        aria-label={`More for ${title}`}
+        aria-haspopup="menu"
+        onClick={(e) => {
+          const box = e.currentTarget.getBoundingClientRect();
+          openMenu({ kind: 'chat', chat }, box.left, box.bottom + 4, row.current);
+        }}
+      >
+        <Icon name="more" size={16} />
+      </button>
+    </div>
   );
 }

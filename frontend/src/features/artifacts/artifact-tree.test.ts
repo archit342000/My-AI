@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import type { Artifact } from '../../api/filesystem';
-import { artifactPath, buildTree, folderPaths, parentFolder, type TreeNode } from './artifact-tree';
+import {
+  artifactPath,
+  buildTree,
+  countFiles,
+  folderPaths,
+  isRunnable,
+  languageForName,
+  parentFolder,
+  type TreeFolder,
+  type TreeNode,
+} from './artifact-tree';
 
 const file = (id: string, title: string, extra: Partial<Artifact> = {}): Artifact => ({
   id,
@@ -43,7 +53,9 @@ describe('buildTree', () => {
   });
 
   it('keeps entries without an id as folders', () => {
-    const tree = buildTree([{ filename: 'workspace', title: 'workspace', type: 'file' } as Artifact]);
+    const tree = buildTree([
+      { filename: 'workspace', title: 'workspace', type: 'file' } as Artifact,
+    ]);
     expect(shape(tree)).toEqual([{ 'workspace/': [] }]);
   });
 });
@@ -61,7 +73,8 @@ describe('folderPaths and parentFolder', () => {
 });
 
 describe('buildTree placeholder option', () => {
-  const dir = (name: string) => ({ id: '', type: 'directory', filename: name, title: name }) as never;
+  const dir = (name: string) =>
+    ({ id: '', type: 'directory', filename: name, title: name }) as never;
   const file = (path: string) =>
     ({ id: path, type: 'file', filename: path, title: path, language: 'text' }) as never;
 
@@ -70,7 +83,9 @@ describe('buildTree placeholder option', () => {
   });
 
   it('keeps it when a file is under it, and keeps other empty folders', () => {
-    const withFile = buildTree([dir('workspace'), file('workspace/a.txt')], { hidePlaceholder: true });
+    const withFile = buildTree([dir('workspace'), file('workspace/a.txt')], {
+      hidePlaceholder: true,
+    });
     expect(withFile.map((n) => n.name)).toEqual(['workspace']);
     const other = buildTree([dir('workspace'), dir('notes')], { hidePlaceholder: true });
     expect(other.map((n) => n.name)).toEqual(['notes']);
@@ -78,5 +93,31 @@ describe('buildTree placeholder option', () => {
 
   it('without the option nothing is dropped', () => {
     expect(buildTree([dir('workspace')]).map((n) => n.name)).toEqual(['workspace']);
+  });
+});
+
+describe('counts, runnable files and languages', () => {
+  it('a folder counts its files, including those in folders inside it', () => {
+    const tree = buildTree([
+      dir('src'),
+      file('1', 'a.py', { folder: 'src' }),
+      file('2', 'b.py', { folder: 'src/lib' }),
+      dir('src/empty'),
+    ]);
+    expect(countFiles(tree[0] as TreeFolder)).toBe(2);
+  });
+
+  it('knows which files the runner accepts', () => {
+    expect(isRunnable('src/app.py')).toBe(true);
+    expect(isRunnable('Query.SQL')).toBe(true);
+    expect(isRunnable('notes.md')).toBe(false);
+    expect(isRunnable('Makefile')).toBe(false);
+  });
+
+  it("takes a new file's language from its name, markdown when it has no ending", () => {
+    expect(languageForName('run.py')).toBe('python');
+    expect(languageForName('page.HTML')).toBe('html');
+    expect(languageForName('Untitled')).toBe('markdown');
+    expect(languageForName('data.csv')).toBe('csv');
   });
 });

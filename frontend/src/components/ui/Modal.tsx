@@ -17,6 +17,14 @@ export interface ModalProps {
   onBack?: () => void;
   /** Element to focus on open instead of the first focusable control. */
   initialFocusRef?: RefObject<HTMLElement | null>;
+  /**
+   * "popup" (default): the small centred pop-up, for confirming what cannot be undone.
+   * "window": the large window shell for tools and bigger views. On a phone a pop-up rises from
+   * the bottom as a sheet and a window fills the screen.
+   */
+  variant?: 'popup' | 'window';
+  /** Shown beside the title of a window (a status light, a count). */
+  status?: ReactNode;
 }
 
 const FOCUSABLE =
@@ -24,7 +32,7 @@ const FOCUSABLE =
 
 /**
  * Dialog with Escape-to-close (top of stack only), backdrop click, focus trap, focus restore and
- * body scroll lock. Matches the legacy `.modal-backdrop.open` / `.modal-content` markup.
+ * body scroll lock. The class names (`modal-backdrop`, `modal-content`, ...) are kept as hooks.
  */
 export function Modal({
   open,
@@ -36,6 +44,8 @@ export function Modal({
   id,
   onBack,
   initialFocusRef,
+  variant = 'popup',
+  status,
 }: ModalProps) {
   const titleId = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -62,6 +72,9 @@ export function Modal({
 
   if (!open) return null;
 
+  const isWindow = variant !== 'popup';
+  const shellClass = isWindow ? 'modal-backdrop open ui-modal--window' : 'modal-backdrop open';
+
   function onKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
     if (event.key !== 'Tab') return;
     const nodes = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? []);
@@ -80,7 +93,7 @@ export function Modal({
   // Portalled to <body>: sidebar/message ancestors use backdrop-filter, which would trap `position: fixed`.
   return createPortal(
     <div
-      className="modal-backdrop open"
+      className={shellClass}
       id={id}
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
@@ -101,9 +114,10 @@ export function Modal({
             {onBack ? (
               <IconButton icon="chevron-left" label="Back" tooltip={false} onClick={onBack} />
             ) : null}
-            <h2 id={titleId} className="font-heading ui-modal__title">
+            <h2 id={titleId} className="ui-modal__title">
               {title}
             </h2>
+            {status ? <div className="ui-modal__status">{status}</div> : null}
             <IconButton icon="close" label="Close" tooltip={false} onClick={onClose} />
           </div>
         </div>

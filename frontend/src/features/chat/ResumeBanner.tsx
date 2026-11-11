@@ -15,7 +15,7 @@ export function ResumeBanner({ chatId }: { chatId: string }) {
       await chatsApi.patch(chatId, { resume_suppressed: 1 });
       await queryClient.invalidateQueries({ queryKey: queryKeys.chat(chatId) });
     } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Could not dismiss', 'error');
+      showToast(err instanceof Error ? err.message : "Couldn't dismiss this. Try again.", 'error');
     } finally {
       setBusy(false);
     }
@@ -42,7 +42,7 @@ export function ResumeBanner({ chatId }: { chatId: string }) {
       <div className="resume-banner-actions">
         <button
           type="button"
-          className="btn-secondary resume-dismiss"
+          className="ui-button ui-button--ghost resume-dismiss"
           disabled={busy}
           onClick={() => void dismiss()}
         >
@@ -50,7 +50,7 @@ export function ResumeBanner({ chatId }: { chatId: string }) {
         </button>
         <button
           type="button"
-          className="resume-confirm"
+          className="ui-button ui-button--primary resume-confirm"
           onClick={() => void resumeTurn(queryClient, chatId)}
         >
           Resume

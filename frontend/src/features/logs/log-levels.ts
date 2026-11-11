@@ -1,4 +1,4 @@
-/** Log levels shown as coloured badges in the app stream (plan F-50). */
+/** Log levels: what a line or a row says about how serious it is. */
 export type LogLevel = 'DEBUG' | 'INFO' | 'WARNING' | 'ERROR';
 
 export const LOG_LEVELS: LogLevel[] = ['DEBUG', 'INFO', 'WARNING', 'ERROR'];
@@ -15,20 +15,6 @@ export function detectLevel(line: string): LogLevel | null {
   return word as LogLevel;
 }
 
-/** Plain-object entries become table rows; scalar values become columns (at most `max`). */
-export function scalarColumns(entries: unknown[], max = 6): string[] {
-  const seen: string[] = [];
-  for (const entry of entries) {
-    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
-    for (const [key, value] of Object.entries(entry as Record<string, unknown>)) {
-      const scalar = value === null || ['string', 'number', 'boolean'].includes(typeof value);
-      if (scalar && !seen.includes(key)) seen.push(key);
-      if (seen.length >= max) return seen;
-    }
-  }
-  return seen;
-}
-
 /** Level of any entry: a line names it, an object carries it in `level` or `severity`. */
 export function levelOf(entry: unknown): LogLevel | null {
   if (typeof entry === 'string') return detectLevel(entry);
@@ -36,20 +22,6 @@ export function levelOf(entry: unknown): LogLevel | null {
   const record = entry as Record<string, unknown>;
   const raw = record.level ?? record.severity;
   return typeof raw === 'string' ? detectLevel(raw.toUpperCase()) : null;
-}
-
-const ACRONYMS = new Set(['id', 'url', 'ip', 'api', 'http', 'pdf', 'sql', 'uuid']);
-
-/** Friendly column header: `chat_id` becomes "Chat ID", `status_code` becomes "Status Code". */
-export function columnLabel(key: string): string {
-  return key
-    .split(/[_\s]+/)
-    .filter(Boolean)
-    .map((word) => {
-      const lower = word.toLowerCase();
-      return ACRONYMS.has(lower) ? lower.toUpperCase() : lower[0]!.toUpperCase() + lower.slice(1);
-    })
-    .join(' ');
 }
 
 /** Cheap string hash (djb2) used to tell rows apart; not for security. */
@@ -91,4 +63,98 @@ export function rowKeys<T>(entries: T[]): Array<{ entry: T; key: string }> {
     keys[i] = n === 0 ? base : `${base}#${n}`;
   }
   return entries.map((entry, i) => ({ entry, key: keys[i] ?? '' }));
+}
+
+export type LogTone = 'neutral' | 'ok' | 'warn' | 'bad';
+
+export interface LogSummary {
+  /** Colour of the row's light: a problem, a warning, something that went well, or nothing to say. */
+  tone: LogTone;
+  /** When it happened, as given (shown as a time by the page); null when the entry has none. */
+  when: string | number | null;
+  /** The short name of the entry: its level, method, event or first value. */
+  what: string;
+  /** The rest of the line, cut by the page to one line. */
+  detail: string;
+  /** The chat the entry belongs to, when it names one. */
+  chatId: string | null;
+}
+
+const TIME_KEYS = ['timestamp', 'time', 'ts', 'created_at'];
+const LEVEL_KEYS = ['level', 'severity'];
+const WHAT_KEYS = ['method', 'event', 'event_type', 'type', 'name', 'action'];
+
+function toneOf(entry: unknown, level: LogLevel | null): LogTone {
+  if (level === 'ERROR') return 'bad';
+  if (level === 'WARNING') return 'warn';
+  if (entry && typeof entry === 'object') {
+    const row = entry as Record<string, unknown>;
+    const status = Number(row.status ?? row.status_code);
+    if (Number.isFinite(status) && status > 0) {
+      if (status >= 500) return 'bad';
+      if (status >= 400) return 'warn';
+      if (status >= 200 && status < 300) return 'ok';
+    }
+    if (typeof row.error === 'string' && row.error) return 'bad';
+  }
+  return 'neutral';
+}
+
+/** A date and a time at the start of a text line, as loggers write them. */
+const LINE_STAMP = /^\[?(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})(?:[.,]\d+)?\]?\s*/;
+/** The level word of a text line with the separators around it. */
+const LINE_LEVEL = /^[\s|:-]*\b(?:DEBUG|INFO|WARNING|WARN|ERROR|CRITICAL)\b[\s|:-]*/;
+
+/** One line for a log entry: what the folded row shows before it is opened. */
+export function logSummary(entry: unknown): LogSummary {
+  const level = levelOf(entry);
+  if (typeof entry === 'string') {
+    const line = entry.split('\n')[0] ?? '';
+    // "2026-11-11 04:52:07,142 | DEBUG | logger | message": the time and the level have their own places.
+    const stamped = LINE_STAMP.exec(line);
+    const rest = (stamped ? line.slice(stamped[0].length) : line)
+      .replace(LINE_LEVEL, '')
+      .replace(/^[\s|:-]+/, '');
+    return {
+      tone: toneOf(entry, level),
+      when: stamped ? `${stamped[1]}T${stamped[2]}` : null,
+      what: level ?? 'Line',
+      detail: rest || line,
+      chatId: null,
+    };
+  }
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+    return {
+      tone: 'neutral',
+      when: null,
+      what: 'Entry',
+      detail: JSON.stringify(entry) ?? '',
+      chatId: null,
+    };
+  }
+  const row = entry as Record<string, unknown>;
+  const timeKey = TIME_KEYS.find((k) => typeof row[k] === 'string' || typeof row[k] === 'number');
+  const when = timeKey ? (row[timeKey] as string | number) : null;
+  const scalars = Object.entries(row).filter(
+    ([key, value]) =>
+      value !== null &&
+      value !== '' &&
+      ['string', 'number', 'boolean'].includes(typeof value) &&
+      key !== timeKey &&
+      !LEVEL_KEYS.includes(key),
+  );
+  const whatKey = WHAT_KEYS.find((k) => scalars.some(([key]) => key === k)) ?? scalars[0]?.[0];
+  const what = level ?? (whatKey !== undefined ? String(row[whatKey]) : 'Entry');
+  const detail = scalars
+    .filter(([key]) => level !== null || key !== whatKey)
+    .slice(0, 5)
+    .map(([, value]) => String(value))
+    .join(' · ');
+  return {
+    tone: toneOf(entry, level),
+    when,
+    what,
+    detail,
+    chatId: typeof row.chat_id === 'string' && row.chat_id ? row.chat_id : null,
+  };
 }

@@ -1,3 +1,4 @@
+import { PHONE_MAX_WIDTH } from '../lib/breakpoints';
 import { create } from 'zustand';
 
 export type ThemeMode = 'light' | 'dark' | 'system';
@@ -10,9 +11,6 @@ interface UiState {
   sidebarWidth: number;
   setSidebarWidth: (width: number) => void;
   artifactsOpen: boolean;
-  /** The open files panel holds edits that are not saved (set by the panel; read by whatever closes it). */
-  artifactsDirty: boolean;
-  setArtifactsDirty: (dirty: boolean) => void;
   /** True while a page that has a files drawer is open (a file link can be followed there). */
   filesAvailable: boolean;
   setFilesAvailable: (available: boolean) => void;
@@ -45,8 +43,7 @@ const SIDEBAR_COLLAPSED_KEY = 'my_ai_sidebar_collapsed';
 
 export const SIDEBAR_MIN_WIDTH = 200;
 export const SIDEBAR_MAX_WIDTH = 480;
-export const SIDEBAR_DEFAULT_WIDTH = 256;
-const PHONE_MAX_WIDTH = 768;
+export const SIDEBAR_DEFAULT_WIDTH = 252;
 
 export function clampSidebarWidth(width: number): number {
   return Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, Math.round(width)));
@@ -85,7 +82,7 @@ function readGlass(): GlassMode {
 }
 
 export const useUiStore = create<UiState>((set) => ({
-  // Legacy: the sidebar starts closed on phones (<= 768px).
+  // Legacy: the sidebar starts closed on phones (under 600 wide).
   sidebarCollapsed: readSidebarCollapsed(),
   sidebarWidth: readSidebarWidth(),
   setSidebarWidth: (width) => {
@@ -96,8 +93,6 @@ export const useUiStore = create<UiState>((set) => ({
     set({ sidebarWidth: next });
   },
   artifactsOpen: false,
-  artifactsDirty: false,
-  setArtifactsDirty: (dirty) => set({ artifactsDirty: dirty }),
   filesAvailable: false,
   setFilesAvailable: (available) => set({ filesAvailable: available }),
   requestedArtifactPath: null,
@@ -116,7 +111,10 @@ export const useUiStore = create<UiState>((set) => ({
       requestedArtifactPath: s.artifactsOpen ? null : s.requestedArtifactPath,
     })),
   setArtifactsOpen: (open) =>
-    set((s) => ({ artifactsOpen: open, requestedArtifactPath: open ? s.requestedArtifactPath : null })),
+    set((s) => ({
+      artifactsOpen: open,
+      requestedArtifactPath: open ? s.requestedArtifactPath : null,
+    })),
   setSidebarCollapsed: (collapsed) => {
     rememberCollapsed(collapsed);
     set({ sidebarCollapsed: collapsed });

@@ -39,14 +39,17 @@ describe('UserGate', () => {
     mockMe(() => json({ id: 'u1', email: 'u1@x.io', role: 'user' }));
     renderGate();
     expect(screen.queryByTestId('app')).toBeNull();
-    expect(screen.getByText('Loading…')).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('Loading');
     expect(await screen.findByTestId('app')).toBeInTheDocument();
     expect(useUserStore.getState().user).toEqual({ id: 'u1', email: 'u1@x.io', role: 'user' });
   });
 
   it('never renders the app before /api/me has answered', async () => {
     let release: (r: Response) => void = () => undefined;
-    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>((resolve) => (release = resolve))));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => new Promise<Response>((resolve) => (release = resolve))),
+    );
     renderGate();
     await new Promise((r) => setTimeout(r, 20));
     expect(screen.queryByTestId('app')).toBeNull();
@@ -74,8 +77,9 @@ describe('UserGate', () => {
   it('shows the session-expired message after a single request on a 401', async () => {
     const fetchMock = mockMe(() => json({ error: 'Unauthorized' }, 401));
     renderGate();
-    expect(await screen.findByText('Your session has expired.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Reload' })).toBeInTheDocument();
+    expect(await screen.findByText('Your session has ended.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Sign in again' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Show details' })).toBeNull();
     expect(screen.queryByTestId('app')).toBeNull();
     await new Promise((r) => setTimeout(r, 30));
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -84,7 +88,12 @@ describe('UserGate', () => {
   it('shows the generic error on a server error', async () => {
     mockMe(() => json({ error: 'boom' }, 500));
     renderGate();
-    await waitFor(() => expect(screen.getByText("Couldn't load your account.")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText("Couldn't load your account.")).toBeInTheDocument(),
+    );
     expect(screen.queryByTestId('app')).toBeNull();
+    // The way forward is a button; the server's own words stay behind Show details.
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Show details' })).toBeInTheDocument();
   });
 });

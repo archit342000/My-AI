@@ -1,0 +1,399 @@
+/*
+ * Tool windows: browser, code runs, version history.
+ * Console at Rest: only shared values from tokens.css. See the rule book in the console-at-rest repository.
+ */
+
+/* The body of a tool window: one column that fills the window. */
+.tool-window {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-height: 0;
+}
+.ui-modal--window .modal-body:has(> .tool-window),
+.ui-modal--window .modal-body:has(> .versions) {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.tool-window__hint {
+  flex: none;
+  margin: 0;
+}
+
+/* ── Browser window: the remote screen is a picture of another computer, dark day and night ── */
+
+.portal-screen {
+  display: flex;
+  flex: 1;
+  min-height: 12rem;
+  overflow: hidden;
+  border: 1px solid var(--edge);
+  border-radius: var(--r-ctl);
+  background: var(--code-bg);
+  color: var(--code-fg);
+}
+.portal-frame {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  border: 0;
+}
+.portal-wait,
+.portal-fail {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  min-width: 0;
+  padding: var(--space-5);
+  text-align: center;
+}
+.portal-wait__bars {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: min(220px, 60%);
+}
+@keyframes portal-wait {
+  to {
+    background-position: -200% 0;
+  }
+}
+.portal-wait__bars > i {
+  display: block;
+  height: 12px;
+  border-radius: 6px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--code-fg) 8%, transparent) 25%,
+    color-mix(in srgb, var(--code-fg) 18%, transparent) 50%,
+    color-mix(in srgb, var(--code-fg) 8%, transparent) 75%
+  );
+  background-size: 200% 100%;
+  animation: portal-wait 1.6s linear infinite;
+}
+.portal-wait__bars > i + i {
+  width: 70%;
+}
+.portal-fail__why {
+  max-width: 24rem;
+  color: var(--code-comment);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.portal-fail > .ui-button {
+  border-color: color-mix(in srgb, var(--code-fg) 30%, transparent);
+  background: transparent;
+  color: var(--code-fg);
+}
+.portal-fail > .ui-button:hover {
+  background: color-mix(in srgb, var(--code-fg) 10%, transparent);
+}
+
+/* ── Code run history: runs fold open like log entries ── */
+
+.code-runs {
+  flex: none;
+}
+.code-run + .code-run {
+  border-top: 1px solid var(--edge);
+}
+.code-run--open {
+  background: var(--well);
+}
+.code-run__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: 46px;
+  padding: 0 var(--space-3);
+  border: 0;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--t-base) var(--ease-spring);
+}
+.code-run:not(.code-run--open) > .code-run__head:hover {
+  background: var(--well);
+}
+.code-run__chevron {
+  flex: none;
+  color: var(--muted);
+  transition: transform var(--t-base) var(--ease-spring);
+}
+.code-run__head[aria-expanded='true'] > .code-run__chevron {
+  transform: rotate(90deg);
+}
+.code-run__head > .led,
+.code-run__outcome {
+  flex: none;
+}
+.code-run__when {
+  flex: none;
+  color: var(--muted);
+}
+.code-run__language {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 500;
+}
+.code-run__line {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.code-run__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-1) 14px 14px 36px;
+}
+.code-run__group {
+  min-width: 0;
+}
+.code-run__group::before {
+  display: block;
+  margin-bottom: var(--space-1);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  content: attr(aria-label);
+}
+.code-run__block {
+  max-height: 20rem;
+  margin: 0;
+  overflow: auto;
+  padding: var(--space-3) 14px;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--bg) 70%, transparent);
+  font-size: 12.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  scrollbar-width: thin;
+  scrollbar-color: var(--edge-strong) transparent;
+}
+.code-run__block--code {
+  background: var(--code-bg);
+  color: var(--code-fg);
+  white-space: pre;
+  overflow-wrap: normal;
+}
+.code-run__block--error {
+  color: var(--bad);
+}
+.code-run__meta {
+  flex: none;
+}
+.code-run__metas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px var(--space-4);
+}
+
+/* ── Version history: versions on the left, the chosen one on the right ── */
+
+.versions {
+  display: flex;
+  flex: 1;
+  gap: 18px;
+  min-height: 0;
+}
+.versions__file {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.versions__list-side {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 290px;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--edge-strong) transparent;
+}
+.versions__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.versions__item {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 3px;
+  width: 100%;
+  padding: 10px var(--space-3);
+  border: 0;
+  border-radius: var(--r-ctl);
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--t-base) var(--ease-spring);
+}
+.versions__item:hover {
+  background: var(--well);
+}
+.versions__item[aria-current='true'] {
+  background: var(--accent-soft);
+}
+.versions__item-top {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: 500;
+}
+.versions__item-top > .dat {
+  margin-left: auto;
+}
+.versions__item-top .ui-chip {
+  min-height: 22px;
+  padding: 0 var(--space-2);
+  font-size: 12px;
+}
+.versions__item-note {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.versions__item-note:empty {
+  display: none;
+}
+.versions__view {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  min-height: 0;
+}
+.versions__bar {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  min-height: var(--touch);
+}
+.versions__back {
+  display: none;
+}
+.versions__who {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 8rem;
+}
+.versions__name {
+  font-weight: 500;
+}
+.versions__who > .dat {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.versions__status,
+.versions__none {
+  margin: 0;
+}
+.versions__none {
+  margin: auto;
+  color: var(--muted);
+}
+.versions__preview,
+.versions__lines {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  overflow: auto;
+  padding: 14px var(--space-4);
+  border: 1px solid var(--edge);
+  border-radius: var(--r-ctl);
+  background: var(--code-bg);
+  color: var(--code-fg);
+  font-size: 13px;
+  line-height: 1.65;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--code-fg) 28%, transparent) transparent;
+}
+.versions__diff {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-height: 0;
+}
+.versions__line {
+  display: block;
+}
+.versions__line--added {
+  background: color-mix(in srgb, var(--ok) 22%, transparent);
+}
+.versions__line--removed {
+  background: color-mix(in srgb, var(--bad) 22%, transparent);
+}
+
+/* ── Phone: each window is a full screen; versions are a list, then the chosen one ── */
+
+@media (max-width: 599px) {
+  .portal-screen {
+    flex: none;
+    aspect-ratio: 16 / 11;
+  }
+  .code-run__body {
+    padding-left: var(--space-3);
+  }
+  .code-run__line {
+    display: none;
+  }
+  .code-run__language {
+    flex: 1;
+  }
+  .versions__list-side {
+    flex: 1;
+    width: auto;
+  }
+  .versions[data-view='list'] > .versions__view,
+  .versions[data-view='view'] > .versions__list-side {
+    display: none;
+  }
+  .versions__back {
+    display: inline-flex;
+  }
+  .versions__item {
+    min-height: 56px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .portal-wait__bars > i {
+    animation: none;
+  }
+}

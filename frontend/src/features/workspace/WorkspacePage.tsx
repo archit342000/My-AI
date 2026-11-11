@@ -1,28 +1,29 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import { Notice } from '../../components/ui/Notice';
 import { Link, useNavigate, useParams } from 'react-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { GonePage } from '../../app/DeadEnds';
+import { PageTitle } from '../../app/PageTitle';
 import { apiRequest } from '../../api/client';
-import { queryKeys } from '../../api/chats';
+import { chatsApi, queryKeys } from '../../api/chats';
 import { Icon } from '../../components/icons/Icon';
-import { iconPaths, type IconName } from '../../components/icons/icon-paths';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { showToast } from '../../components/ui/toast-store';
 import { Button, IconButton } from '../../components/ui/Button';
-import { Input } from '../../components/ui/Field';
+import { EmptyState } from '../../components/ui/EmptyState';
+import { PromptDialog } from '../../components/ui/PromptDialog';
+import { Skeleton } from '../../components/ui/Skeleton';
+import { TickRule } from '../../components/ui/TickRule';
+import { fullDateTime, whenLabel } from '../../lib/format-time';
+import { workspaceEmoji, workspaceIconName } from '../../lib/workspace-icon';
 import { useUiStore } from '../../state/ui-store';
 import { ArtifactPanel } from '../artifacts/ArtifactPanel';
+import { IconPickerDialog } from '../sidebar/IconPickerDialog';
 import { useChatList, useWorkspaceList } from '../chat/useChatQueries';
 
-/** Last-updated label for a chat card. Numbers are Unix seconds (or ms when large); strings are dates. */
-function updatedLabel(ts: number | string | null | undefined): string | null {
-  if (ts === null || ts === undefined || ts === '') return null;
-  const date = typeof ts === 'number' ? new Date(ts < 1e12 ? ts * 1000 : ts) : new Date(ts);
-  if (Number.isNaN(date.getTime())) return null;
-  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-}
-
 /**
- * Workspace page: its chats, rename/delete, and the workspace's shared files (always shown, one Files section).
+ * Workspace page: its icon and name, its chats as cards, and the files the workspace shares
+ * (always shown, one Files section).
  */
 export function WorkspacePage() {
   const { workspaceId = '' } = useParams();
@@ -31,8 +32,10 @@ export function WorkspacePage() {
   const chats = useChatList();
   const workspace = workspaces.data?.find((w) => w.id === workspaceId);
   const members = (chats.data ?? []).filter((c) => c.workspace_id === workspaceId);
-  const [name, setName] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [pickingIcon, setPickingIcon] = useState(false);
+  const renameButton = useRef<HTMLButtonElement>(null);
   const navigate = useNavigate();
 
   const rename = useMutation({
@@ -41,11 +44,22 @@ export function WorkspacePage() {
         method: 'PATCH',
         json: { name: value },
       }),
-    onSuccess: async () => {
-      setName(null);
-      await queryClient.invalidateQueries({ queryKey: queryKeys.workspaces });
-    },
-    onError: (e) => showToast(e instanceof Error ? e.message : 'Rename failed', 'error'),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.workspaces }),
+    onError: (e) =>
+      showToast(
+        e instanceof Error ? e.message : 'The workspace could not be renamed. Try again.',
+        'error',
+      ),
+  });
+
+  const setIcon = useMutation({
+    mutationFn: (icon: string | null) => chatsApi.setWorkspaceIcon(workspaceId, icon),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.workspaces }),
+    onError: (e) =>
+      showToast(
+        e instanceof Error ? e.message : 'The icon could not be changed. Try again.',
+        'error',
+      ),
   });
 
   const remove = useMutation({
@@ -53,115 +67,181 @@ export function WorkspacePage() {
       apiRequest(`/api/chats/workspaces/${encodeURIComponent(workspaceId)}`, { method: 'DELETE' }),
     onSuccess: async () => {
       showToast('Workspace deleted', 'success');
+      // Leave first: refreshing the list while still here would flash "no longer exists".
+      navigate('/', { replace: true });
       await queryClient.invalidateQueries({ queryKey: queryKeys.workspaces });
       await queryClient.invalidateQueries({ queryKey: queryKeys.chats });
-      navigate('/', { replace: true });
     },
-    onError: (e) => showToast(e instanceof Error ? e.message : 'Delete failed', 'error'),
+    onError: (e) =>
+      showToast(
+        e instanceof Error ? e.message : 'The workspace could not be deleted. Try again.',
+        'error',
+      ),
   });
 
   if (!workspace) {
-    if (workspaces.isPending) return <div className="chat-error">Loading…</div>;
-    if (workspaces.isError) return <div className="chat-error">Could not load workspaces.</div>;
-    return <div className="chat-error">Workspace not found.</div>;
+    if (workspaces.isPending) {
+      return (
+        <div
+          className="workspace-view"
+          role="status"
+          aria-label="Loading the workspace"
+          aria-busy="true"
+        >
+          <Skeleton width="38%" height="28px" />
+          <div className="workspace-chat-grid">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="workspace-chat-card workspace-chat-card--placeholder">
+                <Skeleton width="40%" />
+                <Skeleton width="82%" height="16px" />
+              </div>
+            ))}
+          </div>
+          <Skeleton width="100%" height="260px" />
+        </div>
+      );
+    }
+    if (workspaces.isError) {
+      return (
+        <EmptyState
+          className="page-problem"
+          drawing="broke"
+          title="Couldn't open this workspace"
+          description="Something went wrong on the way. Your chats and files are safe."
+          action={
+            <Button variant="quiet" onClick={() => void workspaces.refetch()}>
+              Try again
+            </Button>
+          }
+        />
+      );
+    }
+    return <GonePage what="workspace" />;
   }
 
-  // The workspace's own icon, falling back to the grid when it is unset or unknown (F-47).
-  const headerIcon: IconName =
-    workspace.icon && iconPaths(workspace.icon as IconName) ? (workspace.icon as IconName) : 'grid';
+  const headerIcon = workspaceIconName(workspace.icon);
+  const startChat = () => {
+    useUiStore.getState().setNewChatWorkspaceId(workspaceId);
+    navigate('/');
+  };
   return (
     <div className="workspace-view">
-      <header className="workspace-header">
-        <div className="workspace-header__title">
-          <Icon name={headerIcon} size={22} />
-          {name === null ? (
-            <div className="workspace-header__text">
-              <h1 className="font-heading workspace-header__name">{workspace.name}</h1>
-              <p className="workspace-header__stats">
-                {members.length} {members.length === 1 ? 'chat' : 'chats'}
-              </p>
-            </div>
+      <PageTitle>Workspace</PageTitle>
+      <header className="ws-head">
+        <button
+          type="button"
+          className="ui-icon-button ws-head__icon"
+          aria-label="Change the workspace icon"
+          title="Change icon"
+          onClick={() => setPickingIcon(true)}
+        >
+          {workspaceEmoji(workspace.icon) ? (
+            <span className="ws-head__emoji">{workspaceEmoji(workspace.icon)}</span>
           ) : (
-            <form
-              className="workspace-rename"
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (name.trim()) rename.mutate(name.trim());
-              }}
-            >
-              <Input
-                aria-label="Workspace name"
-                autoFocus
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-              />
-              <Button variant="primary" size="sm" type="submit" loading={rename.isPending}>
-                Save
-              </Button>
-              <Button variant="secondary" size="sm" onClick={() => setName(null)}>
-                Cancel
-              </Button>
-            </form>
+            <Icon name={headerIcon} size={24} />
           )}
+        </button>
+        <div className="ws-head__text">
+          <h1 className="ws-head__name" title={workspace.name}>
+            {workspace.name}
+          </h1>
+          <p className="dat keep ws-head__stats">
+            {members.length} {members.length === 1 ? 'chat' : 'chats'}
+          </p>
         </div>
-        <div className="workspace-header__actions">
-          {name === null ? (
-            <>
-              <IconButton
-                icon="edit"
-                label="Rename workspace"
-                onClick={() => setName(workspace.name)}
-              />
-              <IconButton
-                icon="trash"
-                label="Delete workspace"
-                tone="danger"
-                onClick={() => setConfirming(true)}
-              />
-            </>
-          ) : null}
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => {
-              useUiStore.getState().setNewChatWorkspaceId(workspaceId);
-              navigate('/');
-            }}
-          >
-            New chat in this workspace
-          </Button>
-        </div>
+        <IconButton
+          ref={renameButton}
+          icon="edit"
+          label="Rename workspace"
+          onClick={() => setRenaming(true)}
+        />
+        <IconButton icon="trash" label="Delete workspace" onClick={() => setConfirming(true)} />
+        <Button variant="quiet" className="ws-head__new" onClick={startChat}>
+          <Icon name="plus" size={16} />
+          New chat here
+        </Button>
       </header>
 
-      <div className="workspace-chat-grid">
-        {members.map((c) => {
-          const updated = updatedLabel(c.timestamp);
-          return (
-            <Link key={c.id} to={`/chat/${c.id}`} className="workspace-chat-card">
-              <span className="workspace-chat-card__title">{c.title || 'Untitled Chat'}</span>
-              {updated ? (
-                <time className="workspace-chat-card__date" dateTime={String(c.timestamp)}>
-                  Updated {updated}
-                </time>
-              ) : null}
-            </Link>
-          );
-        })}
-        {chats.isPending ? null : members.length === 0 ? (
-          <p className="workspace-empty">No chats in this workspace yet.</p>
-        ) : null}
-      </div>
+      <section className="ws-block" aria-labelledby="ws-chats-title">
+        <div className="block-head">
+          <h2 id="ws-chats-title" className="sec">
+            Chats
+          </h2>
+          <TickRule />
+        </div>
+        {members.length > 0 ? (
+          <div className="workspace-chat-grid">
+            {members.map((c) => {
+              const when = whenLabel(c.timestamp);
+              return (
+                <Link key={c.id} to={`/chat/${c.id}`} className="workspace-chat-card">
+                  {when ? (
+                    <time className="dat" title={fullDateTime(c.timestamp)}>
+                      {/^\d\d:\d\d$/.test(when) ? `Today · ${when}` : when}
+                    </time>
+                  ) : null}
+                  <span className="workspace-chat-card__title">{c.title || 'Untitled chat'}</span>
+                </Link>
+              );
+            })}
+          </div>
+        ) : chats.isPending ? null : chats.isError ? (
+          <Notice tone="bad" actionLabel="Try again" onAction={() => void chats.refetch()}>
+            The chats here could not be loaded.
+          </Notice>
+        ) : (
+          <EmptyState
+            className="workspace-empty"
+            title="Nothing in this workspace yet"
+            description="Chats you start here are kept together, along with the files they make."
+            action={
+              <Button variant="primary" onClick={startChat}>
+                Start a chat here
+              </Button>
+            }
+          />
+        )}
+      </section>
 
-      {/* One Files section: the panel brings its own heading. */}
-      <div className="artifact-inline">
-        <ArtifactPanel scope={{ workspaceId }} />
-      </div>
+      <section className="ws-block" aria-labelledby="ws-files-title">
+        <div className="block-head">
+          <h2 id="ws-files-title" className="sec">
+            Files
+          </h2>
+          <TickRule />
+        </div>
+        <div className="artifact-inline">
+          <ArtifactPanel scope={{ workspaceId }} />
+        </div>
+      </section>
 
+      <PromptDialog
+        open={renaming}
+        anchorRef={renameButton}
+        title="Rename workspace"
+        message="Workspace name"
+        initialValue={workspace.name}
+        onCancel={() => setRenaming(false)}
+        onSubmit={(value) => {
+          const next = value.trim();
+          setRenaming(false);
+          if (next && next !== workspace.name) rename.mutate(next);
+        }}
+      />
+      <IconPickerDialog
+        open={pickingIcon}
+        current={workspace.icon}
+        onCancel={() => setPickingIcon(false)}
+        onPick={(icon) => {
+          setPickingIcon(false);
+          if ((icon ?? null) !== (workspace.icon ?? null)) setIcon.mutate(icon);
+        }}
+      />
       <ConfirmDialog
         open={confirming}
-        title="Delete workspace?"
-        message="Delete this workspace? This cannot be undone."
-        confirmLabel="Delete"
+        title="Delete this workspace?"
+        message={`"${workspace.name}" will be deleted. This cannot be undone.`}
+        confirmLabel="Delete workspace"
         danger
         onCancel={() => setConfirming(false)}
         onConfirm={() => {

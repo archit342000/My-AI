@@ -4,10 +4,16 @@ import { parseContent, preprocessLatex, normalizeNewlines } from './content';
 
 describe('parseContent', () => {
   it('moves <think> blocks into thoughts', () => {
-    expect(parseContent('<think>plan</think>\nAnswer')).toEqual({ thoughts: 'plan', cleaned: 'Answer' });
+    expect(parseContent('<think>plan</think>\nAnswer')).toEqual({
+      thoughts: 'plan',
+      cleaned: 'Answer',
+    });
   });
   it('hides everything after an unclosed <think>', () => {
-    expect(parseContent('Hi <think>never closed')).toEqual({ thoughts: 'never closed', cleaned: 'Hi' });
+    expect(parseContent('Hi <think>never closed')).toEqual({
+      thoughts: 'never closed',
+      cleaned: 'Hi',
+    });
   });
 });
 
@@ -21,7 +27,9 @@ describe('preprocessLatex / normalizeNewlines', () => {
   });
   it('leaves code with literal \\n untouched (F-05)', () => {
     // Inline code spans are never rewritten, even in a single-line message.
-    expect(normalizeNewlines('Use `"Semantic Graph:\\n"` in code')).toBe('Use `"Semantic Graph:\\n"` in code');
+    expect(normalizeNewlines('Use `"Semantic Graph:\\n"` in code')).toBe(
+      'Use `"Semantic Graph:\\n"` in code',
+    );
     // Multi-line code (real newlines present) is never rewritten.
     const fenced = '```py\nprint("Semantic Graph:\\n")\nf(x\\n)\n```';
     expect(normalizeNewlines(fenced)).toBe(fenced);
@@ -86,5 +94,12 @@ describe('renderMarkdown', () => {
 
   it('returns empty string for empty input', () => {
     expect(renderMarkdown('')).toBe('');
+  });
+
+  it('a task list item has one tick box, written without inline styles', () => {
+    const html = renderMarkdown('- [x] done\n- [ ] to do');
+    expect(html.match(/type="checkbox"/g)).toHaveLength(2);
+    expect(html).toContain('class="task-list-item-checkbox" checked');
+    expect(html).not.toContain('style=');
   });
 });

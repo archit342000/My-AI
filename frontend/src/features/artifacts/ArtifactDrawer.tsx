@@ -1,39 +1,27 @@
-import {
-  useEffect,
-  useRef,
-  useState,
-  type CSSProperties,
-  type KeyboardEvent,
-  type PointerEvent,
-} from 'react';
+import { useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from 'react';
+import { createPortal } from 'react-dom';
 import type { ScopeRef } from '../../api/filesystem';
+import { useBackLayer } from '../../hooks/useBackLayer';
 import { useUiStore } from '../../state/ui-store';
 import { ArtifactPanel } from './ArtifactPanel';
 
 const WIDTH_KEY = 'my_ai_artifact_width';
 const MIN_WIDTH = 320;
-const DEFAULT_WIDTH = 460;
+const DEFAULT_WIDTH = 400;
 const KEY_STEP = 16;
-/** Above this width the drawer sits beside the chat (the chat narrows); at or below it overlays. */
-const SIDE_BY_SIDE_MIN = 1025;
-/** Gap between the drawer and the screen edge (matches `.artifact-drawer { right }`). */
+/** Gaps of the app frame around the panels (the frame's padding and the space between panels). */
 const EDGE_GAP = 16;
 
-/** Room the chat keeps beside the drawer on a wide screen (the sidebar takes its own). */
-const MIN_CHAT_WIDTH = 400;
+/** Room the chat keeps beside the panel. */
+const MIN_CHAT_WIDTH = 360;
 
 function maxWidth(): number {
-  const screen = Math.min(960, window.innerWidth - 48);
-  if (window.innerWidth < SIDE_BY_SIDE_MIN) return Math.max(MIN_WIDTH, screen);
-  // Side by side: the chat must keep a usable column, so the drawer cannot take the whole window.
-  const sidebar =
-    Number.parseFloat(
-      getComputedStyle(document.documentElement).getPropertyValue('--sidebar-width'),
-    ) || 0;
-  return Math.max(
-    MIN_WIDTH,
-    Math.min(screen, window.innerWidth - sidebar - MIN_CHAT_WIDTH - EDGE_GAP),
-  );
+  // The navigation panel takes its own room (a rail or the full panel; on a phone it is a drawer on top).
+  const nav = document.getElementById('sidebar');
+  const navWidth =
+    nav && getComputedStyle(nav).position !== 'fixed' ? nav.getBoundingClientRect().width : 0;
+  const room = window.innerWidth - navWidth - MIN_CHAT_WIDTH - EDGE_GAP * 4;
+  return Math.max(MIN_WIDTH, Math.min(960, room));
 }
 
 function clamp(width: number): number {
@@ -63,6 +51,8 @@ function persistWidth(width: number): void {
 export function ArtifactDrawer({ scope }: { scope: ScopeRef }) {
   const setOpen = useUiStore((s) => s.setArtifactsOpen);
   const [width, setWidth] = useState(readWidth);
+  // On a phone the panel is a screen of its own: Back closes it (what was typed is saved as it goes).
+  useBackLayer(true, () => setOpen(false));
   const drag = useRef<{ startX: number; startWidth: number } | null>(null);
 
   function onPointerDown(event: PointerEvent<HTMLDivElement>) {
@@ -90,28 +80,11 @@ export function ArtifactDrawer({ scope }: { scope: ScopeRef }) {
     persistWidth(next);
   }
 
-  // Like the legacy right sidebar: `main` keeps clear of the open drawer, so the transcript and the composer narrow
-  // instead of being covered. The variable is removed on close, so other pages are untouched.
-  useEffect(() => {
-    const root = document.documentElement;
-    const sync = () => {
-      if (window.innerWidth >= SIDE_BY_SIDE_MIN)
-        root.style.setProperty('--right-sidebar-width', `${width + EDGE_GAP}px`);
-      else root.style.removeProperty('--right-sidebar-width');
-    };
-    sync();
-    window.addEventListener('resize', sync);
-    return () => {
-      window.removeEventListener('resize', sync);
-      root.style.removeProperty('--right-sidebar-width');
-    };
-  }, [width]);
-
   const style = { '--artifact-width': `${width}px` } as CSSProperties;
 
-  return (
-    // Not <aside>: legacy.css styles every `aside` as the left sidebar (inset-inline-start: 0).
-    <section
+  const frame = document.getElementById('app-root');
+  const drawer = (
+    <aside
       className="artifact-drawer"
       style={style} // dynamic-style
       aria-label="Files"
@@ -120,7 +93,7 @@ export function ArtifactDrawer({ scope }: { scope: ScopeRef }) {
         className="artifact-drawer__handle"
         role="separator"
         aria-orientation="vertical"
-        aria-label="Resize files panel"
+        aria-label="Drag to resize the files panel"
         aria-valuemin={MIN_WIDTH}
         aria-valuemax={maxWidth()}
         aria-valuenow={width}
@@ -132,6 +105,8 @@ export function ArtifactDrawer({ scope }: { scope: ScopeRef }) {
         onKeyDown={onKeyDown}
       />
       <ArtifactPanel scope={scope} onClose={() => setOpen(false)} />
-    </section>
+    </aside>
   );
+  // Beside the content panel, as a third panel of the app frame (a full screen of its own on a phone).
+  return frame ? createPortal(drawer, frame) : drawer;
 }

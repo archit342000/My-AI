@@ -1,4 +1,4 @@
-import { Modal } from '../../components/ui/Modal';
+import { Window } from '../../components/ui/Window';
 import type { SlashCommand } from './slash';
 
 /** What `/help` shows: the built-in commands and the user's skills, each with its description. */
@@ -12,7 +12,7 @@ export function HelpDialog({
   commands: readonly SlashCommand[];
 }) {
   return (
-    <Modal open={open} onClose={onClose} title="Commands and skills" maxWidth={560}>
+    <Window open={open} onClose={onClose} title="Commands and skills" maxWidth={560}>
       <ul className="help-list">
         {commands.map((c) => (
           <li key={c.name} className="help-list__item">
@@ -24,6 +24,6 @@ export function HelpDialog({
       <p className="help-list__note">
         Type a command in the message box and press Enter; a skill runs with its /name.
       </p>
-    </Modal>
+    </Window>
   );
 }

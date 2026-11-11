@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { IconPickerDialog } from './IconPickerDialog';
 
 let afterEachCleanup: () => void = () => undefined;
+const pressed = (name: string) => screen.getByRole('button', { name }).getAttribute('aria-pressed');
 
 describe('IconPickerDialog', () => {
   afterEach(() => {
@@ -11,31 +12,60 @@ describe('IconPickerDialog', () => {
     afterEachCleanup = () => undefined;
   });
 
-  it('marks the current icon as pressed and picks another by click', () => {
+  it('a tap chooses, and only Save keeps it', () => {
     const onPick = vi.fn();
-    render(<IconPickerDialog open current="folder" onPick={onPick} onCancel={() => undefined} />);
-    expect(screen.getByRole('button', { name: 'folder' }).getAttribute('aria-pressed')).toBe(
-      'true',
-    );
-    const other = screen
-      .getAllByRole('button')
-      .find((b) => b.getAttribute('aria-pressed') === 'false' && b.title);
-    fireEvent.click(other as HTMLElement);
-    expect(onPick).toHaveBeenCalledWith(other?.title);
+    render(<IconPickerDialog open current="star" onPick={onPick} onCancel={() => undefined} />);
+    expect(pressed('Star')).toBe('true');
+    fireEvent.click(screen.getByRole('button', { name: 'Rocket' }));
+    expect(pressed('Rocket')).toBe('true');
+    expect(pressed('Star')).toBe('false');
+    expect(onPick).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(onPick).toHaveBeenCalledWith('rocket');
   });
 
-  it('"Remove icon" is in the dialog footer and clears the icon', () => {
+  it('Save with nothing chosen changes nothing, so an older icon is kept as it is', () => {
     const onPick = vi.fn();
-    const { baseElement } = render(
-      <IconPickerDialog open current="folder" onPick={onPick} onCancel={() => undefined} />,
-    );
-    const remove = screen.getByRole('button', { name: 'Remove icon' });
-    expect(baseElement.querySelector('.modal-footer')?.contains(remove)).toBe(true);
-    fireEvent.click(remove);
+    const onCancel = vi.fn();
+    render(<IconPickerDialog open current="🚀" onPick={onPick} onCancel={onCancel} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(onPick).not.toHaveBeenCalled();
+    expect(onCancel).toHaveBeenCalled();
+  });
+
+  it('Cancel keeps nothing', () => {
+    const onPick = vi.fn();
+    const onCancel = vi.fn();
+    render(<IconPickerDialog open current="star" onPick={onPick} onCancel={onCancel} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Rocket' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(onCancel).toHaveBeenCalled();
+    expect(onPick).not.toHaveBeenCalled();
+  });
+
+  it('"Back to the folder" returns to the starting icon, saved as no icon of its own', () => {
+    const onPick = vi.fn();
+    render(<IconPickerDialog open current="star" onPick={onPick} onCancel={() => undefined} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Back to the folder' }));
+    expect(pressed('Folder')).toBe('true');
+    expect(screen.getByRole('button', { name: 'Back to the folder' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     expect(onPick).toHaveBeenCalledWith(null);
   });
 
-  it('brings the current icon into view when it opens', () => {
+  it('a workspace without an icon, or with one that no longer exists, starts on the folder', () => {
+    const { unmount } = render(
+      <IconPickerDialog open current={null} onPick={() => undefined} onCancel={() => undefined} />,
+    );
+    expect(pressed('Folder')).toBe('true');
+    unmount();
+    render(
+      <IconPickerDialog open current="gone" onPick={() => undefined} onCancel={() => undefined} />,
+    );
+    expect(pressed('Folder')).toBe('true');
+  });
+
+  it('icons are named in plain words, and the current one is brought into view', () => {
     const scroll = vi.fn();
     // jsdom has no scrollIntoView: give it one for this test.
     Element.prototype.scrollIntoView = scroll;
@@ -43,11 +73,12 @@ describe('IconPickerDialog', () => {
     render(
       <IconPickerDialog
         open
-        current="folder"
+        current="help-circle"
         onPick={() => undefined}
         onCancel={() => undefined}
       />,
     );
+    expect(pressed('Help circle')).toBe('true');
     expect(scroll).toHaveBeenCalled();
   });
 });

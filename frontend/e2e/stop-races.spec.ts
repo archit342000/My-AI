@@ -155,7 +155,7 @@ test('deleting the chat that is generating stops it first', async ({ page }) => 
   await expect(page.getByRole('button', { name: 'Stop generating' })).toBeVisible();
   await page.locator('.chat-list-item').first().click({ button: 'right' });
   await page.getByRole('menuitem', { name: /Delete/ }).click();
-  await page.getByRole('button', { name: 'Delete', exact: true }).click();
+  await page.getByRole('button', { name: 'Delete chat', exact: true }).click();
   await expect.poll(() => events.includes('delete'), { timeout: STOP_DELAY_MS + 4000 }).toBe(true);
   expect(events.indexOf('stop-answered')).toBeGreaterThan(-1);
   expect(events.indexOf('stop-answered')).toBeLessThan(events.indexOf('delete'));

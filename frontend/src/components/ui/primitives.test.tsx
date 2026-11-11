@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import { Badge } from './Badge';
 import { Button, IconButton } from './Button';
 import { EmptyState } from './EmptyState';
 import { Field, Input, Textarea } from './Field';
@@ -46,7 +45,9 @@ describe('Tooltip', () => {
       </Tooltip>,
     );
     screen.getByRole('button', { name: 'copy' }).focus();
-    expect(await screen.findByRole('tooltip', {}, { timeout: 1000 })).toHaveTextContent('Copy message');
+    expect(await screen.findByRole('tooltip', {}, { timeout: 1000 })).toHaveTextContent(
+      'Copy message',
+    );
     screen.getByRole('button', { name: 'copy' }).blur();
     await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull());
   });
@@ -63,7 +64,13 @@ function SelectHarness({ searchable = false }: { searchable?: boolean }) {
   const [value, setValue] = useState('qwen');
   return (
     <>
-      <Select aria-label="Model" value={value} onChange={setValue} options={models} searchable={searchable} />
+      <Select
+        aria-label="Model"
+        value={value}
+        onChange={setValue}
+        options={models}
+        searchable={searchable}
+      />
       <output data-testid="value">{value}</output>
     </>
   );
@@ -131,14 +138,30 @@ describe('Select', () => {
   });
 });
 
-function MenuHarness({ onPick, extra = [] as MenuEntry[] }: { onPick: (id: string) => void; extra?: MenuEntry[] }) {
+function MenuHarness({
+  onPick,
+  extra = [] as MenuEntry[],
+}: {
+  onPick: (id: string) => void;
+  extra?: MenuEntry[];
+}) {
   const items: MenuEntry[] = [
     { id: 'rename', label: 'Rename', onSelect: () => onPick('rename') },
     { type: 'separator', id: 'sep' },
     { id: 'delete', label: 'Delete', danger: true, onSelect: () => onPick('delete') },
     ...extra,
   ];
-  return <Menu label="Chat actions" items={items} trigger={(props) => <button type="button" {...props}>More</button>} />;
+  return (
+    <Menu
+      label="Chat actions"
+      items={items}
+      trigger={(props) => (
+        <button type="button" {...props}>
+          More
+        </button>
+      )}
+    />
+  );
 }
 
 describe('Menu', () => {
@@ -214,7 +237,14 @@ describe('Toggle', () => {
   it('flips aria-checked and links the description', async () => {
     function Harness() {
       const [on, setOn] = useState(false);
-      return <Toggle checked={on} onChange={setOn} label="Vision" description="Send images to the model" />;
+      return (
+        <Toggle
+          checked={on}
+          onChange={setOn}
+          label="Vision"
+          description="Send images to the model"
+        />
+      );
     }
     render(<Harness />);
     const toggle = screen.getByRole('switch', { name: 'Vision' });
@@ -263,9 +293,20 @@ describe('RadioCards and SegmentedControl', () => {
 });
 
 describe('Slider', () => {
-  const box = () => screen.getByRole('spinbutton', { name: 'Max tokens value' }) as HTMLInputElement;
+  const box = () =>
+    screen.getByRole('spinbutton', { name: 'Max tokens value' }) as HTMLInputElement;
   const setup = (value = 16384, onChange = vi.fn()) => {
-    render(<Slider label="Max tokens" value={value} onChange={onChange} min={256} max={32768} step={256} decimals={0} />);
+    render(
+      <Slider
+        label="Max tokens"
+        value={value}
+        onChange={onChange}
+        min={256}
+        max={32768}
+        step={256}
+        decimals={0}
+      />,
+    );
     return onChange;
   };
 
@@ -342,7 +383,9 @@ describe('Slider', () => {
 
   it('sets the --fill custom property that draws the filled track', () => {
     render(<Slider label="Top P" value={0.25} onChange={vi.fn()} min={0} max={1} step={0.01} />);
-    expect(screen.getByRole('slider', { name: 'Top P' }).getAttribute('style')).toContain('--fill: 25%');
+    expect(screen.getByRole('slider', { name: 'Top P' }).getAttribute('style')).toContain(
+      '--fill: 25%',
+    );
   });
 
   it('exposes the range input with its min and max', () => {
@@ -374,17 +417,16 @@ describe('Field, Input and Textarea', () => {
   });
 
   it('renders a textarea with its own control props', () => {
-    render(<Field label="Notes">{(control) => <Textarea {...control} defaultValue="x" autoGrow />}</Field>);
+    render(
+      <Field label="Notes">
+        {(control) => <Textarea {...control} defaultValue="x" autoGrow />}
+      </Field>,
+    );
     expect(screen.getByLabelText('Notes').tagName).toBe('TEXTAREA');
   });
 });
 
-describe('Badge and EmptyState', () => {
-  it('Badge applies its tone class', () => {
-    render(<Badge tone="warning">loading</Badge>);
-    expect(screen.getByText('loading')).toHaveClass('ui-badge', 'ui-badge--warning');
-  });
-
+describe('EmptyState', () => {
   it('EmptyState shows title, description and action', () => {
     render(
       <EmptyState
@@ -396,5 +438,61 @@ describe('Badge and EmptyState', () => {
     expect(screen.getByText('No chats yet')).toBeInTheDocument();
     expect(screen.getByText('Start a conversation')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'New chat' })).toBeInTheDocument();
+  });
+});
+
+describe('Button kinds and reasons (design system)', () => {
+  it('has a class per kind, including quiet and link', () => {
+    render(
+      <>
+        <Button variant="quiet">Quiet</Button>
+        <Button variant="link">Show all 24</Button>
+      </>,
+    );
+    expect(screen.getByRole('button', { name: 'Quiet' })).toHaveClass('ui-button--quiet');
+    expect(screen.getByRole('button', { name: 'Show all 24' })).toHaveClass('ui-button--link');
+  });
+
+  it('a switched-off button says why, and only while it is off', () => {
+    const { rerender } = render(
+      <Button disabled reason="Pick a model first">
+        Send
+      </Button>,
+    );
+    expect(screen.getByRole('button', { name: 'Send' })).toHaveAttribute(
+      'aria-description',
+      'Pick a model first',
+    );
+    rerender(<Button reason="Pick a model first">Send</Button>);
+    expect(screen.getByRole('button', { name: 'Send' })).not.toHaveAttribute('aria-description');
+  });
+});
+
+describe('Menu groups, ticks, keys and reasons (design system)', () => {
+  it('shows a group label, the current choice, keys, and why an item is off', async () => {
+    const onSelect = vi.fn();
+    render(
+      <Menu
+        label="View"
+        trigger={(props) => <Button {...props}>Open</Button>}
+        items={[
+          { type: 'group', id: 'g', label: 'Sort by' },
+          { id: 'new', label: 'Newest', checked: true, onSelect },
+          { id: 'old', label: 'Oldest', checked: false, keys: ['Ctrl', 'O'], onSelect },
+          { id: 'run', label: 'Run', disabled: true, reason: 'Runner is offline', onSelect },
+        ]}
+      />,
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Open' }));
+    expect(screen.getByText('Sort by')).toHaveClass('ui-menu__group');
+    expect(screen.getByRole('menuitemradio', { name: 'Newest' })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    );
+    expect(screen.getByRole('menuitemradio', { name: /Oldest/ })).toHaveTextContent('CtrlO');
+    expect(screen.getByRole('menuitem', { name: /Run/ })).toBeDisabled();
+    expect(screen.getByText('Runner is offline')).toBeInTheDocument();
+    await userEvent.keyboard('{ArrowDown}{Enter}');
+    expect(onSelect).toHaveBeenCalledTimes(1);
   });
 });

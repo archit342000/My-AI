@@ -12,15 +12,7 @@ import { listFiles, readSrc, SRC_DIR } from './source-scan';
  */
 const BASELINE: Record<string, number> = {
   'app/Sidebar.tsx': 0,
-  'features/settings/AgentConfigDialog.tsx': 0,
-  'features/settings/ChatSettingsModal.tsx': 0,
   'features/settings/CrudList.tsx': 0,
-  'features/settings/ModelsDialog.tsx': 0,
-  'features/settings/PersonasDialog.tsx': 0,
-  'features/settings/PreferencesDialog.tsx': 0,
-  'features/settings/SkillsDialog.tsx': 0,
-  'features/settings/StealthDialog.tsx': 0,
-  'features/settings/SystemSettingsModal.tsx': 0,
   'features/settings/forms.tsx': 0,
   'features/tools/CodeHistoryDialog.tsx': 0,
   'features/tools/PortalDialog.tsx': 0,
@@ -44,7 +36,10 @@ describe('inline style ratchet', () => {
     const over = [...counts.entries()]
       .filter(([file, n]) => n > (BASELINE[file] ?? 0))
       .map(([file, n]) => `${file}: ${n} > ${BASELINE[file] ?? 0}`);
-    expect(over, 'Move these styles to components.css or mark them // dynamic-style').toEqual([]);
+    expect(
+      over,
+      "Move these styles to the area's sheet in styles/ds or mark them // dynamic-style",
+    ).toEqual([]);
   });
 
   it('baseline is lowered as files are cleaned up', () => {

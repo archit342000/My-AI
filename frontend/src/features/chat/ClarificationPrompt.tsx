@@ -50,14 +50,23 @@ export function ClarificationPrompt({
       await clarificationApi.respond(chatId, request.id, answer);
       setAnsweredId(request.id);
     } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Could not send the answer', 'error');
+      showToast(
+        err instanceof Error ? err.message : "Couldn't send the answer. Try again.",
+        'error',
+      );
     } finally {
       setSending(false);
     }
   }
 
   return (
-    <section ref={section} className="clarify" role="group" aria-live="polite" aria-label="The assistant has a question">
+    <section
+      ref={section}
+      className="clarify"
+      role="group"
+      aria-live="polite"
+      aria-label="The assistant has a question"
+    >
       <div className="clarify__question">
         <Markdown text={request.question} className="message-content raw-text-content" />
       </div>

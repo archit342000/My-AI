@@ -1,7 +1,7 @@
 // A scripted stand-in for the inference proxy, for the stack e2e suite. No dependencies.
 // The scenario is picked by a keyword in the last user message:
 //   NOTHINK plain answer, no reasoning · TOOL one tool round · MULTI three tool rounds · SLOW a long, slow reply
-//   LONG a long markdown reply (headings, a table, code, a list) used by the geometry check
+//   LONG a long markdown reply (headings, a table, code, a list) for long-answer checks
 //   ERR the model call fails · anything else: reasoning and a short answer (after tool rounds: a summary).
 import http from 'node:http';
 

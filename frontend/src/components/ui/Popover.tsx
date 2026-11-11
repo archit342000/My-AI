@@ -9,6 +9,7 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { cx } from '../../lib/cx';
+import { useMediaQuery } from '../../hooks/useMediaQuery';
 import {
   computePosition,
   readVisibleViewport,
@@ -16,6 +17,7 @@ import {
   type PopoverPlacement,
   type Position,
 } from '../../lib/popover-position';
+import { pushBackLayer } from '../../lib/back-layer';
 import { pushPopover, type PopoverCloseReason } from './popover-stack';
 
 export type { PopoverPlacement };
@@ -38,6 +40,8 @@ export interface PopoverProps {
   label?: string;
   id?: string;
   className?: string;
+  /** On a phone, rise from the bottom as a sheet instead of hanging from the anchor (menus, drop-downs). */
+  sheetOnPhone?: boolean;
 }
 
 function samePosition(a: Position | null, b: Position): boolean {
@@ -72,7 +76,10 @@ export function Popover({
   label,
   id,
   className,
+  sheetOnPhone = false,
 }: PopoverProps) {
+  const phone = useMediaQuery('(max-width: 599px)');
+  const asSheet = sheetOnPhone && phone;
   const [pos, setPos] = useState<Position | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef(onClose);
@@ -109,7 +116,9 @@ export function Popover({
     visual?.addEventListener('scroll', update);
     // The panel's real height decides where a `right` panel must shift to; it changes as content loads.
     const observer =
-      typeof ResizeObserver === 'undefined' || !panelRef.current ? null : new ResizeObserver(update);
+      typeof ResizeObserver === 'undefined' || !panelRef.current
+        ? null
+        : new ResizeObserver(update);
     if (observer && panelRef.current) observer.observe(panelRef.current);
     return () => {
       window.removeEventListener('resize', update);
@@ -123,6 +132,8 @@ export function Popover({
   useEffect(() => {
     if (!open) return;
     const release = pushPopover((reason) => closeRef.current(reason));
+    // On a phone a menu or a drop-down is a layer of its own: Back closes it first.
+    const releaseBack = pushBackLayer(() => closeRef.current('escape'));
     function onPointerDown(event: PointerEvent) {
       const target = event.target;
       if (!(target instanceof Element)) return;
@@ -132,11 +143,38 @@ export function Popover({
     document.addEventListener('pointerdown', onPointerDown);
     return () => {
       release();
+      releaseBack();
       document.removeEventListener('pointerdown', onPointerDown);
     };
   }, [open, anchorRef]);
 
   if (!open) return null;
+
+  if (asSheet) {
+    // The veil carries data-popover so a press on it is not an "outside" press for other popovers;
+    // it closes this one itself.
+    return createPortal(
+      <div
+        className="ui-sheet-veil"
+        data-popover=""
+        onPointerDown={(event) => {
+          if (event.target === event.currentTarget) closeRef.current('outside');
+        }}
+      >
+        <div
+          ref={panelRef}
+          id={id}
+          role={role}
+          aria-label={label}
+          className={cx('ui-sheet', className)}
+        >
+          <div className="ui-sheet__grip" aria-hidden="true" />
+          {children}
+        </div>
+      </div>,
+      document.body,
+    );
+  }
 
   const placementStyle: CSSProperties = pos
     ? {

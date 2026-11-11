@@ -9,8 +9,8 @@ export type TimelineItem =
   | { kind: 'reasoning'; key: string; text: string }
   | { kind: 'text'; key: string; text: string }
   | { kind: 'event'; key: string; text: string }
-  | { kind: 'call'; key: string; name: string; args: string; running: boolean }
-  | { kind: 'result'; key: string; name: string; result: string }
+  /** One tool call with its answer; `result` is null while the tool is still running. */
+  | { kind: 'tool'; key: string; name: string; args: string; result: string | null }
   | { kind: 'group'; key: string; label: string; items: TimelineItem[] };
 
 function itemsOf(step: Step, key: string): TimelineItem[] {
@@ -22,18 +22,8 @@ function itemsOf(step: Step, key: string): TimelineItem[] {
       return step.agent !== null && step.text ? [{ kind: 'text', key, text: step.text }] : [];
     case 'event':
       return step.text ? [{ kind: 'event', key, text: step.text }] : [];
-    case 'tool': {
-      const call: TimelineItem = {
-        kind: 'call',
-        key: `${key}:call`,
-        name: step.name,
-        args: step.args,
-        running: step.result === null,
-      };
-      return step.result === null
-        ? [call]
-        : [call, { kind: 'result', key: `${key}:result`, name: step.name, result: step.result }];
-    }
+    case 'tool':
+      return [{ kind: 'tool', key, name: step.name, args: step.args, result: step.result }];
   }
 }
 
@@ -69,4 +59,42 @@ export function statusOf(steps: Step[], toolLabel: (name: string) => string): st
     if (s.kind === 'tool' && s.result === null) return toolLabel(s.name);
   }
   return null;
+}
+
+/** How many tool calls a timeline holds, counting those inside sub-agent groups. */
+export function toolCount(items: TimelineItem[]): number {
+  return items.reduce(
+    (n, item) => n + (item.kind === 'tool' ? 1 : item.kind === 'group' ? toolCount(item.items) : 0),
+    0,
+  );
+}
+
+/** "3 tools used", "1 tool used", or "" when no tool was called. */
+export function toolSummary(items: TimelineItem[]): string {
+  const n = toolCount(items);
+  return n === 0 ? '' : `${n} ${n === 1 ? 'tool' : 'tools'} used`;
+}
+
+/**
+ * What a tool was asked, in a few words for its row: the first plain value among its arguments
+ * (a path, a search, a command). Empty while the arguments are still arriving or hold nothing plain.
+ */
+export function toolDetail(args: string): string {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(args);
+  } catch {
+    return '';
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return '';
+  for (const value of Object.values(parsed)) {
+    if (typeof value === 'string' && value.trim()) return value.trim().split('\n')[0] ?? '';
+    if (typeof value === 'number') return String(value);
+  }
+  return '';
+}
+
+/** A tool's answer that reports a failure in the server's usual wording. */
+export function toolFailed(result: string | null): boolean {
+  return result !== null && /^\s*(error\b|\{\s*"error")/i.test(result);
 }

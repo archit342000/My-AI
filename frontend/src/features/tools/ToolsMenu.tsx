@@ -1,23 +1,16 @@
+import { PHONE_QUERY } from '../../lib/breakpoints';
 import { useRef, useState, type RefObject } from 'react';
 import { Icon } from '../../components/icons/Icon';
 import { Button } from '../../components/ui/Button';
 import { Popover } from '../../components/ui/Popover';
+import { TickRule } from '../../components/ui/TickRule';
 import { Toggle } from '../../components/ui/Toggle';
 import { MARGIN, readVisibleViewport } from '../../lib/popover-position';
 import { useMediaQuery } from '../../hooks/useMediaQuery';
-import { useSettingsStore, type ModeToggles } from '../../state/settings-store';
+import { useSettingsStore } from '../../state/settings-store';
+import { availableModes } from './modes';
 import { useModalStore } from '../../state/modal-store';
 import { useIsAdmin } from '../../state/user-store';
-
-const MODES: Array<[keyof ModeToggles, string, string]> = [
-  ['researchMode', 'Research Agent', 'Multi-step autonomous agent'],
-  ['fileSystemMode', 'File System Mode', 'Dynamic side-panel for artifacts'],
-  ['browsingMode', 'Browsing Agent', 'Autonomous multi-step web navigation'],
-  ['gitMode', 'Git Agent', 'Autonomous version control and syncing'],
-  ['codeExecutionMode', 'Code Execution', 'Calculations and scripts (sandboxed)'],
-];
-
-const PHONE_QUERY = '(max-width: 768px)';
 
 /**
  * Wrench button next to the composer: mode toggles plus browser and code-run dialogs. The panel is
@@ -34,7 +27,7 @@ export function ToolsMenu({ sheetAnchorRef }: { sheetAnchorRef?: RefObject<HTMLE
   const show = useModalStore((s) => s.show);
   const isAdmin = useIsAdmin();
   // Git and the browser portal reach host-wide tools: admin only.
-  const modeList = isAdmin ? MODES : MODES.filter(([key]) => key !== 'gitMode');
+  const modeList = availableModes(isAdmin);
 
   return (
     <div id="tools-container">
@@ -42,8 +35,8 @@ export function ToolsMenu({ sheetAnchorRef }: { sheetAnchorRef?: RefObject<HTMLE
         ref={anchorRef}
         id="tools-button"
         type="button"
-        className="input-action-btn"
-        title="AI Tools"
+        className="ui-icon-button"
+        title="Tools"
         aria-label="AI tools"
         aria-haspopup="dialog"
         aria-expanded={open}
@@ -53,7 +46,7 @@ export function ToolsMenu({ sheetAnchorRef }: { sheetAnchorRef?: RefObject<HTMLE
           setOpen((value) => !value);
         }}
       >
-        <Icon name="tool" size={20} />
+        <Icon name="tool" size={19} />
       </button>
       <Popover
         open={open}
@@ -69,16 +62,16 @@ export function ToolsMenu({ sheetAnchorRef }: { sheetAnchorRef?: RefObject<HTMLE
         width={phone ? sheetWidth : 320}
       >
         <div className="tools-panel">
-          {modeList.map(([key, name, desc]) => (
+          {modeList.map((mode) => (
             <Toggle
-              key={key}
-              checked={modes[key]}
-              onChange={(value) => setMode(key, value)}
-              label={name}
-              description={desc}
+              key={mode.key}
+              checked={modes[mode.key]}
+              onChange={(value) => setMode(mode.key, value)}
+              label={mode.name}
+              description={mode.description}
             />
           ))}
-          <div className="tools-panel__divider" />
+          <TickRule className="tools-panel__divider" />
           {isAdmin ? (
             <Button
               variant="ghost"

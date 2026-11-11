@@ -1,0 +1,331 @@
+/*
+ * Home and the message box.
+ * Console at Rest: only shared values from tokens.css. See the rule book in the console-at-rest repository.
+ */
+
+/* ── The greeting: an open screen, words straight on the sphere ── */
+
+#welcome-hero {
+  display: grid;
+  flex: 1;
+  place-items: center;
+  min-height: 0;
+  padding: var(--space-5) var(--pad);
+}
+.greeting {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+  animation: greetIn var(--t-greet) var(--ease-liquid) both;
+}
+.greeting-text {
+  margin: 0;
+  font-family: var(--display);
+  font-size: var(--text-greeting);
+  font-weight: 700;
+  letter-spacing: -0.05em;
+  line-height: 1.1;
+  text-wrap: balance;
+}
+.greeting-sub {
+  margin: 0;
+  font-family: var(--display);
+  font-size: clamp(1.3rem, 3.6vw, 2.1rem);
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  line-height: 1.3;
+  color: var(--fg);
+}
+
+/* ── The message box ── */
+
+#chat-input-area {
+  position: relative;
+  z-index: var(--z-page);
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 100%;
+  max-width: calc(var(--measure) + var(--pad) * 2);
+  margin: 0 auto;
+  padding: 10px var(--pad) 18px;
+}
+.input-container {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px var(--space-3) 10px var(--space-4);
+  border: 1px solid var(--edge);
+  border-radius: var(--r-panel);
+  background: var(--glass-strong);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  box-shadow: var(--shadow);
+  transition:
+    border-color var(--t-base) var(--ease-spring),
+    box-shadow var(--t-base) var(--ease-spring);
+}
+.input-container:focus-within {
+  border-color: var(--accent);
+  box-shadow:
+    var(--shadow),
+    0 0 0 3px var(--accent-soft);
+}
+.input-container--drop {
+  border-style: solid;
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+#chat-textarea {
+  display: block;
+  width: 100%;
+  max-height: 40dvh;
+  min-height: 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  line-height: 1.6;
+  outline: 0;
+  resize: none;
+  field-sizing: content;
+}
+#chat-textarea::placeholder {
+  color: var(--muted);
+}
+.composer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.composer-left {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  margin-left: calc(var(--space-2) * -1);
+}
+#tools-container {
+  display: flex;
+}
+.composer-tools {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+  margin-left: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.composer-tools .ui-chip {
+  flex: none;
+}
+.composer-file-input {
+  display: none;
+}
+#send-btn-wrapper {
+  display: flex;
+  flex: none;
+}
+.send-btn {
+  width: var(--touch);
+  height: var(--touch);
+  min-height: 0;
+  padding: 0;
+}
+.send-btn:hover:not(:disabled) {
+  transform: scale(1.05);
+}
+/* While a reply is being written the same button stops it: a filled square. */
+.send-btn__stop {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px 3px 3px 1px;
+  background: currentColor;
+}
+.composer-hint {
+  align-self: center;
+  font-size: var(--text-small);
+  color: var(--muted);
+}
+.composer-drop-hint {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  border-radius: inherit;
+  background: color-mix(in srgb, var(--pop) 88%, transparent);
+  color: var(--accent-text);
+  font-weight: 500;
+  pointer-events: none;
+}
+
+/* Files waiting to be sent: a pill each, with progress and failure. */
+.composer-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.composer-chip {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: 100%;
+  min-height: var(--touch);
+  padding: 4px 4px 4px var(--space-2);
+  border: 1px solid var(--edge);
+  border-radius: var(--r-ctl);
+  background: var(--well);
+}
+.composer-chip--error {
+  border-color: color-mix(in srgb, var(--bad) 45%, transparent);
+}
+.composer-chip__thumb {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px 6px 6px 2px;
+  object-fit: cover;
+}
+.composer-chip__icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--muted);
+}
+.composer-chip__body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  max-width: 14rem;
+}
+.composer-chip__body .ui-tooltip-anchor {
+  min-width: 0;
+}
+.composer-chip__name {
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.composer-chip__status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-small);
+  color: var(--muted);
+}
+.composer-chip--error .composer-chip__status {
+  color: var(--bad);
+}
+.composer-chip__spinner {
+  width: 10px;
+  height: 10px;
+}
+.composer-chip__progress {
+  display: block;
+  height: 3px;
+  margin-top: 3px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--edge);
+}
+.composer-chip__progress-fill {
+  display: block;
+  width: calc(var(--progress, 0) * 100%);
+  height: 100%;
+  border-radius: 2px;
+  background: var(--led);
+  transition: width var(--t-base) linear;
+}
+.composer-chip__ok {
+  display: inline-flex;
+  flex: none;
+  color: var(--ok);
+}
+
+/* Slash commands: a list that opens above the box as you type "/". */
+.slash-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  overflow-y: auto;
+}
+.slash-option {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: var(--touch);
+  padding: 0 var(--space-3);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+.slash-option--active {
+  background: var(--accent-soft);
+}
+.slash-option__name {
+  flex: none;
+  font-family: var(--mono);
+  font-size: var(--text-code);
+  font-weight: 500;
+}
+.slash-option__desc {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.slash-option__tag {
+  flex: none;
+  padding: 0 var(--space-2);
+  border-radius: 8px 8px 8px 2px;
+  background: var(--well);
+  color: var(--muted);
+  font-size: var(--text-small);
+}
+
+/* The Tools menu: a switch per tool, then the two tool windows. */
+.tools-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+}
+.tools-panel__divider {
+  margin: var(--space-1) 0;
+}
+.tools-panel > .ui-button {
+  justify-content: flex-start;
+  padding: 0 var(--space-2);
+}
+
+@media (max-width: 599px) {
+  #chat-input-area {
+    padding: var(--space-2) var(--space-3) max(var(--space-3), env(safe-area-inset-bottom));
+  }
+  .composer-chip__body {
+    max-width: 9rem;
+  }
+}
+
+/* A temporary chat: a strip across the top of the page, and a dashed edge round the panel. */
+.temp-chat-banner {
+  position: relative;
+  z-index: var(--z-page);
+  flex: none;
+  margin: var(--space-3) var(--pad) 0;
+}
+@media (min-width: 600px) {
+  :root main:has(> .temp-chat-banner) {
+    border: 1px dashed var(--edge-strong);
+  }
+}

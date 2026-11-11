@@ -1,0 +1,226 @@
+/*
+ * Developer preview page.
+ * Console at Rest: only shared values from tokens.css. See the rule book in the console-at-rest repository.
+ */
+
+/* ── Dev UI demo (route /dev/ui) ── */
+
+.ui-demo {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  padding: var(--space-5);
+  max-width: 960px;
+  margin: 0 auto;
+}
+.ui-demo__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--edge);
+  border-radius: var(--r-panel);
+  background: var(--glass-strong);
+}
+.ui-demo__section h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+.ui-demo__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.ui-demo__stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-width: 420px;
+}
+
+/* ── Dev: foundations (foundations) ── */
+/* The shared values shown as samples on /dev/ui. Everything here reads tokens.css names directly. */
+
+.foundations {
+  color: var(--fg);
+  font-family: var(--font);
+}
+.foundations__swatches,
+.foundations__type,
+.foundations__spaces,
+.foundations__corners {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.foundations__swatch {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  width: calc(var(--space-7) * 2);
+}
+.foundations__chip {
+  height: var(--space-7);
+  border: 1px solid var(--edge-strong);
+  border-radius: var(--r-sm);
+}
+.foundations__chip--bg {
+  background: var(--bg);
+}
+.foundations__chip--fg {
+  background: var(--fg);
+}
+.foundations__chip--muted {
+  background: var(--muted);
+}
+.foundations__chip--accent {
+  background: var(--accent);
+}
+.foundations__chip--accent-text {
+  background: var(--accent-text);
+}
+.foundations__chip--accent-soft {
+  background: var(--accent-soft);
+}
+.foundations__chip--led {
+  background: var(--led);
+}
+.foundations__chip--ok {
+  background: var(--ok);
+}
+.foundations__chip--warn {
+  background: var(--warn);
+}
+.foundations__chip--bad {
+  background: var(--bad);
+}
+.foundations__chip--glass {
+  background: var(--glass);
+}
+.foundations__chip--glass-strong {
+  background: var(--glass-strong);
+}
+.foundations__chip--pop {
+  background: var(--pop);
+}
+.foundations__chip--well {
+  background: var(--well);
+}
+.foundations__chip--edge-strong {
+  background: var(--edge-strong);
+}
+.foundations__name {
+  font-family: var(--mono);
+  font-size: var(--text-label);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.foundations__type {
+  flex-direction: column;
+}
+.foundations__type-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+}
+.foundations__sample {
+  color: var(--fg);
+}
+.foundations__sample--page {
+  font: 600 var(--text-page) / 1.2 var(--display);
+  letter-spacing: -0.03em;
+}
+.foundations__sample--section {
+  font: 600 var(--text-section) / 1.2 var(--display);
+  letter-spacing: -0.02em;
+}
+.foundations__sample--heading {
+  font: 600 var(--text-heading) / 1.3 var(--display);
+  letter-spacing: -0.01em;
+}
+.foundations__sample--body {
+  font: 400 var(--text-body) / 1.6 var(--font);
+}
+.foundations__sample--small {
+  font: 400 var(--text-small) / 1.5 var(--font);
+}
+.foundations__sample--label {
+  font: 400 var(--text-label) / 1.4 var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.foundations__sample--code {
+  font: 400 var(--text-code) / 1.65 var(--mono);
+}
+/* Each bar is its spacing step plus a common base (--space-5), which leaves room for the number. */
+.foundations__spaces {
+  align-items: flex-end;
+}
+.foundations__space {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  width: var(--touch);
+  background: var(--accent-soft);
+  border-radius: var(--r-sm);
+}
+.foundations__space--1 {
+  height: calc(var(--space-1) + var(--space-5));
+}
+.foundations__space--2 {
+  height: calc(var(--space-2) + var(--space-5));
+}
+.foundations__space--3 {
+  height: calc(var(--space-3) + var(--space-5));
+}
+.foundations__space--4 {
+  height: calc(var(--space-4) + var(--space-5));
+}
+.foundations__space--5 {
+  height: calc(var(--space-5) + var(--space-5));
+}
+.foundations__space--6 {
+  height: calc(var(--space-6) + var(--space-5));
+}
+.foundations__space--7 {
+  height: calc(var(--space-7) + var(--space-5));
+}
+.foundations__space--8 {
+  height: calc(var(--space-8) + var(--space-5));
+}
+.foundations__corner {
+  display: grid;
+  place-items: center;
+  width: calc(var(--space-8) + var(--space-6));
+  height: var(--space-8);
+  background: var(--glass-strong);
+  border: 1px solid var(--edge);
+  box-shadow: var(--shadow);
+  font-family: var(--mono);
+  font-size: var(--text-label);
+  color: var(--muted);
+}
+.foundations__corner--sm {
+  border-radius: var(--r-sm);
+}
+.foundations__corner--ctl {
+  border-radius: var(--r-ctl);
+}
+.foundations__corner--panel {
+  border-radius: var(--r-panel);
+}
+.foundations__corner--lift {
+  box-shadow: var(--shadow-lift);
+}
+.foundations__corner--glass {
+  background: var(--glass);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+}

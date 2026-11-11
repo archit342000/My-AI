@@ -9,7 +9,13 @@ import { MermaidDialog } from './MermaidDialog';
  * Renders markdown as sanitised HTML and attaches the interactive pieces the legacy UI had:
  * copy buttons on code blocks, mermaid diagrams with zoom controls, and an image lightbox.
  */
-export function Markdown({ text, className = 'message-content raw-text-content' }: { text: string; className?: string }) {
+export function Markdown({
+  text,
+  className = 'message-content raw-text-content',
+}: {
+  text: string;
+  className?: string;
+}) {
   const html = useMemo(() => renderMarkdown(text), [text]);
   const ref = useRef<HTMLDivElement>(null);
   const [lightbox, setLightbox] = useState<string | null>(null);
@@ -21,7 +27,10 @@ export function Markdown({ text, className = 'message-content raw-text-content' 
     let cancelled = false;
     void import('mermaid').then(async ({ default: mermaid }) => {
       if (cancelled) return;
-      mermaid.initialize({ startOnLoad: false, theme: document.documentElement.classList.contains('dark') ? 'dark' : 'default' });
+      mermaid.initialize({
+        startOnLoad: false,
+        theme: document.documentElement.classList.contains('dark') ? 'dark' : 'default',
+      });
       const nodes = Array.from(root.querySelectorAll<HTMLElement>('pre.mermaid'));
       try {
         await mermaid.run({ nodes });
@@ -74,7 +83,12 @@ export function Markdown({ text, className = 'message-content raw-text-content' 
 
   return (
     <>
-      <div ref={ref} className={className} onClick={onClick} dangerouslySetInnerHTML={{ __html: html }} />
+      <div
+        ref={ref}
+        className={className}
+        onClick={onClick}
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
       {lightbox ? <ImageLightbox src={lightbox} onClose={() => setLightbox(null)} /> : null}
       {diagram ? <MermaidDialog diagram={diagram} onClose={() => setDiagram(null)} /> : null}
     </>

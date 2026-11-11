@@ -1,6 +1,7 @@
 import { act, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { startParticles } from '../../lib/particles';
+import { rippleSphere, setSphereBusy } from '../../lib/sphere-signal';
 import { AmbientBackground } from './AmbientBackground';
 
 vi.mock('../../lib/particles', () => ({ startParticles: vi.fn() }));
@@ -24,59 +25,69 @@ async function flush() {
 }
 
 describe('AmbientBackground', () => {
-  let stop: ReturnType<typeof vi.fn>;
+  const sphere = { stop: vi.fn(), ripple: vi.fn(), setBusy: vi.fn(), refresh: vi.fn() };
 
   beforeEach(() => {
-    stop = vi.fn();
+    Object.values(sphere).forEach((fn) => fn.mockReset());
     started.mockReset();
-    started.mockReturnValue(stop);
+    started.mockReturnValue(sphere);
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    setSphereBusy(false);
     root.className = '';
+    root.style.cssText = '';
   });
 
-  it('starts the canvas once and tells it whether less motion is wanted', () => {
+  it('starts the sphere once with a star canvas, the shared dot colours and the motion setting', () => {
     stubReducedMotion(true);
-    render(<AmbientBackground />);
+    for (const n of [1, 2, 3, 4, 5]) root.style.setProperty(`--dot-${n}`, `colour-${n}`);
+    const { container } = render(<AmbientBackground />);
     expect(started).toHaveBeenCalledTimes(1);
-    expect(started.mock.calls[0]?.[0].reduceMotion?.()).toBe(true);
+    const options = started.mock.calls[0]?.[0];
+    expect(options?.canvas).toBe(container.querySelector('#bg-stars'));
+    expect(options?.starCanvas).toBe(container.querySelector('#bg-night'));
+    expect(options?.reduceMotion?.()).toBe(true);
+    expect(options?.palette().dots).toEqual([
+      'colour-1',
+      'colour-2',
+      'colour-3',
+      'colour-4',
+      'colour-5',
+    ]);
   });
 
-  it('with less motion, a theme flip stops the still frame and draws a new one', async () => {
-    stubReducedMotion(true);
+  it('passes ripples and the working pulse on to the sphere', () => {
+    stubReducedMotion(false);
     render(<AmbientBackground />);
-    await act(async () => root.classList.add('dark'));
-    await flush();
-    expect(stop).toHaveBeenCalledTimes(1);
-    expect(started).toHaveBeenCalledTimes(2);
+    rippleSphere(2);
+    setSphereBusy(true);
+    expect(sphere.ripple).toHaveBeenCalledWith(2);
+    expect(sphere.setBusy).toHaveBeenLastCalledWith(true);
   });
 
-  it('with less motion, an unrelated class on <html> does not redraw', async () => {
-    stubReducedMotion(true);
+  it('reads the colours again when the theme flips, and only then', async () => {
+    stubReducedMotion(false);
     render(<AmbientBackground />);
     await act(async () => root.classList.add('is-ios'));
     await flush();
-    expect(started).toHaveBeenCalledTimes(1);
-  });
-
-  it('with normal motion, a theme flip leaves the running canvas alone', async () => {
-    stubReducedMotion(false);
-    render(<AmbientBackground />);
+    expect(sphere.refresh).not.toHaveBeenCalled();
     await act(async () => root.classList.add('dark'));
     await flush();
+    expect(sphere.refresh).toHaveBeenCalledTimes(1);
     expect(started).toHaveBeenCalledTimes(1);
-    expect(started.mock.calls[0]?.[0].reduceMotion?.()).toBe(false);
   });
 
-  it('stops the canvas and the observer when it unmounts', async () => {
+  it('stops the sphere, the signal and the observer when it unmounts', async () => {
     stubReducedMotion(true);
     const { unmount } = render(<AmbientBackground />);
     unmount();
-    expect(stop).toHaveBeenCalledTimes(1);
+    expect(sphere.stop).toHaveBeenCalledTimes(1);
+    rippleSphere();
     await act(async () => root.classList.add('dark'));
     await flush();
-    expect(started).toHaveBeenCalledTimes(1);
+    expect(sphere.ripple).not.toHaveBeenCalled();
+    expect(sphere.refresh).not.toHaveBeenCalled();
   });
 });

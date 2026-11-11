@@ -1,0 +1,187 @@
+/*
+ * Page basics: lettering, focus ring, scrollbars, typewriter labels, status light, tick rule.
+ * Console at Rest: only shared values from tokens.css. See the rule book in the console-at-rest repository.
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* The app is one screen: the panels inside it scroll, the page itself never does. */
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+html {
+  /* The sphere is drawn on a fixed canvas behind everything; the page colour sits under it. */
+  background-color: var(--bg);
+}
+body {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--fg);
+  font-family: var(--font);
+  font-size: var(--text-body);
+  line-height: 1.6;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+.hidden {
+  display: none !important;
+}
+
+::selection {
+  background: var(--accent-soft);
+}
+
+/* Keyboard focus: one ring everywhere. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Thin scrollbars that sit on the panel, never a system-grey gutter. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--edge-strong) transparent;
+}
+
+/* Read by screen readers only. */
+.sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Typewriter label: section names, figures and status only (rule book 2.2). */
+.sec,
+.dat {
+  font-family: var(--mono);
+  font-size: var(--text-label);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.dat.keep {
+  text-transform: none;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Tick rule: the drawn divider under headers and between blocks. */
+.ticks {
+  flex: none;
+  height: 5px;
+  background-image: repeating-linear-gradient(90deg, var(--tick) 0 1px, transparent 1px 8px);
+}
+
+/* Status light with its word. */
+.statline {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.led {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--led);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--led) 25%, transparent);
+}
+.led.ok {
+  background: var(--ok);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 25%, transparent);
+}
+.led.warn {
+  background: var(--warn);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn) 25%, transparent);
+}
+.led.bad {
+  background: var(--bad);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--bad) 25%, transparent);
+}
+.led.off {
+  background: var(--edge-strong);
+  box-shadow: none;
+}
+.led.busy {
+  animation: led 1s ease-in-out infinite;
+}
+
+/* ── Background: night stars and the dot sphere (rule book Part 3) ── */
+
+#ambient-bg {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--z-background) - 1);
+  pointer-events: none;
+  overflow: hidden;
+}
+#bg-night,
+#bg-stars {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  transition: opacity var(--t-greet) ease;
+  touch-action: none;
+}
+/* Reading strength is the default; an open screen (home, sign-in, a dead end) asks for full strength. */
+#bg-night {
+  opacity: calc(var(--stars) * 0.4);
+}
+#bg-stars {
+  opacity: var(--sphere-read);
+}
+:root[data-dim='open'] #bg-night {
+  opacity: var(--stars);
+}
+:root[data-dim='open'] #bg-stars {
+  opacity: var(--sphere-open);
+}
+@media (max-width: 599px) {
+  #bg-stars {
+    opacity: calc(var(--sphere-read) * var(--sphere-phone));
+  }
+  :root[data-dim='open'] #bg-stars {
+    opacity: calc(var(--sphere-open) * var(--sphere-phone));
+  }
+}
+
+/* Words on the sphere (3.3): a soft patch behind each line and button, nothing behind the gaps. */
+.on-sphere {
+  position: relative;
+  isolation: isolate;
+}
+.fade-layer {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  filter: blur(var(--fade-blur));
+  opacity: var(--fade);
+}
+.fade-layer i {
+  position: absolute;
+  background: var(--bg);
+  border-radius: var(--r-ctl);
+}
+
+/* Small helpers used across screens. */
+.ui-hint {
+  color: var(--muted);
+  font-size: var(--text-small, 13px);
+}
+.font-mono {
+  font-family: var(--mono);
+}

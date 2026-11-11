@@ -45,7 +45,7 @@ test('the model select keeps its search field inside the panel', async ({ page }
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('/');
   await page.locator('#settings-trigger').click();
-  await page.getByRole('combobox', { name: 'Model' }).click();
+  await page.getByRole('combobox', { name: 'Model', exact: true }).click();
   await page.waitForTimeout(400);
   const list = await box(page.locator('.ui-popover').last());
   const search = await box(page.locator('.ui-select__search'));

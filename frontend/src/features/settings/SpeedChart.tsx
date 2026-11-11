@@ -41,24 +41,24 @@ export function SpeedChart({ points }: { points: SpeedPoint[] }) {
             className="speed-chart__label"
             x={PADDING}
             y={HEIGHT - 6}
-          >{`${g.xMin.toLocaleString('en-US')} tokens`}</text>
+          >{`${g.xMin.toLocaleString('en-GB')} tokens`}</text>
           <text
             className="speed-chart__label speed-chart__label--end"
             x={WIDTH - PADDING}
             y={HEIGHT - 6}
           >
-            {`${g.xMax.toLocaleString('en-US')} tokens`}
+            {`${g.xMax.toLocaleString('en-GB')} tokens`}
           </text>
           <text
             className="speed-chart__label"
             x={PADDING + 4}
             y={PADDING - 4}
-          >{`${g.yMax.toFixed(1)} tok/s`}</text>
+          >{`${g.yMax.toFixed(1)} tokens/s`}</text>
           <text
             className="speed-chart__label"
             x={PADDING + 4}
             y={HEIGHT - PADDING - 4}
-          >{`${g.yMin.toFixed(1)} tok/s`}</text>
+          >{`${g.yMin.toFixed(1)} tokens/s`}</text>
         </>
       ) : null}
     </svg>

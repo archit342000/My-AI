@@ -46,17 +46,20 @@ test('the sidebar remembers its collapsed state and its width across a reload', 
   await settledBox(page, '#sidebar'); // the sidebar animates to its width: the handle is where it ends
   const handle = await page.locator('#sidebar-resizer').boundingBox();
   if (!handle) throw new Error('no resize handle');
-  await page.mouse.move(handle.x + 2, 300);
+  await page.mouse.move(handle.x + handle.width / 2, 300);
   await page.mouse.down();
   await page.mouse.move(380, 300, { steps: 5 });
   await page.mouse.up();
+  // The panel floats inside the shell's padding: its edge follows the pointer, so its width is
+  // the pointer's distance from the panel's left edge.
+  const left = Math.round((await page.locator('#sidebar').boundingBox())?.x ?? 0);
   await expect
     .poll(async () => Math.round((await page.locator('#sidebar').boundingBox())?.width ?? 0))
-    .toBe(380);
+    .toBe(380 - left);
   await page.reload();
   await expect
     .poll(async () => Math.round((await page.locator('#sidebar').boundingBox())?.width ?? 0))
-    .toBe(380);
+    .toBe(380 - left);
 });
 
 test('the collapsed rail is one centred column with nothing clipped', async ({ page }) => {
@@ -70,7 +73,7 @@ test('the collapsed rail is one centred column with nothing clipped', async ({ p
     if (!box) throw new Error(`${selector} has no box`);
     return { cx: box.x + box.width / 2, x: box.x };
   };
-  const logo = await centre('.sidebar-logo-icon');
+  const logo = await centre('.sidebar-brand svg');
   const toggle = await centre('#sidebar-toggle');
   const button = await centre('#new-chat-btn');
   expect(logo.x).toBeGreaterThanOrEqual(8);
@@ -96,9 +99,7 @@ test('the workspace page wraps its header at 390px and has one Files section', a
   await expect(page.getByRole('heading', { name: 'Research' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Files' })).toHaveCount(1);
   await expect(page.getByText('1 chat', { exact: true })).toBeVisible();
-  const button = await page
-    .getByRole('button', { name: 'New chat in this workspace' })
-    .boundingBox();
+  const button = await page.getByRole('button', { name: 'New chat here' }).boundingBox();
   expect((button?.x ?? 0) + (button?.width ?? 0)).toBeLessThanOrEqual(390);
   const overflow = await page.evaluate(
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth,

@@ -34,13 +34,15 @@ export function MessageActions({ text, role, canRetry, onEdit, onRetry, onDelete
       await navigator.clipboard.writeText(text);
       setCopied(true);
     } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Copy failed', 'error');
+      showToast(err instanceof Error ? err.message : "Couldn't copy. Try again.", 'error');
     }
   }
 
   return (
     <>
-      <div className={`message-actions-container ${role === 'user' ? 'user-actions' : 'bot-actions'}`}>
+      <div
+        className={`message-actions-container ${role === 'user' ? 'user-actions' : 'bot-actions'}`}
+      >
         <IconButton
           className="action-btn copy-msg-btn"
           size="sm"
@@ -49,7 +51,13 @@ export function MessageActions({ text, role, canRetry, onEdit, onRetry, onDelete
           onClick={() => void copy()}
         />
         {onEdit ? (
-          <IconButton className="action-btn edit-msg-btn" size="sm" icon="edit" label="Edit message" onClick={onEdit} />
+          <IconButton
+            className="action-btn edit-msg-btn"
+            size="sm"
+            icon="edit"
+            label="Edit message"
+            onClick={onEdit}
+          />
         ) : null}
         {canRetry && onRetry ? (
           <IconButton
@@ -73,7 +81,7 @@ export function MessageActions({ text, role, canRetry, onEdit, onRetry, onDelete
         open={confirming}
         title="Delete message?"
         message="This removes the message from the chat. It cannot be undone."
-        confirmLabel="Delete"
+        confirmLabel="Delete message"
         danger
         onCancel={() => setConfirming(false)}
         onConfirm={() => {

@@ -10,7 +10,7 @@ export function ClippedText({ text, label }: { text: string; label: string }) {
   const shown = long && !full ? `${text.slice(0, CLIP_CHARS)}\n…` : text;
   return (
     <div className="activity-content" role="group" aria-label={label}>
-      <pre className="font-mono">{shown}</pre>
+      <pre>{shown}</pre>
       {long ? (
         <button type="button" className="activity-more" onClick={() => setFull((value) => !value)}>
           {full ? 'Show less' : `Show more (${Math.ceil(text.length / 1024)} KB)`}

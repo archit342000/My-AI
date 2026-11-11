@@ -6,7 +6,9 @@ describe('router', () => {
   const paths = (root.children ?? []).map((r) => r.path);
 
   it('registers the app routes under the root layout', () => {
-    expect(paths).toEqual(expect.arrayContaining(['/', '/chat/:chatId', '/workspace/:workspaceId', '/logs']));
+    expect(paths).toEqual(
+      expect.arrayContaining(['/', '/chat/:chatId', '/workspace/:workspaceId', '/logs']),
+    );
   });
 
   it('exposes the dev-only UI route only when the dev flag is on', () => {
