@@ -268,3 +268,40 @@ async def test_a_search_that_needs_retries_counts_as_one_hit(mock_agent, mock_ta
     assert mock_tavily.execute_tool.call_count == 3
     assert search_limit.call_count == 1
 
+
+
+def _tavily(mock_tavily, payload):
+    res = MagicMock()
+    res.content = [MagicMock(text=json.dumps(payload))]
+    mock_tavily.execute_tool.return_value = res
+
+
+RESULTS = [{"url": "https://a.example", "title": "A", "content": "ca"}, {"url": "https://b.example", "content": "cb"}, {"title": "no url", "content": "c"}]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("kwargs,payload_extra", [
+    ({"depth": "normal"}, {"answer": "Tavily answer"}),   # native answer
+    ({"depth": "normal"}, {}),                              # formatted snippets
+    ({"depth": "advanced", "return_raw_results": True}, {}),
+    ({"depth": "advanced"}, {}),                            # LLM synthesis
+])
+async def test_every_depth_reports_the_result_pages_as_sources(mock_agent, mock_tavily, mock_db, mock_config, kwargs, payload_extra):
+    mock_agent.sources = []
+    _tavily(mock_tavily, {"results": RESULTS, **payload_extra})
+    [c async for c in flow_fn(mock_agent, "search_web", "query", **kwargs)]
+    assert mock_agent.sources == [
+        {"kind": "web", "title": "A", "locator": "https://a.example", "detail": None},
+        {"kind": "web", "title": "https://b.example", "locator": "https://b.example", "detail": None},  # no title: the address
+    ]  # a result without an address is not a source
+
+
+@pytest.mark.anyio
+async def test_a_failed_or_empty_search_reports_no_sources(mock_agent, mock_tavily, mock_db, mock_config):
+    mock_agent.sources = []
+    _tavily(mock_tavily, {"results": []})
+    [c async for c in flow_fn(mock_agent, "search_web", "query")]
+    mock_tavily.execute_tool.side_effect = RuntimeError("down")
+    with patch('backend.tools.agents.search_web_agent.agent.asyncio.sleep', new_callable=AsyncMock):
+        [c async for c in flow_fn(mock_agent, "search_web", "query")]
+    assert mock_agent.sources == []

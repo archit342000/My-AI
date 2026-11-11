@@ -22,6 +22,12 @@ const tool = (id: string, result: string | null = null, agent: string | null = n
 });
 
 describe('applyChunk', () => {
+  it('ignores a sources chunk (source chips are a follow-up)', () => {
+    const base = applyChunk(emptyLiveTurn(), delta({ content: 'Answer [[1]]' }));
+    const sources = [{ n: 1, kind: 'web' as const, title: 'A', locator: 'https://a', detail: null }];
+    expect(applyChunk(base, { sources })).toEqual(base);
+  });
+
   it('accumulates content and reasoning into one step each', () => {
     let t = emptyLiveTurn();
     t = applyChunk(t, delta({ content: 'Hel' }));

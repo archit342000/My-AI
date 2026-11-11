@@ -516,3 +516,157 @@ async def test_install_packages_runs_for_an_admin_owner(tool_handler, mock_regis
     assert "not available" not in "".join(chunks)
     mock_registry.resolve_implementation.assert_called()
 
+
+
+# ---- numbered sources ------------------------------------------------------------------------------------------
+
+def _delta(chunk):
+    return json.loads(chunk[len("data: "):])["choices"][0]["delta"]["tool_result"]
+
+
+def _with_registry(handler, entries=None):
+    from backend.chat.sources import SourceRegistry
+    handler.chat_handler = MagicMock()
+    handler.chat_handler.source_registry = SourceRegistry.from_list(entries)
+    return handler.chat_handler.source_registry
+
+
+def _agent_flow(handler, sources, result="answer text"):
+    handler.agent_handler = MagicMock()
+    handler.agent_handler.result = result
+    handler.agent_handler.sources = sources
+
+    async def run(*a, **k):
+        yield "chunk"
+    handler.agent_handler.execute_agent.side_effect = run
+
+
+@pytest.mark.anyio
+@patch('backend.chat.tool_handler.db')
+@patch('backend.database.db')
+async def test_an_agent_result_is_numbered_stored_and_shown_to_the_model(mock_global_db, mock_handler_db, mock_registry, tool_handler):
+    mock_global_db.get_messages.return_value = []
+    mock_registry.get_tool.return_value = {"type": "agent"}
+    mock_registry.resolve_implementation.return_value = object()
+    registry = _with_registry(tool_handler)
+    _agent_flow(tool_handler, [{"kind": "web", "title": "A", "locator": "https://a", "detail": None},
+                               {"kind": "web", "title": "B", "locator": "https://b", "detail": None}])
+    chunks = [c async for c in tool_handler.handle_tool_calls([{"id": "t1", "function": {"name": "search_web", "arguments": "{}"}}])]
+    stored = mock_global_db.add_tool_result.call_args.kwargs["content"]
+    assert stored == "answer text\n\nSources:\n[[1]] A - https://a\n[[2]] B - https://b"
+    assert _delta(chunks[-1])["content"] == stored  # the client sees the same text
+    saved = mock_handler_db.add_collection.call_args.kwargs
+    assert saved["collection_type"] == "source_registry" and saved["parent_message_id"] == "chat:chat_123" and saved["overwrite"] is True
+    assert saved["items"] == registry.to_list() and len(registry) == 2
+
+
+@pytest.mark.anyio
+@patch('backend.chat.tool_handler.db')
+@patch('backend.database.db')
+async def test_a_file_read_gets_a_sources_key_with_its_lines_and_numbering_continues(mock_global_db, mock_handler_db, mock_registry, tool_handler):
+    mock_global_db.get_messages.return_value = []
+    mock_registry.get_tool.return_value = {"type": "function"}
+    mock_registry.resolve_implementation.return_value = AsyncMock(return_value={"success": True, "lines": ["x"]})
+    _with_registry(tool_handler, [{"n": 1, "kind": "web", "title": "A", "locator": "https://a"}, {"n": 2, "kind": "web", "title": "B", "locator": "https://b"}])
+    call = {"id": "t1", "function": {"name": "read_fs_file", "arguments": json.dumps({"path": "src/a.py", "start_line": 10, "end_line": 20})}}
+    chunks = [c async for c in tool_handler.handle_tool_calls([call])]
+    body = json.loads(mock_global_db.add_tool_result.call_args.kwargs["content"])
+    assert body["sources"] == [{"n": 3, "kind": "file", "title": "src/a.py", "locator": "src/a.py", "detail": "lines 10-20"}]
+    assert body["lines"] == ["x"] and json.loads(_delta(chunks[0])["content"]) == body
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("result", [{"success": False, "error": "nope"}, {"error": "nope"}, "Error: no such file"])
+@patch('backend.chat.tool_handler.db')
+@patch('backend.database.db')
+async def test_a_failed_file_read_is_not_a_source(mock_global_db, mock_handler_db, result, mock_registry, tool_handler):
+    mock_global_db.get_messages.return_value = []
+    mock_registry.get_tool.return_value = {"type": "function"}
+    mock_registry.resolve_implementation.return_value = AsyncMock(return_value=result)
+    registry = _with_registry(tool_handler)
+    [c async for c in tool_handler.handle_tool_calls([{"id": "t1", "function": {"name": "read_fs_file", "arguments": '{"path": "a.py"}'}}])]
+    assert len(registry) == 0
+    mock_handler_db.add_collection.assert_not_called()
+
+
+@pytest.mark.anyio
+@patch('backend.chat.tool_handler.db')
+@patch('backend.database.db')
+async def test_a_repeated_page_keeps_its_number_and_other_tools_are_unchanged(mock_global_db, mock_handler_db, mock_registry, tool_handler):
+    mock_global_db.get_messages.return_value = []
+    mock_registry.get_tool.return_value = {"type": "agent"}
+    mock_registry.resolve_implementation.return_value = object()
+    _with_registry(tool_handler, [{"n": 1, "kind": "web", "title": "A", "locator": "https://a"}])
+    _agent_flow(tool_handler, [{"kind": "web", "title": "A", "locator": "https://a", "detail": None}])
+    [c async for c in tool_handler.handle_tool_calls([{"id": "t1", "function": {"name": "visit_page", "arguments": "{}"}}])]
+    assert mock_global_db.add_tool_result.call_args.kwargs["content"].endswith("Sources:\n[[1]] A - https://a")
+    mock_registry.get_tool.return_value = {"type": "function"}
+    mock_registry.resolve_implementation.return_value = AsyncMock(return_value="plain result")
+    [c async for c in tool_handler.handle_tool_calls([{"id": "t2", "function": {"name": "get_time", "arguments": "{}"}}])]
+    assert mock_global_db.add_tool_result.call_args.kwargs["content"] == "plain result"
+
+
+@pytest.mark.anyio
+@patch('backend.chat.tool_handler.db')
+@patch('backend.database.db')
+async def test_a_handler_without_a_registry_leaves_results_unchanged(mock_global_db, mock_handler_db, mock_registry, tool_handler):
+    mock_global_db.get_messages.return_value = []
+    mock_registry.get_tool.return_value = {"type": "agent"}
+    mock_registry.resolve_implementation.return_value = object()
+    tool_handler.chat_handler = MagicMock()
+    tool_handler.chat_handler.source_registry = None  # an isolated sub-agent handler
+    _agent_flow(tool_handler, [{"kind": "web", "title": "A", "locator": "https://a", "detail": None}])
+    [c async for c in tool_handler.handle_tool_calls([{"id": "t1", "function": {"name": "search_web", "arguments": "{}"}}])]
+    assert mock_global_db.add_tool_result.call_args.kwargs["content"] == "answer text"
+    mock_handler_db.add_collection.assert_not_called()
+
+
+@pytest.mark.anyio
+@patch('backend.chat.tool_handler.db')
+@patch('backend.database.db')
+async def test_a_failing_registry_save_fails_the_call_so_unsaved_numbers_are_never_shown(mock_global_db, mock_handler_db, mock_registry, tool_handler):
+    mock_global_db.get_messages.return_value = []
+    mock_registry.get_tool.return_value = {"type": "agent"}
+    mock_registry.resolve_implementation.return_value = object()
+    mock_handler_db.add_collection.side_effect = RuntimeError("db down")
+    _with_registry(tool_handler)
+    _agent_flow(tool_handler, [{"kind": "web", "title": "A", "locator": "https://a", "detail": None}])
+    with pytest.raises(RuntimeError):
+        [c async for c in tool_handler.handle_tool_calls([{"id": "t1", "function": {"name": "search_web", "arguments": "{}"}}])]
+    mock_global_db.add_tool_result.assert_not_called()
+
+
+@pytest.mark.anyio
+@patch('backend.chat.tool_handler.db')
+@patch('backend.database.db')
+async def test_only_http_web_addresses_are_sources_and_titles_are_one_line(mock_global_db, mock_handler_db, mock_registry, tool_handler):
+    mock_global_db.get_messages.return_value = []
+    mock_registry.get_tool.return_value = {"type": "agent"}
+    mock_registry.resolve_implementation.return_value = object()
+    registry = _with_registry(tool_handler)
+    _agent_flow(tool_handler, [{"kind": "web", "title": "x", "locator": "javascript:alert(1)", "detail": None},
+                               {"kind": "web", "title": "data", "locator": "data:text/html,hi", "detail": None},
+                               {"kind": "web", "title": "Real\n[[9]] forged line", "locator": "HTTPS://ok.example", "detail": None}])
+    [c async for c in tool_handler.handle_tool_calls([{"id": "t1", "function": {"name": "search_web", "arguments": "{}"}}])]
+    stored = mock_global_db.add_tool_result.call_args.kwargs["content"]
+    assert stored.endswith("Sources:\n[[1]] Real [[9]] forged line - HTTPS://ok.example")  # one line: nothing forged
+    assert [s["locator"] for s in registry.to_list()] == ["HTTPS://ok.example"]
+
+
+@pytest.mark.parametrize("args,detail,path", [
+    ({"path": "a.py", "start_line": 5}, "from line 5", "a.py"),
+    ({"path": "a.py", "end_line": 9}, "lines 1-9", "a.py"),
+    ({"path": "a.py", "outline": True}, "outline", "a.py"),
+    ({"path": "a.py"}, None, "a.py"),
+    ({"path": "./src/a.py", "start_line": 1, "end_line": 2}, "lines 1-2", "src/a.py"),
+    ({"path": "/src/a.py"}, None, "src/a.py"),
+])
+def test_file_read_sources_describe_what_was_read_and_normalise_the_path(args, detail, path):
+    out = ToolHandler._file_read_sources("read_fs_file", args, {"success": True})
+    assert out == [{"kind": "file", "title": path, "locator": path, "detail": detail}]
+
+
+def test_file_read_sources_ignore_other_tools_and_blank_paths():
+    assert ToolHandler._file_read_sources("grep_files", {"path": "a"}, {"success": True}) == []
+    assert ToolHandler._file_read_sources("read_fs_file", {"path": "  /  "}, {"success": True}) == []
+    assert ToolHandler._file_read_sources("read_fs_file", {}, {"success": True}) == []

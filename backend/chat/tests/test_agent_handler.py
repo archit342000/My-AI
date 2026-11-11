@@ -129,3 +129,19 @@ def test_model(agent_handler):
         mock.return_value.active_model = "test"
         _ = agent_handler.model
     assert True
+
+
+@pytest.mark.anyio
+async def test_sources_start_empty_and_are_reset_for_every_agent_run():
+    from backend.chat.agent_handler import AgentHandler
+    handler = AgentHandler("chat", MagicMock())
+    assert handler.sources == []
+
+    async def flow(agent, agent_name, **kwargs):
+        agent.sources.append({"kind": "web", "title": "t", "locator": "u", "detail": None})
+        yield "chunk"
+
+    [c async for c in handler.execute_agent("a", flow)]
+    assert len(handler.sources) == 1
+    [c async for c in handler.execute_agent("a", flow)]
+    assert len(handler.sources) == 1  # not 2: reset at the start of the second run

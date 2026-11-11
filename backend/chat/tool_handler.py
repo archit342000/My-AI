@@ -8,6 +8,7 @@ from backend.database import db
 from backend.tools import ToolRegistry
 from backend.logging import log_event
 from backend.chat.models import ParsedToolCall
+from backend.chat.sources import SOURCE_REGISTRY_ANCHOR, format_sources_block
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +49,58 @@ class ToolHandler:
             return False
         owner = db.get_user(self.user_id)
         return bool(owner and owner.get('role') == 'admin')
+
+    @property
+    def _registry(self):
+        """The chat's source registry, held only by the main chat handler of a turn (sub-agents' handlers have none)."""
+        return getattr(self.chat_handler, "source_registry", None)
+
+    def _register_sources(self, entries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Number the given sources (`{kind, title, locator, detail}`) in the chat's registry and save it right away, so a turn
+        that fails or is cancelled later still leaves the numbers stored. Returns the numbered entries (empty without a registry).
+        """
+        registry = self._registry
+        if registry is None or not entries:
+            return []
+        numbered = []
+        for e in entries:
+            if e["kind"] == "web" and not e["locator"].lower().startswith(("http://", "https://")):
+                continue  # only real web addresses are sources (a chip may link to it)
+            n = registry.add(e["kind"], e.get("title"), e["locator"], e.get("detail"))
+            numbered.append(registry.get(n))
+        if not numbered:
+            return []
+        # A save error propagates: numbers must never be shown to the model unless they are stored.
+        db.add_collection(chat_id=self.chat_id, parent_message_id=SOURCE_REGISTRY_ANCHOR.format(self.chat_id), parent_type="main",
+                          collection_type="source_registry", items=registry.to_list(), overwrite=True)
+        return numbered
+
+    @staticmethod
+    def _file_read_sources(name: str, args: Dict[str, Any], result: Any) -> List[Dict[str, Any]]:
+        """A successful `read_fs_file` is a file source: its path, with the line range when one was asked for."""
+        if name != "read_fs_file" or not isinstance(result, dict) or result.get("success") is False or result.get("error"):
+            return []
+        path = args.get("path")
+        if not isinstance(path, str) or not path:
+            return []
+        path = path.strip()
+        while path.startswith("./") or path.startswith("/"):
+            path = path[2:] if path.startswith("./") else path[1:]
+        if not path:
+            return []
+        start, end = args.get("start_line"), args.get("end_line")
+        if args.get("outline"):
+            detail = "outline"
+        elif start is not None and end is not None:
+            detail = f"lines {start}-{end}"
+        elif start is not None:
+            detail = f"from line {start}"
+        elif end is not None:
+            detail = f"lines 1-{end}"
+        else:
+            detail = None
+        return [{"kind": "file", "title": path, "locator": path, "detail": detail}]
 
     async def handle_tool_calls(
         self, 
@@ -221,6 +274,11 @@ class ToolHandler:
                     # Ensure structured data is serialized to JSON string for the frontend
                     agent_content_str = json.dumps(agent_result) if isinstance(agent_result, (dict, list)) else str(agent_result)
 
+                    # Number the pages the agent used and show the numbers to the model with the result
+                    numbered = self._register_sources(list(getattr(self.agent_handler, "sources", None) or []))
+                    if numbered:
+                        agent_content_str = f"{agent_content_str}\n\n{format_sources_block(numbered)}"
+
                     # Record the tool result with the ACTUAL content returned by the agent
                     from backend.database import db
                     log_event("tool_result_storing", {"chat_id": self.chat_id, "name": name, "tc_id": tc_id, "result_preview": agent_content_str[:200]})
@@ -279,6 +337,11 @@ class ToolHandler:
                 # Injecting system context including tc_id for clarification support
                 result = await self._execute_pure_tool(name, args, tc_id=tc_id)
                 
+                # Number a file read as a source: a dict result gets a `sources` key, so the model sees the number
+                numbered = self._register_sources(self._file_read_sources(name, args, result))
+                if numbered and isinstance(result, dict):
+                    result = {**result, "sources": numbered}
+
                 # Ensure structured data is serialized to JSON string for the frontend
                 content_str = json.dumps(result) if isinstance(result, (dict, list)) else str(result)
                 logger.info(f"[TOOL] Pure tool '{name}' returned: {content_str[:200]}")

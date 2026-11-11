@@ -111,3 +111,9 @@ def test_the_prompt_omits_admin_only_tool_directives_for_a_user_with_git_and_cod
         assert directive and directive in admin_prompt and directive not in user_prompt
     assert "install_packages" not in user_prompt  # a user is never told to call a tool they cannot use
     assert "`run_file`" in user_prompt  # the ordinary code directive stays
+
+
+def test_the_system_prompt_tells_the_model_to_cite_numbered_sources():
+    ctx = PromptContext(chat_metadata={}, preferences=[], skills=[], is_admin=False)
+    prompt = PromptBuilder(ctx).build()
+    assert "Source citations" in prompt and "`[[n]]`" in prompt and "Cite only numbers you were given" in prompt
