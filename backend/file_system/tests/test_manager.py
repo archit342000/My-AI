@@ -617,3 +617,15 @@ async def test_replace_fs_lines_with_clipboard_key():
 
 
 
+
+
+@pytest.mark.anyio
+async def test_restore_of_a_workspace_file_without_a_chat_writes_it_in_the_workspace_directory(mock_db, mock_aiofiles, tmp_path):
+    mock_db.get_file_system_meta.return_value = {"chat_id": None, "workspace_id": "w1", "filename": "docs/a.md", "navigation_history": "[]", "navigation_index": -1}
+    mock_db.get_file_system_version_content.return_value = "old content"
+    with patch('backend.file_system.utils.WORKSPACES_DIR', str(tmp_path)), \
+         patch('backend.file_system.manager.ensure_physical_dir_exists') as ensure:
+        res = await manager.restore_fs_file_version("fs_1", None, 1, workspace_id="w1")
+    assert res["success"] is True and res["content"] == "old content"
+    assert ensure.call_args.args[0] == str(tmp_path / "w1" / "docs" / "a.md")
+    mock_aiofiles.open.assert_called_once_with(str(tmp_path / "w1" / "docs" / "a.md"), mode='w', encoding='utf-8')

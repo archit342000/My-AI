@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 # starts (code_runner_mcp/executor.py), plus a margin. A shorter client timeout would free the run slot too early.
 RUNNER_COMPILE_BUDGET = 20
 RUNNER_BUSY_MESSAGE = "Error: Code runner is busy; try again shortly."
+WORKSPACE_RUN_CONFIRMATION_MESSAGE = "Error: This file needs your confirmation before it runs. Run it from a chat to confirm."
 RUNNER_UNAVAILABLE_MESSAGE = "Error: Code runner is unavailable for this request."
 
 
@@ -27,19 +28,28 @@ class RunnerRefused(Exception):
     """The run slot could not be taken; the message is the tool result to return."""
 
 
-async def _call_runner(method: str, url: str, chat_id: Optional[str], **kwargs):
+def _run_owner(chat_id: Optional[str], workspace_id: Optional[str] = None) -> Optional[str]:
+    """The user a run is charged to: the chat's owner, else the workspace's owner, else None."""
+    if chat_id:
+        return db.get_chat_owner(chat_id)
+    if workspace_id:
+        return db.get_workspace_owner(workspace_id)
+    return None
+
+
+async def _call_runner(method: str, url: str, chat_id: Optional[str], workspace_id: Optional[str] = None, **kwargs):
     """
-    Send one request to the code runner inside the process-wide run slot, keyed by the chat owner.
+    Send one request to the code runner inside the process-wide run slot, keyed by the owner of the chat or workspace.
 
     The blocking `requests` call runs in a worker thread so the event loop is not stalled, and every runner call (runs,
     installs, package lists) takes the slot, so nothing overlaps an install or a clean-up between runs.
 
     Raises:
-        RunnerRefused: the chat has no owner, or the user's queue is full, or the wait timed out (message = tool result).
+        RunnerRefused: the chat (or workspace) has no owner, or the user's queue is full, or the wait timed out (message = tool result).
     """
-    owner = db.get_chat_owner(chat_id) if chat_id else None
+    owner = _run_owner(chat_id, workspace_id)
     if not owner:
-        log_event("code_runner_no_owner_error", {"chat_id": chat_id})
+        log_event("code_runner_no_owner_error", {"chat_id": chat_id, **({"workspace_id": workspace_id} if workspace_id else {})})
         raise RunnerRefused(RUNNER_UNAVAILABLE_MESSAGE)
     try:
         async with async_run_slot(owner):
@@ -198,13 +208,14 @@ async def run_code(
     result_str += f"\n\n**stdout:**\n```\n{stdout}\n```\n\n**stderr:**\n```\n{stderr}\n```"
     return result_str
 
-def resolve_run_target(chat_id: str, path: str) -> tuple[str, str]:
+def resolve_run_target(chat_id: Optional[str], path: str, workspace_id: Optional[str] = None) -> tuple[str, str]:
     """
     Resolves the file to run and the chat's root directory on disk.
 
     Args:
-        chat_id: The chat (or workspace) that owns the file.
+        chat_id: The chat that owns the file, or None for a workspace file.
         path: The file's path in the virtual file system.
+        workspace_id: The workspace that owns the file when there is no chat.
 
     Returns:
         `(physical_target_path, chat_root_dir)`.
@@ -213,8 +224,8 @@ def resolve_run_target(chat_id: str, path: str) -> tuple[str, str]:
         FileNotFoundError: If the target file does not exist.
         ValueError: If the path cannot be resolved (invalid input); other resolver failures propagate unchanged.
     """
-    _, _, physical_target_path = resolve_owner_and_physical_path(chat_id, path)
-    _, _, chat_root_dir = resolve_owner_and_physical_path(chat_id, "")
+    _, _, physical_target_path = resolve_owner_and_physical_path(chat_id, path, workspace_id=workspace_id)
+    _, _, chat_root_dir = resolve_owner_and_physical_path(chat_id, "", workspace_id=workspace_id)
     if not os.path.exists(physical_target_path):
         raise FileNotFoundError(f"File '{path}' does not exist.")
     return physical_target_path, chat_root_dir
@@ -269,15 +280,16 @@ async def run_file(
     chat_id: Optional[str] = None,
     tool_call_id: Optional[str] = None,
     parent_message_id: Optional[str] = None,
+    workspace_id: Optional[str] = None,
     **kwargs
 ) -> str:
-    """Execute a file from the virtual file system including all project tree files."""
-    if not chat_id:
+    """Execute a file from the virtual file system (a chat's, or a workspace's when no chat is given) including all project tree files."""
+    if not chat_id and not workspace_id:
         return "Error: Missing chat context."
 
     # Resolve target file relative path to physical file path
     try:
-        physical_target_path, chat_root_dir = resolve_run_target(chat_id, path)
+        physical_target_path, chat_root_dir = resolve_run_target(chat_id, path, workspace_id=workspace_id)
     except FileNotFoundError:
         return f"Error: File '{path}' does not exist."
     except ValueError as e:
@@ -348,6 +360,8 @@ async def run_file(
 
     if target_code:
         safety_status = classify_code(target_code, lang)
+        if safety_status == "dangerous" and not chat_id:
+            return WORKSPACE_RUN_CONFIRMATION_MESSAGE
         if safety_status == "dangerous":
             question = (
                 f"Warning: The entry file '{entry_file}' contains potentially dangerous commands:\n\n"
@@ -380,7 +394,7 @@ async def run_file(
     }
 
     try:
-        res = await _call_runner("post", url, chat_id, json=payload, headers=headers, timeout=timeout + RUNNER_COMPILE_BUDGET)
+        res = await _call_runner("post", url, chat_id, workspace_id=workspace_id, json=payload, headers=headers, timeout=timeout + RUNNER_COMPILE_BUDGET)
         res.raise_for_status()
         data = res.json()
     except RunnerRefused as refused:

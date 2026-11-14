@@ -334,7 +334,7 @@ def test_optional_body_route_still_rejects_an_invalid_body(client, mock_db, body
 def test_optional_body_route_accepts_no_body_and_reaches_its_own_validation(client, mock_db, body):
     resp = client.post("/tools/code-execution/run-file", **body)
     assert resp.status_code == 400
-    assert resp.get_json() == {"error": "Missing path or chat_id"}   # the route's own error, as JSON
+    assert resp.get_json() == {"error": "Missing path, chat_id or workspace_id"}   # the route's own error, as JSON
 
 
 # ---- error bodies never carry exception or upstream text; the detail goes to the log -------------------------
@@ -579,3 +579,56 @@ def test_proxy_portal_vnc_entry_urls_are_served_not_redirected(client, path):
         resp = client.get(path + "?autoconnect=true&resize=scale")
     assert resp.status_code == 200 and resp.data == b"novnc"
     assert mock_get.call_args.args[0] == "http://playwright_mcp:6080/vnc.html"
+
+
+# ---- run-file for a workspace -----------------------------------------------------------------------------------
+
+def test_run_file_runs_a_workspace_file_given_workspace_id(client):
+    from unittest.mock import AsyncMock
+    with patch('backend.tools.implementations.code_executor.resolve_run_target', return_value=("/p/a.py", "/p")) as resolve, \
+         patch('backend.tools.implementations.code_executor.run_file', new_callable=AsyncMock, return_value="ok") as run:
+        resp = client.post('/tools/code-execution/run-file', json={"path": "a.py", "workspace_id": "w1"})
+    assert resp.status_code == 200 and resp.json == {"result": "ok"}
+    resolve.assert_called_once_with(None, "a.py", workspace_id="w1")
+    assert run.call_args.kwargs["workspace_id"] == "w1" and run.call_args.kwargs["chat_id"] is None
+
+
+def test_run_file_chat_id_wins_over_workspace_id(client):
+    from unittest.mock import AsyncMock
+    with patch('backend.tools.implementations.code_executor.resolve_run_target', return_value=("/p/a.py", "/p")), \
+         patch('backend.tools.implementations.code_executor.run_file', new_callable=AsyncMock, return_value="ok") as run:
+        client.post('/tools/code-execution/run-file', json={"path": "a.py", "chat_id": "c1", "workspace_id": "w1"})
+    assert run.call_args.kwargs["chat_id"] == "c1" and run.call_args.kwargs["workspace_id"] is None
+
+
+def test_run_file_refuses_another_users_workspace_and_runs_nothing(app, login_as, user_b, owned_by_user_a):
+    from unittest.mock import AsyncMock
+    owned_by_user_a.get_workspace_owner.return_value = "someone-else"
+    with patch('backend.tools.implementations.code_executor.resolve_run_target') as resolve, \
+         patch('backend.tools.implementations.code_executor.run_file', new_callable=AsyncMock) as run:
+        resp = app.test_client().post('/tools/code-execution/run-file', json={"path": "a.py", "workspace_id": "theirs"})
+    assert resp.status_code == 404
+    resolve.assert_not_called(); run.assert_not_called()
+
+
+def test_run_file_missing_workspace_file_is_a_404(client):
+    from unittest.mock import AsyncMock
+    with patch('backend.tools.implementations.code_executor.resolve_run_target', side_effect=FileNotFoundError), \
+         patch('backend.tools.implementations.code_executor.run_file', new_callable=AsyncMock) as run:
+        resp = client.post('/tools/code-execution/run-file', json={"path": "nope.py", "workspace_id": "w1"})
+    assert resp.status_code == 404 and resp.json == {"error": "File not found"}
+    run.assert_not_called()
+
+
+@pytest.mark.parametrize("body", [
+    {"path": "a.py"},
+    {"workspace_id": "w1"},
+    {"path": "a.py", "workspace_id": "default"},
+    {"path": "a.py", "workspace_id": 5},
+])
+def test_run_file_without_a_usable_scope_or_path_is_a_400(client, body):
+    from unittest.mock import AsyncMock
+    with patch('backend.tools.implementations.code_executor.run_file', new_callable=AsyncMock) as run:
+        resp = client.post('/tools/code-execution/run-file', json=body)
+    assert resp.status_code == 400
+    run.assert_not_called()

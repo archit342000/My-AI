@@ -105,11 +105,17 @@ describe('artifactsApi version calls (chat scope)', () => {
 describe('codeExecApi', () => {
   it('runFile posts the chat and the path, and returns what the run printed', async () => {
     const call = stub({ result: 'hello\n' });
-    const out = await codeExecApi.runFile('c1', 'src/app.py');
+    const out = await codeExecApi.runFile({ chatId: 'c1' }, 'src/app.py');
     const [url, init] = call();
     expect(url).toBe('/api/tools/code-execution/run-file');
     expect(init?.method).toBe('POST');
     expect(JSON.parse(String(init?.body))).toEqual({ chat_id: 'c1', path: 'src/app.py' });
     expect(out).toBe('hello\n');
+  });
+
+  it('runFile posts the workspace in place of a chat', async () => {
+    const call = stub({ result: 'ok' });
+    await codeExecApi.runFile({ workspaceId: 'w1' }, 'a.py');
+    expect(JSON.parse(String(call()[1]?.body))).toEqual({ workspace_id: 'w1', path: 'a.py' });
   });
 });

@@ -909,3 +909,63 @@ def test_disk_only_artifacts_keep_their_old_answers_on_the_version_routes(method
         assert response.status_code == 200 and response.get_json()["versions"] == []
     else:
         assert response.status_code == 400  # the diff's usual "version not found" answer
+
+
+# ---- version routes for a workspace file (no chat) --------------------------------------------------------------
+
+def test_version_routes_work_with_only_a_workspace_id(client):
+    with patch('backend.file_system.manager.get_file_system_versions') as versions, \
+         patch('backend.file_system.router.get_fs_file_version') as version, \
+         patch('backend.file_system.manager.restore_fs_file_version', new_callable=AsyncMock) as restore, \
+         patch('backend.file_system.manager.get_fs_file_diff') as diff, \
+         patch('backend.file_system.router.db') as mock_db:
+        mock_db.get_file_system_meta.return_value = {"chat_id": None, "workspace_id": "w1"}
+        mock_db.get_file_system_current_version.return_value = {"version_number": 4}
+        versions.return_value = [{"version_number": 1, "author": "u", "timestamp": "t"}]
+        version.return_value = {"content": "old"}
+        restore.return_value = {"success": True}
+        diff.return_value = {"success": True, "added_lines": ["b"], "removed_lines": ["a"]}
+
+        assert client.get('/api/file_system/fs1/versions?workspace_id=w1').get_json()["versions"][0]["version_number"] == 1
+        versions.assert_called_once_with("fs1", None, workspace_id="w1")
+        assert client.get('/api/file_system/fs1/versions/1?workspace_id=w1').get_json()["content"] == "old"
+        version.assert_called_once_with("fs1", None, 1, workspace_id="w1")
+        assert client.post('/api/file_system/fs1/versions/1/restore?workspace_id=w1', json={}).status_code == 200
+        assert restore.call_args.kwargs["workspace_id"] == "w1" and restore.call_args.args[1] is None
+        assert client.post('/api/file_system/fs1/versions/1/restore', json={"workspace_id": "w1"}).status_code == 200
+        assert restore.call_args.kwargs["workspace_id"] == "w1"
+        assert client.post('/api/file_system/fs1/diff', json={"workspace_id": "w1", "version1": 1, "version2": 2}).get_json()["added_lines"] == ["b"]
+        assert diff.call_args.kwargs["workspace_id"] == "w1"
+        assert client.get('/api/file_system/fs1/current-version?workspace_id=w1').get_json()["current_version"] == 4
+
+
+@pytest.mark.parametrize("method,url,body", [
+    ("get", "/api/file_system/fs1/versions", None),
+    ("get", "/api/file_system/fs1/versions/1", None),
+    ("post", "/api/file_system/fs1/versions/1/restore", {}),
+    ("post", "/api/file_system/fs1/diff", {"version1": 1, "version2": 2}),
+    ("get", "/api/file_system/fs1/current-version", None),
+])
+def test_version_routes_without_a_chat_or_workspace_are_a_400(method, url, body, client):
+    with patch('backend.file_system.router.db') as mock_db:
+        kwargs = {"json": body} if body is not None else {}
+        response = getattr(client, method)(url, **kwargs)
+    assert response.status_code == 400 and "chat_id or workspace_id" in response.get_json()["error"]
+    mock_db.get_file_system_meta.assert_not_called()
+
+
+def test_version_routes_for_a_missing_workspace_file_are_404(client):
+    with patch('backend.file_system.router.db') as mock_db, patch('backend.file_system.router.get_fs_file_version') as version:
+        mock_db.get_file_system_meta.return_value = None
+        assert client.get('/api/file_system/nope/versions/1?workspace_id=w1').status_code == 404
+        assert client.get('/api/file_system/nope/versions?workspace_id=w1').status_code == 404
+        assert client.get('/api/file_system/nope/current-version?workspace_id=w1').status_code == 404
+        assert client.post('/api/file_system/nope/diff', json={"workspace_id": "w1", "version1": 1, "version2": 2}).status_code == 404
+    version.assert_not_called()
+
+
+def test_restore_of_a_missing_workspace_file_is_a_404(client):
+    with patch('backend.file_system.manager.restore_fs_file_version', new_callable=AsyncMock) as restore:
+        restore.return_value = {"success": False, "error": "FileSystem not found"}
+        response = client.post('/api/file_system/nope/versions/1/restore', json={"workspace_id": "w1"})
+    assert response.status_code == 404

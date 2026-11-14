@@ -6,7 +6,7 @@
 | Folder | Responsibility |
 | :--- | :--- |
 | `agents/` | Implementation logic for autonomous sub-agents (research, browsing, etc.). |
-| `implementations/` | Tool implementations. Code-runner calls hold a run slot (`run_slot.py`: runs are serialised process-wide; a user may hold at most `CODE_RUNNER_MAX_QUEUED_PER_USER` places, the running one plus queued ones, and a wait is capped by `CODE_RUNNER_QUEUE_TIMEOUT`). A refusal comes back as a tool result: "busy" for a full or timed-out queue, "unavailable" for a chat without an owner. |
+| `implementations/` | Tool implementations. Code-runner calls hold a run slot (`run_slot.py`: runs are serialised process-wide; a user may hold at most `CODE_RUNNER_MAX_QUEUED_PER_USER` places, the running one plus queued ones, and a wait is capped by `CODE_RUNNER_QUEUE_TIMEOUT`). A refusal comes back as a tool result: "busy" for a full or timed-out queue, "unavailable" for a chat or workspace without an owner. |
 | `catalog/` | Unified ToolSpec definition files organized by domain. |
 | Scratch area | Temporary workspace for transient tool-related data (created at runtime). |
 
@@ -20,7 +20,7 @@
 | `clipboard.py` | Out-of-band text sharing clipboard tool implementations. | `clipboard_write`, `clipboard_read`, `clipboard_copy_file` |
 | `preferences.py` | Management of long-term user profile facts. Tools receive `user_id` from the server (the chat owner, via `ToolHandler`), never from model arguments. | `add_user_preference`, `edit_user_preference`, `delete_user_preference` |
 | `spec.py` | ToolSpec dataclass and scope/type enumerations. | `ToolSpec`, `ToolScope`, `ToolType` |
-| `router.py` | API endpoints for interacting with tools and config. Callback routes (`/active/<chat_id>`, `/clarification/response`) check the chat owner; an unknown or foreign callback id is the same 404. The `/config/*` routes (agents, browser, system settings) are admin only. | `tools_bp` |
+| `router.py` | API endpoints for interacting with tools and config. Callback routes (`/active/<chat_id>`, `/clarification/response`) check the chat owner; an unknown or foreign callback id is the same 404. `POST /code-execution/run-file` takes a `chat_id` or a `workspace_id` (owner checked); a workspace run keeps no history and refuses dangerous code. The `/config/*` routes (agents, browser, system settings) are admin only. | `tools_bp` |
 | `tasks.py` | Implementation of persistent task/checklist management. | `manage_task_list` |
 | `time_utils.py` | Local date and time utilities. | `get_current_time` |
 

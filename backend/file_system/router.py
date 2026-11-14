@@ -1007,12 +1007,12 @@ def add_file_system_tag(file_system_id, tag):
 
 @file_system_bp.route('/<path:file_system_id>/versions', methods=['GET'])
 async def get_file_system_versions_endpoint(file_system_id):
-    """Get version history for a file_system."""
+    """Get version history for a file_system (of a chat's file or a workspace's file)."""
     chat_id = request.args.get('chat_id')
-    if not chat_id:
-        return jsonify({"error": "chat_id is required"}), 400
-        
     workspace_id = request.args.get('workspace_id')
+    if not chat_id and not workspace_id:
+        return jsonify({"error": "chat_id or workspace_id is required"}), 400
+
     _, missing = _fs_meta_or_404(file_system_id, chat_id, workspace_id)
     if missing:
         return missing
@@ -1045,10 +1045,14 @@ async def get_file_system_versions_endpoint(file_system_id):
 async def get_fs_file_version_endpoint(file_system_id, version_number):
     """Get a specific version of a file_system content."""
     chat_id = request.args.get('chat_id')
-    if not chat_id:
-        return jsonify({"error": "chat_id is required"}), 400
-        
-    version = get_fs_file_version(file_system_id, chat_id, version_number)
+    workspace_id = request.args.get('workspace_id')
+    if not chat_id and not workspace_id:
+        return jsonify({"error": "chat_id or workspace_id is required"}), 400
+    _, missing = _fs_meta_or_404(file_system_id, chat_id, workspace_id)
+    if missing:
+        return missing
+
+    version = get_fs_file_version(file_system_id, chat_id, version_number, workspace_id=workspace_id)
     if version is None:
         return jsonify({"success": False, "error": "Version not found"}), 404
 
@@ -1067,10 +1071,10 @@ async def restore_fs_file_version_endpoint(file_system_id, version_number):
     if err:
         return err
     chat_id = data.get('chat_id') or request.args.get('chat_id')
-    if not chat_id:
-        return jsonify({"error": "chat_id is required"}), 400
-        
-    workspace_id = request.args.get('workspace_id')
+    workspace_id = data.get('workspace_id') or request.args.get('workspace_id')
+    if not chat_id and not workspace_id:
+        return jsonify({"error": "chat_id or workspace_id is required"}), 400
+
     from backend.file_system.manager import restore_fs_file_version
     result = await restore_fs_file_version(file_system_id, chat_id, version_number, workspace_id=workspace_id)
     if result['success']:
@@ -1085,8 +1089,9 @@ async def get_fs_file_diff_endpoint(file_system_id):
     if err:
         return err
     chat_id = data.get('chat_id') or request.args.get('chat_id')
-    if not chat_id:
-        return jsonify({"success": False, "error": "chat_id is required"}), 400
+    workspace_id = data.get('workspace_id') or request.args.get('workspace_id')
+    if not chat_id and not workspace_id:
+        return jsonify({"success": False, "error": "chat_id or workspace_id is required"}), 400
 
     version1 = data.get('version1')
     version2 = data.get('version2')
@@ -1094,7 +1099,6 @@ async def get_fs_file_diff_endpoint(file_system_id):
     if version1 is None or version2 is None:
         return jsonify({"success": False, "error": "version1 and version2 are required"}), 400
 
-    workspace_id = request.args.get('workspace_id')
     _, missing = _fs_meta_or_404(file_system_id, chat_id, workspace_id)
     if missing:
         return missing
@@ -1109,10 +1113,10 @@ async def get_fs_file_diff_endpoint(file_system_id):
 async def get_file_system_current_version_endpoint(file_system_id):
     """Get the current active version number for a file_system."""
     chat_id = request.args.get('chat_id')
-    if not chat_id:
-        return jsonify({"error": "chat_id is required"}), 400
-
     workspace_id = request.args.get('workspace_id')
+    if not chat_id and not workspace_id:
+        return jsonify({"error": "chat_id or workspace_id is required"}), 400
+
     if workspace_id:
         file_system_meta = db.get_file_system_meta(file_system_id=file_system_id, workspace_id=workspace_id)
     else:

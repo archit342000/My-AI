@@ -514,7 +514,7 @@ async def restore_fs_file_version(file_system_id: str, chat_id: str, version_num
     # Sync disk file
     try:
         safe_path = file_system_meta['filename']
-        _, _, filepath = resolve_owner_and_physical_path(chat_id, safe_path)
+        _, _, filepath = resolve_owner_and_physical_path(actual_chat_id, safe_path, workspace_id=actual_workspace_id)
         ensure_physical_dir_exists(filepath, is_file_path=True)
         async with aiofiles.open(filepath, mode='w', encoding='utf-8') as f:
             await f.write(content)
