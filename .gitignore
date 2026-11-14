@@ -65,7 +65,8 @@ Thumbs.db
 
 # Claude
 plans/
-.claude/
+.claude/*
+!.claude/skills/
 reports/
 scratch/
 
