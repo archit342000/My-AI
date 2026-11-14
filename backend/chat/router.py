@@ -5,6 +5,7 @@ import time
 from typing import Dict, Any
 
 from backend.chat.handler import ChatHandler
+from backend.chat.cleanup import purge_expired_temporary_chats
 from backend.auth import rate_limit
 from backend.auth.context import current_user, current_user_id
 from backend.auth.ownership import claim_chat, reject_foreign_chat, require_chat_owner, require_workspace_owner
@@ -34,6 +35,8 @@ STILL_STOPPING = "The chat is still stopping its response; try again in a moment
 @chat_bp.route('/', methods=['GET'])
 def list_chats():
     logger.debug("[API] GET /api/chats - listing chats that have content")
+    # Unsaved temporary chats are never listed; the ones nobody saved or discarded in time are removed here.
+    purge_expired_temporary_chats(current_user_id(), _delete_chat_fully)
     chats = db.get_listed_chats(current_user_id())
     return jsonify(chats)
 
@@ -215,6 +218,10 @@ def patch_chat_endpoint(chat_id):
     enable_thinking = data.get('enable_thinking')
     thinking_profile = data.get('thinking_profile')
 
+    # Saving a temporary chat: the only accepted value is false; refused before anything is created or written.
+    if 'is_temporary' in data and data['is_temporary'] is not False:
+        return jsonify({"error": "is_temporary can only be set to false"}), 400
+
     # A target workspace must belong to the caller; checked before anything is created or written.
     if workspace_id:
         denied = require_workspace_owner(workspace_id)
@@ -243,6 +250,8 @@ def patch_chat_endpoint(chat_id):
         db.update_chat(chat_id=chat_id, thinking_budget_tokens=thinking_budget_tokens)
     if 'workspace_id' in data:
         db.update_chat_workspace(chat_id=chat_id, workspace_id=workspace_id)
+    if 'is_temporary' in data:
+        db.update_chat(chat_id=chat_id, is_temporary=0)  # saved: the chat is listed and kept
     if 'research_completed' in data:
         db.mark_research_completed(chat_id=chat_id, completed=data['research_completed'])
     if 'user_preferences' in data:
@@ -283,44 +292,57 @@ def patch_chat_endpoint(chat_id):
 
     return jsonify({"success": True})
 
+def _delete_chat_fully(chat_id):
+    """
+    Stop the chat's turn and remove everything it owns: files (disk and RAG), task state, rows and the file channel.
+    Returns False, leaving the chat intact, when the turn did not stop in time.
+    """
+    # End the chat's turn first: a worker that outlives the chat would write rows for a chat that is gone.
+    if not task_manager.stop_task_and_wait(chat_id):
+        log_event("chat_delete_stop_timeout", {"chat_id": chat_id})
+        return False
+    from backend.tools.callbacks import callback_registry
+    from backend.database import response_cache
+    callback_registry.cleanup_chat(chat_id)
+    response_cache.cleanup_chat(chat_id)
+
+    # 1. Physical cleanup of files (disk + RAG). The embedding model and RAG manager are set up only for a chat that has files,
+    # and a setup failure propagates (the chat is kept, so a delete or the next sweep can retry) instead of orphaning its files.
+    try:
+        chat_files = db.get_chat_files(chat_id)
+    except Exception as e:
+        logger.error(f"Error listing the files of chat {chat_id}: {e}")
+        chat_files = []
+    if chat_files:
+        from backend.rag import RAGProvider
+        from backend.models import get_embedding_model
+        from backend.files.manager import FileManager
+        rag_manager = RAGProvider.get_manager(
+            persist_path=config.CHROMA_PATH,
+            embedding_model=get_embedding_model()
+        )
+        file_manager = FileManager(rag_manager=rag_manager)
+        try:
+            for f in chat_files:
+                file_manager.delete_file(f['id'])
+        except Exception as e:
+            logger.error(f"Error during physical file cleanup for chat {chat_id}: {e}")
+
+    # 2. Database cleanup (the task files go first: a failure there leaves the chat intact)
+    task_manager.forget_chat(chat_id)
+    db.delete_chat(chat_id=chat_id)
+
+    FileSystemChannelManager.release_channel(chat_id)
+    return True
+
+
 @chat_bp.route('/<chat_id>', methods=['DELETE'])
 def remove_chat(chat_id):
     denied = require_chat_owner(chat_id)
     if denied:
         return denied
-    # End the chat's turn first: a worker that outlives the chat would write rows for a chat that is gone.
-    if not task_manager.stop_task_and_wait(chat_id):
-        log_event("chat_delete_stop_timeout", {"chat_id": chat_id})
+    if not _delete_chat_fully(chat_id):
         return jsonify({"error": STILL_STOPPING}), 409
-    from backend.tools.callbacks import callback_registry
-    from backend.database import response_cache
-    callback_registry.cleanup_chat(chat_id)
-    response_cache.cleanup_chat(chat_id)
-    from backend.rag import RAGProvider
-    from backend.models import get_embedding_model
-    from backend.files.manager import FileManager
-
-    # 1. Setup RAG and File Manager for cleanup
-    embedding_model = get_embedding_model()
-    rag_manager = RAGProvider.get_manager(
-        persist_path=config.CHROMA_PATH,
-        embedding_model=embedding_model
-    )
-    file_manager = FileManager(rag_manager=rag_manager)
-
-    # 2. Physical Cleanup of Files (Disk + RAG)
-    try:
-        chat_files = db.get_chat_files(chat_id)
-        for f in chat_files:
-            file_manager.delete_file(f['id'])
-    except Exception as e:
-        logger.error(f"Error during physical file cleanup for chat {chat_id}: {e}")
-
-    # 3. Database Cleanup (the task files go first: a failure there leaves the chat intact)
-    task_manager.forget_chat(chat_id)
-    db.delete_chat(chat_id=chat_id)
-    
-    FileSystemChannelManager.release_channel(chat_id)
     return jsonify({"success": True})
 
 # =============================================================================
@@ -412,6 +434,11 @@ def chat_completions():
     if denied:
         return denied
 
+    # A temporary chat is marked on its first send; checked before the claim like the other request checks.
+    temporary = data.get('temporary', False)
+    if not isinstance(temporary, bool):
+        return jsonify({"error": "temporary must be true or false"}), 400
+
     if files is not None and not isinstance(files, list):
         return jsonify({"error": "uploadedFiles must be a list"}), 400
 
@@ -425,6 +452,10 @@ def chat_completions():
     denied = claim_chat(chat_id)
     if denied:
         return denied
+
+    # First send of a temporary chat (no messages yet): mark it, so it stays out of the chat list until it is saved.
+    if temporary:
+        db.mark_chat_temporary(chat_id)
 
     # One turn per chat: refuse before a message is stored if a turn is running or being started.
     turns = task_manager  # the same manager claims and releases, whatever happens to the module global
@@ -554,7 +585,7 @@ def chat_completions():
         handler = ChatHandler(chat_id)
         
         # Pass extra body params (sampling, etc)
-        extra_body = {k: v for k, v in data.items() if k not in ['messages', 'chatId', 'uploadedFiles', 'model']}
+        extra_body = {k: v for k, v in data.items() if k not in ['messages', 'chatId', 'uploadedFiles', 'model', 'temporary']}
         
         def generate_stream():
             import asyncio

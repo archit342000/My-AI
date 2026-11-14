@@ -410,6 +410,7 @@ def init_db():
                 persona_snapshot TEXT,
                 history_compression TEXT,
                 user_id TEXT DEFAULT NULL,
+                is_temporary INTEGER DEFAULT 0,
                 FOREIGN KEY(workspace_id) REFERENCES workspaces(id) ON DELETE SET NULL
             )
         ''')
@@ -695,7 +696,8 @@ def init_db():
             ('git_mode', 'INTEGER DEFAULT 0'),
             ('code_execution_mode', 'INTEGER DEFAULT 1'),
             ('persona_snapshot', 'TEXT'),
-            ('history_compression', 'TEXT')
+            ('history_compression', 'TEXT'),
+            ('is_temporary', 'INTEGER DEFAULT 0')
         ]
         for col_name, col_def in chat_columns:
             try:

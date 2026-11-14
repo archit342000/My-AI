@@ -91,7 +91,10 @@ describe('saveTemporaryChat', () => {
     useUiStore.setState({ temporaryChatId: 't1' });
     const id = await saveTemporaryChat(new QueryClient(), 'hello there');
     expect(id).toBe('t1');
-    expect(patch).toHaveBeenCalledWith('t1', expect.objectContaining({ title: 'hello there' }));
+    expect(patch).toHaveBeenCalledWith(
+      't1',
+      expect.objectContaining({ title: 'hello there', is_temporary: false }),
+    );
     expect(useUiStore.getState().temporaryChatId).toBeNull();
   });
 
