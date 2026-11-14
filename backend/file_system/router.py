@@ -264,7 +264,7 @@ async def list_file_systems_endpoint():
     if chat_id and not owns_chat(chat_id):
         chat_id = None  # never read the chat's rows or directory
         if not workspace_id or workspace_id == "default":
-            return jsonify({"success": True, "file_systems": []})
+            return jsonify({"success": True, "file_systems": [], "root": ""})
 
     file_systems_with_content = []
     
@@ -435,7 +435,10 @@ async def list_file_systems_endpoint():
     except Exception as e:
         logger.error(f"Error scanning physical items for frontend: {e}")
 
-    return jsonify({"success": True, "file_systems": file_systems_with_content})
+    # `root` says which leading folder is the scope's own root so a client can hide it: a workspace-only scope's files all
+    # sit under `workspace/` (the mount); in a chat scope `workspace/` separates the workspace's files from the chat's own.
+    root = "workspace/" if not chat_id else ""
+    return jsonify({"success": True, "file_systems": file_systems_with_content, "root": root})
 
 
 @file_system_bp.route('/chat/<chat_id>/folders', methods=['GET'])

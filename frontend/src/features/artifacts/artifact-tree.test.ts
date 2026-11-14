@@ -3,6 +3,7 @@ import type { Artifact } from '../../api/filesystem';
 import {
   artifactPath,
   buildTree,
+  folderInRoot,
   countFiles,
   folderPaths,
   isRunnable,
@@ -72,27 +73,50 @@ describe('folderPaths and parentFolder', () => {
   });
 });
 
-describe('buildTree placeholder option', () => {
+describe('folderInRoot', () => {
+  it('maps the hidden root folder to the top level and leaves other folders alone', () => {
+    expect(folderInRoot('workspace', 'workspace/')).toBe('');
+    expect(folderInRoot('workspace/notes', 'workspace/')).toBe('workspace/notes');
+    expect(folderInRoot('workspace', '')).toBe('workspace'); // a chat: it is a real folder
+    expect(folderInRoot('', 'workspace/')).toBe('');
+  });
+});
+
+describe('buildTree root option', () => {
   const dir = (name: string) =>
     ({ id: '', type: 'directory', filename: name, title: name }) as never;
   const file = (path: string) =>
     ({ id: path, type: 'file', filename: path, title: path, language: 'text' }) as never;
 
-  it('hides a lone root `workspace` directory entry when asked', () => {
-    expect(buildTree([dir('workspace')], { hidePlaceholder: true })).toEqual([]);
+  it('with the workspace root, an empty workspace gives an empty tree (the panel shows its empty state)', () => {
+    expect(buildTree([dir('workspace')], { root: 'workspace/' })).toEqual([]);
   });
 
-  it('keeps it when a file is under it, and keeps other empty folders', () => {
-    const withFile = buildTree([dir('workspace'), file('workspace/a.txt')], {
-      hidePlaceholder: true,
-    });
-    expect(withFile.map((n) => n.name)).toEqual(['workspace']);
-    const other = buildTree([dir('workspace'), dir('notes')], { hidePlaceholder: true });
-    expect(other.map((n) => n.name)).toEqual(['notes']);
+  it('with the workspace root, its files and folders sit at the top and keep their full server paths', () => {
+    const tree = buildTree(
+      [dir('workspace'), dir('workspace/notes'), file('workspace/notes/a.md'), file('workspace/b.txt')],
+      { root: 'workspace/' },
+    );
+    expect(shape(tree)).toEqual([{ 'notes/': ['a.md'] }, 'b.txt']);
+    const notes = tree[0];
+    expect(notes?.kind === 'folder' && notes.path).toBe('workspace/notes');
+    expect(notes?.kind === 'folder' && notes.children[0]?.path).toBe('workspace/notes/a.md');
+    expect(folderPaths(tree)).toEqual(['workspace/notes']); // a move destination is a real server path
+  });
+
+  it('with no root (a chat) the workspace folder is a normal level and other empty folders stay', () => {
+    expect(buildTree([dir('workspace')], { root: '' }).map((n) => n.name)).toEqual(['workspace']);
+    const tree = buildTree([dir('workspace'), file('workspace/a.txt'), dir('notes')], { root: '' });
+    expect(shape(tree)).toEqual([{ 'notes/': [] }, { 'workspace/': ['a.txt'] }]);
   });
 
   it('without the option nothing is dropped', () => {
     expect(buildTree([dir('workspace')]).map((n) => n.name)).toEqual(['workspace']);
+  });
+
+  it('a root that is not a prefix of an entry leaves that entry where it is', () => {
+    const tree = buildTree([file('docs/a.md'), file('workspace/b.md')], { root: 'workspace/' });
+    expect(shape(tree)).toEqual([{ 'docs/': ['a.md'] }, 'b.md']);
   });
 });
 

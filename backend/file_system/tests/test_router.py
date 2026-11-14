@@ -909,3 +909,41 @@ def test_disk_only_artifacts_keep_their_old_answers_on_the_version_routes(method
         assert response.status_code == 200 and response.get_json()["versions"] == []
     else:
         assert response.status_code == 400  # the diff's usual "version not found" answer
+
+
+# ---- `root` in the list response ---------------------------------------------------------------------------------
+
+def _list(client, query, owns=True):
+    with patch('backend.file_system.router.db') as mock_db, \
+         patch('backend.file_system.manager.get_fs_file_content', new_callable=AsyncMock, return_value="c"), \
+         patch('backend.file_system.utils.get_workspace_for_chat', return_value="w1"), \
+         patch('backend.file_system.router.os') as mock_os:
+        mock_os.path.join.side_effect = lambda *args: "/".join(args)
+        mock_os.path.exists.return_value = False
+        mock_db.get_chat_file_systems.return_value = [{'id': 'fs1', 'chat_id': 'c1', 'filename': 'own.md'}]
+        mock_db.get_owner_file_systems.return_value = [{'id': 'fs2', 'workspace_id': 'w1', 'filename': 'note.md'}]
+        response = client.get('/api/file_system' + query)
+    return response.get_json()
+
+
+def test_a_workspace_listing_names_workspace_as_its_root_and_keeps_every_path(client):
+    body = _list(client, '?workspace_id=w1')
+    assert body["root"] == "workspace/"
+    assert any(f.get('id') == 'fs2' and f['filename'] == 'workspace/note.md' for f in body["file_systems"])  # paths unchanged
+
+
+def test_a_chat_listing_has_no_root_so_the_workspace_mount_stays_visible(client):
+    body = _list(client, '?chat_id=c1')
+    assert body["root"] == ""
+    assert {f['filename'] for f in body["file_systems"] if f.get('id')} == {'own.md', 'workspace/note.md'}
+
+
+def test_a_chat_that_does_not_exist_yet_lists_nothing_with_an_empty_root(client, owned_by_user_a):
+    owned_by_user_a.get_chat_owner.return_value = None
+    assert _list(client, '?chat_id=new') == {"success": True, "file_systems": [], "root": ""}
+
+
+def test_a_new_chat_next_to_an_owned_workspace_lists_the_workspace_with_its_root(client, owned_by_user_a):
+    owned_by_user_a.get_chat_owner.return_value = None
+    body = _list(client, '?chat_id=new&workspace_id=w1')
+    assert body["root"] == "workspace/" and any(f.get('id') == 'fs2' for f in body["file_systems"])

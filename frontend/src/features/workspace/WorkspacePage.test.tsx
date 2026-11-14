@@ -277,15 +277,19 @@ describe('WorkspacePage', () => {
     it("a workspace whose list holds only the server's placeholder folder shows the empty state", async () => {
       vi.spyOn(chatsApi, 'listWorkspaces').mockResolvedValue(ws as never);
       vi.spyOn(chatsApi, 'list').mockResolvedValue([] as never);
-      vi.spyOn(artifactsApi, 'list').mockResolvedValue([
-        { id: '', type: 'directory', filename: 'workspace', title: 'workspace' },
-      ] as never);
+      const placeholderOnly = Object.assign(
+        [{ id: '', type: 'directory', filename: 'workspace', title: 'workspace' }],
+        { root: 'workspace/' },
+      );
+      const list = vi.spyOn(artifactsApi, 'list').mockResolvedValue(placeholderOnly as never);
       renderWithProviders(<WorkspacePage />, {
         route: '/workspace/w1',
         path: '/workspace/:workspaceId',
       });
       await screen.findByRole('region', { name: 'Files' });
-      await waitFor(() => expect(screen.queryByText('workspace')).toBeNull());
+      await waitFor(() => expect(list).toHaveBeenCalled());
+      expect(await screen.findByText('No files yet')).toBeTruthy(); // the empty state, once the list has loaded
+      expect(screen.queryByText('workspace')).toBeNull();
     });
   });
 });
