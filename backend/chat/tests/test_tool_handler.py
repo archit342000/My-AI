@@ -1,6 +1,6 @@
 import pytest
 import json
-from unittest.mock import MagicMock, patch, AsyncMock
+from unittest.mock import ANY, MagicMock, patch, AsyncMock
 from backend.chat.tool_handler import ToolHandler
 
 @pytest.fixture
@@ -372,7 +372,8 @@ async def test_handle_tool_calls_unregistered_tool_recovery(mock_db_instance, mo
         name="non_existent_tool",
         content="Error: Tool 'non_existent_tool' not found in registry. Available: ['real_tool']",
         parent_id=100,
-        parent_type="main"
+        parent_type="main",
+        duration_ms=ANY
     )
 
 
@@ -516,3 +517,92 @@ async def test_install_packages_runs_for_an_admin_owner(tool_handler, mock_regis
     assert "not available" not in "".join(chunks)
     mock_registry.resolve_implementation.assert_called()
 
+
+
+
+# ---- durations -------------------------------------------------------------------------------------------------
+
+def _clock(*values):
+    """A stand-in for the module's `time` whose monotonic() returns the given values in order."""
+    fake = MagicMock()
+    fake.monotonic.side_effect = list(values)
+    return fake
+
+
+def _delta(chunk):
+    return json.loads(chunk[len("data: "):])["choices"][0]["delta"]["tool_result"]
+
+
+@pytest.mark.anyio
+@patch('backend.database.db')
+async def test_a_pure_tool_stores_and_sends_its_duration(mock_db_instance, mock_registry, tool_handler):
+    mock_db_instance.get_messages.return_value = []
+    mock_registry.get_tool.return_value = {"type": "function"}
+    mock_registry.resolve_implementation.return_value = AsyncMock(return_value="ok")
+    with patch('backend.chat.tool_handler.time', _clock(10.0, 10.25)):
+        chunks = [c async for c in tool_handler.handle_tool_calls([{"id": "t1", "function": {"name": "x", "arguments": "{}"}}])]
+    assert mock_db_instance.add_tool_result.call_args.kwargs["duration_ms"] == 250
+    assert _delta(chunks[0])["duration_ms"] == 250
+
+
+@pytest.mark.anyio
+@patch('backend.database.db')
+async def test_an_agent_tool_duration_covers_the_whole_run(mock_db_instance, mock_registry, tool_handler):
+    mock_db_instance.get_messages.return_value = []
+    mock_registry.get_tool.return_value = {"type": "agent"}
+    mock_registry.resolve_implementation.return_value = object()
+    tool_handler.agent_handler = MagicMock()
+
+    async def run(*a, **k):
+        yield "chunk"
+    tool_handler.agent_handler.execute_agent.side_effect = run
+    tool_handler.agent_handler.result = "done"
+    with patch('backend.chat.tool_handler.time', _clock(5.0, 43.0)):
+        chunks = [c async for c in tool_handler.handle_tool_calls([{"id": "t1", "function": {"name": "agent", "arguments": "{}"}}])]
+    assert mock_db_instance.add_tool_result.call_args.kwargs["duration_ms"] == 38000
+    assert _delta(chunks[-1])["duration_ms"] == 38000
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("branch", ["unknown", "unresolved_agent", "clipboard"])
+@patch('backend.database.db')
+async def test_refusals_and_unresolved_calls_also_carry_a_duration(mock_db_instance, branch, mock_registry, tool_handler):
+    mock_db_instance.get_messages.return_value = []
+    mock_registry._registry = {}
+    name, args = "x", "{}"
+    if branch == "unknown":
+        mock_registry.get_tool.return_value = None
+    elif branch == "unresolved_agent":
+        mock_registry.get_tool.return_value = {"type": "agent"}
+        mock_registry.resolve_implementation.return_value = None
+    else:
+        from backend import config
+        mock_registry.get_tool.return_value = {"type": "agent"}
+        name, args = "file_system_agent", json.dumps({"instruction": "A" * (config.MAX_FS_AGENT_INSTRUCTION_LENGTH + 1)})
+        tool_handler.chat_handler._pending_confirmation = None
+        tool_handler.chat_handler._validation_bypass_next = False
+    with patch('backend.chat.tool_handler.time', _clock(1.0, 1.5)):
+        chunks = [c async for c in tool_handler.handle_tool_calls([{"id": "t1", "function": {"name": name, "arguments": args}}])]
+    assert mock_db_instance.add_tool_result.call_args.kwargs["duration_ms"] == 500
+    assert _delta(chunks[0])["duration_ms"] == 500
+
+
+@pytest.mark.anyio
+async def test_an_admin_only_refusal_carries_a_duration(tool_handler):
+    tool_handler._user_id = "u1"
+    with patch('backend.chat.tool_handler.db') as handler_db, patch('backend.database.db') as global_db, \
+         patch('backend.chat.tool_handler.time', _clock(2.0, 2.1)):
+        handler_db.get_user.return_value = {"id": "u1", "role": "user"}
+        global_db.get_messages.return_value = []
+        chunks = await _run_calls(tool_handler, "git_agent")
+    assert global_db.add_tool_result.call_args.kwargs["duration_ms"] == 100
+    assert _delta(chunks[0])["duration_ms"] == 100
+
+
+@pytest.mark.anyio
+@patch('backend.database.db')
+async def test_a_call_skipped_as_already_done_sends_and_stores_nothing(mock_db_instance, tool_handler):
+    mock_db_instance.get_messages.return_value = [{"role": "tool", "tool_call_id": "t1"}]
+    chunks = [c async for c in tool_handler.handle_tool_calls([{"id": "t1", "function": {"name": "x", "arguments": "{}"}}])]
+    assert chunks == []
+    mock_db_instance.add_tool_result.assert_not_called()

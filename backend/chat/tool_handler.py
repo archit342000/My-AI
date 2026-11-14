@@ -2,6 +2,7 @@ import logging
 import json
 import asyncio
 import contextvars
+import time
 from typing import List, Dict, Any, Optional, AsyncGenerator
 
 from backend.database import db
@@ -88,6 +89,7 @@ class ToolHandler:
                 continue
 
             log_event("tool_call_execution", {"name": name, "id": tc_id})
+            started = time.monotonic()  # a call's duration_ms runs from here to its stored result
 
             # Check Registry for Type
             tool_meta = ToolRegistry.get_tool(name)
@@ -96,13 +98,15 @@ class ToolHandler:
                 logger.warning(f"[TOOL] {error_msg}")
 
                 from backend.database import db
+                duration_ms = int((time.monotonic() - started) * 1000)
                 db.add_tool_result(
                     chat_id=self.chat_id,
                     tool_call_id=tc_id,
                     name=name,
                     content=error_msg,
                     parent_id=self.parent_message_id,
-                    parent_type=self.parent_type
+                    parent_type=self.parent_type,
+                    duration_ms=duration_ms
                 )
                 yield "data: " + json.dumps({
                     "parent_type": self.parent_type,
@@ -111,7 +115,8 @@ class ToolHandler:
                             "tool_result": {
                                 "name": name,
                                 "content": error_msg,
-                                "tool_call_id": tc_id
+                                "tool_call_id": tc_id,
+                                "duration_ms": duration_ms
                             }
                         }
                     }]
@@ -125,17 +130,19 @@ class ToolHandler:
                 log_event("tool_admin_only_denied", {"chat_id": self.chat_id, "name": name, "id": tc_id})
                 denied_msg = "Error: This tool is not available."
                 from backend.database import db
+                duration_ms = int((time.monotonic() - started) * 1000)
                 db.add_tool_result(
                     chat_id=self.chat_id,
                     tool_call_id=tc_id,
                     name=name,
                     content=denied_msg,
                     parent_id=self.parent_message_id,
-                    parent_type=self.parent_type
+                    parent_type=self.parent_type,
+                    duration_ms=duration_ms
                 )
                 yield "data: " + json.dumps({
                     "parent_type": self.parent_type,
-                    "choices": [{"delta": {"tool_result": {"name": name, "content": denied_msg, "tool_call_id": tc_id}}}]
+                    "choices": [{"delta": {"tool_result": {"name": name, "content": denied_msg, "tool_call_id": tc_id, "duration_ms": duration_ms}}}]
                 }) + "\n\n"
                 continue
 
@@ -173,6 +180,7 @@ class ToolHandler:
                                 }
 
                             from backend.database import db as _vdb
+                            duration_ms = int((time.monotonic() - started) * 1000)
                             _vdb.add_tool_result(
                                 chat_id=self.chat_id,
                                 tool_call_id=tc_id,
@@ -180,6 +188,7 @@ class ToolHandler:
                                 content=validation.message,
                                 parent_id=self.parent_message_id,
                                 parent_type=self.parent_type,
+                                duration_ms=duration_ms
                             )
                             yield "data: " + json.dumps({
                                 "parent_type": self.parent_type,
@@ -187,6 +196,7 @@ class ToolHandler:
                                     "name": name,
                                     "content": validation.message,
                                     "tool_call_id": tc_id,
+                                    "duration_ms": duration_ms,
                                 }}}]
                             }) + "\n\n"
                             continue
@@ -224,13 +234,15 @@ class ToolHandler:
                     # Record the tool result with the ACTUAL content returned by the agent
                     from backend.database import db
                     log_event("tool_result_storing", {"chat_id": self.chat_id, "name": name, "tc_id": tc_id, "result_preview": agent_content_str[:200]})
+                    duration_ms = int((time.monotonic() - started) * 1000)
                     db.add_tool_result(
                         chat_id=self.chat_id,
                         tool_call_id=tc_id,
                         name=name,
                         content=agent_content_str,
                         parent_id=self.parent_message_id,
-                        parent_type=self.parent_type
+                        parent_type=self.parent_type,
+                        duration_ms=duration_ms
                     )
 
                     # Yield synthetic result chunk for frontend rendering and phase boundary.
@@ -243,7 +255,8 @@ class ToolHandler:
                                 "tool_result": {
                                     "name": name,
                                     "content": agent_content_str,
-                                    "tool_call_id": tc_id
+                                    "tool_call_id": tc_id,
+                                    "duration_ms": duration_ms
                                 }
                             }
                         }]
@@ -252,13 +265,15 @@ class ToolHandler:
                     error_msg = f"Error: Agent implementation for '{name}' could not be resolved."
                     logger.error(f"[TOOL] {error_msg}")
                     from backend.database import db
+                    duration_ms = int((time.monotonic() - started) * 1000)
                     db.add_tool_result(
                         chat_id=self.chat_id,
                         tool_call_id=tc_id,
                         name=name,
                         content=error_msg,
                         parent_id=self.parent_message_id,
-                        parent_type=self.parent_type
+                        parent_type=self.parent_type,
+                        duration_ms=duration_ms
                     )
                     yield "data: " + json.dumps({
                         "parent_type": self.parent_type,
@@ -267,7 +282,8 @@ class ToolHandler:
                                 "tool_result": {
                                     "name": name,
                                     "content": error_msg,
-                                    "tool_call_id": tc_id
+                                    "tool_call_id": tc_id,
+                                    "duration_ms": duration_ms
                                 }
                             }
                         }]
@@ -285,13 +301,15 @@ class ToolHandler:
                 
                 from backend.database import db
                 log_event("tool_result_storing", {"chat_id": self.chat_id, "name": name, "tc_id": tc_id, "result_preview": content_str[:200]})
+                duration_ms = int((time.monotonic() - started) * 1000)
                 db.add_tool_result(
                     chat_id=self.chat_id,
                     tool_call_id=tc_id,
                     name=name,
                     content=content_str,
                     parent_id=self.parent_message_id,
-                    parent_type=self.parent_type
+                    parent_type=self.parent_type,
+                    duration_ms=duration_ms
                 )
 
                 # Yield synthetic result chunk for frontend rendering and phase boundary
@@ -302,7 +320,8 @@ class ToolHandler:
                             "tool_result": {
                                 "name": name,
                                 "content": content_str,
-                                "tool_call_id": tc_id
+                                "tool_call_id": tc_id,
+                                "duration_ms": duration_ms
                             }
                         }
                     }]
