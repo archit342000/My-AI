@@ -5,6 +5,7 @@ import json
 import uuid
 
 from backend.file_system import manager
+from backend.file_system.utils import PathRuleError
 from backend.file_system.utils import generate_fs_file_id as real_generate_fs_file_id
 from backend.file_system.fuzzy_matcher import MatchNotFoundError, MultipleMatchesError
 
@@ -617,3 +618,16 @@ async def test_replace_fs_lines_with_clipboard_key():
 
 
 
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("tool,message", [("create_directory_tool", "Could not create the folder. Try again."), ("delete_directory_tool", "Could not delete the folder. Try again.")])
+async def test_directory_tools_hide_unexpected_exception_text_but_keep_path_rule_messages(tool, message):
+    fn = getattr(manager, tool)
+    with patch('backend.file_system.manager.resolve_owner_and_physical_path', side_effect=OSError("/secret/place denied")), \
+         patch('backend.file_system.manager.log_event') as events:
+        res = await fn("c1", "d")
+    assert res == {"success": False, "error": message}
+    assert events.call_args.args[0].endswith("_directory_error") and "denied" in events.call_args.args[1]["error"]
+    with patch('backend.file_system.manager.resolve_owner_and_physical_path', side_effect=PathRuleError("The 'workspace/' directory is reserved")):
+        assert (await fn("c1", "workspace/d")) == {"success": False, "error": "The 'workspace/' directory is reserved"}

@@ -433,9 +433,9 @@ def test_run_file_resolver_failure_is_a_generic_500_and_logged(client):
          patch('backend.tools.router.log_event') as log:
         resp = _run_file_request(client)
     assert resp.status_code == 500
-    assert resp.json == {"error": "Failed to run file"}
+    assert resp.json == {"error": "Could not run the file. Try again."}
     assert "/secret" not in resp.get_data(as_text=True)
-    log.assert_any_call("tools_run_file_error", {"chat_id": "c1", "path": "nope.py", "error": "db down at /secret"})
+    log.assert_any_call("tools_run_file_error", {"chat_id": "c1", "path": "nope.py", "error": "RuntimeError: db down at /secret"})
     run.assert_not_called()
 
 
@@ -446,9 +446,9 @@ def test_run_file_execution_failure_is_a_generic_500_and_logged(client):
          patch('backend.tools.router.log_event') as log:
         resp = _run_file_request(client)
     assert resp.status_code == 500
-    assert resp.json == {"error": "Failed to run file"}
+    assert resp.json == {"error": "Could not run the file. Try again."}
     assert "10.0.0.5" not in resp.get_data(as_text=True)
-    log.assert_any_call("tools_run_file_error", {"chat_id": "c1", "path": "nope.py", "error": "runner at 10.0.0.5 failed"})
+    log.assert_any_call("tools_run_file_error", {"chat_id": "c1", "path": "nope.py", "error": "RuntimeError: runner at 10.0.0.5 failed"})
 
 
 def test_run_file_missing_file_is_a_404_through_the_real_resolver(client, tmp_path):

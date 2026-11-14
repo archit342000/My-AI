@@ -7,6 +7,7 @@ from backend.auth.ownership import claim_chat, owns_chat, reject_foreign_chat, r
 from backend.database import db
 from backend.utils import read_json_object
 from backend import config
+from backend.logging import log_event, error_detail
 from backend.file_system import (
     get_file_system_versions,
     get_fs_file_version,
@@ -193,7 +194,8 @@ async def create_fs_file_route():
         })
     except Exception as e:
         logger.error(f"[CREATE_FILE_SYSTEM_ROUTE] FAILED chat_id={chat_id!r} path={computed_path!r}: {type(e).__name__}: {e}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        log_event("file_system_create_file_error", {"chat_id": chat_id, "path": str(computed_path)[:200], "error": error_detail(e)})
+        return jsonify({"error": "Could not create the file. Try again."}), 500
 
 
 @file_system_bp.route('/directory', methods=['POST'])
@@ -220,7 +222,8 @@ async def create_directory_route():
         result = await create_directory_tool(chat_id=chat_id, path=path, workspace_id=workspace_id)
         return jsonify(result)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        log_event("file_system_create_directory_error", {"chat_id": chat_id, "path": str(path)[:200], "error": error_detail(e)})
+        return jsonify({"error": "Could not create the folder. Try again."}), 500
 
 
 @file_system_bp.route('/directory', methods=['DELETE'])
@@ -240,7 +243,8 @@ async def delete_directory_route():
             return jsonify({"error": result.get("error", "Unknown error")}), 400
         return jsonify(result)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        log_event("file_system_delete_directory_error", {"chat_id": chat_id, "path": str(path)[:200], "error": error_detail(e)})
+        return jsonify({"error": "Could not delete the folder. Try again."}), 500
 
 
 def _infer_language(filename: str, current_lang: str) -> str:
@@ -664,7 +668,8 @@ async def update_file_system_endpoint(file_system_id):
             return jsonify({"success": True, "id": file_system_id})
         except Exception as e:
             logger.error(f"Error updating disk file {virtual_path}: {e}")
-            return jsonify({"success": False, "error": str(e)}), 500
+            log_event("file_system_update_disk_file_error", {"path": str(virtual_path)[:200], "error": error_detail(e)})
+            return jsonify({"success": False, "error": "Could not save the file. Try again."}), 500
     if workspace_id:
         file_system = db.get_file_system_meta(file_system_id=file_system_id, workspace_id=workspace_id)
     else:
@@ -760,7 +765,8 @@ async def remove_fs_file_endpoint(file_system_id):
             return jsonify({"success": True, "action": "delete", "file_system_id": file_system_id})
         except Exception as e:
             logger.error(f"Error deleting disk file {virtual_path}: {e}")
-            return jsonify({"success": False, "error": str(e)}), 500
+            log_event("file_system_delete_disk_file_error", {"path": str(virtual_path)[:200], "error": error_detail(e)})
+            return jsonify({"success": False, "error": "Could not delete the file. Try again."}), 500
     if workspace_id:
         file_system = db.get_file_system_meta(file_system_id=file_system_id, workspace_id=workspace_id)
     else:

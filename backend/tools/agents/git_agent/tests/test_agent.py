@@ -151,13 +151,14 @@ async def test_flow_fn_exception_caught(mock_agent, mock_config, mock_db):
     chunks = [chunk async for chunk in flow_fn(mock_agent, "instruction")]
     
     assert len(chunks) == 1
-    assert "Git Agent failed: DB error" in chunks[0]
-    assert mock_agent.result == "Git Agent failed: DB error"
+    assert "Git Agent failed. Try again." in chunks[0]
+    assert "DB error" not in chunks[0]
+    assert mock_agent.result == "Git Agent failed. Try again."
     
     mock_db.add_message.assert_any_call(
         chat_id="test_chat",
         role='event',
-        content='Git Agent failed: DB error',
+        content='Git Agent failed. Try again.',
         parent_id="test_parent",
         parent_type='git_agent'
     )

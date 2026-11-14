@@ -4,6 +4,7 @@ import os
 import uuid
 import mimetypes
 from backend import config
+from backend.logging import log_event, error_detail
 from backend.auth.ownership import claim_chat, require_chat_owner, require_file_owner
 from backend.database import db
 from backend.rag import RAGProvider
@@ -120,14 +121,16 @@ async def upload_file_endpoint():
                 "file_size": metadata.file_size
             })
         else:
-            return jsonify({"error": "Failed to process file"}), 500
+            log_event("files_upload_error", {"error": "no metadata returned for the uploaded file"})
+            return jsonify({"error": "Could not read the uploaded file. Try another file."}), 500
 
     except Exception as e:
         if os.path.exists(temp_path):
             try: os.remove(temp_path)
             except: pass
         logger.error(f"[UPLOAD_ENDPOINT] Exception: {e}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        log_event("files_upload_error", {"error": error_detail(e)})
+        return jsonify({"error": "Could not upload the file. Try again."}), 500
 
 @files_bp.route('', methods=['GET'])
 def list_files_endpoint():

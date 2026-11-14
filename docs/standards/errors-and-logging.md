@@ -9,7 +9,15 @@
   Callers must handle `CircuitOpenError`.
 - Routes convert failures into the error body and status codes in `docs/standards/api.md`. Streams send `data: {"error": ...}` and end.
 - Tools return text beginning `Error`/`Failed` for expected failures so the agent can recover (`docs/tools.md`).
-- User-facing messages are short and actionable. Internal detail goes to logs.
+- User-facing messages are short and actionable. Internal detail goes to logs. Applies to route error bodies, stream errors, retry notices,
+  status events and a failed file run:
+  - one or two short sentences: say what happened, then what to do ("Could not save the file. Try again.");
+  - never an exception's text, an id, a code, a path or a stack trace; send a fixed message and `log_event(..., {"error": f"{type(e).__name__}: {e}"})`;
+  - one "…" character, never three dots;
+  - an exception that carries the project's own wording for people may be shown as written; it has its own class (`PathRuleError` in `backend/file_system/utils.py` for path rules), and only that class is passed through, never every `ValueError`;
+  - the detail in `log_event` is `error_detail(e)` (`backend.logging`): type and message, cut to 300 characters;
+  - tool results the model reads keep a leading `Error`/`failed` word, and new or changed ones carry no exception text either (the older file-system, preferences, git and clipboard tools still do and are being brought in line);
+  - status texts that code compares against stored rows (the research resume markers, `EVENT_SYNTHESIS_START` and the literal `Synthesizing final report sections...` in `research_agent/agent.py`) keep their exact text so older runs still resume.
 
 ## Logging
 

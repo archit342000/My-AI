@@ -278,13 +278,13 @@ async def test_flow_fn_exception_handling(mock_agent_context):
         
         assert len(chunks) == 1
         assert "Research agent failed" in chunks[0]
-        assert mock_agent_context.result == "Research agent failed: Initialization error"
+        assert mock_agent_context.result == "Research agent failed. Try again."
         
         # Verify event logged to DB
         mock_db.add_message.assert_any_call(
             chat_id="test_chat",
             role='event',
-            content='Research Agent failed: Initialization error',
+            content='Research Agent failed. Try again.',
             parent_id=123,
             parent_type='research'
         )
@@ -373,3 +373,93 @@ async def test_a_limit_during_gap_searches_keeps_the_section_going_and_enters_th
     assert added and added[0]["collection_type"] == "section_0_followup_searches"
     assert added[0]["items"].strip() == "## FOLLOW-UP SEARCH RESULTS"  # earlier results kept, no new ones
 
+
+
+# ---- fixed failure texts ---------------------------------------------------------------------------------------
+
+SECRET = "/secret/place db locked"
+STOPPED = "Research stopped; you can start it again."
+
+
+def _events_of(agent):
+    """Replace `_emit_event` by one that records the text it was given and streams it."""
+    texts = []
+
+    async def emit(content, parent_type=None):
+        texts.append(content)
+        yield content
+    agent._emit_event = emit
+    return texts
+
+
+def _run_state(history=(), plan=None):
+    colls = [{"collection_type": "research_plan", "items": json.dumps(plan)}] if plan else []
+    return list(history), colls
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("phase,patched,history,expected_event", [
+    ("scout", "_run_scout", [], f"❌ Scout phase failed. {STOPPED}"),
+    ("planner", "_run_planner", [{"role": "event", "content": "Scouting finalized. Context gathered."}], f"❌ Planner phase failed. {STOPPED}"),
+    ("executor", "_run_executor", [{"role": "event", "content": "Scouting finalized. Context gathered."},
+                                   {"role": "event", "content": "Research plan approved. Proceeding to execution."}], f"❌ Execution phase failed. {STOPPED}"),
+    ("synthesis", "_run_synthesis", [{"role": "event", "content": "Scouting finalized. Context gathered."},
+                                     {"role": "event", "content": "Research plan approved. Proceeding to execution."}], f"❌ Synthesis phase failed. {STOPPED}"),
+])
+async def test_a_failing_research_phase_sends_a_fixed_text_marks_the_chat_failed_and_logs_the_detail(research_agent, phase, patched, history, expected_event):
+    plan = {"title": "T", "sections": [{"heading": "A", "queries": [], "description": "d"}]}
+    hist, colls = _run_state(history, plan)
+
+    async def boom(*a, **k):
+        raise RuntimeError(SECRET)
+        yield
+
+    async def nothing(*a, **k):
+        return
+        yield
+
+    texts = _events_of(research_agent)
+    with patch.object(agent_mod, 'db') as mock_db, patch.object(agent_mod, 'log_event') as events, \
+         patch.object(research_agent, '_validate_plan', return_value=(True, "Valid")), \
+         patch.object(research_agent, '_run_executor', side_effect=nothing), patch.object(research_agent, '_run_synthesis', side_effect=nothing), \
+         patch.object(research_agent, '_run_scout', side_effect=nothing), patch.object(research_agent, '_run_planner', side_effect=nothing):
+        mock_db.get_messages.return_value = hist
+        mock_db.get_collections.return_value = colls
+        setattr(research_agent, patched, MagicMock(side_effect=boom))
+        [c async for c in research_agent.run("topic", MagicMock())]
+    assert expected_event in texts and all("secret" not in t for t in texts)
+    mock_db.update_chat.assert_any_call("test_chat", research_state='failed')
+    assert any(c.args[0] == f"research_{phase}_error" and "db locked" in c.args[1]["error"] for c in events.call_args_list)
+
+
+@pytest.mark.anyio
+async def test_a_section_that_fails_stops_research_with_a_fixed_text_and_a_search_limit_says_so(research_agent):
+    from backend.auth.rate_limit import SearchLimitReached
+    plan = {"title": "T", "sections": [{"heading": "A"}]}
+    texts = _events_of(research_agent)
+    for error, expected in ((RuntimeError(SECRET), f"❌ Section 0 failed. {STOPPED}"),
+                            (SearchLimitReached("Error: Daily web search limit reached."), "❌ Section 0 stopped: the daily web search limit is reached. Try again tomorrow.")):
+        async def boom(*a, **k):
+            raise error
+            yield
+        texts.clear()
+        with patch.object(agent_mod, 'db') as mock_db, patch.object(research_agent, '_run_single_section', side_effect=boom):
+            mock_db.get_messages.return_value = []
+            mock_db.get_collections.return_value = [{"collection_type": "report_file_system_id", "items": '"fs_1"'}]
+            with pytest.raises(type(error)):
+                [c async for c in research_agent._run_executor(plan, MagicMock())]
+        assert expected in texts and all("secret" not in t for t in texts)
+
+
+@pytest.mark.anyio
+async def test_the_report_update_failure_text_says_research_stopped(research_agent):
+    import inspect
+    source = inspect.getsource(agent_mod.ResearchAgent._run_single_section)
+    assert "Research stopped; you can start it again." in source and "Research continues" not in source
+
+
+@pytest.mark.anyio
+async def test_an_invalid_plan_notice_is_fixed_wording_with_the_reason_only_in_the_log():
+    import inspect
+    source = inspect.getsource(agent_mod.ResearchAgent._run_planner)
+    assert "The generated plan was not valid. Trying a new plan…" in source and "({reason})" not in source

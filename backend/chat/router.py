@@ -10,15 +10,18 @@ from backend.auth.context import current_user, current_user_id
 from backend.auth.ownership import claim_chat, reject_foreign_chat, require_chat_owner, require_workspace_owner
 from backend.chat.message_edit import merge_edited_user_content
 from backend.database import db
-from backend.logging import log_event
+from backend.logging import log_event, error_detail
 from backend.task_manager import task_manager
 from backend.utils import read_json_object
 from backend.file_system import FileSystemChannelManager
 from backend.files.router import get_file_manager
 from backend import config
+from backend.error_handling import USER_STREAM_ERROR
 import os
 
 logger = logging.getLogger(__name__)
+
+
 
 chat_bp = Blueprint('chat', __name__)
 openai_bp = Blueprint('openai', __name__)
@@ -342,7 +345,8 @@ def get_chat_history_full(chat_id):
         return jsonify(result)
     except Exception as e:
         logger.error(f"Error fetching history for chat {chat_id}: {e}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        log_event("chat_history_error", {"chat_id": chat_id, "error": error_detail(e)})
+        return jsonify({"error": "Could not load the chat. Try again."}), 500
 
 def _forbid_git_mode_for_non_admin(body):
     """
@@ -579,7 +583,8 @@ def chat_completions():
                         break
                     except Exception as e:
                         logger.error(f"Stream generation error: {e}")
-                        yield f"data: {json.dumps({'error': str(e)})}\n\n"
+                        log_event("chat_stream_error", {"chat_id": chat_id, "error": error_detail(e)})
+                        yield f"data: {json.dumps({'error': USER_STREAM_ERROR})}\n\n"
                         break
             finally:
                 loop.close()
@@ -592,7 +597,8 @@ def chat_completions():
     except Exception as e:
         turns.release_turn_claim(chat_id)
         logger.error(f"Error in chat_completions route: {e}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        log_event("chat_completions_error", {"chat_id": chat_id, "error": error_detail(e)})
+        return jsonify({"error": "Could not start the answer. Try sending again."}), 500
 
 @chat_bp.route('/<chat_id>/stream', methods=['GET'])
 def reattach_stream(chat_id):
@@ -712,7 +718,8 @@ def resume_chat(chat_id):
     except Exception as e:
         turns.release_turn_claim(chat_id)
         logger.error(f"Error in resume_chat route: {e}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        log_event("chat_resume_error", {"chat_id": chat_id, "error": error_detail(e)})
+        return jsonify({"error": "Could not retry the answer. Try again."}), 500
 
 @chat_bp.route('/<chat_id>/stop', methods=['POST'])
 def stop_chat(chat_id):
@@ -748,7 +755,8 @@ def stop_chat(chat_id):
         return jsonify({"status": "success", "stopped": stopped})
     except Exception as e:
         logger.error(f"Error stopping chat {chat_id}: {e}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        log_event("chat_stop_error", {"chat_id": chat_id, "error": error_detail(e)})
+        return jsonify({"error": "Could not stop the answer. Try again."}), 500
 
 
 @chat_bp.route('/<chat_id>/messages/<int:message_id>', methods=['PUT', 'PATCH'])

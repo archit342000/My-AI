@@ -251,11 +251,11 @@ async def test_flow_fn_exception(mock_agent, mock_db, mock_log_tool_call):
     gen = flow_fn(mock_agent, "document_agent", "file_id", "query")
     res = [chunk async for chunk in gen]
     
-    assert "Document agent failed: DB error" in mock_agent.result
+    assert mock_agent.result == "Document agent failed. Try again." and "DB error" not in mock_agent.result
     mock_db.add_message.assert_any_call(
         chat_id="test_chat",
         role='event',
-        content='Document Agent failed: DB error',
+        content='Document Agent failed. Try again.',
         parent_id="test_parent",
         parent_type='document_agent'
     )
@@ -266,11 +266,11 @@ async def test_flow_fn_get_messages_exception(mock_agent, mock_db, mock_log_tool
     gen = flow_fn(mock_agent, "document_agent", "file_id", "query")
     res = [chunk async for chunk in gen]
     
-    assert "Document agent failed: DB fetch error" in mock_agent.result
+    assert mock_agent.result == "Document agent failed. Try again." and "DB fetch error" not in mock_agent.result
     mock_db.add_message.assert_any_call(
         chat_id="test_chat",
         role='event',
-        content='Document Agent failed: DB fetch error',
+        content='Document Agent failed. Try again.',
         parent_id="test_parent",
         parent_type='document_agent'
     )
@@ -359,3 +359,21 @@ async def test_flow_fn_does_not_open_a_file_outside_the_callers_chats(mock_agent
     assert "not found" in mock_agent.result and "secret.png" not in str(res) + mock_agent.result
     file_manager.assert_not_called()  # the image is never encoded
 
+
+
+@pytest.mark.anyio
+async def test_a_document_failure_logs_the_detail_and_the_event_row_has_no_exception_text(mock_agent, mock_db, mock_log_tool_call):
+    mock_db.get_messages.return_value = []
+    mock_db.get_file.side_effect = Exception("/secret/place DB error")
+    with patch('backend.tools.agents.document_agent.agent.log_event') as events:
+        [c async for c in flow_fn(mock_agent, "document_agent", "file_id", "query")]
+    assert events.call_args.args[0] == "document_agent_error" and "DB error" in events.call_args.args[1]["error"]
+    assert all("secret" not in str(c) for c in mock_db.add_message.call_args_list)
+
+
+def test_the_documents_status_lines_use_the_ellipsis_character():
+    import inspect
+    from backend.tools.agents.document_agent import agent as document_agent_module
+    source = inspect.getsource(document_agent_module)
+    for line in (l for l in source.splitlines() if 'yield f"Event:' in l):
+        assert "..." not in line and "…" in line

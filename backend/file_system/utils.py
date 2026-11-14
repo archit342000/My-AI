@@ -31,6 +31,10 @@ def get_workspace_for_chat(chat_id: str) -> Optional[str]:
         return chat.get('workspace_id')
     return None
 
+class PathRuleError(ValueError):
+    """A path rule was broken; the text is the project's own wording for people (it may be shown as written)."""
+
+
 def resolve_owner_and_physical_path(chat_id: Optional[str], virtual_path: str, ensure_dir: bool = False, workspace_id: Optional[str] = None) -> Tuple[Optional[str], Optional[str], str]:
     """
     Resolves a virtual path (e.g. 'workspace/docs.md' or 'local/docs.md') into:
@@ -48,7 +52,7 @@ def resolve_owner_and_physical_path(chat_id: Optional[str], virtual_path: str, e
         ws_id_param = workspace_id if workspace_id != "default" else None
         target_ws_id = ws_id_param or (get_workspace_for_chat(chat_id) if chat_id else None)
         if not target_ws_id:
-            raise ValueError("The 'workspace/' directory is reserved for Workspace Folders. Please add this chat to a workspace to use workspace file_systems, or choose a different path.")
+            raise PathRuleError("The 'workspace/' directory is reserved for Workspace Folders. Please add this chat to a workspace to use workspace file_systems, or choose a different path.")
             
         # Strip 'workspace/' (or handle just 'workspace')
         rest_of_path = safe_path
@@ -68,7 +72,7 @@ def resolve_owner_and_physical_path(chat_id: Optional[str], virtual_path: str, e
         
     else:
         if not chat_id:
-            raise ValueError("chat_id is required for local chat file systems.")
+            raise PathRuleError("chat_id is required for local chat file systems.")
         # Standard chat-local storage
         physical_dir = os.path.join(FILE_SYSTEMS_DIR, sanitize_filename(chat_id))
         physical_path = os.path.join(physical_dir, safe_path)

@@ -370,13 +370,13 @@ async def test_flow_fn_playwright_connection_failure(mock_agent, mock_config, mo
     
     # Verify we yielded the error message
     assert len(chunks) == 1
-    assert "Failed to connect to browser session" in chunks[0]
+    assert chunks[0] == "Error: Could not reach the browser. Try again in a moment."
     
     # Verify database event message was added
     mock_db.add_message.assert_any_call(
         chat_id="test_chat",
         role='event',
-        content='Browsing Agent failed: Connection refused',
+        content='Browsing Agent failed. Try again.',
         parent_id="test_parent",
         parent_type='browsing_agent'
     )
@@ -406,7 +406,7 @@ async def test_flow_fn_execution_error(mock_agent, mock_config, mock_db, mock_pl
     mock_db.add_message.assert_any_call(
         chat_id="test_chat",
         role='event',
-        content='Browsing Agent failed: Inference timeout',
+        content='Browsing Agent failed. Try again.',
         parent_id="test_parent",
         parent_type='browsing_agent'
     )

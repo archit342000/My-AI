@@ -112,7 +112,7 @@
 ## Errors
 
 - API errors return a short message (`{"error": ...}`), not stack traces or internal paths. Details go to `log_event` / the app log.
-  Some routes currently return `str(e)`; do not copy that pattern into new code.
+  The routes that used to return `str(e)` now send fixed messages; follow the wording rules in `docs/standards/errors-and-logging.md` and never copy the old pattern.
 
 ## Dependencies
 

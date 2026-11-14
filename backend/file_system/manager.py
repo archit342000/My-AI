@@ -8,11 +8,12 @@ from typing import Optional, Dict, List, Tuple, Any
 import fitz # PyMuPDF
 import aiofiles
 
-from backend.logging import log_event
+from backend.logging import log_event, error_detail
 from backend.database import db
 
 from .channel import FileSystemChannelManager
 from .utils import (
+    PathRuleError,
     FILE_SYSTEMS_DIR, 
     WORKSPACES_DIR,
     sanitize_path,
@@ -152,7 +153,7 @@ async def create_fs_file(
         if existing:
             return {
                 "success": False, 
-                "error": f"A file_system already exists at path '{safe_path}'. Please use a different path or use replace_fs_text to update it."
+                "error": f"A file_system already exists at path '{safe_path}'. Choose another path, or edit the existing file."
             }
 
         ensure_physical_dir_exists(physical_path, is_file_path=True)
@@ -445,7 +446,8 @@ async def export_fs_file_pdf(file_system_id: str, chat_id: str) -> Tuple[Optiona
         return pdf_bytes, filename
     except Exception as e:
         logger.error(f"PDF generation failed for file_system {file_system_id}: {e}")
-        return None, f"PDF generation failed: {str(e)}"
+        log_event("file_system_export_pdf_error", {"file_system_id": file_system_id, "error": error_detail(e)})
+        return None, "Could not create the PDF. Try again."
 
 def get_file_system_versions(file_system_id: str, chat_id: str = None, workspace_id: str = None) -> List[Dict[str, Any]]:
     """Get all versions for a file_system."""
@@ -780,7 +782,8 @@ def update_file_system_metadata(chat_id: Optional[str], current_path: str, **kwa
                 db.save_file_system_meta(file_system_id, chat_id=target_chat_id, workspace_id=target_workspace_id, filename=lookup_path, title=new_title, **kwargs)
         except OSError as e:
             logger.error(f"Failed to move physical file_system file {file_system_id} during path update: {e}")
-            return {"success": False, "error": f"File system error: {e}"}
+            log_event("file_system_move_error", {"file_system_id": file_system_id, "error": error_detail(e)})
+            return {"success": False, "error": "Could not move the file. Try again."}
     else:
         # Just update other metadata
         actual_chat_id = file_system_meta.get('chat_id')
@@ -1335,9 +1338,12 @@ async def create_directory_tool(chat_id: Optional[str], path: str, **kwargs) -> 
             
         os.makedirs(physical_dir, exist_ok=True)
         return {"success": True, "action": "create_dir", "path": safe_path}
+    except PathRuleError as e:
+        return {"success": False, "error": str(e)}  # the path rules' own wording, written for people
     except Exception as e:
         logger.error(f"Failed to create directory {path}: {e}")
-        return {"success": False, "error": str(e)}
+        log_event("file_system_create_directory_error", {"path": str(path)[:200], "error": error_detail(e)})
+        return {"success": False, "error": "Could not create the folder. Try again."}
 
 async def delete_directory_tool(chat_id: Optional[str], path: str, **kwargs) -> Dict[str, Any]:
     """Tool implementation to delete a directory."""
@@ -1380,9 +1386,12 @@ async def delete_directory_tool(chat_id: Optional[str], path: str, **kwargs) -> 
         # If we reach here, it's safe to physically delete (even if it contains empty subfolders)
         shutil.rmtree(physical_dir)
         return {"success": True, "path": safe_path}
+    except PathRuleError as e:
+        return {"success": False, "error": str(e)}  # the path rules' own wording, written for people
     except Exception as e:
         logger.error(f"Failed to delete directory {path}: {e}")
-        return {"success": False, "error": str(e)}
+        log_event("file_system_delete_directory_error", {"path": str(path)[:200], "error": error_detail(e)})
+        return {"success": False, "error": "Could not delete the folder. Try again."}
 
 async def move_fs_file_tool(chat_id: str, source_path: str, destination_path: str, **kwargs) -> Dict[str, Any]:
     """Tool implementation to move or rename a file_system file."""
