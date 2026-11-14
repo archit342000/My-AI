@@ -24,6 +24,17 @@ Client code lives in `frontend/src/api/`.
 - Validate before acting, and fail with `400` (not a partial write).
 - Routes that read a JSON body use `read_json_object` (`backend/utils.py`): a missing, malformed or non-object body is `400 {"error": "Request body must be a JSON object"}` (the personas and skills routes add `"success": false`), never Flask's HTML 400/415 page or a 500. Pass `required=False` only when every field is optional: an absent body (nothing, `null`, `[]`) is then accepted as `{}`, while a malformed or non-object body is still a 400.
 
+## File search
+
+`GET /api/file_systems/search?chat_id=<id>|workspace_id=<id>&q=<text>&limit=<n>` searches the current contents of every file in the
+scope (a chat's files plus its workspace's, or a workspace's), with the same per-user access and the same `workspace/` paths as
+`GET /api/file_systems`. The match is case-insensitive plain text per line (no regex); `q` is trimmed, and lines are split on `\n` as in the editor. Every file of the scope is read on each request (only the result count is bounded). Response:
+`{"results": [{"file_system_id", "path", "line_number", "line"}], "truncated": bool}`, in file then line order; `truncated` is true when
+more hits exist than `limit`. `limit` defaults to `FILE_SEARCH_DEFAULT_RESULTS` (50) and is clamped to `FILE_SEARCH_MAX_RESULTS` (200);
+`line` is cut to `FILE_SEARCH_MAX_LINE_CHARS` (300), starting at the match when it lies beyond the cut. `400` for a missing or whitespace `q`, a `q` over `FILE_SEARCH_MAX_QUERY_CHARS` (200),
+a `limit` that is not an integer or is below 1, or no scope; `404` for another user's chat or workspace; a chat that does not exist
+yet gives an empty result (or its workspace's hits). The typed client is `artifactsApi.search` in `frontend/src/api/filesystem.ts`.
+
 ## Streaming (SSE)
 
 - Streaming endpoints return `text/event-stream`; each event is `data: <json>\n\n`. Generation endpoints:

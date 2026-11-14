@@ -24,6 +24,22 @@ describe('artifactsApi file and directory calls', () => {
     expect(call()[0]).toBe('/api/file_systems/a%2Fb?workspace_id=w1');
   });
 
+  it('search puts the scope, query and limit in the URL and maps the hits', async () => {
+    const call = stub({
+      results: [{ file_system_id: 'f1', path: 'a.md', line_number: 3, line: 'hello' }],
+      truncated: true,
+    });
+    const found = await artifactsApi.search({ chatId: 'c1' }, 'hello world', 20);
+    expect(call()[0]).toBe('/api/file_systems/search?chat_id=c1&q=hello+world&limit=20');
+    expect(found).toEqual({
+      hits: [{ fileId: 'f1', path: 'a.md', lineNumber: 3, line: 'hello' }],
+      truncated: true,
+    });
+    const noLimit = stub({ results: [], truncated: false });
+    await artifactsApi.search({ workspaceId: 'w1' }, 'x');
+    expect(noLimit()[0]).toBe('/api/file_systems/search?workspace_id=w1&q=x');
+  });
+
   it('update (rename and move) PATCHes title or folder with the scope in the body', async () => {
     const call = stub();
     await artifactsApi.update('f1', { chatId: 'c1' }, { title: 'new.md' });

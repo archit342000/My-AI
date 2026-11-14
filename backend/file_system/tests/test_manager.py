@@ -617,3 +617,67 @@ async def test_replace_fs_lines_with_clipboard_key():
 
 
 
+
+
+
+@pytest.mark.asyncio
+async def test_search_fs_contents_finds_hits_in_file_then_line_order_case_insensitively():
+    rows = [{"id": "a", "filename": "a.md"}, {"id": "b", "filename": "workspace/b.py", "workspace_id": "w1"}]
+    contents = {"a": "Hello world\nnothing\nsay HELLO again", "b": "hello"}
+    with patch('backend.file_system.manager.get_fs_file_content', new_callable=AsyncMock) as get_content:
+        get_content.side_effect = lambda fid, chat_id=None, workspace_id=None: contents[fid]
+        result = await manager.search_fs_contents(rows, "hello", 10)
+        assert get_content.await_args_list[1].kwargs == {"chat_id": None, "workspace_id": "w1"}
+    assert result == {"results": [
+        {"file_system_id": "a", "path": "a.md", "line_number": 1, "line": "Hello world"},
+        {"file_system_id": "a", "path": "a.md", "line_number": 3, "line": "say HELLO again"},
+        {"file_system_id": "b", "path": "workspace/b.py", "line_number": 1, "line": "hello"},
+    ], "truncated": False}
+
+
+@pytest.mark.asyncio
+async def test_search_fs_contents_no_hits_and_empty_scope():
+    with patch('backend.file_system.manager.get_fs_file_content', new_callable=AsyncMock, return_value="abc"):
+        assert await manager.search_fs_contents([{"id": "a", "filename": "a"}], "zzz", 5) == {"results": [], "truncated": False}
+    assert await manager.search_fs_contents([], "x", 5) == {"results": [], "truncated": False}
+
+
+@pytest.mark.asyncio
+async def test_search_fs_contents_limit_sets_truncated_only_when_more_hits_exist():
+    rows = [{"id": "a", "filename": "a"}]
+    with patch('backend.file_system.manager.get_fs_file_content', new_callable=AsyncMock, return_value="x\nx\nx"):
+        cut = await manager.search_fs_contents(rows, "x", 2)
+        exact = await manager.search_fs_contents(rows, "x", 3)
+    assert [r["line_number"] for r in cut["results"]] == [1, 2] and cut["truncated"] is True
+    assert len(exact["results"]) == 3 and exact["truncated"] is False
+
+
+@pytest.mark.asyncio
+async def test_search_fs_contents_cuts_long_lines_and_skips_unreadable_and_binary_files():
+    rows = [{"id": "none", "filename": "n"},
+            {"id": "bin", "filename": "b"}, {"id": "long", "filename": "l"}]
+    contents = {"none": None, "bin": manager._BINARY_PLACEHOLDER, "long": "x" * 1000}
+    with patch('backend.file_system.manager.get_fs_file_content', new_callable=AsyncMock) as get_content, \
+         patch('backend.file_system.manager.config.FILE_SEARCH_MAX_LINE_CHARS', 300):
+        get_content.side_effect = lambda fid, chat_id=None, workspace_id=None: contents[fid]
+        result = await manager.search_fs_contents(rows, "x", 10)
+    assert [r["file_system_id"] for r in result["results"]] == ["long"]
+    assert len(result["results"][0]["line"]) == 300
+
+
+@pytest.mark.asyncio
+async def test_search_fs_contents_numbers_lines_by_newline_only_and_shows_a_match_beyond_the_cut():
+    content = "a\x0cneedle on the same line\r\n" + "x" * 400 + "needle tail"
+    with patch('backend.file_system.manager.get_fs_file_content', new_callable=AsyncMock, return_value=content), \
+         patch('backend.file_system.manager.config.FILE_SEARCH_MAX_LINE_CHARS', 300):
+        result = await manager.search_fs_contents([{"id": "a", "filename": "a"}], "needle", 10)
+    first, second = result["results"]
+    assert first["line_number"] == 1 and first["line"] == "a\x0cneedle on the same line"  # form feed is not a line break, CR trimmed
+    assert second["line_number"] == 2 and second["line"].startswith("needle tail")
+
+
+@pytest.mark.asyncio
+async def test_search_fs_contents_does_not_skip_a_text_file_that_starts_with_the_binary_marker():
+    with patch('backend.file_system.manager.get_fs_file_content', new_callable=AsyncMock, return_value="[Binary File] notes: needle"):
+        result = await manager.search_fs_contents([{"id": "a", "filename": "a"}], "needle", 10)
+    assert len(result["results"]) == 1
