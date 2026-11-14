@@ -144,3 +144,24 @@ async def test_visit_page_startup_exception(mock_agent, mock_playwright, mock_db
         parent_id=mock_agent.parent_message_id,
         parent_type='visit_page'
     )
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("query", [None, "what is on it"])
+async def test_a_read_page_is_reported_as_a_source_with_its_address_as_title(mock_agent, mock_playwright, mock_db, mock_config, query):
+    mock_agent.sources = []
+    mock_res = MagicMock()
+    mock_res.content = [MagicMock(text="Page text")]
+    mock_playwright.execute_tool.return_value = mock_res
+    [c async for c in flow_fn(mock_agent, "visit_page", "https://p.example/x", query=query)]
+    assert mock_agent.sources == [{"kind": "web", "title": "https://p.example/x", "locator": "https://p.example/x", "detail": None}]
+
+
+@pytest.mark.anyio
+async def test_a_page_that_could_not_be_read_is_not_a_source(mock_agent, mock_playwright, mock_db, mock_config):
+    mock_agent.sources = []
+    mock_res = MagicMock()
+    mock_res.content = [MagicMock(text="Error: timeout")]
+    mock_playwright.execute_tool.return_value = mock_res
+    [c async for c in flow_fn(mock_agent, "visit_page", "https://p.example/x")]
+    assert mock_agent.sources == []

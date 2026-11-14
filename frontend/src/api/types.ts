@@ -37,8 +37,29 @@ export interface StoredMessage {
   reasoning_content: Nullable<string>;
   /** File references sent with a user message (decoded list); absent or null on older rows. */
   attachments?: Nullable<unknown>;
+  /** Collections anchored on this message; the `sources` one lists the sources the answer cited. */
+  collections?: Nullable<StoredCollection[]>;
   /** Sub-agent rows woven into this assistant row by the server (events, text, tool calls). */
   sub_agent_history?: Nullable<StoredSubAgentRow[]>;
+}
+
+/** A source an answer cited: a web page or a file read, numbered per chat; the answer text marks it as `[[n]]`. */
+export interface AnswerSource {
+  n: number;
+  kind: 'web' | 'file';
+  title: string;
+  /** The page address, or the file path. */
+  locator: string;
+  /** For a file, the lines that were read ("lines 10-20"); null otherwise. */
+  detail: Nullable<string>;
+}
+
+/** A stored collection attached to an assistant message; `items` is the decoded value or its JSON string. The `sources` one holds the answer's `AnswerSource[]`. */
+export interface StoredCollection {
+  collection_type: string;
+  parent_type?: Nullable<string>;
+  parent_message_id?: Nullable<string | number>;
+  items?: unknown;
 }
 
 /** A sub-agent row inside an assistant message's `sub_agent_history`. */

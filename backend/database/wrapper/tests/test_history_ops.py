@@ -190,3 +190,30 @@ def test_woven_history_detailed(temp_db):
     
     # Cleanup sse chunks from cache
     cache_system.delete_sse_chunks(chat_id)
+
+def test_sources_collection_is_served_on_its_assistant_row_only_and_the_chat_registry_is_not_served(temp_db):
+    db = temp_db
+    chat_id = "test_sources_history"
+    db.ensure_chat_exists(chat_id, "u1")
+    user_id = db.add_message(chat_id=chat_id, role="user", content="q")
+    asst_id = db.add_message(chat_id=chat_id, role="assistant", content="answer [[1]]")
+    cited = [{"n": 1, "kind": "web", "title": "A", "locator": "https://a", "detail": None}]
+    db.add_collection(chat_id=chat_id, parent_message_id=asst_id, parent_type="main", collection_type="sources", items=cited, overwrite=True)
+    db.add_collection(chat_id=chat_id, parent_message_id=f"chat:{chat_id}", parent_type="main", collection_type="source_registry", items=cited, overwrite=True)
+    woven = {m["id"]: m for m in db.get_woven_history(chat_id)}
+    assert [c["collection_type"] for c in woven[asst_id]["collections"]] == ["sources"]
+    assert not woven[user_id].get("collections")
+    found = [c for c in db.get_collections(chat_id, parent_message_id=f"chat:{chat_id}", parent_type="main") if c["collection_type"] == "source_registry"]
+    assert len(found) == 1  # the registry is read back by the chat handler
+
+
+def test_a_numeric_chat_id_does_not_attach_the_registry_to_a_message(temp_db):
+    db = temp_db
+    chat_id = "777"
+    db.ensure_chat_exists(chat_id, "u1")
+    db.add_message(chat_id=chat_id, role="user", content="q")
+    asst_id = db.add_message(chat_id=chat_id, role="assistant", content="a")
+    db.add_collection(chat_id=chat_id, parent_message_id=f"chat:{chat_id}", parent_type="main", collection_type="source_registry",
+                      items=[{"n": 1, "kind": "web", "title": "A", "locator": "https://a", "detail": None}], overwrite=True)
+    woven = {m["id"]: m for m in db.get_woven_history(chat_id)}
+    assert not woven[asst_id].get("collections")

@@ -9,7 +9,7 @@
 ## 📄 Core Files
 | File | Purpose | Key Symbols/Exports |
 | :--- | :--- | :--- |
-| `agent.py` | Orchestration logic for scraping and LLM-based synthesis. | `flow_fn` |
+| `agent.py` | Orchestration logic for scraping and LLM-based synthesis; reports the page it read on `agent.sources`. | `flow_fn` |
 | `prompts.py` | System prompt for the precising reading phase. | `VISIT_PAGE_SYSTEM_PROMPT` |
 
 ## 🧩 Architectural Context

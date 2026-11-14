@@ -63,6 +63,9 @@ async def flow_fn(
             yield error_msg
             return
 
+        # The page was read: report it as a source (the page tool returns no title, so the address stands in).
+        agent.sources.append({"kind": "web", "title": url, "locator": url, "detail": None})
+
         # 2. Raw Extraction Mode (No Query)
         if not query:
             logger.info("VisitPageAgent: No query provided, returning raw content.")

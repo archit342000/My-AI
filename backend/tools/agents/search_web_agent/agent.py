@@ -111,6 +111,12 @@ async def flow_fn(
         answer = res_json.get("answer", "")
         results = res_json.get("results", [])
         
+        # Report the pages the answer is based on (those with an address) so the chat can number and cite them.
+        for r in results:
+            url = r.get("url")
+            if url:
+                agent.sources.append({"kind": "web", "title": r.get("title") or url, "locator": url, "detail": None})
+
         if not results and not answer:
             agent.result = "No results found for this query."
             db.add_message(

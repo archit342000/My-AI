@@ -9,12 +9,13 @@
 | File | Purpose | Key Symbols/Exports |
 | :--- | :--- | :--- |
 | `__init__.py` | Package entry point and export aggregator. | `ChatHandler`, `TurnHandler`, `AgentHandler`, `ToolHandler`, `chat_bp`, `personas_bp` |
-| `agent_handler.py` | Orchestrates sub-agents with isolated contexts. | `AgentHandler` |
+| `agent_handler.py` | Orchestrates sub-agents with isolated contexts; `sources` collects the web pages an agent run used. | `AgentHandler` |
 | `handler.py` | Core chat flow logic and background task management. | `ChatHandler`, `THINKING_PROFILES` |
+| `sources.py` | Per-chat numbered sources (`SourceRegistry`, `[[n]]` markers, the `Sources:` block shown to the model). | `SourceRegistry`, `format_sources_block` |
 | `message_edit.py` | Merges an edited user message back into its stored content, keeping images and the attachment note. | `merge_edited_user_content` |
 | `router.py` | Flask API endpoints for chat management, completions, and persona CRUD. | `chat_bp`, `openai_bp`, `personas_bp` |
-| `tool_handler.py` | Dispatches and executes tool calls (pure or agent-based). | `ToolHandler` |
-| `turn_handler.py` | Serializes turns and ensures state persistence. | `TurnHandler` |
+| `tool_handler.py` | Dispatches and executes tool calls (pure or agent-based); numbers web pages and file reads as sources and shows the numbers with the result. | `ToolHandler` |
+| `turn_handler.py` | Serializes turns and ensures state persistence; stores and sends the sources an answer cited (`sources=` registry). | `TurnHandler` |
 | `validators.py` | Enforces clipboard-first checks and parses LLM confirmations. | `validate_fs_agent_instruction`, `parse_confirmation_response` |
 
 ## 🧩 Architectural Context

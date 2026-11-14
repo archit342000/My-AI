@@ -30,6 +30,13 @@ Client code lives in `frontend/src/api/`.
   `POST /v1/chat/completions`, `GET /api/chats/<id>/stream` (re-attach), `POST /api/chats/<id>/resume`.
 - Payloads follow the OpenAI chunk format with the project's extensions: content and reasoning deltas, tool-call fragments,
   tool results, `event` activity labels, sub-agent deltas and `__redact__`. The reader and fixtures are described in `docs/frontend.md`.
+- Sources: web pages (`search_web`, `visit_page`) and successful `read_fs_file` reads in a main turn are numbered per chat (`[[1]]`, `[[2]]`, ...; numbers never change and
+  continue across turns, kept in a hidden `source_registry` collection; an unreadable registry fails the turn instead of restarting the numbers). The numbers reach the model with the tool result: a text result ends with a `Sources:` block
+  (`[[n]] title - address`), a dict result (a file read) gains a `sources` list, and the same stored text goes to the client. The model cites with `[[n]]` in the answer.
+  After a turn that finishes normally and whose answer cites numbered sources, one event `data: {"sources": [{"n", "kind", "title", "locator", "detail"}]}` is sent and the
+  same list is stored as a `sources` collection on the turn's last assistant message, so `GET /api/chats/<id>` serves it in that message's `collections`.
+  `kind` is `web` (`locator` is the address; `title` is the page title, or the address for `visit_page`) or `file` (`locator` is the path; `detail` says what was read: `lines 10-20`, `from line 10`, `outline`, or null for the whole file). Only `http`/`https` addresses are web sources; titles are one line, at most 200 characters. The registry is stored under the non-numeric anchor `chat:<chat id>`, so it is never served on a message.
+  Answers that cite nothing send and store nothing; a failed or stopped turn sends nothing.
 - Errors during a stream are sent as `data: {"error": "<message>"}` and the stream ends. Never raise after the response has started.
 - A turn runs independently of the HTTP request: the client may disconnect and re-attach. Stop it with `POST /api/chats/<id>/stop`, which answers only after the turn's worker has exited (waiting at most `TASK_STOP_WAIT_SECONDS`, default 5) with `{"status": "success", "stopped": true}`; if the worker is still alive after the wait it still rolls back and answers `"stopped": false`. `DELETE /api/chats/<id>` and `DELETE /api/chats` (clear all, the caller's chats only) stop running turns first and answer `409 {"error": "The chat is still stopping its response; try again in a moment."}`, deleting nothing, when a turn has not ended within the wait.
 - `POST /v1/chat/completions` checks in this order: another user's chat is `404`; `uploadedFiles` that are not attached to the chat are

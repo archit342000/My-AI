@@ -38,6 +38,8 @@ class AgentHandler:
         self.emitter = ManualChunkEmitter()
         self._chat_handler = None
         self.result: Optional[Union[str, AgentResult]] = None
+        # Sources (web pages) the running agent used: dicts `{kind, title, locator, detail}`; reset for every run.
+        self.sources: List[Dict[str, Any]] = []
 
     @property
     def chat_handler(self):
@@ -74,6 +76,7 @@ class AgentHandler:
         Executes a specific agent flow with standardized orchestration.
         """
         log_event("agent_start", {"chat_id": self.chat_id, "agent": agent_name})
+        self.sources = []
         
         # Standardize iteration to allow capturing return values from async generators
         it = flow_fn(agent=self, agent_name=agent_name, **kwargs).__aiter__()

@@ -18,4 +18,5 @@
 
 ## 🛠️ Usage & Conventions
 *   **Patterns:** Text templates must adhere to strict XML tag schemas.
+    - `formatting_rules.txt` also tells the model to cite numbered tool-result sources as `[[n]]` (rule 7; see `backend/chat/sources.py`).
 *   **Testing:** Local unit tests inside `tests/` and offline evaluations via `scripts/run_evals.py`.

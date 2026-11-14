@@ -9,7 +9,7 @@
 ## 📄 Core Files
 | File | Purpose | Key Symbols/Exports |
 | :--- | :--- | :--- |
-| `agent.py` | Orchestration logic for searching, retrying, and synthesizing results. | `flow_fn` |
+| `agent.py` | Orchestration logic for searching, retrying, and synthesizing results; reports each result page on `agent.sources`. | `flow_fn` |
 | `prompts.py` | System prompt for the synthesis phase. | `SEARCH_AGENT_SYSTEM_PROMPT` |
 
 ## 🧩 Architectural Context
