@@ -276,8 +276,10 @@ async def test_flow_fn_exception_handling(mock_agent_context):
         
         chunks = [c async for c in flow_fn(mock_agent_context, "research", "topic")]
         
-        assert len(chunks) == 1
-        assert "Research agent failed" in chunks[0]
+        assert len(chunks) == 2
+        progress = json.loads(chunks[0][len("data: "):])
+        assert progress["research_progress"]["phase"] == "failed"  # the card shows the failure
+        assert "Research agent failed" in chunks[1]
         assert mock_agent_context.result == "Research agent failed: Initialization error"
         
         # Verify event logged to DB
@@ -373,3 +375,163 @@ async def test_a_limit_during_gap_searches_keeps_the_section_going_and_enters_th
     assert added and added[0]["collection_type"] == "section_0_followup_searches"
     assert added[0]["items"].strip() == "## FOLLOW-UP SEARCH RESULTS"  # earlier results kept, no new ones
 
+
+
+
+# ---- research_progress ---------------------------------------------------------------------------------------
+
+def _progress_chunks(chunks):
+    return [json.loads(c[len("data: "):])["research_progress"] for c in chunks if isinstance(c, str) and '"research_progress"' in c]
+
+
+@pytest.mark.anyio
+async def test_publish_progress_stores_the_snapshot_and_streams_one_data_chunk(research_agent):
+    plan = {"title": "T", "sections": [{"heading": "A"}, {"heading": "B"}]}
+    history = [
+        {"role": "event", "content": "[Section 0] Starting Execution: Section 0", "timestamp": 100.0},
+        {"role": "event", "content": "Section 0 complete.", "timestamp": 138.0},
+    ]
+    colls = [{"collection_type": "visited_urls", "items": json.dumps(["u1", "u2", "u3"])}]
+    with patch.object(agent_mod, 'db') as mock_db:
+        mock_db.get_messages.return_value = history
+        mock_db.get_collections.return_value = colls
+        chunks = [c async for c in research_agent._publish_progress("executing", plan)]
+    assert len(chunks) == 1 and chunks[0].startswith("data: ") and chunks[0].endswith("\n\n")
+    payload = json.loads(chunks[0][len("data: "):])
+    assert payload["parent_type"] == "research"
+    snap = payload["research_progress"]
+    assert snap["phase"] == "executing" and snap["steps_done"] == 1 and snap["steps_total"] == 2 and snap["pages_read"] == 3
+    assert snap["steps"][0] == {"index": 0, "heading": "A", "state": "done", "duration_ms": 38000}
+    stored = mock_db.add_collection.call_args.kwargs
+    assert stored["collection_type"] == "research_progress" and stored["items"] == snap and stored["overwrite"] is True
+    assert stored["parent_message_id"] == 123 and stored["parent_type"] == "research"
+
+
+@pytest.mark.anyio
+async def test_publish_progress_reads_the_stored_plan_when_none_is_passed(research_agent):
+    colls = [{"collection_type": "research_plan", "items": json.dumps({"title": "Stored", "sections": [{"heading": "A"}]})}]
+    with patch.object(agent_mod, 'db') as mock_db:
+        mock_db.get_messages.return_value = []
+        mock_db.get_collections.return_value = colls
+        chunks = [c async for c in research_agent._publish_progress("awaiting_approval")]
+    snap = _progress_chunks(chunks)[0]
+    assert snap["title"] == "Stored" and snap["steps"][0]["state"] == "pending"
+
+
+@pytest.mark.anyio
+async def test_a_failure_while_publishing_progress_is_logged_and_never_raised(research_agent):
+    with patch.object(agent_mod, 'db') as mock_db, patch.object(agent_mod, 'log_event') as events:
+        mock_db.get_messages.side_effect = RuntimeError("db down")
+        chunks = [c async for c in research_agent._publish_progress("executing", None)]
+    assert chunks == []
+    assert any(c.args[0] == "research_progress_error" for c in events.call_args_list)
+
+
+@pytest.mark.anyio
+async def test_run_executor_publishes_progress_around_each_section_and_the_stored_one_matches_the_last_chunk(research_agent):
+    plan = {"title": "T", "sections": [{"heading": "A"}, {"heading": "B"}]}
+    state = {"events": [], "stored": None}
+
+    async def single_section(idx, *a, **k):
+        state["events"].append({"role": "event", "content": f"[Section {idx}] Starting Execution: Section {idx}", "timestamp": 10.0 + idx})
+        yield f"section-{idx}"
+        state["events"].append({"role": "event", "content": f"Section {idx} complete.", "timestamp": 20.0 + idx})
+
+    def add_collection(**kw):
+        if kw["collection_type"] == "research_progress":
+            state["stored"] = kw["items"]
+
+    with patch.object(agent_mod, 'db') as mock_db, patch.object(research_agent, '_run_single_section', side_effect=single_section):
+        mock_db.get_messages.side_effect = lambda *a, **k: list(state["events"])
+        mock_db.get_collections.return_value = [{"collection_type": "report_file_system_id", "items": json.dumps("fs1")}]
+        mock_db.add_collection.side_effect = add_collection
+        chunks = [c async for c in research_agent._run_executor(plan, MagicMock())]
+    snaps = _progress_chunks(chunks)
+    assert [s["steps_done"] for s in snaps] == [0, 1, 2]  # before the first section, then after each
+    assert all(s["phase"] == "executing" for s in snaps)
+    assert snaps[-1]["steps"][1] == {"index": 1, "heading": "B", "state": "done", "duration_ms": 10000}
+    assert state["stored"] == snaps[-1]
+
+
+@pytest.mark.anyio
+async def test_run_publishes_failed_progress_when_the_executor_crashes(research_agent):
+    plan = {"title": "T", "sections": [{"heading": "A", "queries": [], "description": "d"}]}
+    history = [{"role": "event", "content": "Research plan approved. Proceeding to execution."},
+               {"role": "event", "content": "Scouting finalized. Context gathered."}]
+    colls = [{"collection_type": "research_plan", "items": json.dumps(plan)}]
+
+    async def boom(*a, **k):
+        raise RuntimeError("executor down")
+        yield
+
+    with patch.object(agent_mod, 'db') as mock_db, patch.object(research_agent, '_run_executor', side_effect=boom), \
+         patch.object(research_agent, '_validate_plan', return_value=(True, "Valid")):
+        mock_db.get_messages.return_value = history
+        mock_db.get_collections.return_value = colls
+        chunks = [c async for c in research_agent.run("topic", MagicMock())]
+    assert _progress_chunks(chunks)[-1]["phase"] == "failed"
+    mock_db.update_chat.assert_any_call("test_chat", research_state='failed')
+
+
+def _approved_history(*extra):
+    return [{"role": "event", "content": "Research plan approved. Proceeding to execution."},
+            {"role": "event", "content": "Scouting finalized. Context gathered."}, *extra]
+
+
+async def _run_to_the_end(agent, history, **patches):
+    plan = {"title": "T", "sections": [{"heading": "A", "queries": [], "description": "d"}]}
+    colls = [{"collection_type": "research_plan", "items": json.dumps(plan)}]
+
+    async def nothing(*a, **k):
+        return
+        yield
+
+    with patch.object(agent_mod, 'db') as mock_db, patch.object(agent, '_run_executor', side_effect=nothing), \
+         patch.object(agent, '_run_synthesis', side_effect=nothing), patch.object(agent, '_validate_plan', return_value=(True, "Valid")):
+        mock_db.get_messages.return_value = history
+        mock_db.get_collections.return_value = colls
+        return [c async for c in agent.run("topic", MagicMock())]
+
+
+@pytest.mark.anyio
+async def test_run_publishes_synthesizing_then_done_when_the_completion_event_is_stored(research_agent):
+    chunks = await _run_to_the_end(research_agent, _approved_history(
+        {"role": "event", "content": "Research complete! The full report has been audited and finalized in the FileSystem."}))
+    assert [s["phase"] for s in _progress_chunks(chunks)] == ["synthesizing", "done"]
+
+
+@pytest.mark.anyio
+async def test_a_synthesis_that_paused_publishes_no_done(research_agent):
+    chunks = await _run_to_the_end(research_agent, _approved_history())
+    assert [s["phase"] for s in _progress_chunks(chunks)] == ["synthesizing"]
+
+
+@pytest.mark.anyio
+async def test_a_synthesis_that_halted_on_a_failure_event_publishes_failed(research_agent):
+    chunks = await _run_to_the_end(research_agent, _approved_history(
+        {"role": "event", "content": "❌ Report file_system is missing. Cannot finalize."}))
+    assert [s["phase"] for s in _progress_chunks(chunks)] == ["synthesizing", "failed"]
+
+
+@pytest.mark.anyio
+async def test_run_publishes_planning_before_the_planner_and_failed_for_an_invalid_plan(research_agent):
+    async def nothing(*a, **k):
+        return
+        yield
+
+    with patch.object(agent_mod, 'db') as mock_db, patch.object(research_agent, '_run_planner', side_effect=nothing):
+        mock_db.get_messages.return_value = [{"role": "event", "content": "Scouting finalized. Context gathered."}]
+        mock_db.get_collections.return_value = []
+        chunks = [c async for c in research_agent.run("topic", MagicMock())]
+    assert [s["phase"] for s in _progress_chunks(chunks)] == ["planning", "awaiting_approval"]
+    plan_coll = [{"collection_type": "research_plan", "items": json.dumps({"title": "T", "sections": []})}]
+    with patch.object(agent_mod, 'db') as mock_db:
+        mock_db.get_messages.return_value = _approved_history()
+        mock_db.get_collections.return_value = plan_coll
+        chunks = [c async for c in research_agent.run("topic", MagicMock())]
+    assert _progress_chunks(chunks)[-1]["phase"] == "failed"  # validation failure (no sections)
+    with patch.object(agent_mod, 'db') as mock_db:
+        mock_db.get_messages.return_value = _approved_history()
+        mock_db.get_collections.return_value = []
+        chunks = [c async for c in research_agent.run("topic", MagicMock())]
+    assert _progress_chunks(chunks)[-1]["phase"] == "failed"  # plan missing

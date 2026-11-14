@@ -22,6 +22,19 @@ const tool = (id: string, result: string | null = null, agent: string | null = n
 });
 
 describe('applyChunk', () => {
+  it('ignores a research_progress chunk (the plan card is a follow-up)', () => {
+    const base = applyChunk(emptyLiveTurn(), delta({ content: 'hi' }));
+    const progress = {
+      title: 'T',
+      phase: 'executing' as const,
+      steps: [{ index: 0, heading: 'A', state: 'running' as const, duration_ms: null }],
+      steps_done: 0,
+      steps_total: 1,
+      pages_read: 2,
+    };
+    expect(applyChunk(base, { parent_type: 'research', research_progress: progress })).toEqual(base);
+  });
+
   it('accumulates content and reasoning into one step each', () => {
     let t = emptyLiveTurn();
     t = applyChunk(t, delta({ content: 'Hel' }));

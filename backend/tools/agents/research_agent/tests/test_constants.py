@@ -60,3 +60,10 @@ def test_event_phase_pairs_complete():
     assert EVENT_TRIAGE_START and EVENT_TRIAGE_DONE
     assert EVENT_WRITER_START and EVENT_WRITER_DONE
     assert EVENT_SUMMARY_START and EVENT_SUMMARY_DONE
+
+
+def test_progress_markers_and_phases():
+    from backend.tools.agents.research_agent.constants import SECTION_TAG_FORMAT, EVENT_FAILURE_MARKER, PROGRESS_PHASES
+    assert SECTION_TAG_FORMAT.format(2) == "[Section 2] "
+    assert EVENT_FAILURE_MARKER == "\u274c"
+    assert PROGRESS_PHASES == ("scouting", "planning", "awaiting_approval", "executing", "synthesizing", "done", "failed")

@@ -13,6 +13,7 @@
 | `prompts.py` | 10+ specialized prompt templates for scouting, planning, reflection, triage, and synthesis. | `PLANNER_SYSTEM_PROMPT`, `SCOUT_SYSTEM_PROMPT`, etc. |
 | `research_utils.py` | Helpers for structured JSON extraction, citation normalization, and report sanitization. | `_extract_json_from_text`, `_normalize_citations` |
 | `schemas.py` | Strict Pydantic-like JSON schemas for all structured LLM output phases. | `SCOUT_JSON_SCHEMA`, `PLAN_GENERATOR_JSON_SCHEMA`, etc. |
+| `progress.py` | Pure builder of the structured progress snapshot (`research_progress`: steps with state and duration, counts, phase) from the plan, the stored events and `visited_urls`; the agent stores it as a collection and streams it. | `build_progress` |
 | `constants.py` | Database event markers used for thread-safe state reconstruction. | `EVENT_SCOUT_START`, `EVENT_PLAN_APPROVED`, etc. |
 
 ## 🧩 Architectural Context
