@@ -146,8 +146,8 @@ class BrowsingAgent(BaseAgent):
 
     async def on_error(self, error: Exception) -> str:
         if "Connection refused" in str(error):
-            return "Failed to connect to browser session. Please ensure the Playwright MCP server is running."
-        return f"Browsing agent failed during execution: {str(error)}"
+            return "Could not reach the browser. Try again in a moment."
+        return "Browsing agent failed during execution. Try again."
 
     def build_history(self, db_history: List[Dict], **kwargs) -> List[Dict]:
         screenshot_indices = []

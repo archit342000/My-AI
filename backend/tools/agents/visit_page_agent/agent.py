@@ -4,6 +4,7 @@ from backend.mcp_client import playwright_client
 from backend.tools.agents.visit_page_agent.prompts import VISIT_PAGE_SYSTEM_PROMPT
 from backend import config
 from backend.database import db
+from backend.logging import log_event, error_detail
 
 logger = logging.getLogger(__name__)
 
@@ -124,8 +125,9 @@ async def flow_fn(
             )
 
     except Exception as e:
-        error_msg = f"Visit page failed: {str(e)}"
-        logger.error(error_msg)
+        logger.error(f"Visit page failed: {e}")
+        log_event("visit_page_agent_error", {"chat_id": chat_id, "error": error_detail(e)})
+        error_msg = "Visit page failed. Try again."
         agent.result = error_msg
         try:
             db.add_message(

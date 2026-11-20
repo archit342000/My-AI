@@ -318,7 +318,7 @@ function completionBody(
   model: string,
   chatId: string,
   messages: HistoryMessage[],
-  opts: { userPreferences: boolean; files?: UploadedFile[] },
+  opts: { userPreferences: boolean; files?: UploadedFile[]; temporary?: boolean },
 ): Record<string, unknown> {
   return buildCompletionBody({
     model,
@@ -338,6 +338,7 @@ function completionBody(
     personaId: settings.personaId,
     folder: null,
     uploadedFiles: opts.files,
+    temporary: opts.temporary,
   });
 }
 
@@ -458,6 +459,7 @@ export async function sendTurn({
   const body = completionBody(settings, settings.model, chatId, messages, {
     userPreferences: temporary ? false : settings.userPreferences,
     files,
+    temporary,
   });
 
   await consume(

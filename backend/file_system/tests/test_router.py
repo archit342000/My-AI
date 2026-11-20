@@ -657,6 +657,7 @@ FS_ROUTES = [
     ("post", "/api/file_system/directory", {"chat_id": "{c}", "path": "d"}),
     ("delete", "/api/file_system/directory?chat_id={c}&path=d", None),
     ("get", "/api/file_system?chat_id={c}", None),
+    ("get", "/api/file_system/search?chat_id={c}&q=x", None),
     ("get", "/api/file_system/chat/{c}/folders", None),
     ("get", "/api/file_system/raw?chat_id={c}&path=a.txt", None),
     ("get", "/api/file_system/fs1/raw?chat_id={c}", None),
@@ -714,6 +715,7 @@ def test_user_b_gets_404_on_every_fs_route_for_user_as_chat_and_nothing_runs(met
 @pytest.mark.parametrize("method,url,body", [
     ("get", "/api/file_system?workspace_id=ws-of-a", None),
     ("get", "/api/file_system/fs1?workspace_id=ws-of-a", None),
+    ("get", "/api/file_system/search?workspace_id=ws-of-a&q=x", None),
     ("post", "/api/file_system/directory", {"workspace_id": "ws-of-a", "path": "d"}),
     ("delete", "/api/file_system/directory?workspace_id=ws-of-a&path=d", None),
     ("patch", "/api/file_system/fs1", {"workspace_id": "ws-of-a", "content": "x"}),
@@ -909,3 +911,235 @@ def test_disk_only_artifacts_keep_their_old_answers_on_the_version_routes(method
         assert response.status_code == 200 and response.get_json()["versions"] == []
     else:
         assert response.status_code == 400  # the diff's usual "version not found" answer
+
+
+# ---- `root` in the list response ---------------------------------------------------------------------------------
+
+def _list(client, query, owns=True):
+    with patch('backend.file_system.router.db') as mock_db, \
+         patch('backend.file_system.manager.get_fs_file_content', new_callable=AsyncMock, return_value="c"), \
+         patch('backend.file_system.utils.get_workspace_for_chat', return_value="w1"), \
+         patch('backend.file_system.router.os') as mock_os:
+        mock_os.path.join.side_effect = lambda *args: "/".join(args)
+        mock_os.path.exists.return_value = False
+        mock_db.get_chat_file_systems.return_value = [{'id': 'fs1', 'chat_id': 'c1', 'filename': 'own.md'}]
+        mock_db.get_owner_file_systems.return_value = [{'id': 'fs2', 'workspace_id': 'w1', 'filename': 'note.md'}]
+        response = client.get('/api/file_system' + query)
+    return response.get_json()
+
+
+def test_a_workspace_listing_names_workspace_as_its_root_and_keeps_every_path(client):
+    body = _list(client, '?workspace_id=w1')
+    assert body["root"] == "workspace/"
+    assert any(f.get('id') == 'fs2' and f['filename'] == 'workspace/note.md' for f in body["file_systems"])  # paths unchanged
+
+
+def test_a_chat_listing_has_no_root_so_the_workspace_mount_stays_visible(client):
+    body = _list(client, '?chat_id=c1')
+    assert body["root"] == ""
+    assert {f['filename'] for f in body["file_systems"] if f.get('id')} == {'own.md', 'workspace/note.md'}
+
+
+def test_a_chat_that_does_not_exist_yet_lists_nothing_with_an_empty_root(client, owned_by_user_a):
+    owned_by_user_a.get_chat_owner.return_value = None
+    assert _list(client, '?chat_id=new') == {"success": True, "file_systems": [], "root": ""}
+
+
+def test_a_new_chat_next_to_an_owned_workspace_lists_the_workspace_with_its_root(client, owned_by_user_a):
+    owned_by_user_a.get_chat_owner.return_value = None
+    body = _list(client, '?chat_id=new&workspace_id=w1')
+    assert body["root"] == "workspace/" and any(f.get('id') == 'fs2' for f in body["file_systems"])
+
+
+# ---- version routes for a workspace file (no chat) --------------------------------------------------------------
+
+def test_version_routes_work_with_only_a_workspace_id(client):
+    with patch('backend.file_system.manager.get_file_system_versions') as versions, \
+         patch('backend.file_system.router.get_fs_file_version') as version, \
+         patch('backend.file_system.manager.restore_fs_file_version', new_callable=AsyncMock) as restore, \
+         patch('backend.file_system.manager.get_fs_file_diff') as diff, \
+         patch('backend.file_system.router.db') as mock_db:
+        mock_db.get_file_system_meta.return_value = {"chat_id": None, "workspace_id": "w1"}
+        mock_db.get_file_system_current_version.return_value = {"version_number": 4}
+        versions.return_value = [{"version_number": 1, "author": "u", "timestamp": "t"}]
+        version.return_value = {"content": "old"}
+        restore.return_value = {"success": True}
+        diff.return_value = {"success": True, "added_lines": ["b"], "removed_lines": ["a"]}
+
+        assert client.get('/api/file_system/fs1/versions?workspace_id=w1').get_json()["versions"][0]["version_number"] == 1
+        versions.assert_called_once_with("fs1", None, workspace_id="w1")
+        assert client.get('/api/file_system/fs1/versions/1?workspace_id=w1').get_json()["content"] == "old"
+        version.assert_called_once_with("fs1", None, 1, workspace_id="w1")
+        assert client.post('/api/file_system/fs1/versions/1/restore?workspace_id=w1', json={}).status_code == 200
+        assert restore.call_args.kwargs["workspace_id"] == "w1" and restore.call_args.args[1] is None
+        assert client.post('/api/file_system/fs1/versions/1/restore', json={"workspace_id": "w1"}).status_code == 200
+        assert restore.call_args.kwargs["workspace_id"] == "w1"
+        assert client.post('/api/file_system/fs1/diff', json={"workspace_id": "w1", "version1": 1, "version2": 2}).get_json()["added_lines"] == ["b"]
+        assert diff.call_args.kwargs["workspace_id"] == "w1"
+        assert client.get('/api/file_system/fs1/current-version?workspace_id=w1').get_json()["current_version"] == 4
+
+
+@pytest.mark.parametrize("method,url,body", [
+    ("get", "/api/file_system/fs1/versions", None),
+    ("get", "/api/file_system/fs1/versions/1", None),
+    ("post", "/api/file_system/fs1/versions/1/restore", {}),
+    ("post", "/api/file_system/fs1/diff", {"version1": 1, "version2": 2}),
+    ("get", "/api/file_system/fs1/current-version", None),
+])
+def test_version_routes_without_a_chat_or_workspace_are_a_400(method, url, body, client):
+    with patch('backend.file_system.router.db') as mock_db:
+        kwargs = {"json": body} if body is not None else {}
+        response = getattr(client, method)(url, **kwargs)
+    assert response.status_code == 400 and "chat_id or workspace_id" in response.get_json()["error"]
+    mock_db.get_file_system_meta.assert_not_called()
+
+
+def test_version_routes_for_a_missing_workspace_file_are_404(client):
+    with patch('backend.file_system.router.db') as mock_db, patch('backend.file_system.router.get_fs_file_version') as version:
+        mock_db.get_file_system_meta.return_value = None
+        assert client.get('/api/file_system/nope/versions/1?workspace_id=w1').status_code == 404
+        assert client.get('/api/file_system/nope/versions?workspace_id=w1').status_code == 404
+        assert client.get('/api/file_system/nope/current-version?workspace_id=w1').status_code == 404
+        assert client.post('/api/file_system/nope/diff', json={"workspace_id": "w1", "version1": 1, "version2": 2}).status_code == 404
+    version.assert_not_called()
+
+
+def test_restore_of_a_missing_workspace_file_is_a_404(client):
+    with patch('backend.file_system.manager.restore_fs_file_version', new_callable=AsyncMock) as restore:
+        restore.return_value = {"success": False, "error": "FileSystem not found"}
+        response = client.post('/api/file_system/nope/versions/1/restore', json={"workspace_id": "w1"})
+    assert response.status_code == 404
+
+
+# ---- fixed plain messages for failures --------------------------------------------------------------------------
+
+SECRET = "/secret/place/db is locked"
+
+
+@pytest.mark.parametrize("method,url,body,patch_target,message", [
+    ("post", "/api/file_system/", {"chat_id": "c1", "content": "x"}, "backend.file_system.create_fs_file", "Could not create the file. Try again."),
+    ("post", "/api/file_system/directory", {"chat_id": "c1", "path": "d"}, "backend.file_system.manager.create_directory_tool", "Could not create the folder. Try again."),
+    ("delete", "/api/file_system/directory?chat_id=c1&path=d", None, "backend.file_system.manager.delete_directory_tool", "Could not delete the folder. Try again."),
+])
+def test_a_failing_file_or_folder_route_sends_a_fixed_message_without_the_exception_text(client, method, url, body, patch_target, message):
+    with patch(patch_target, new_callable=AsyncMock, side_effect=OSError(SECRET)), patch('backend.file_system.router.db'):
+        kwargs = {"json": body} if body is not None else {}
+        response = getattr(client, method)(url, **kwargs)
+    assert response.status_code == 500
+    assert response.get_json() == {"error": message}
+    assert "secret" not in response.get_data(as_text=True)
+
+
+@pytest.mark.parametrize("method,url,body,message", [
+    ("patch", "/api/file_system/disk:notes.txt", {"chat_id": "c1", "content": "x"}, "Could not save the file. Try again."),
+    ("delete", "/api/file_system/disk:notes.txt?chat_id=c1", None, "Could not delete the file. Try again."),
+])
+def test_a_failing_disk_file_save_or_delete_sends_a_fixed_message(client, method, url, body, message):
+    with patch('backend.file_system.utils.resolve_owner_and_physical_path', side_effect=OSError(SECRET)):
+        kwargs = {"json": body} if body is not None else {}
+        response = getattr(client, method)(url, **kwargs)
+    assert response.status_code == 500
+    assert response.get_json() == {"success": False, "error": message}  # the body keeps its `success` key
+    assert "secret" not in response.get_data(as_text=True)
+
+
+@pytest.mark.anyio
+async def test_a_failing_pdf_export_returns_a_fixed_message_and_logs_the_exception():
+    from backend.file_system import manager
+    with patch('backend.file_system.manager.export_fs_file_html', new_callable=AsyncMock, return_value=("<html></html>", "x.html")), \
+         patch('backend.file_system.manager.fitz') as fitz, patch('backend.file_system.manager.log_event') as events:
+        fitz.open.side_effect = OSError("/secret/place pdf engine crashed")
+        content, message = await manager.export_fs_file_pdf("fs1", "c1")
+    assert content is None and message == "Could not create the PDF. Try again."
+    assert events.call_args.args[0] == "file_system_export_pdf_error" and "crashed" in events.call_args.args[1]["error"]
+
+
+def test_the_pdf_export_route_sends_the_managers_fixed_message(client):
+    with patch('backend.file_system.router.db') as mock_db, \
+         patch('backend.file_system.manager.export_fs_file_pdf', new_callable=AsyncMock, return_value=(None, "Could not create the PDF. Try again.")):
+        mock_db.get_file_system_meta.return_value = {'chat_id': 'c1'}
+        resp = client.get('/api/file_system/fs1/export/pdf?chat_id=c1')
+    assert resp.status_code == 404 and resp.get_json() == {"error": "Could not create the PDF. Try again."}
+
+
+@pytest.mark.parametrize("method,url,body,event", [
+    ("post", "/api/file_system/", {"chat_id": "c1", "content": "x"}, "file_system_create_file_error"),
+    ("patch", "/api/file_system/disk:notes.txt", {"chat_id": "c1", "content": "x"}, "file_system_update_disk_file_error"),
+    ("delete", "/api/file_system/disk:notes.txt?chat_id=c1", None, "file_system_delete_disk_file_error"),
+])
+def test_failures_of_file_routes_log_the_detail(client, method, url, body, event):
+    with patch('backend.file_system.create_fs_file', new_callable=AsyncMock, side_effect=OSError(SECRET)), \
+         patch('backend.file_system.utils.resolve_owner_and_physical_path', side_effect=OSError(SECRET)), \
+         patch('backend.file_system.router.db'), patch('backend.file_system.router.log_event') as events:
+        kwargs = {"json": body} if body is not None else {}
+        assert getattr(client, method)(url, **kwargs).status_code == 500
+    assert events.call_args.args[0] == event and "is locked" in events.call_args.args[1]["error"]
+
+
+def _search(client, query_string, rows=None, content="alpha\nBeta line\nbeta again", workspace_for_chat=None):
+    with patch('backend.file_system.router.db') as mock_db, \
+         patch('backend.file_system.manager.get_fs_file_content', new_callable=AsyncMock, return_value=content) as get_content, \
+         patch('backend.file_system.utils.get_workspace_for_chat', return_value=workspace_for_chat):
+        mock_db.get_chat_file_systems.return_value = rows if rows is not None else [{"id": "f1", "chat_id": "c1", "filename": "a.md"}]
+        mock_db.get_owner_file_systems.return_value = [{"id": "f2", "workspace_id": "w1", "filename": "n.md"}]
+        response = client.get('/api/file_system/search' + query_string)
+    return response, mock_db, get_content
+
+
+def test_search_returns_hits_with_file_id_path_line_number_and_line(client):
+    response, _, _ = _search(client, '?chat_id=c1&q=beta')
+    assert response.status_code == 200
+    assert response.get_json() == {"results": [
+        {"file_system_id": "f1", "path": "a.md", "line_number": 2, "line": "Beta line"},
+        {"file_system_id": "f1", "path": "a.md", "line_number": 3, "line": "beta again"},
+    ], "truncated": False}
+
+
+def test_search_with_no_hits_is_an_empty_list_and_skips_the_meta_lookup(client):
+    response, mock_db, _ = _search(client, '?chat_id=c1&q=nothing-here')
+    assert response.status_code == 200 and response.get_json() == {"results": [], "truncated": False}
+    mock_db.get_file_system_meta.assert_not_called()
+
+
+def test_search_limit_is_applied_clamped_and_validated(client):
+    response, _, _ = _search(client, '?chat_id=c1&q=beta&limit=1')
+    assert len(response.get_json()["results"]) == 1 and response.get_json()["truncated"] is True
+    with patch('backend.file_system.router.config.FILE_SEARCH_MAX_RESULTS', 1):
+        response, _, _ = _search(client, '?chat_id=c1&q=beta&limit=999')
+    assert len(response.get_json()["results"]) == 1  # clamped to the maximum
+    for bad in ("abc", "0", "-3", "1.5"):
+        assert _search(client, f'?chat_id=c1&q=beta&limit={bad}')[0].status_code == 400
+
+
+def test_search_rejects_an_empty_or_too_long_query_and_a_missing_scope(client):
+    assert _search(client, '?chat_id=c1')[0].status_code == 400
+    assert _search(client, '?chat_id=c1&q=%20%20')[0].status_code == 400
+    assert _search(client, '?chat_id=c1&q=' + 'x' * 201)[0].status_code == 400
+    assert _search(client, '?q=beta')[0].status_code == 400
+
+
+def test_search_a_workspace_scope_prefixes_paths(client):
+    response, _, _ = _search(client, '?workspace_id=w1&q=alpha')
+    assert response.get_json()["results"][0]["path"] == "workspace/n.md"
+
+
+def test_search_a_chat_also_searches_its_workspace_files(client):
+    response, _, _ = _search(client, '?chat_id=c1&q=alpha', workspace_for_chat="w1")
+    assert [r["path"] for r in response.get_json()["results"]] == ["a.md", "workspace/n.md"]
+
+
+def test_search_a_chat_that_does_not_exist_yet_is_empty_or_searches_its_owned_workspace(client, owned_by_user_a):
+    owned_by_user_a.get_chat_owner.return_value = None
+    response, mock_db, _ = _search(client, '?chat_id=new&q=alpha')
+    assert response.status_code == 200 and response.get_json() == {"results": [], "truncated": False}
+    mock_db.get_chat_file_systems.assert_not_called()
+    response, mock_db, _ = _search(client, '?chat_id=new&workspace_id=w1&q=alpha')
+    assert [r["file_system_id"] for r in response.get_json()["results"]] == ["f2"]
+    mock_db.get_chat_file_systems.assert_not_called()
+
+
+def test_search_failure_is_a_fixed_500_message(client):
+    with patch('backend.file_system.manager.search_fs_contents', new_callable=AsyncMock, side_effect=RuntimeError("secret detail")), \
+         patch('backend.file_system.router.db'):
+        response = client.get('/api/file_system/search?chat_id=c1&q=x')
+    assert response.status_code == 500 and response.get_json() == {"error": "Search failed"}

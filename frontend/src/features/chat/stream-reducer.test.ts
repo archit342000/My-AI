@@ -35,6 +35,34 @@ describe('applyChunk', () => {
     expect(applyChunk(base, { parent_type: 'research', research_progress: progress })).toEqual(base);
   });
 
+  it('ignores an agent_run chunk (the helpers card is a follow-up)', () => {
+    const base = applyChunk(emptyLiveTurn(), delta({ content: 'hi' }));
+    const run = {
+      id: 't1',
+      name: 'search_web',
+      parent_id: null,
+      state: 'running' as const,
+      activity: 'Searching',
+      started_at: 1,
+      duration_ms: null,
+    };
+    expect(applyChunk(base, { parent_type: 'main', agent_run: run })).toEqual(base);
+  });
+
+  it('ignores a turn chunk (durations are not shown yet) and a tool result with a duration still attaches', () => {
+    const base = applyChunk(emptyLiveTurn(), delta({ content: 'hi' }));
+    expect(applyChunk(base, { turn: { duration_ms: 46000 } })).toEqual(base);
+    const withTool = applyChunk(
+      base,
+      delta({ tool_calls: [{ index: 0, id: 't1', function: { name: 'x', arguments: '{}' } }] }),
+    );
+    const done = applyChunk(
+      withTool,
+      delta({ tool_result: { tool_call_id: 't1', content: 'ok', duration_ms: 250 } }),
+    );
+    expect(turnTools(done.steps)[0]?.result).toBe('ok');
+  });
+
   it('accumulates content and reasoning into one step each', () => {
     let t = emptyLiveTurn();
     t = applyChunk(t, delta({ content: 'Hel' }));

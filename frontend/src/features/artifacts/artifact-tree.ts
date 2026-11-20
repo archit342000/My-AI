@@ -33,21 +33,21 @@ export function artifactPath(a: Artifact): string {
   return a.title;
 }
 
-/** The directory entry the server adds to every file list. */
-const PLACEHOLDER_FOLDER = 'workspace';
-
 export interface BuildTreeOptions {
   /**
-   * Hides the server's placeholder: the root directory entry named `workspace` (every file list holds one)
-   * when nothing is under it, so an empty list shows the panel's empty state. Any other folder is kept.
+   * The leading folder the server names as the scope's root (`workspace/` on a workspace page, `""` in a chat). Its
+   * contents sit at the top of the tree and its own directory entry is dropped (so an empty workspace shows the
+   * panel's empty state); every node keeps its full server path, so opening, renaming and running still send it.
    */
-  hidePlaceholder?: boolean;
+  root?: string;
 }
 
 /** Builds a folder tree from the flat list. Folders come first at every level, then files, each sorted by name. */
 export function buildTree(items: Artifact[], options: BuildTreeOptions = {}): TreeNode[] {
   const root: TreeFolder = { kind: 'folder', path: '', name: '', children: [] };
+  const hiddenRoot = (options.root ?? '').replace(/^\/+|\/+$/g, '');
   const folders = new Map<string, TreeFolder>([['', root]]);
+  if (hiddenRoot) folders.set(hiddenRoot, root); // the root folder is the top of the tree, not a level in it
 
   function folder(path: string): TreeFolder {
     const existing = folders.get(path);
@@ -82,11 +82,6 @@ export function buildTree(items: Artifact[], options: BuildTreeOptions = {}): Tr
   }
 
   sortNodes(root.children);
-  if (options.hidePlaceholder) {
-    return root.children.filter(
-      (n) => !(n.kind === 'folder' && n.path === PLACEHOLDER_FOLDER && n.children.length === 0),
-    );
-  }
   return root.children;
 }
 
@@ -107,6 +102,12 @@ export function folderPaths(nodes: TreeNode[]): string[] {
     out.push(...folderPaths(node.children));
   }
   return out;
+}
+
+/** `folder` as the tree shows it: the hidden root folder itself is the top level (''), any other folder is unchanged. */
+export function folderInRoot(folder: string, root: string): string {
+  const hidden = root.replace(/^\/+|\/+$/g, '');
+  return hidden && folder === hidden ? '' : folder;
 }
 
 /** The folder a path is in ('' for the top level). */

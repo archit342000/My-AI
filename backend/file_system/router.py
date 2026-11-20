@@ -3,10 +3,12 @@ import logging
 import json
 import os
 import mimetypes
+from typing import Any, Dict, List, Optional
 from backend.auth.ownership import claim_chat, owns_chat, reject_foreign_chat, require_chat_owner, require_workspace_owner
 from backend.database import db
 from backend.utils import read_json_object
 from backend import config
+from backend.logging import log_event, error_detail
 from backend.file_system import (
     get_file_system_versions,
     get_fs_file_version,
@@ -62,7 +64,7 @@ def normalize_workspace_id():
 _CHAT_CREATING_ENDPOINTS = {"file_system.create_fs_file_route", "file_system.create_directory_route"}
 # Read routes that may name a chat that does not exist yet and just return an empty result (the UI lists a new chat's
 # artifacts before the chat row exists); another user's existing chat is still 404.
-_MISSING_CHAT_OK_ENDPOINTS = _CHAT_CREATING_ENDPOINTS | {"file_system.list_file_systems_endpoint"}
+_MISSING_CHAT_OK_ENDPOINTS = _CHAT_CREATING_ENDPOINTS | {"file_system.list_file_systems_endpoint", "file_system.search_file_systems_endpoint"}
 
 
 def _request_ids():
@@ -95,7 +97,7 @@ def require_fs_owner():
     Owner check for every file-system route, run after `normalize_workspace_id` so it sees the resolved workspace.
 
     Each chat and workspace the request names must belong to the current user, otherwise 404 (nothing is read or
-    written). A chat that does not exist yet passes only on the two creating routes (which then `claim_chat`) and the list route. The
+    written). A chat that does not exist yet passes only on the two creating routes (which then `claim_chat`), the list route and the search route. The
     "default" workspace sentinel (a chat with no workspace) passes only next to a chat that passed its own check above (owned, or
     on the create and list routes not yet existing: nothing foreign is read or written, "default" meaning "no workspace"). No ids at all passes:
     the route's own "required" check answers.
@@ -193,7 +195,8 @@ async def create_fs_file_route():
         })
     except Exception as e:
         logger.error(f"[CREATE_FILE_SYSTEM_ROUTE] FAILED chat_id={chat_id!r} path={computed_path!r}: {type(e).__name__}: {e}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        log_event("file_system_create_file_error", {"chat_id": chat_id, "path": str(computed_path)[:200], "error": error_detail(e)})
+        return jsonify({"error": "Could not create the file. Try again."}), 500
 
 
 @file_system_bp.route('/directory', methods=['POST'])
@@ -220,7 +223,8 @@ async def create_directory_route():
         result = await create_directory_tool(chat_id=chat_id, path=path, workspace_id=workspace_id)
         return jsonify(result)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        log_event("file_system_create_directory_error", {"chat_id": chat_id, "path": str(path)[:200], "error": error_detail(e)})
+        return jsonify({"error": "Could not create the folder. Try again."}), 500
 
 
 @file_system_bp.route('/directory', methods=['DELETE'])
@@ -240,7 +244,8 @@ async def delete_directory_route():
             return jsonify({"error": result.get("error", "Unknown error")}), 400
         return jsonify(result)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        log_event("file_system_delete_directory_error", {"chat_id": chat_id, "path": str(path)[:200], "error": error_detail(e)})
+        return jsonify({"error": "Could not delete the folder. Try again."}), 500
 
 
 def _infer_language(filename: str, current_lang: str) -> str:
@@ -250,6 +255,32 @@ def _infer_language(filename: str, current_lang: str) -> str:
         if ext not in ["md", "markdown"]:
             return ext
     return current_lang or "markdown"
+
+def _scope_file_systems(chat_id: Optional[str], workspace_id: Optional[str]) -> List[Dict[str, Any]]:
+    """
+    The file rows of a scope, as the list route shows them: a chat's own files plus its workspace's files (prefixed
+    `workspace/`), or a workspace's files (prefixed `workspace/`). Returns an empty list when neither id is given.
+    """
+    from backend.file_system.utils import get_workspace_for_chat
+
+    if chat_id:
+        file_systems = db.get_chat_file_systems(chat_id=chat_id)
+        chat_workspace_id = get_workspace_for_chat(chat_id)
+        if chat_workspace_id:
+            ws_file_systems = db.get_owner_file_systems(workspace_id=chat_workspace_id)
+            for wc in ws_file_systems:
+                if not wc['filename'].startswith("workspace/"):
+                    wc['filename'] = "workspace/" + wc['filename']
+            file_systems.extend(ws_file_systems)
+        return file_systems
+    if workspace_id:
+        file_systems = db.get_owner_file_systems(workspace_id=workspace_id)
+        for wc in file_systems:
+            if not wc['filename'].startswith("workspace/"):
+                wc['filename'] = "workspace/" + wc['filename']
+        return file_systems
+    return []
+
 
 @file_system_bp.route('', methods=['GET'])
 async def list_file_systems_endpoint():
@@ -264,26 +295,13 @@ async def list_file_systems_endpoint():
     if chat_id and not owns_chat(chat_id):
         chat_id = None  # never read the chat's rows or directory
         if not workspace_id or workspace_id == "default":
-            return jsonify({"success": True, "file_systems": []})
+            return jsonify({"success": True, "file_systems": [], "root": ""})
 
     file_systems_with_content = []
-    
-    if chat_id:
-        file_systems = db.get_chat_file_systems(chat_id=chat_id)
-        chat_workspace_id = get_workspace_for_chat(chat_id)
-        if chat_workspace_id:
-            ws_file_systems = db.get_owner_file_systems(workspace_id=chat_workspace_id)
-            for wc in ws_file_systems:
-                if not wc['filename'].startswith("workspace/"):
-                    wc['filename'] = "workspace/" + wc['filename']
-            file_systems.extend(ws_file_systems)
-    elif workspace_id:
-        file_systems = db.get_owner_file_systems(workspace_id=workspace_id)
-        for wc in file_systems:
-            if not wc['filename'].startswith("workspace/"):
-                wc['filename'] = "workspace/" + wc['filename']
-    else:
+
+    if not chat_id and not workspace_id:
         return jsonify({"error": "chat_id or workspace_id is required"}), 400
+    file_systems = _scope_file_systems(chat_id, workspace_id)
 
     for file_system in file_systems:
         # Resolve actual owner for content fetching
@@ -435,7 +453,10 @@ async def list_file_systems_endpoint():
     except Exception as e:
         logger.error(f"Error scanning physical items for frontend: {e}")
 
-    return jsonify({"success": True, "file_systems": file_systems_with_content})
+    # `root` says which leading folder is the scope's own root so a client can hide it: a workspace-only scope's files all
+    # sit under `workspace/` (the mount); in a chat scope `workspace/` separates the workspace's files from the chat's own.
+    root = "workspace/" if not chat_id else ""
+    return jsonify({"success": True, "file_systems": file_systems_with_content, "root": root})
 
 
 @file_system_bp.route('/chat/<chat_id>/folders', methods=['GET'])
@@ -547,6 +568,47 @@ async def get_raw_file_by_id_endpoint(file_system_id):
         mime_type = 'text/plain'
         
     return Response(content, mimetype=mime_type)
+
+@file_system_bp.route('/search', methods=['GET'])
+async def search_file_systems_endpoint():
+    """Search the contents of every file in a chat's or workspace's scope: `GET /search?chat_id=|workspace_id=&q=&limit=`."""
+    from backend.file_system.manager import search_fs_contents
+    from backend.logging import log_event
+
+    query = (request.args.get('q') or "").strip()
+    if not query:
+        return jsonify({"error": "q is required"}), 400
+    if len(query) > config.FILE_SEARCH_MAX_QUERY_CHARS:
+        return jsonify({"error": f"q must be at most {config.FILE_SEARCH_MAX_QUERY_CHARS} characters"}), 400
+    raw_limit = request.args.get('limit')
+    if raw_limit is None:
+        limit = min(config.FILE_SEARCH_DEFAULT_RESULTS, config.FILE_SEARCH_MAX_RESULTS)
+    else:
+        try:
+            limit = int(raw_limit)
+        except ValueError:
+            return jsonify({"error": "limit must be an integer"}), 400
+        if limit < 1:
+            return jsonify({"error": "limit must be at least 1"}), 400
+        limit = min(limit, config.FILE_SEARCH_MAX_RESULTS)
+
+    chat_id = request.args.get('chat_id')
+    workspace_id = request.args.get('workspace_id')
+    if not chat_id and not workspace_id:
+        return jsonify({"error": "chat_id or workspace_id is required"}), 400
+    # Same rule as the list route: a chat that does not exist yet has nothing to search (another user's chat was
+    # already refused by the hook).
+    if chat_id and not owns_chat(chat_id):
+        chat_id = None
+        if not workspace_id or workspace_id == "default":
+            return jsonify({"results": [], "truncated": False})
+
+    try:
+        return jsonify(await search_fs_contents(_scope_file_systems(chat_id, workspace_id), query, limit))
+    except Exception as e:
+        log_event("file_system_search_error", {"error": error_detail(e), "chat_id": chat_id, "workspace_id": workspace_id})
+        return jsonify({"error": "Search failed"}), 500
+
 
 @file_system_bp.route('/<path:file_system_id>', methods=['GET'])
 async def get_file_system_endpoint(file_system_id):
@@ -664,7 +726,8 @@ async def update_file_system_endpoint(file_system_id):
             return jsonify({"success": True, "id": file_system_id})
         except Exception as e:
             logger.error(f"Error updating disk file {virtual_path}: {e}")
-            return jsonify({"success": False, "error": str(e)}), 500
+            log_event("file_system_update_disk_file_error", {"path": str(virtual_path)[:200], "error": error_detail(e)})
+            return jsonify({"success": False, "error": "Could not save the file. Try again."}), 500
     if workspace_id:
         file_system = db.get_file_system_meta(file_system_id=file_system_id, workspace_id=workspace_id)
     else:
@@ -760,7 +823,8 @@ async def remove_fs_file_endpoint(file_system_id):
             return jsonify({"success": True, "action": "delete", "file_system_id": file_system_id})
         except Exception as e:
             logger.error(f"Error deleting disk file {virtual_path}: {e}")
-            return jsonify({"success": False, "error": str(e)}), 500
+            log_event("file_system_delete_disk_file_error", {"path": str(virtual_path)[:200], "error": error_detail(e)})
+            return jsonify({"success": False, "error": "Could not delete the file. Try again."}), 500
     if workspace_id:
         file_system = db.get_file_system_meta(file_system_id=file_system_id, workspace_id=workspace_id)
     else:
@@ -1007,12 +1071,12 @@ def add_file_system_tag(file_system_id, tag):
 
 @file_system_bp.route('/<path:file_system_id>/versions', methods=['GET'])
 async def get_file_system_versions_endpoint(file_system_id):
-    """Get version history for a file_system."""
+    """Get version history for a file_system (of a chat's file or a workspace's file)."""
     chat_id = request.args.get('chat_id')
-    if not chat_id:
-        return jsonify({"error": "chat_id is required"}), 400
-        
     workspace_id = request.args.get('workspace_id')
+    if not chat_id and not workspace_id:
+        return jsonify({"error": "chat_id or workspace_id is required"}), 400
+
     _, missing = _fs_meta_or_404(file_system_id, chat_id, workspace_id)
     if missing:
         return missing
@@ -1045,10 +1109,14 @@ async def get_file_system_versions_endpoint(file_system_id):
 async def get_fs_file_version_endpoint(file_system_id, version_number):
     """Get a specific version of a file_system content."""
     chat_id = request.args.get('chat_id')
-    if not chat_id:
-        return jsonify({"error": "chat_id is required"}), 400
-        
-    version = get_fs_file_version(file_system_id, chat_id, version_number)
+    workspace_id = request.args.get('workspace_id')
+    if not chat_id and not workspace_id:
+        return jsonify({"error": "chat_id or workspace_id is required"}), 400
+    _, missing = _fs_meta_or_404(file_system_id, chat_id, workspace_id)
+    if missing:
+        return missing
+
+    version = get_fs_file_version(file_system_id, chat_id, version_number, workspace_id=workspace_id)
     if version is None:
         return jsonify({"success": False, "error": "Version not found"}), 404
 
@@ -1067,10 +1135,10 @@ async def restore_fs_file_version_endpoint(file_system_id, version_number):
     if err:
         return err
     chat_id = data.get('chat_id') or request.args.get('chat_id')
-    if not chat_id:
-        return jsonify({"error": "chat_id is required"}), 400
-        
-    workspace_id = request.args.get('workspace_id')
+    workspace_id = data.get('workspace_id') or request.args.get('workspace_id')
+    if not chat_id and not workspace_id:
+        return jsonify({"error": "chat_id or workspace_id is required"}), 400
+
     from backend.file_system.manager import restore_fs_file_version
     result = await restore_fs_file_version(file_system_id, chat_id, version_number, workspace_id=workspace_id)
     if result['success']:
@@ -1085,8 +1153,9 @@ async def get_fs_file_diff_endpoint(file_system_id):
     if err:
         return err
     chat_id = data.get('chat_id') or request.args.get('chat_id')
-    if not chat_id:
-        return jsonify({"success": False, "error": "chat_id is required"}), 400
+    workspace_id = data.get('workspace_id') or request.args.get('workspace_id')
+    if not chat_id and not workspace_id:
+        return jsonify({"success": False, "error": "chat_id or workspace_id is required"}), 400
 
     version1 = data.get('version1')
     version2 = data.get('version2')
@@ -1094,7 +1163,6 @@ async def get_fs_file_diff_endpoint(file_system_id):
     if version1 is None or version2 is None:
         return jsonify({"success": False, "error": "version1 and version2 are required"}), 400
 
-    workspace_id = request.args.get('workspace_id')
     _, missing = _fs_meta_or_404(file_system_id, chat_id, workspace_id)
     if missing:
         return missing
@@ -1109,10 +1177,10 @@ async def get_fs_file_diff_endpoint(file_system_id):
 async def get_file_system_current_version_endpoint(file_system_id):
     """Get the current active version number for a file_system."""
     chat_id = request.args.get('chat_id')
-    if not chat_id:
-        return jsonify({"error": "chat_id is required"}), 400
-
     workspace_id = request.args.get('workspace_id')
+    if not chat_id and not workspace_id:
+        return jsonify({"error": "chat_id or workspace_id is required"}), 400
+
     if workspace_id:
         file_system_meta = db.get_file_system_meta(file_system_id=file_system_id, workspace_id=workspace_id)
     else:

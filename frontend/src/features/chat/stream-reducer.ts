@@ -3,7 +3,7 @@
  * extra events). Mirrors the legacy `sendMessage` read loop in `static/script.js`.
  * The turn is an ordered step list, the same shape `toTurns` builds from stored messages.
  */
-import type { ResearchProgress } from '../../api/types';
+import type { AgentRun, ResearchProgress } from '../../api/types';
 import type { Step } from '../../lib/chat-model';
 import {
   CLARIFICATION_TOOL,
@@ -34,6 +34,8 @@ interface ToolCallDelta {
 interface ToolResultDelta {
   tool_call_id?: string;
   content?: string;
+  /** Milliseconds the call took (0 when it was refused). */
+  duration_ms?: number;
 }
 
 interface Delta {
@@ -54,6 +56,10 @@ export interface StreamChunk {
   parent_type?: string;
   /** The research run's progress so far (steps, states, counts); sent each time it changes. */
   research_progress?: ResearchProgress;
+  /** Sent once, after a turn that finished normally. */
+  turn?: { duration_ms?: number };
+  /** A helper run starting, changing activity or ending (the helpers card is a follow-up). */
+  agent_run?: AgentRun;
   choices?: Array<{ delta?: Delta }>;
 }
 
@@ -67,7 +73,7 @@ export function applyChunk(turn: LiveTurn, chunk: StreamChunk): LiveTurn {
     return {
       ...next,
       steps: next.snapshot,
-      // The server writes three dots; the app writes the ellipsis as one character.
+      // Older servers wrote three dots; the app shows the ellipsis as one character.
       redactNotice: (chunk.message ?? 'Correcting the formatting…').replace(/\.{3}$/, '…'),
       pendingRequest: null,
     };

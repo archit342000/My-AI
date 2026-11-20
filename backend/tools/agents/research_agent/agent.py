@@ -8,7 +8,7 @@ from backend.tools.time_utils import get_current_date
 from backend.inference import ManualChunkEmitter
 from backend.database import db
 from backend import config
-from backend.logging import log_event
+from backend.logging import log_event, error_detail
 from backend.auth.rate_limit import SearchLimitReached, check_search_limit
 from backend.error_handling import CircuitOpenError
 from .prompts import (
@@ -188,7 +188,7 @@ class ResearchAgent:
                 overwrite=True
             )
         except Exception as e:
-            log_event("research_progress_error", {"chat_id": self.chat_id, "phase": phase, "error": str(e)})
+            log_event("research_progress_error", {"chat_id": self.chat_id, "phase": phase, "error": error_detail(e)})
             logger.error(f"Failed to publish research progress ({phase}): {e}")
             return
         yield "data: " + json.dumps({"parent_type": self.AGENT_NAME, "research_progress": snapshot}) + "\n\n"
@@ -255,7 +255,7 @@ class ResearchAgent:
                     # Explicitly allow retry on ValueError for JSON parse failures (1.2)
                     if _is_transient_error(e) or isinstance(e, ValueError):
                         logger.warning(f"Inference error in {phase_name}: {e}. Retrying...")
-                        async for chunk in self._emit_event(f"⚠️ {phase_name} inference failed. Retrying ({attempt+2}/{max_retries+1})...", parent_type=p_type):
+                        async for chunk in self._emit_event(f"⚠️ {phase_name} inference failed. Retrying ({attempt+2}/{max_retries+1})…", parent_type=p_type):
                             yield chunk
                         continue
                 
@@ -323,7 +323,8 @@ class ResearchAgent:
                         yield chunk
             except Exception as e:
                 logger.error(f"Scout phase crashed: {e}", exc_info=True)
-                async for chunk in self._emit_event(f"❌ Scout phase failed: {str(e)[:200]}"):
+                log_event("research_scout_error", {"chat_id": self.chat_id, "error": error_detail(e)})
+                async for chunk in self._emit_event("❌ Scout phase failed. Research stopped; you can start it again."):
                     yield chunk
                 async for chunk in self._publish_progress("failed", active_plan):
                     yield chunk
@@ -343,7 +344,8 @@ class ResearchAgent:
                     yield chunk
             except Exception as e:
                 logger.error(f"Planner phase crashed: {e}", exc_info=True)
-                async for chunk in self._emit_event(f"❌ Planner phase failed: {str(e)[:200]}"):
+                log_event("research_planner_error", {"chat_id": self.chat_id, "error": error_detail(e)})
+                async for chunk in self._emit_event("❌ Planner phase failed. Research stopped; you can start it again."):
                     yield chunk
                 async for chunk in self._publish_progress("failed", active_plan):
                     yield chunk
@@ -386,7 +388,8 @@ class ResearchAgent:
                 yield chunk
         except Exception as e:
             logger.error(f"Executor phase crashed: {e}", exc_info=True)
-            async for chunk in self._emit_event(f"❌ Execution phase failed: {str(e)[:200]}"):
+            log_event("research_executor_error", {"chat_id": self.chat_id, "error": error_detail(e)})
+            async for chunk in self._emit_event("❌ Execution phase failed. Research stopped; you can start it again."):
                 yield chunk
             async for chunk in self._publish_progress("failed", active_plan):
                 yield chunk
@@ -401,7 +404,8 @@ class ResearchAgent:
                 yield chunk
         except Exception as e:
             logger.error(f"Synthesis phase crashed: {e}", exc_info=True)
-            async for chunk in self._emit_event(f"❌ Synthesis phase failed: {str(e)[:200]}"):
+            log_event("research_synthesis_error", {"chat_id": self.chat_id, "error": error_detail(e)})
+            async for chunk in self._emit_event("❌ Synthesis phase failed. Research stopped; you can start it again."):
                 yield chunk
             async for chunk in self._publish_progress("failed", active_plan):
                 yield chunk
@@ -682,7 +686,8 @@ class ResearchAgent:
             is_valid, reason = self._validate_plan(plan_json)
             if not is_valid:
                 logger.warning(f"Generated plan invalid: {reason}. Retrying...")
-                async for chunk in self._emit_event(f"⚠️ Generated plan was invalid ({reason}). Retrying strategy..."):
+                log_event("research_plan_invalid", {"chat_id": self.chat_id, "reason": str(reason)[:300]})
+                async for chunk in self._emit_event("⚠️ The generated plan was not valid. Trying a new plan…"):
                     yield chunk
                 continue
 
@@ -841,7 +846,7 @@ class ResearchAgent:
                 if stall_count >= config.RESEARCH_MAX_SECTION_STALLS:
                     stalled_idx = pending_indices[0]
                     logger.error(f"Section {stalled_idx} stalled after {config.RESEARCH_MAX_SECTION_STALLS} attempts. Halting.")
-                    async for chunk in self._emit_event(f"❌ Section {stalled_idx} failed repeatedly. Research halted to prevent incomplete report."): yield chunk
+                    async for chunk in self._emit_event(f"❌ Section {stalled_idx} failed repeatedly. Research stopped; you can start it again."): yield chunk
                     raise RuntimeError(f"Section {stalled_idx} stalled repeatedly after {config.RESEARCH_MAX_SECTION_STALLS} attempts.")
             else:
                 stall_count = 0
@@ -852,9 +857,13 @@ class ResearchAgent:
             try:
                 async for chunk in self._run_single_section(idx, sections[idx], plan, sections, accumulated_summaries_text, agent):
                     yield chunk
+            except SearchLimitReached:
+                async for chunk in self._emit_event(f"❌ Section {idx} stopped: the daily web search limit is reached. Try again tomorrow."):
+                    yield chunk
+                raise
             except Exception as e:
                 logger.error(f"Section {idx} failed fatally: {e}", exc_info=True)
-                async for chunk in self._emit_event(f"❌ Section {idx} failed: {str(e)[:200]}. Research halted."):
+                async for chunk in self._emit_event(f"❌ Section {idx} failed. Research stopped; you can start it again."):
                     yield chunk
                 raise
 
@@ -872,7 +881,7 @@ class ResearchAgent:
                 async for chunk in self._emit_event(f"{prefix}{EVENT_SECTION_START_PREFIX}{current_idx}", parent_type=self.AGENT_NAME): yield chunk
                 async for chunk in self._publish_progress("executing", plan):
                     yield chunk
-                async for chunk in self._emit_event(f"{prefix}{EVENT_INITIAL_SEARCHES_PREFIX}{current_idx}...", parent_type=self.AGENT_NAME): yield chunk
+                async for chunk in self._emit_event(f"{prefix}{EVENT_INITIAL_SEARCHES_PREFIX}{current_idx}…", parent_type=self.AGENT_NAME): yield chunk
                 
                 search_payload = ""
                 for search_attempt in range(config.RESEARCH_SEARCH_RETRIES + 1):
@@ -890,7 +899,7 @@ class ResearchAgent:
 
                     if search_attempt < config.RESEARCH_SEARCH_RETRIES:
                         async for chunk in self._emit_event(
-                            f"{prefix}⚠️ No usable search results. Retrying ({search_attempt + 2}/{config.RESEARCH_SEARCH_RETRIES + 1})...",
+                            f"{prefix}⚠️ No usable search results. Retrying ({search_attempt + 2}/{config.RESEARCH_SEARCH_RETRIES + 1})…",
                             parent_type=self.AGENT_NAME
                         ): yield chunk
                     else:
@@ -1043,7 +1052,7 @@ class ResearchAgent:
                         await update_fs_file_content(self.file_system_id, self.chat_id, new_content, author="research_agent")
                 except Exception as e:
                     logger.error(f"FileSystem update failed for section {current_idx}: {e}", exc_info=True)
-                    async for chunk in self._emit_event(f"{prefix}❌ FileSystem update failed for section {current_idx}: {str(e)[:200]}", parent_type=self.AGENT_NAME):
+                    async for chunk in self._emit_event(f"{prefix}❌ The report could not be updated for section {current_idx}. Research stopped; you can start it again.", parent_type=self.AGENT_NAME):
                         yield chunk
                     raise e
                     
@@ -1322,7 +1331,7 @@ class ResearchAgent:
                 continue
             except Exception as e:
                 logger.error(f"Internal search failed for '{query_text}': {e}")
-                search_errors.append(f"Search failed: {query_text}: {e}")
+                search_errors.append(f"Search failed: {query_text}")
                 continue
                 
         if search_errors and not payload.strip():
@@ -1393,7 +1402,7 @@ class ResearchAgent:
                 await update_fs_file_content(self.file_system_id, self.chat_id, processed_report, author="system")
             except Exception as e:
                 logger.error(f"Synthesis post-processing failed: {e}", exc_info=True)
-                async for chunk in self._emit_event(f"❌ Synthesis post-processing failed: {str(e)[:200]}"):
+                async for chunk in self._emit_event("❌ Final formatting of the report failed. Research stopped; you can start it again."):
                     yield chunk
                 raise e
         
@@ -1624,7 +1633,7 @@ async def flow_fn(agent: Any, agent_name: str, topic: str, **kwargs):
             db.add_message(
                 chat_id=agent.chat_id,
                 role='event',
-                content=f'Research Agent failed: {str(e)}',
+                content='Research Agent failed. Try again.',
                 parent_id=agent.parent_message_id,
                 parent_type='research'
             )
@@ -1640,5 +1649,5 @@ async def flow_fn(agent: Any, agent_name: str, topic: str, **kwargs):
         except Exception as db_err:
             logger.error(f"Failed to update chat state: {db_err}")
             
-        agent.result = f"Research agent failed: {str(e)}"
-        yield f"Error: Research agent failed: {str(e)}"
+        agent.result = "Research agent failed. Try again."
+        yield "Error: Research agent failed. Try again."

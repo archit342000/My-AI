@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 import logging
 
 from backend.database import db
-from backend.logging import log_event
+from backend.logging import log_event, error_detail
 from backend import config
 
 logger = logging.getLogger(__name__)
@@ -75,7 +75,7 @@ class BaseAgent(ABC):
 
     async def on_error(self, error: Exception) -> str:
         """Called on unrecoverable error."""
-        return f"{self.config.display_name} failed: {str(error)}"
+        return f"{self.config.display_name} failed. Try again."
 
     async def on_cleanup(self) -> None:
         """Called in finally block. Override for cleanup (e.g. Playwright session teardown)."""
@@ -233,11 +233,12 @@ class BaseAgent(ABC):
 
         except Exception as e:
             logger.error(f"{self.config.display_name} failed: {e}", exc_info=True)
+            log_event("agent_failed_error", {"agent": self.config.display_name, "chat_id": self.chat_id, "error": error_detail(e)})
             error_msg = await self.on_error(e)
             try:
                 db.add_message(
                     chat_id=self.chat_id, role='event',
-                    content=f'{self.config.display_name} failed: {str(e)}',
+                    content=f'{self.config.display_name} failed. Try again.',
                     parent_id=self.parent_message_id, parent_type=name
                 )
             except Exception as db_err:
