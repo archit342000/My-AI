@@ -43,6 +43,22 @@ export interface StoredMessage {
   sub_agent_history?: Nullable<StoredSubAgentRow[]>;
 }
 
+/** One run of a helper (sub-agent): sent as an `agent_run` stream chunk (each change of state or activity) and kept, finished, in the `agent_runs` collection. */
+export interface AgentRun {
+  /** The id of the tool call that started it. */
+  id: string;
+  name: string;
+  /** The enclosing run's id for a helper called by another helper, else null. */
+  parent_id: Nullable<string | number>;
+  state: 'running' | 'done' | 'failed';
+  /** What it is doing now (its latest event or the tool it called), null before the first one. */
+  activity: Nullable<string>;
+  /** Epoch seconds. */
+  started_at: number;
+  /** Milliseconds the run took; null while it is running. */
+  duration_ms: Nullable<number>;
+}
+
 /** A sub-agent row inside an assistant message's `sub_agent_history`. */
 export interface StoredSubAgentRow {
   id?: string | number;

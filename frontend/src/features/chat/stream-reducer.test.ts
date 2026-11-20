@@ -22,6 +22,20 @@ const tool = (id: string, result: string | null = null, agent: string | null = n
 });
 
 describe('applyChunk', () => {
+  it('ignores an agent_run chunk (the helpers card is a follow-up)', () => {
+    const base = applyChunk(emptyLiveTurn(), delta({ content: 'hi' }));
+    const run = {
+      id: 't1',
+      name: 'search_web',
+      parent_id: null,
+      state: 'running' as const,
+      activity: 'Searching',
+      started_at: 1,
+      duration_ms: null,
+    };
+    expect(applyChunk(base, { parent_type: 'main', agent_run: run })).toEqual(base);
+  });
+
   it('ignores a turn chunk (durations are not shown yet) and a tool result with a duration still attaches', () => {
     const base = applyChunk(emptyLiveTurn(), delta({ content: 'hi' }));
     expect(applyChunk(base, { turn: { duration_ms: 46000 } })).toEqual(base);

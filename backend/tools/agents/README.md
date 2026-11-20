@@ -18,6 +18,7 @@
 
 ## 🛠️ Usage & Conventions
 *   **Handoff Pattern:** The main assistant delegates to these agents via the `ToolHandler`.
+*   **Helper runs:** `ToolHandler` announces each run (`agent_run` stream chunk: start, activity, end with the duration; finished runs stored as the `agent_runs` collection). Runs are sequential and may nest (research calls the search helper); no helpers run in parallel.
 *   **Persistence:** Agent messages are stored in the `sub_agent_messages` table and are anchored to the tool call that spawned them. Additionally, all agents emit `role="event"` messages (`Started`, `Completed`, `Failed`) to ensure consistent UI activity tracking and crash recovery.
 *   **Testing:**
     - **Local:** Unit tests in each agent's `tests/` subdirectory ensure strict compliance with the exhaustive 1:1 testing rule.
