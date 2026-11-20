@@ -14,6 +14,8 @@ export interface ChatPatch {
   thinking_profile?: string;
   last_model?: string;
   resume_suppressed?: number;
+  /** Saves a temporary chat (keeps it and lists it); `false` is the only accepted value. */
+  is_temporary?: false;
 }
 
 const enc = encodeURIComponent;
