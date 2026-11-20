@@ -37,10 +37,46 @@ export interface StoredMessage {
   reasoning_content: Nullable<string>;
   /** File references sent with a user message (decoded list); absent or null on older rows. */
   attachments?: Nullable<unknown>;
+  /** Collections anchored on this message or its tool calls; the `research_progress` one holds a `ResearchProgress`. */
+  collections?: Nullable<StoredCollection[]>;
   /** Milliseconds a tool call took (on a `tool` row) or the whole turn took (on a turn's last assistant row); null on older rows. */
   duration_ms?: Nullable<number>;
   /** Sub-agent rows woven into this assistant row by the server (events, text, tool calls). */
   sub_agent_history?: Nullable<StoredSubAgentRow[]>;
+}
+
+/** One step of a research plan, as the server reports its progress. */
+export interface ResearchProgressStep {
+  index: number;
+  heading: string;
+  state: 'pending' | 'running' | 'done' | 'failed';
+  /** Milliseconds the step took; null when the step is not done or its timestamps are missing. */
+  duration_ms: Nullable<number>;
+}
+
+/** The research plan card's data: sent as a `research_progress` stream chunk and stored (and served) as a collection. */
+export interface ResearchProgress {
+  title: string;
+  phase:
+    | 'scouting'
+    | 'planning'
+    | 'awaiting_approval'
+    | 'executing'
+    | 'synthesizing'
+    | 'done'
+    | 'failed';
+  steps: ResearchProgressStep[];
+  steps_done: number;
+  steps_total: number;
+  pages_read: number;
+}
+
+/** A stored collection attached to an assistant message; `items` is the decoded value or its JSON string. */
+export interface StoredCollection {
+  collection_type: string;
+  parent_type?: Nullable<string>;
+  parent_message_id?: Nullable<string | number>;
+  items?: unknown;
 }
 
 /** One run of a helper (sub-agent): sent as an `agent_run` stream chunk (each change of state or activity) and kept, finished, in the `agent_runs` collection. */

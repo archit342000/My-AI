@@ -62,6 +62,13 @@ def test_event_phase_pairs_complete():
     assert EVENT_SUMMARY_START and EVENT_SUMMARY_DONE
 
 
+def test_progress_markers_and_phases():
+    from backend.tools.agents.research_agent.constants import SECTION_TAG_FORMAT, EVENT_FAILURE_MARKER, PROGRESS_PHASES
+    assert SECTION_TAG_FORMAT.format(2) == "[Section 2] "
+    assert EVENT_FAILURE_MARKER == "\u274c"
+    assert PROGRESS_PHASES == ("scouting", "planning", "awaiting_approval", "executing", "synthesizing", "done", "failed")
+
+
 def test_status_texts_use_the_ellipsis_character_except_the_ones_compared_on_resume():
     from backend.tools.agents.research_agent import constants as c
     only_shown = [c.EVENT_SCOUT_START, c.EVENT_PLAN_START, c.EVENT_REFLECTION_START, c.EVENT_GAP_SEARCHES_START,

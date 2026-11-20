@@ -51,6 +51,12 @@ yet gives an empty result (or its workspace's hits). The typed client is `artifa
   `POST /v1/chat/completions`, `GET /api/chats/<id>/stream` (re-attach), `POST /api/chats/<id>/resume`.
 - Payloads follow the OpenAI chunk format with the project's extensions: content and reasoning deltas, tool-call fragments,
   tool results, `event` activity labels, sub-agent deltas and `__redact__`. The reader and fixtures are described in `docs/frontend.md`.
+- Research progress: a research run sends `data: {"parent_type": "research", "research_progress": {...}}` each time its state changes (scouting, plan awaiting
+  approval, before the first section and after every section, at synthesis, done or failed; also when a section starts). The snapshot is
+  `{"title", "phase", "steps": [{"index", "heading", "state", "duration_ms"}], "steps_done", "steps_total", "pages_read"}`. `phase` is one of `scouting`, `planning`,
+  `awaiting_approval`, `executing`, `synthesizing`, `done`, `failed`; a step `state` is `pending`, `running`, `done` or `failed`, and `duration_ms`
+  (from the stored section's last start event to its complete event, so a retried step counts only the attempt that finished) is set only on a `done` step. `done` is sent only when the run really finished (a run paused for the user sends no terminal snapshot). Pages read is refreshed after each section's search phases, not during one. The latest snapshot is also stored as the `research_progress` collection under
+  the research tool call and served in the `collections` of the assistant message that made the call, so a reload shows the same card (a re-attached stream gets the next snapshot, or the stored one from the chat). The research run's Stop is the chat's Stop.
 - File list root: `GET /api/file_systems?chat_id=|workspace_id=` also returns `"root"`, the leading folder that is the scope's own root so a client can hide it: `"workspace/"` for
   a workspace-only scope (every file path there starts with it, and stays so: ids and paths are unchanged everywhere), `""` for a chat scope (where `workspace/` separates the
   workspace's files from the chat's own) and for a chat that does not exist yet and names no workspace (one that does is listed as that workspace, with `"workspace/"`). The React client hides the root level in the Files panel; the legacy UI reads only `file_systems`
