@@ -362,7 +362,7 @@ export function FileBrowser({ ref, scope, full, onToggleFull }: FileBrowserProps
     if (!(await saved()) || runToken.current !== started) return;
     setRun({ state: 'running', text: '' });
     try {
-      const text = await codeExecApi.runFile(scope.chatId, path);
+      const text = await codeExecApi.runFile(scope, path);
       // Another file was opened (or run) meanwhile: this result belongs to nothing on screen.
       if (runToken.current !== started) return;
       setRun({ state: text.startsWith('Error:') ? 'failed' : 'done', text });
