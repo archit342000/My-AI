@@ -23,7 +23,17 @@ export type ArtifactList = Artifact[] & { root?: string };
  * structural sharing, so every refetch would look changed).
  */
 export function fetchArtifactList(scope: ScopeRef): Promise<{ files: Artifact[]; root: string }> {
-  return artifactsApi.list(scope).then((list) => ({ files: Array.from(list), root: list.root ?? '' }));
+  return artifactsApi
+    .list(scope)
+    .then((list) => ({ files: Array.from(list), root: list.root ?? '' }));
+}
+
+/** One line of a file that matched a content search. */
+export interface FileSearchHit {
+  fileId: string;
+  path: string;
+  lineNumber: number;
+  line: string;
 }
 
 export interface ArtifactVersion {
@@ -79,6 +89,29 @@ export const artifactsApi = {
     apiJson<{ file_systems: Artifact[]; root?: string }>(
       `/api/file_systems?${scopeQuery(scope)}`,
     ).then((r): ArtifactList => Object.assign(r.file_systems, { root: r.root ?? '' })),
+  /** Search the contents of every file in the scope (case-insensitive text); `truncated` means more hits exist. */
+  search: (scope: ScopeRef, q: string, limit?: number) => {
+    const params = new URLSearchParams(scopeQuery(scope));
+    params.set('q', q);
+    if (limit !== undefined) params.set('limit', String(limit));
+    return apiJson<{
+      results: {
+        file_system_id: string;
+        path: string;
+        line_number: number;
+        line: string;
+      }[];
+      truncated: boolean;
+    }>(`/api/file_systems/search?${params.toString()}`).then((r) => ({
+      hits: r.results.map((h): FileSearchHit => ({
+        fileId: h.file_system_id,
+        path: h.path,
+        lineNumber: h.line_number,
+        line: h.line,
+      })),
+      truncated: r.truncated,
+    }));
+  },
   get: (id: string, scope: ScopeRef) =>
     apiJson<Artifact & { content: string }>(
       `/api/file_systems/${encodeURIComponent(id)}?${scopeQuery(scope)}`,
@@ -174,11 +207,11 @@ export interface CodeRun {
 export const codeExecApi = {
   history: (chatId: string) =>
     apiJson<CodeRun[]>(`/api/tools/code-execution/history/${encodeURIComponent(chatId)}`),
-  /** Runs a saved file of the chat and returns what it printed (or the runner's own error text). */
-  runFile: (chatId: string, path: string) =>
+  /** Runs a saved file of the chat or workspace and returns what it printed (or the runner's own error text). */
+  runFile: (scope: ScopeRef, path: string) =>
     apiJson<{ result: string }>('/api/tools/code-execution/run-file', {
       method: 'POST',
-      json: { chat_id: chatId, path },
+      json: { ...scopeBody(scope), path },
     }).then((r) => r.result),
 };
 

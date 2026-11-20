@@ -5,8 +5,11 @@ import collections
 from backend import config
 from backend.auth.context import forbid_non_admin
 from backend.database.db_layer import make_connection
+from backend.logging.logger import error_detail, log_event
 
 logs_bp = Blueprint('logs', __name__)
+
+LOGS_UNREADABLE = "Could not read the logs. Try again in a moment."
 
 
 @logs_bp.before_request
@@ -45,7 +48,8 @@ def get_log_index():
                 except Exception:
                     pass
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        log_event("logs_read_error", {"path": request.path, "error": error_detail(e)})
+        return jsonify({"error": LOGS_UNREADABLE}), 500
 
     return jsonify(list(reversed(entries)))
 
@@ -70,7 +74,8 @@ def get_log_detail():
             data = json.load(f)
         return jsonify(data)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        log_event("logs_read_error", {"path": request.path, "error": error_detail(e)})
+        return jsonify({"error": LOGS_UNREADABLE}), 500
 
 @logs_bp.route('/events', methods=['GET'])
 def get_event_logs():
@@ -100,7 +105,8 @@ def get_event_logs():
                 except Exception:
                     pass
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        log_event("logs_read_error", {"path": request.path, "error": error_detail(e)})
+        return jsonify({"error": LOGS_UNREADABLE}), 500
 
     return jsonify(list(reversed(entries)))
 
@@ -120,7 +126,8 @@ def get_app_logs():
         logs = _tail_file(log_file, limit)
         return jsonify({"logs": list(reversed(logs)), "total": len(logs)})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        log_event("logs_read_error", {"path": request.path, "error": error_detail(e)})
+        return jsonify({"error": LOGS_UNREADABLE}), 500
 
 def _tail_file(path, n, chunk_size=32768):
     """Efficiently return the last n lines of a file using binary seek."""
@@ -180,7 +187,8 @@ def get_app_log_lines():
                     logs.append(stripped)
         return jsonify({"logs": logs, "start": start, "end": len(logs) + start})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        log_event("logs_read_error", {"path": request.path, "error": error_detail(e)})
+        return jsonify({"error": LOGS_UNREADABLE}), 500
 
 
 @logs_bp.route('/db/tables', methods=['GET'])
@@ -250,7 +258,8 @@ def get_db_table_data(table_name):
         rows = [dict(row) for row in c.fetchall()]
         return jsonify(rows)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        log_event("logs_read_error", {"path": request.path, "error": error_detail(e)})
+        return jsonify({"error": LOGS_UNREADABLE}), 500
     finally:
         conn.close()
 

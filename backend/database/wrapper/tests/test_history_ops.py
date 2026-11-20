@@ -190,3 +190,20 @@ def test_woven_history_detailed(temp_db):
     
     # Cleanup sse chunks from cache
     cache_system.delete_sse_chunks(chat_id)
+
+def test_agent_runs_collections_are_served_on_the_assistant_message_for_top_level_and_nested_runs(temp_db):
+    import json
+    db = temp_db
+    chat_id = "test_agent_runs_history"
+    db.ensure_chat_exists(chat_id, "u1")
+    db.add_message(chat_id=chat_id, role="user", content="research this")
+    asst_id = db.add_message(chat_id=chat_id, role="assistant", content="working",
+                             tool_calls=[{"id": "tc_outer", "type": "function", "function": {"name": "research", "arguments": "{}"}}])
+    top = [{"id": "tc_outer", "name": "research", "parent_id": None, "state": "done", "activity": None, "started_at": 1.0, "duration_ms": 5000}]
+    nested = [{"id": "tc_inner", "name": "search_web", "parent_id": "tc_outer", "state": "done", "activity": "Searching", "started_at": 2.0, "duration_ms": 900}]
+    # a top-level run is anchored on the assistant message's own id (the handler's parent_message_id), a nested run on the outer tool call id
+    db.add_collection(chat_id=chat_id, parent_message_id=asst_id, parent_type="main", collection_type="agent_runs", items=top, overwrite=True)
+    db.add_collection(chat_id=chat_id, parent_message_id="tc_outer", parent_type="research", collection_type="agent_runs", items=nested, overwrite=True)
+    assistant = next(m for m in db.get_woven_history(chat_id) if m.get("role") == "assistant")
+    runs = [json.loads(c["items"]) if isinstance(c["items"], str) else c["items"] for c in assistant["collections"] if c["collection_type"] == "agent_runs"]
+    assert top in runs and nested in runs

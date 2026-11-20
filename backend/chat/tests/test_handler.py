@@ -327,6 +327,13 @@ async def test_handle_tool_execution_disabled(mock_db, mock_task_manager):
         
     assert any("Error: Tool execution denied" in c for c in chunks)
     mock_db.add_message.assert_called()
+    assert mock_db.add_message.call_args.kwargs["duration_ms"] == 0  # refused: nothing ran
+    # every keyword must exist on the real method (a mock accepts anything)
+    import inspect
+    from backend.database.wrapper.message_ops import MessageOpsMixin
+    inspect.signature(MessageOpsMixin.add_message).bind(None, **mock_db.add_message.call_args.kwargs)
+    denied = next(c for c in chunks if "Error: Tool execution denied" in c)
+    assert json.loads(denied[len("data: "):])["choices"][0]["delta"]["tool_result"]["duration_ms"] == 0
 
 def test_parse_sse_delta():
     from backend.chat.models import SSEEventType
@@ -603,3 +610,30 @@ async def test_initiate_chat_drops_git_mode_for_a_non_admin_owner(mock_db, role,
     assert ("git_mode" in updates and updates["git_mode"] == 1) is expect_git
     assert any(c.args[0] == "chat_git_mode_denied" for c in events.call_args_list) is (not expect_git)
 
+
+
+@pytest.mark.anyio
+async def test_a_failing_tool_round_sends_a_fixed_stream_error_and_logs_the_detail(mock_db, mock_task_manager):
+    handler = ChatHandler("test")
+    mock_task_manager.is_interrupted.return_value = False
+    mock_db.get_last_assistant_message.return_value = {"id": 2, "tool_calls": [{"id": "tc1", "function": {"name": "t", "arguments": "{}"}}]}
+    mock_db.get_chat.return_value = {"last_assistant_id": 2}
+
+    async def boom(*args, **kwargs):
+        raise RuntimeError("/secret/path exploded")
+        yield
+
+    handler.tool_handler.handle_tool_calls = MagicMock(side_effect=boom)
+    with patch("backend.chat.handler.log_event") as events:
+        chunks = [c async for c in handler._handle_tool_execution(parent_message_id=1, parent_type="main")]
+    assert chunks == ['data: {"error": "Something went wrong while answering. Try sending again."}\n\n']
+    assert any(c.args[0] == "chat_tool_execution_error" and "exploded" in c.args[1]["error"] for c in events.call_args_list)
+
+
+@pytest.mark.anyio
+async def test_a_crashing_background_turn_sends_the_fixed_stream_error(mock_db, mock_task_manager):
+    handler = ChatHandler("test")
+    with patch("backend.chat.handler.TurnHandler.handle_turn", side_effect=RuntimeError("/secret/path exploded")), patch("backend.chat.handler.log_event") as events:
+        chunks = [c async for c in handler._run_background_turn(user_message={"id": 1}, model_name="m")]
+    assert chunks == ['data: {"error": "Something went wrong while answering. Try sending again."}\n\n']
+    assert any(c.args[0] == "chat_background_turn_error" and "exploded" in c.args[1]["error"] for c in events.call_args_list)

@@ -1,3 +1,4 @@
+from backend.logging import error_detail, log_event
 from backend.mcp_client import playwright_client
 from backend.database import db
 
@@ -109,4 +110,5 @@ async def browser_screenshot(chat_id: str, **kwargs) -> str:
             })
         return res.content[0].text
     except Exception as e:
-        return json.dumps({"error": f"Failed to process screenshot: {str(e)}"})
+        log_event("browser_screenshot_error", {"error": error_detail(e)})
+        return json.dumps({"error": "Could not process the screenshot. Try again."})

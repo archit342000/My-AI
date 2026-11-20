@@ -62,8 +62,13 @@ PLAYWRIGHT_HEADLESS = os.getenv("PLAYWRIGHT_HEADLESS", "True").lower() == "true"
 # Per-user rate limits (backend/auth/rate_limit.py): turn starts (send and resume) per minute, web searches per day.
 # Zero or less means unlimited. The admin is exempt unless RATE_LIMIT_EXEMPT_ADMIN is false.
 RATE_LIMIT_TURNS_PER_MINUTE = int(os.getenv("RATE_LIMIT_TURNS_PER_MINUTE", "10"))
+
 RATE_LIMIT_SEARCHES_PER_DAY = int(os.getenv("RATE_LIMIT_SEARCHES_PER_DAY", "200"))
 RATE_LIMIT_EXEMPT_ADMIN = os.getenv("RATE_LIMIT_EXEMPT_ADMIN", "True").lower() == "true"
+
+# A temporary chat that nobody saved or discarded is removed once it is this old (seconds since its last turn), on its owner's next
+# chat-list request. Zero or less makes every idle unsaved temporary chat eligible at the next listing.
+TEMPORARY_CHAT_TTL_SECONDS = int(os.getenv("TEMPORARY_CHAT_TTL_SECONDS", 86400))
 CHROMA_PATH = get_secret("CHROMA_PATH", os.path.abspath(os.path.join(DATA_DIR, "chroma_db")))
 
 # Ensure persistence directories exist
@@ -351,6 +356,11 @@ DOCUMENT_AGENT_RAG_DEPTH_MAP = {"basic": 3, "standard": 5, "deep": 7}
 # =============================================================================
 FILE_SYSTEM_MAX_SEARCH_RESULTS = int(os.getenv("FILE_SYSTEM_MAX_SEARCH_RESULTS", 15))
 FILE_SYSTEM_SEARCH_CONTEXT_LINES = int(os.getenv("FILE_SYSTEM_SEARCH_CONTEXT_LINES", 2))
+# Content search route (GET /api/file_systems/search)
+FILE_SEARCH_DEFAULT_RESULTS = int(os.getenv("FILE_SEARCH_DEFAULT_RESULTS", 50))
+FILE_SEARCH_MAX_RESULTS = int(os.getenv("FILE_SEARCH_MAX_RESULTS", 200))
+FILE_SEARCH_MAX_QUERY_CHARS = int(os.getenv("FILE_SEARCH_MAX_QUERY_CHARS", 200))
+FILE_SEARCH_MAX_LINE_CHARS = int(os.getenv("FILE_SEARCH_MAX_LINE_CHARS", 300))
 MAX_FS_AGENT_INSTRUCTION_LENGTH = int(os.getenv("MAX_FS_AGENT_INSTRUCTION_LENGTH", 2000))
 FILE_SYSTEM_AGENT_MAX_TURNS = int(os.getenv("FILE_SYSTEM_AGENT_MAX_TURNS", 100))
 FILE_SYSTEM_AGENT_FAILSAFE_TURNS = int(os.getenv("FILE_SYSTEM_AGENT_FAILSAFE_TURNS", 10))

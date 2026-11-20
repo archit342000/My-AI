@@ -222,13 +222,14 @@ def test_upload_file_process_failure(mock_exists, mock_remove, mock_makedirs, mo
         }
         response = client.post('/files/upload', data=data, content_type='multipart/form-data')
         assert response.status_code == 500
-        assert "Failed to process file" in response.get_json()['error']
+        assert response.get_json()['error'] == "Could not read the uploaded file. Try another file."
 
+@patch('backend.files.router.log_event')
 @patch('backend.files.router.get_file_manager')
 @patch('backend.files.router.os.makedirs')
 @patch('backend.files.router.os.remove')
 @patch('backend.files.router.os.path.exists', return_value=True)
-def test_upload_file_exception(mock_exists, mock_remove, mock_makedirs, mock_get_file_manager, client):
+def test_upload_file_exception(mock_exists, mock_remove, mock_makedirs, mock_get_file_manager, mock_log_event, client):
     mock_file_manager = MagicMock()
     mock_file_manager.upload_file_async = AsyncMock(side_effect=Exception("Internal error"))
     mock_get_file_manager.return_value = mock_file_manager
@@ -240,7 +241,9 @@ def test_upload_file_exception(mock_exists, mock_remove, mock_makedirs, mock_get
         }
         response = client.post('/files/upload', data=data, content_type='multipart/form-data')
         assert response.status_code == 500
-        assert "Internal error" in response.get_json()['error']
+        assert response.get_json()['error'] == "Could not upload the file. Try again."
+        assert "Internal error" not in response.get_data(as_text=True)
+        assert any(c.args[0] == "files_upload_error" and "Internal error" in c.args[1]["error"] for c in mock_log_event.call_args_list)
 
 # --- Dummy tests to satisfy AST coverage parser ---
 def test_get_file_endpoint(): pass

@@ -49,6 +49,8 @@ export interface CompletionOptions {
   personaId: string | null;
   folder: string | null;
   uploadedFiles?: UploadedFile[];
+  /** True on every send of a temporary chat; the server marks the chat on its first send and keeps it out of the chat list. */
+  temporary?: boolean;
 }
 
 export function buildCompletionBody(o: CompletionOptions): Record<string, unknown> {
@@ -69,6 +71,7 @@ export function buildCompletionBody(o: CompletionOptions): Record<string, unknow
     stream: true,
     stream_options: { include_usage: true },
     uploadedFiles: o.uploadedFiles && o.uploadedFiles.length > 0 ? o.uploadedFiles : undefined,
+    temporary: o.temporary ? true : undefined,
     ...o.sampling,
   };
 }

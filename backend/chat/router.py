@@ -5,20 +5,24 @@ import time
 from typing import Dict, Any
 
 from backend.chat.handler import ChatHandler
+from backend.chat.cleanup import purge_expired_temporary_chats
 from backend.auth import rate_limit
 from backend.auth.context import current_user, current_user_id
 from backend.auth.ownership import claim_chat, reject_foreign_chat, require_chat_owner, require_workspace_owner
 from backend.chat.message_edit import merge_edited_user_content
 from backend.database import db
-from backend.logging import log_event
+from backend.logging import log_event, error_detail
 from backend.task_manager import task_manager
 from backend.utils import read_json_object
 from backend.file_system import FileSystemChannelManager
 from backend.files.router import get_file_manager
 from backend import config
+from backend.error_handling import USER_STREAM_ERROR
 import os
 
 logger = logging.getLogger(__name__)
+
+
 
 chat_bp = Blueprint('chat', __name__)
 openai_bp = Blueprint('openai', __name__)
@@ -34,6 +38,8 @@ STILL_STOPPING = "The chat is still stopping its response; try again in a moment
 @chat_bp.route('/', methods=['GET'])
 def list_chats():
     logger.debug("[API] GET /api/chats - listing chats that have content")
+    # Unsaved temporary chats are never listed; the ones nobody saved or discarded in time are removed here.
+    purge_expired_temporary_chats(current_user_id(), _delete_chat_fully)
     chats = db.get_listed_chats(current_user_id())
     return jsonify(chats)
 
@@ -215,6 +221,10 @@ def patch_chat_endpoint(chat_id):
     enable_thinking = data.get('enable_thinking')
     thinking_profile = data.get('thinking_profile')
 
+    # Saving a temporary chat: the only accepted value is false; refused before anything is created or written.
+    if 'is_temporary' in data and data['is_temporary'] is not False:
+        return jsonify({"error": "is_temporary can only be set to false"}), 400
+
     # A target workspace must belong to the caller; checked before anything is created or written.
     if workspace_id:
         denied = require_workspace_owner(workspace_id)
@@ -243,6 +253,8 @@ def patch_chat_endpoint(chat_id):
         db.update_chat(chat_id=chat_id, thinking_budget_tokens=thinking_budget_tokens)
     if 'workspace_id' in data:
         db.update_chat_workspace(chat_id=chat_id, workspace_id=workspace_id)
+    if 'is_temporary' in data:
+        db.update_chat(chat_id=chat_id, is_temporary=0)  # saved: the chat is listed and kept
     if 'research_completed' in data:
         db.mark_research_completed(chat_id=chat_id, completed=data['research_completed'])
     if 'user_preferences' in data:
@@ -283,44 +295,57 @@ def patch_chat_endpoint(chat_id):
 
     return jsonify({"success": True})
 
+def _delete_chat_fully(chat_id):
+    """
+    Stop the chat's turn and remove everything it owns: files (disk and RAG), task state, rows and the file channel.
+    Returns False, leaving the chat intact, when the turn did not stop in time.
+    """
+    # End the chat's turn first: a worker that outlives the chat would write rows for a chat that is gone.
+    if not task_manager.stop_task_and_wait(chat_id):
+        log_event("chat_delete_stop_timeout", {"chat_id": chat_id})
+        return False
+    from backend.tools.callbacks import callback_registry
+    from backend.database import response_cache
+    callback_registry.cleanup_chat(chat_id)
+    response_cache.cleanup_chat(chat_id)
+
+    # 1. Physical cleanup of files (disk + RAG). The embedding model and RAG manager are set up only for a chat that has files,
+    # and a setup failure propagates (the chat is kept, so a delete or the next sweep can retry) instead of orphaning its files.
+    try:
+        chat_files = db.get_chat_files(chat_id)
+    except Exception as e:
+        logger.error(f"Error listing the files of chat {chat_id}: {e}")
+        chat_files = []
+    if chat_files:
+        from backend.rag import RAGProvider
+        from backend.models import get_embedding_model
+        from backend.files.manager import FileManager
+        rag_manager = RAGProvider.get_manager(
+            persist_path=config.CHROMA_PATH,
+            embedding_model=get_embedding_model()
+        )
+        file_manager = FileManager(rag_manager=rag_manager)
+        try:
+            for f in chat_files:
+                file_manager.delete_file(f['id'])
+        except Exception as e:
+            logger.error(f"Error during physical file cleanup for chat {chat_id}: {e}")
+
+    # 2. Database cleanup (the task files go first: a failure there leaves the chat intact)
+    task_manager.forget_chat(chat_id)
+    db.delete_chat(chat_id=chat_id)
+
+    FileSystemChannelManager.release_channel(chat_id)
+    return True
+
+
 @chat_bp.route('/<chat_id>', methods=['DELETE'])
 def remove_chat(chat_id):
     denied = require_chat_owner(chat_id)
     if denied:
         return denied
-    # End the chat's turn first: a worker that outlives the chat would write rows for a chat that is gone.
-    if not task_manager.stop_task_and_wait(chat_id):
-        log_event("chat_delete_stop_timeout", {"chat_id": chat_id})
+    if not _delete_chat_fully(chat_id):
         return jsonify({"error": STILL_STOPPING}), 409
-    from backend.tools.callbacks import callback_registry
-    from backend.database import response_cache
-    callback_registry.cleanup_chat(chat_id)
-    response_cache.cleanup_chat(chat_id)
-    from backend.rag import RAGProvider
-    from backend.models import get_embedding_model
-    from backend.files.manager import FileManager
-
-    # 1. Setup RAG and File Manager for cleanup
-    embedding_model = get_embedding_model()
-    rag_manager = RAGProvider.get_manager(
-        persist_path=config.CHROMA_PATH,
-        embedding_model=embedding_model
-    )
-    file_manager = FileManager(rag_manager=rag_manager)
-
-    # 2. Physical Cleanup of Files (Disk + RAG)
-    try:
-        chat_files = db.get_chat_files(chat_id)
-        for f in chat_files:
-            file_manager.delete_file(f['id'])
-    except Exception as e:
-        logger.error(f"Error during physical file cleanup for chat {chat_id}: {e}")
-
-    # 3. Database Cleanup (the task files go first: a failure there leaves the chat intact)
-    task_manager.forget_chat(chat_id)
-    db.delete_chat(chat_id=chat_id)
-    
-    FileSystemChannelManager.release_channel(chat_id)
     return jsonify({"success": True})
 
 # =============================================================================
@@ -342,7 +367,8 @@ def get_chat_history_full(chat_id):
         return jsonify(result)
     except Exception as e:
         logger.error(f"Error fetching history for chat {chat_id}: {e}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        log_event("chat_history_error", {"chat_id": chat_id, "error": error_detail(e)})
+        return jsonify({"error": "Could not load the chat. Try again."}), 500
 
 def _forbid_git_mode_for_non_admin(body):
     """
@@ -412,6 +438,11 @@ def chat_completions():
     if denied:
         return denied
 
+    # A temporary chat is marked on its first send; checked before the claim like the other request checks.
+    temporary = data.get('temporary', False)
+    if not isinstance(temporary, bool):
+        return jsonify({"error": "temporary must be true or false"}), 400
+
     if files is not None and not isinstance(files, list):
         return jsonify({"error": "uploadedFiles must be a list"}), 400
 
@@ -425,6 +456,10 @@ def chat_completions():
     denied = claim_chat(chat_id)
     if denied:
         return denied
+
+    # First send of a temporary chat (no messages yet): mark it, so it stays out of the chat list until it is saved.
+    if temporary:
+        db.mark_chat_temporary(chat_id)
 
     # One turn per chat: refuse before a message is stored if a turn is running or being started.
     turns = task_manager  # the same manager claims and releases, whatever happens to the module global
@@ -554,7 +589,7 @@ def chat_completions():
         handler = ChatHandler(chat_id)
         
         # Pass extra body params (sampling, etc)
-        extra_body = {k: v for k, v in data.items() if k not in ['messages', 'chatId', 'uploadedFiles', 'model']}
+        extra_body = {k: v for k, v in data.items() if k not in ['messages', 'chatId', 'uploadedFiles', 'model', 'temporary']}
         
         def generate_stream():
             import asyncio
@@ -579,7 +614,8 @@ def chat_completions():
                         break
                     except Exception as e:
                         logger.error(f"Stream generation error: {e}")
-                        yield f"data: {json.dumps({'error': str(e)})}\n\n"
+                        log_event("chat_stream_error", {"chat_id": chat_id, "error": error_detail(e)})
+                        yield f"data: {json.dumps({'error': USER_STREAM_ERROR})}\n\n"
                         break
             finally:
                 loop.close()
@@ -592,7 +628,8 @@ def chat_completions():
     except Exception as e:
         turns.release_turn_claim(chat_id)
         logger.error(f"Error in chat_completions route: {e}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        log_event("chat_completions_error", {"chat_id": chat_id, "error": error_detail(e)})
+        return jsonify({"error": "Could not start the answer. Try sending again."}), 500
 
 @chat_bp.route('/<chat_id>/stream', methods=['GET'])
 def reattach_stream(chat_id):
@@ -712,7 +749,8 @@ def resume_chat(chat_id):
     except Exception as e:
         turns.release_turn_claim(chat_id)
         logger.error(f"Error in resume_chat route: {e}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        log_event("chat_resume_error", {"chat_id": chat_id, "error": error_detail(e)})
+        return jsonify({"error": "Could not retry the answer. Try again."}), 500
 
 @chat_bp.route('/<chat_id>/stop', methods=['POST'])
 def stop_chat(chat_id):
@@ -748,7 +786,8 @@ def stop_chat(chat_id):
         return jsonify({"status": "success", "stopped": stopped})
     except Exception as e:
         logger.error(f"Error stopping chat {chat_id}: {e}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        log_event("chat_stop_error", {"chat_id": chat_id, "error": error_detail(e)})
+        return jsonify({"error": "Could not stop the answer. Try again."}), 500
 
 
 @chat_bp.route('/<chat_id>/messages/<int:message_id>', methods=['PUT', 'PATCH'])

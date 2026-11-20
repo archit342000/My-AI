@@ -837,3 +837,60 @@ class TestOwnership:
         assert chat["title"] == "Original" and chat["last_model"] is None and chat["user_id"] == "ua"
         temp_db.save_chat("c1", "Renamed by owner", time.time(), enable_thinking=1, user_id="ua")
         assert temp_db.get_chat("c1")["title"] == "Renamed by owner"
+
+
+class TestTemporaryChats:
+    """Unsaved temporary chats are kept out of the list and can be found once they are old."""
+
+    def _ids(self, rows):
+        return [r["id"] for r in rows]
+
+    def test_update_chat_sets_and_clears_the_flag_and_it_defaults_to_zero(self, temp_db):
+        temp_db.ensure_chat_exists("tmp_flag", "u1")
+        assert not temp_db.get_chat("tmp_flag")["is_temporary"]
+        temp_db.update_chat("tmp_flag", is_temporary=1)
+        assert temp_db.get_chat("tmp_flag")["is_temporary"] == 1
+        temp_db.update_chat("tmp_flag", is_temporary=0)
+        assert temp_db.get_chat("tmp_flag")["is_temporary"] == 0
+
+    def test_a_temporary_chat_with_content_is_not_listed_until_saved(self, temp_db):
+        temp_db.ensure_chat_exists("tmp_listed", "u1")
+        temp_db.add_message("tmp_listed", role="user", content="hi")
+        temp_db.update_chat("tmp_listed", is_temporary=1)
+        assert "tmp_listed" not in self._ids(temp_db.get_listed_chats("u1"))
+        assert "tmp_listed" in self._ids(temp_db.get_all_chats("u1"))  # internal callers still see it
+        temp_db.update_chat("tmp_listed", is_temporary=0)
+        assert "tmp_listed" in self._ids(temp_db.get_listed_chats("u1"))
+
+    def test_expired_query_returns_only_the_callers_old_unsaved_temporary_chats(self, temp_db):
+        for chat, user, ts, temp in (("tmp_old", "u1", 100.0, 1), ("tmp_new", "u1", 900.0, 1), ("tmp_saved", "u1", 100.0, 0), ("tmp_other", "u2", 100.0, 1)):
+            temp_db.save_chat(chat, chat, ts, enable_thinking=1, user_id=user)
+            temp_db.update_chat(chat, is_temporary=temp, timestamp=ts)
+        assert temp_db.get_expired_temporary_chats("u1", 500.0) == ["tmp_old"]
+        assert temp_db.get_expired_temporary_chats("u2", 500.0) == ["tmp_other"]
+        assert temp_db.get_expired_temporary_chats("u1", 50.0) == []
+
+    def test_mark_chat_temporary_only_marks_a_chat_without_messages(self, temp_db):
+        temp_db.ensure_chat_exists("tmp_mark_new", "u1")
+        assert temp_db.mark_chat_temporary("tmp_mark_new") is True
+        assert temp_db.get_chat("tmp_mark_new")["is_temporary"] == 1
+        temp_db.ensure_chat_exists("tmp_mark_used", "u1")
+        temp_db.add_message("tmp_mark_used", role="user", content="hi")
+        assert temp_db.mark_chat_temporary("tmp_mark_used") is False  # a saved or already-used chat is not re-marked
+        assert not temp_db.get_chat("tmp_mark_used")["is_temporary"]
+        assert temp_db.mark_chat_temporary("no_such_chat") is False
+
+    def test_workspace_order_ignores_the_activity_of_unsaved_temporary_chats(self, temp_db):
+        older = temp_db.create_workspace("Order older", "u1")["id"]
+        time.sleep(0.01)
+        newer = temp_db.create_workspace("Order newer", "u1")["id"]
+        temp_db.ensure_chat_exists("tmp_ws_chat", "u1")
+        temp_db.update_chat_workspace("tmp_ws_chat", older)
+        temp_db.update_chat("tmp_ws_chat", is_temporary=1, timestamp=9e9)
+
+        def order():
+            return [w["id"] for w in temp_db.get_all_workspaces("u1") if w["id"] in (older, newer)]
+
+        assert order() == [newer, older]  # an unsaved chat does not lift its workspace
+        temp_db.update_chat("tmp_ws_chat", is_temporary=0)
+        assert order() == [older, newer]  # once saved it does
