@@ -1,9 +1,9 @@
 ---
 id: MYAI-96
 title: "Backend: what the design needs that the server does not send"
-status: todo
+status: done
 created: 2026-11-11
-updated: 2026-11-11
+updated: 2026-11-20
 links:
   split_into: [MYAI-97, MYAI-98, MYAI-99, MYAI-100, MYAI-101, MYAI-102, MYAI-103]
   relates_to: [MYAI-93, MYAI-94, MYAI-95]
@@ -22,15 +22,15 @@ While the frontend was moved to the Console at Rest design (MYAI-93) and compare
 8. **Stopping a turn has no time limit.** Nothing bounds how long a worker takes to exit after Stop, so a slow exit ends in "a response is already in progress" for the next send (already described in `docs/frontend.md`). Needed: a bounded stop, or a state the frontend can wait on.
 
 ## Acceptance criteria
-- [ ] Tool calls and assistant turns carry a duration in the stream and in stored messages
-- [ ] Research progress is sent as structured events the chat can draw as a plan card, live and after a reload
-- [ ] Sub-agent runs have an explicit start, end and current activity
-- [ ] An answer's sources are stored and sent with it
-- [ ] An abandoned temporary chat never appears in the chat list and is removed after a set time
-- [ ] Workspace files are returned relative to the workspace root
-- [ ] User-facing server messages follow the wording rules, or each failure has a stable code
-- [ ] Stop completes within a set time, or reports a state the frontend can wait on
-- [ ] API changes are documented and the frontend types in `frontend/src/api/` are updated in the same change
+- [x] Tool calls and assistant turns carry a duration in the stream and in stored messages
+- [x] Research progress is sent as structured events the chat can draw as a plan card, live and after a reload
+- [x] Sub-agent runs have an explicit start, end and current activity
+- [x] An answer's sources are stored and sent with it
+- [x] An abandoned temporary chat never appears in the chat list and is removed after a set time
+- [x] Workspace files are returned relative to the workspace root
+- [x] User-facing server messages follow the wording rules, or each failure has a stable code
+- [x] Stop completes within a set time, or reports a state the frontend can wait on
+- [x] API changes are documented and the frontend types in `frontend/src/api/` are updated in the same change
 
 ## Plan
 
@@ -39,6 +39,9 @@ This ticket was split on 2026-11-11: items 1 to 7 are MYAI-97 to MYAI-103. Item 
 Frontend follow-ups once the data exists (each is small): show durations in `features/chat/TimelineEntry.tsx` and `ThoughtBox.tsx`; add the research plan and helpers cards to the live reply in `features/chat/MessageList.tsx`; add source chips under an answer; drop the `workspace` level in `features/artifacts/FileTree.tsx`.
 
 This ticket is wide. It should probably be split by item (1 to 4 belong together as "richer turn data") before planning.
+
+### Closed (2026-11-20)
+Every item was split into its own ticket and those are merged: 1 MYAI-97, 2 MYAI-98, 3 MYAI-99, 4 MYAI-100, 5 MYAI-101, 6 MYAI-102, 7 MYAI-103 (PRs 124-132). Item 8: the server side already exists (`/stop` waits up to `TASK_STOP_WAIT_SECONDS` and answers `stopped`); the client part is MYAI-114. Frontend follow-ups: MYAI-108 to MYAI-113.
 
 ## Verification
 
@@ -55,3 +58,4 @@ This ticket is wide. It should probably be split by item (1 to 4 belong together
 - 2026-11-11: linked split_into MYAI-102
 - 2026-11-11: linked split_into MYAI-103
 - 2026-11-11: split into MYAI-97 to MYAI-103; item 8 left as a frontend/docs note
+- 2026-11-20: closed (all parts split out and done; client stop handling in MYAI-114)
