@@ -9,6 +9,9 @@ import logging
 import threading
 from typing import Optional, Dict, Any, Callable
 
+USER_STREAM_ERROR = "Something went wrong while answering. Try sending again."  # sent to the person when a turn fails; the detail goes to the log
+
+
 class CircuitOpenError(Exception):
     """Raised when the circuit breaker is open and blocking calls."""
     pass

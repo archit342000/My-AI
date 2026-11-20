@@ -110,8 +110,9 @@ async def test_visit_page_exception(mock_agent, mock_playwright, mock_db, mock_c
     gen = flow_fn(mock_agent, "visit_page", "http://example.com")
     chunks = [c async for c in gen]
     
-    assert "Visit page failed: Crash" in chunks[0]
-    assert mock_agent.result == "Visit page failed: Crash"
+    assert "Visit page failed. Try again." in chunks[0]
+    assert mock_agent.result == "Visit page failed. Try again."
+    assert "Crash" not in mock_agent.result
 
 @pytest.mark.anyio
 async def test_visit_page_synthesis_failure(mock_agent, mock_playwright, mock_db, mock_config):
@@ -124,7 +125,7 @@ async def test_visit_page_synthesis_failure(mock_agent, mock_playwright, mock_db
     gen = flow_fn(mock_agent, "visit_page", "http://example.com", query="query")
     chunks = [c async for c in gen]
     
-    assert "Visit page failed: Synthesis failed" in chunks[0]
+    assert "Visit page failed. Try again." in chunks[0]
 
 @pytest.mark.anyio
 async def test_visit_page_startup_exception(mock_agent, mock_playwright, mock_db, mock_config):
@@ -133,8 +134,8 @@ async def test_visit_page_startup_exception(mock_agent, mock_playwright, mock_db
     gen = flow_fn(mock_agent, "visit_page", "http://example.com")
     chunks = [c async for c in gen]
     
-    assert "Visit page failed: DB Connection Error" in chunks[0]
-    assert mock_agent.result == "Visit page failed: DB Connection Error"
+    assert "Visit page failed. Try again." in chunks[0]
+    assert mock_agent.result == "Visit page failed. Try again."
     
     # Check that it tried to log the failure event to the database
     mock_db.add_message.assert_called_once_with(
@@ -144,3 +145,12 @@ async def test_visit_page_startup_exception(mock_agent, mock_playwright, mock_db
         parent_id=mock_agent.parent_message_id,
         parent_type='visit_page'
     )
+
+
+@pytest.mark.anyio
+async def test_a_visit_failure_logs_the_detail_and_shows_none_of_it(mock_agent, mock_playwright, mock_db, mock_config):
+    mock_playwright.execute_tool.side_effect = RuntimeError("/secret/place crashed")
+    with patch('backend.tools.agents.visit_page_agent.agent.log_event') as events:
+        chunks = [c async for c in flow_fn(mock_agent, "visit_page", "https://p.example")]
+    assert chunks == ["Visit page failed. Try again."] and "secret" not in str(mock_agent.result)
+    assert events.call_args.args[0] == "visit_page_agent_error" and "crashed" in events.call_args.args[1]["error"]

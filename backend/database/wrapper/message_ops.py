@@ -184,9 +184,10 @@ class MessageOpsMixin(BaseMixin):
                     tool_calls: str = None, tool_call_id: str = None,
                     name: str = None, parent_id: int = None,
                     parent_type: str = "main", reasoning_content: str = None,
-                    attachments: list = None):
+                    attachments: list = None, duration_ms: int = None):
         """
         Unified method to add messages to both main chat and sub-agents.
+        `duration_ms` is how long a tool call took (on a `tool` row); NULL when not measured.
         If parent_type is 'main', adds to the 'messages' table.
         Otherwise, adds to 'sub_agent_messages' using parent_type as agent_name.
         `attachments` (a list of file references) is stored only on main messages.
@@ -212,11 +213,11 @@ class MessageOpsMixin(BaseMixin):
                         c.execute('''
                             INSERT INTO messages (chat_id, role, content, timestamp, model,
                                                 tool_calls, tool_call_id, name, parent_id, parent_type, reasoning_content,
-                                                attachments)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                                attachments, duration_ms)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ''', (chat_id, role, content, timestamp, model,
                             tool_calls, tool_call_id, name, parent_id, parent_type, reasoning_content,
-                            attachments_json))
+                            attachments_json, duration_ms))
                         new_id = c.lastrowid
                         
                         # Fetch existing state for main chat pointers/order map
@@ -260,10 +261,10 @@ class MessageOpsMixin(BaseMixin):
                         c.execute('''
                             INSERT INTO sub_agent_messages (
                                 chat_id, parent_message_id, parent_type, agent_name, sequence_order,
-                                role, content, tool_calls, tool_call_id, name, model, timestamp, reasoning_content
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                role, content, tool_calls, tool_call_id, name, model, timestamp, reasoning_content, duration_ms
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ''', (chat_id, parent_id, parent_type, agent_name, seq, role, content, 
-                              tool_calls, tool_call_id, name, model, timestamp, reasoning_content))
+                              tool_calls, tool_call_id, name, model, timestamp, reasoning_content, duration_ms))
                         new_id = c.lastrowid
                     
                     c.execute("COMMIT")
@@ -287,13 +288,14 @@ class MessageOpsMixin(BaseMixin):
             # Also invalid our general sub-agent list cache
             cache_layer.invalidate("sub_agent_messages", f"chat:{chat_id}:all")
         
-        duration_ms = (time.time() - write_start) * 1000
-        self._log_db_wrapper_op("ADD_MESSAGE_END", chat_id, f"duration_ms={duration_ms:.2f} msg_id={new_id}")
+        elapsed_ms = (time.time() - write_start) * 1000
+        self._log_db_wrapper_op("ADD_MESSAGE_END", chat_id, f"duration_ms={elapsed_ms:.2f} msg_id={new_id}")
         return new_id
 
-    def add_tool_result(self, chat_id: str, tool_call_id: str, name: str, content: str, parent_id: int = None, parent_type: str = "main"):
+    def add_tool_result(self, chat_id: str, tool_call_id: str, name: str, content: str, parent_id: int = None, parent_type: str = "main",
+                        duration_ms: int = None):
         """
-        Convenience wrapper to add a tool result message.
+        Convenience wrapper to add a tool result message; `duration_ms` is how long the call took.
         """
         return self.add_message(
             chat_id=chat_id,
@@ -302,8 +304,41 @@ class MessageOpsMixin(BaseMixin):
             tool_call_id=tool_call_id,
             name=name,
             parent_id=parent_id,
-            parent_type=parent_type
+            parent_type=parent_type,
+            duration_ms=duration_ms
         )
+
+    def set_turn_duration(self, chat_id: str, after_message_id: int, duration_ms: int) -> bool:
+        """
+        Record how long a turn took on its last main assistant message: the latest `assistant` row of the chat whose id is
+        greater than `after_message_id` (the message that started the turn). Returns True when a row was updated.
+        """
+        self._log_db_wrapper_op("SET_TURN_DURATION", chat_id, f"after={after_message_id} duration_ms={duration_ms}")
+
+        def _write():
+            conn = make_connection()
+            try:
+                c = conn.cursor()
+                c.execute('''
+                    UPDATE messages SET duration_ms = ?
+                    WHERE id = (
+                        SELECT id FROM messages
+                        WHERE chat_id = ? AND role = 'assistant' AND id > ? AND (parent_type IS NULL OR parent_type = 'main')
+                        ORDER BY id DESC LIMIT 1
+                    )
+                ''', (duration_ms, chat_id, after_message_id))
+                updated = c.rowcount > 0
+                conn.commit()
+                return updated
+            finally:
+                conn.close()
+
+        updated = _write()
+        if updated:
+            cache_layer.invalidate("messages", f"chat:{chat_id}")
+            cache_layer.invalidate("chats", chat_id)
+            cache_layer.invalidate("chats_full", chat_id)
+        return updated
 
     def delete_sub_agent_message(self, chat_id: str, message_id: int):
         """Delete a single sub-agent message by ID. Used for orphan cleanup during resume."""

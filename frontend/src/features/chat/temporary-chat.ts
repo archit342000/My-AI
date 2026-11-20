@@ -57,6 +57,7 @@ export async function saveTemporaryChat(
   await chatsApi.patch(id, {
     title: firstMessage.substring(0, 50) || 'New Chat',
     user_preferences: settings.userPreferences,
+    is_temporary: false,
   });
   useUiStore.getState().setTemporaryChatId(null);
   await queryClient.invalidateQueries({ queryKey: queryKeys.chats });

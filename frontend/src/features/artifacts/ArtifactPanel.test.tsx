@@ -628,13 +628,13 @@ describe('ArtifactPanel', () => {
     });
 
     it('a run that fails says why; a file that cannot be run has Run switched off', async () => {
-      vi.spyOn(codeExecApi, 'runFile').mockRejectedValue(new Error('Failed to run file'));
+      vi.spyOn(codeExecApi, 'runFile').mockRejectedValue(new Error('Could not run the file. Try again.'));
       renderWithProviders(<ArtifactPanel scope={{ chatId: 'c' }} />);
       await openApp();
       fireEvent.click(screen.getByRole('button', { name: 'Run' }));
       const output = await screen.findByRole('region', { name: 'Run output' });
       await waitFor(() => expect(within(output).getByText('Did not run')).toBeTruthy());
-      expect(output).toHaveTextContent('Failed to run file');
+      expect(output).toHaveTextContent('Could not run the file. Try again.');
       fireEvent.click(screen.getByRole('button', { name: /^notes.md/ }));
       await screen.findByRole('heading', { name: 'Heading' });
       expect(screen.getByRole('button', { name: 'Run' })).toBeDisabled();

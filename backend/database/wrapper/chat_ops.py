@@ -82,6 +82,7 @@ class ChatOpsMixin(BaseMixin):
         Chats for the sidebar and workspace lists: only those that hold content (at least one message,
         uploaded file or chat-scoped artifact). Empty chats come from uploads, artifact creation or the
         first PATCH before any message exists, and would show up as blank "New Conversation" entries.
+        Unsaved temporary chats (`is_temporary = 1`) are never listed.
 
         `get_all_chats` stays unfiltered by content on purpose: internal callers must see every row of the user,
         including empty ones. Both are scoped to `user_id`.
@@ -103,9 +104,10 @@ class ChatOpsMixin(BaseMixin):
                     SELECT c.*, w.name as workspace_name
                     FROM chats c
                     LEFT JOIN workspaces w ON c.workspace_id = w.id
-                    WHERE EXISTS (SELECT 1 FROM messages m WHERE m.chat_id = c.id)
+                    WHERE (EXISTS (SELECT 1 FROM messages m WHERE m.chat_id = c.id)
                        OR EXISTS (SELECT 1 FROM files f WHERE f.chat_id = c.id)
-                       OR EXISTS (SELECT 1 FROM file_systems fs WHERE fs.chat_id = c.id)
+                       OR EXISTS (SELECT 1 FROM file_systems fs WHERE fs.chat_id = c.id))
+                      AND COALESCE(c.is_temporary, 0) = 0
                     ORDER BY c.timestamp DESC
                 ''')
                 return [dict(row) for row in c.fetchall()]
@@ -114,6 +116,40 @@ class ChatOpsMixin(BaseMixin):
 
         rows = cache_layer.get_table("chats", _fetch, key_extractor=lambda row: row.get('id', ''), ttl=300)
         return [row for row in rows if row.get('user_id') == user_id]
+
+    def mark_chat_temporary(self, chat_id: str) -> bool:
+        """
+        Mark a chat temporary only while it has no messages (one statement, so a save or a first message cannot be undone by
+        a racing first-send mark). Returns True when the chat was marked.
+        """
+        conn = make_connection()
+        try:
+            c = conn.cursor()
+            c.execute(
+                "UPDATE chats SET is_temporary = 1 WHERE id = ? AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.chat_id = ?)",
+                (chat_id, chat_id),
+            )
+            marked = c.rowcount > 0
+            conn.commit()
+        finally:
+            conn.close()
+        if marked:
+            cache_layer.invalidate("chats", chat_id)
+        return marked
+
+    def get_expired_temporary_chats(self, user_id: str, before_ts: float) -> list[str]:
+        """Ids of one user's unsaved temporary chats whose last activity (`timestamp`) is older than `before_ts`."""
+        _require_user_id(user_id)
+        conn = make_connection()
+        try:
+            c = conn.cursor()
+            c.execute(
+                "SELECT id FROM chats WHERE user_id = ? AND COALESCE(is_temporary, 0) = 1 AND COALESCE(timestamp, 0) < ?",
+                (user_id, before_ts),
+            )
+            return [row[0] for row in c.fetchall()]
+        finally:
+            conn.close()
 
     # =========================================================================
     # WORKSPACE OPERATIONS
@@ -131,7 +167,7 @@ class ChatOpsMixin(BaseMixin):
                 c.execute('''
                     SELECT w.*
                     FROM workspaces w
-                    LEFT JOIN chats c ON w.id = c.workspace_id
+                    LEFT JOIN chats c ON w.id = c.workspace_id AND COALESCE(c.is_temporary, 0) = 0
                     GROUP BY w.id
                     ORDER BY CASE 
                         WHEN COALESCE(w.timestamp, 0) > COALESCE(MAX(c.timestamp), 0) 
@@ -379,7 +415,7 @@ class ChatOpsMixin(BaseMixin):
                     'top_k', 'min_p', 'presence_penalty', 'frequency_penalty',
                     'last_user_id', 'last_assistant_id', 'research_state',
                     'resume_suppressed', 'thinking_profile',
-                    'browsing_session_id', 'git_mode', 'code_execution_mode', 'timestamp'
+                    'browsing_session_id', 'git_mode', 'code_execution_mode', 'timestamp', 'is_temporary'
                 ]
                 for field in allowed_fields:
                     if field in kwargs:
