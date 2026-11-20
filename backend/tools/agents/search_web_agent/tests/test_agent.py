@@ -145,6 +145,7 @@ async def test_search_web_fatal_failure(mock_agent, mock_tavily, mock_db, mock_c
         chunks = [c async for c in gen]
         
         assert "Search failed after 3 attempts" in chunks[0]
+        assert "Fatal error" not in chunks[0]
         assert mock_agent.result == chunks[0]
         assert mock_tavily.execute_tool.call_count == 3
 
@@ -197,7 +198,8 @@ async def test_search_web_synthesis_failure(mock_agent, mock_tavily, mock_db, mo
     gen = flow_fn(mock_agent, "search_web", "query", depth="advanced")
     chunks = [c async for c in gen]
     
-    assert "Search failed: Synthesis failed" in chunks[0]
+    assert "Search failed. Try again or rephrase the request." in chunks[0]
+    assert "Synthesis failed" not in chunks[0]
 
 @pytest.mark.anyio
 async def test_search_web_initialization_failure(mock_agent, mock_tavily, mock_db, mock_config):
@@ -207,8 +209,9 @@ async def test_search_web_initialization_failure(mock_agent, mock_tavily, mock_d
     chunks = [c async for c in gen]
     
     assert len(chunks) == 1
-    assert "Search failed: DB connection down" in chunks[0]
-    assert mock_agent.result == "Search failed: DB connection down"
+    assert "Search failed. Try again or rephrase the request." in chunks[0]
+    assert mock_agent.result == "Search failed. Try again or rephrase the request."
+    assert "DB connection down" not in mock_agent.result
     
     mock_db.add_message.assert_any_call(
         chat_id="test_chat",
@@ -268,3 +271,14 @@ async def test_a_search_that_needs_retries_counts_as_one_hit(mock_agent, mock_ta
     assert mock_tavily.execute_tool.call_count == 3
     assert search_limit.call_count == 1
 
+
+
+@pytest.mark.anyio
+async def test_search_failures_log_the_detail_and_show_none_of_it(mock_agent, mock_tavily, mock_db, mock_config):
+    mock_tavily.execute_tool.side_effect = RuntimeError("/secret/place tavily down")
+    with patch('backend.tools.agents.search_web_agent.agent.asyncio.sleep', new_callable=AsyncMock), \
+         patch('backend.tools.agents.search_web_agent.agent.log_event') as events:
+        chunks = [c async for c in flow_fn(mock_agent, "search_web", "query")]
+    assert chunks == ["Search failed after 3 attempts. Try again or rephrase the request."]
+    assert "secret" not in str(mock_agent.result)
+    assert events.call_args.args[0] == "search_web_agent_error" and "tavily down" in events.call_args.args[1]["error"] and events.call_args.args[1]["attempts"] == 3

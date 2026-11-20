@@ -20,7 +20,7 @@ Client code lives in `frontend/src/api/`.
 - Status codes: `200` ok, `400` invalid input, `401` not authenticated (set by `authenticate_request`), `403` forbidden operation (also an unknown or inactive user),
   `404` not found (also another user's chat or workspace, so ids are not confirmed), `409` conflict (a chat's turn has not ended in time to delete it), `413` upload too large, `429` over the caller's turn limit (with a `Retry-After` header in seconds), `500` unexpected failure.
 - Error body is `{"error": "<short message>"}`. The personas and skills routes also include `"success": false`; keep that there for
-  compatibility but use the plain form elsewhere. Do not return stack traces or `str(e)` of internal exceptions from new code.
+  compatibility but use the plain form elsewhere. Do not return stack traces or `str(e)` of internal exceptions from new code; the wording rules for every user-facing message are in `docs/standards/errors-and-logging.md`.
 - Validate before acting, and fail with `400` (not a partial write).
 - Routes that read a JSON body use `read_json_object` (`backend/utils.py`): a missing, malformed or non-object body is `400 {"error": "Request body must be a JSON object"}` (the personas and skills routes add `"success": false`), never Flask's HTML 400/415 page or a 500. Pass `required=False` only when every field is optional: an absent body (nothing, `null`, `[]`) is then accepted as `{}`, while a malformed or non-object body is still a 400.
 

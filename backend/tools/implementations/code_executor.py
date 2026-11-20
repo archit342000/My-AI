@@ -8,8 +8,8 @@ from typing import Optional, List, Dict, Any
 
 from backend import config
 from backend.database import db
-from backend.file_system.utils import resolve_owner_and_physical_path
-from backend.logging import log_event
+from backend.file_system.utils import PathRuleError, resolve_owner_and_physical_path
+from backend.logging import error_detail, log_event
 from backend.tools.clarify import request_clarification
 from backend.tools.implementations.run_slot import RunQueueFull, RunQueueTimeout, async_run_slot
 from code_runner_mcp.safety import classify_code
@@ -281,11 +281,14 @@ async def run_file(
     except FileNotFoundError:
         return f"Error: File '{path}' does not exist."
     except ValueError as e:
-        return f"Error: Failed to resolve file path: {e}"
+        if isinstance(e, PathRuleError):
+            return f"Error: {e}"  # the path rules' own wording, written for people
+        log_event("code_executor_resolve_error", {"chat_id": chat_id, "path": str(path)[:200], "error": error_detail(e)})
+        return "Error: Could not open that file. Check the path and try again."
     except Exception as e:
         # Not an input problem (for example a database failure): keep the detail in the log, not in the result.
-        log_event("code_executor_resolve_error", {"chat_id": chat_id, "path": str(path)[:200], "error": type(e).__name__})
-        return "Error: Failed to resolve file path."
+        log_event("code_executor_resolve_error", {"chat_id": chat_id, "path": str(path)[:200], "error": error_detail(e)})
+        return "Error: Could not open that file. Check the path and try again."
 
     # Map extension to language
     ext = os.path.splitext(physical_target_path)[1].lower()

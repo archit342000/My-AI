@@ -1,4 +1,5 @@
 import asyncio
+from backend.file_system.utils import PathRuleError
 import threading
 from contextlib import asynccontextmanager
 import pytest
@@ -221,14 +222,14 @@ def test_run_file_non_input_resolver_failure_keeps_its_detail_out_of_the_result(
     import asyncio
     with patch('backend.tools.implementations.code_executor.resolve_owner_and_physical_path', side_effect=RuntimeError("db at /secret/chats.db locked")):
         res = asyncio.run(run_file(path="a.py", chat_id="c1", tool_call_id="tc"))
-    assert res == "Error: Failed to resolve file path."
+    assert res == "Error: Could not open that file. Check the path and try again."
 
 
 def test_run_file_invalid_path_keeps_the_resolvers_message_for_the_agent():
     import asyncio
-    with patch('backend.tools.implementations.code_executor.resolve_owner_and_physical_path', side_effect=ValueError("reserved path 'workspace/'")):
+    with patch('backend.tools.implementations.code_executor.resolve_owner_and_physical_path', side_effect=PathRuleError("reserved path 'workspace/'")):
         res = asyncio.run(run_file(path="workspace/a.py", chat_id="c1", tool_call_id="tc"))
-    assert res == "Error: Failed to resolve file path: reserved path 'workspace/'"
+    assert res == "Error: reserved path 'workspace/'"
 
 
 def test_install_packages_reports_a_rejected_package_request_clearly(mock_db, mock_requests):
@@ -329,18 +330,18 @@ def _resolver_for(tmp_path):
 
 
 def test_run_file_keeps_the_resolvers_own_message_for_an_invalid_path():
-    with patch('backend.tools.implementations.code_executor.resolve_owner_and_physical_path', side_effect=ValueError("Path is reserved")):
+    with patch('backend.tools.implementations.code_executor.resolve_owner_and_physical_path', side_effect=PathRuleError("Path is reserved")):
         res = asyncio.run(run_file(path="workspace/a.py", chat_id="c1", tool_call_id="tc"))
-    assert res == "Error: Failed to resolve file path: Path is reserved"
+    assert res == "Error: Path is reserved"
 
 
 def test_run_file_hides_an_internal_resolver_failure_and_logs_it():
     with patch('backend.tools.implementations.code_executor.resolve_owner_and_physical_path', side_effect=RuntimeError("db locked at /secret")), \
          patch('backend.tools.implementations.code_executor.log_event') as log:
         res = asyncio.run(run_file(path="a.py", chat_id="c1", tool_call_id="tc"))
-    assert res == "Error: Failed to resolve file path."
+    assert res == "Error: Could not open that file. Check the path and try again."
     assert "/secret" not in res
-    log.assert_called_once_with("code_executor_resolve_error", {"chat_id": "c1", "path": "a.py", "error": "RuntimeError"})
+    log.assert_called_once_with("code_executor_resolve_error", {"chat_id": "c1", "path": "a.py", "error": "RuntimeError: db locked at /secret"})
 
 
 def test_run_file_known_user_facing_messages_are_unchanged(tmp_path):
@@ -386,8 +387,8 @@ def test_run_file_internal_resolver_failure_logs_a_capped_string_path_even_for_o
     with patch('backend.tools.implementations.code_executor.resolve_owner_and_physical_path', side_effect=AttributeError("boom")), \
          patch('backend.tools.implementations.code_executor.log_event') as log:
         res = asyncio.run(run_file(path=path, chat_id="c1", tool_call_id="tc"))
-    assert res == "Error: Failed to resolve file path."
-    log.assert_called_once_with("code_executor_resolve_error", {"chat_id": "c1", "path": logged, "error": "AttributeError"})
+    assert res == "Error: Could not open that file. Check the path and try again."
+    log.assert_called_once_with("code_executor_resolve_error", {"chat_id": "c1", "path": logged, "error": "AttributeError: boom"})
 
 
 # --- the run slot: runner calls are serialised, keyed by the chat owner, and never block the event loop ------

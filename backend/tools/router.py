@@ -4,7 +4,7 @@ import logging
 from backend.auth.context import admin_required, current_user_id
 from backend.auth.ownership import require_chat_owner
 from backend.tools.callbacks import callback_registry
-from backend.logging import log_event
+from backend.logging import log_event, error_detail
 from backend.utils import read_json_object
 
 logger = logging.getLogger(__name__)
@@ -457,8 +457,8 @@ async def api_run_file():
         return jsonify({"error": "Invalid file path"}), 400
     except Exception as e:
         logger.error(f"Error resolving file for direct run: {e}", exc_info=True)
-        log_event("tools_run_file_error", {"chat_id": chat_id, "path": path[:200], "error": str(e)})
-        return jsonify({"error": "Failed to run file"}), 500
+        log_event("tools_run_file_error", {"chat_id": chat_id, "path": path[:200], "error": error_detail(e)})
+        return jsonify({"error": "Could not run the file. Try again."}), 500
 
     try:
         result = await run_file(
@@ -472,7 +472,7 @@ async def api_run_file():
         return jsonify({"result": result})
     except Exception as e:
         logger.error(f"Error running file directly: {e}", exc_info=True)
-        log_event("tools_run_file_error", {"chat_id": chat_id, "path": path[:200], "error": str(e)})
-        return jsonify({"error": "Failed to run file"}), 500
+        log_event("tools_run_file_error", {"chat_id": chat_id, "path": path[:200], "error": error_detail(e)})
+        return jsonify({"error": "Could not run the file. Try again."}), 500
 
 

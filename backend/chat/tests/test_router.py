@@ -229,10 +229,11 @@ def test_get_chat_history_full(mock_chat_handler_class, client):
     assert response.status_code == 200
     assert response.json == [{"role": "user", "content": "hello"}]
     
-    mock_handler.get_history.side_effect = Exception("error")
+    mock_handler.get_history.side_effect = Exception("/secret/path db locked")
     response = client.get('/api/chats/chat1')
     assert response.status_code == 500
-    assert response.json == {"error": "error"}
+    assert response.json == {"error": "Could not load the chat. Try again."}  # the exception text is not sent
+    assert "secret" not in response.get_data(as_text=True)
 
 @patch('backend.chat.router.db')
 @patch('backend.chat.router.log_event')
@@ -288,7 +289,9 @@ def test_chat_completions_stream_error(mock_chat_handler_class, mock_log_event, 
     assert response.status_code == 200
     data = response.get_data(as_text=True)
     assert "data: ok\n\n" in data
-    assert "simulated error" in data
+    assert "Something went wrong while answering. Try sending again." in data
+    assert "simulated error" not in data  # the detail stays in the log
+    assert any(c.args[0] == "chat_stream_error" and "ValueError: simulated error" in c.args[1]["error"] for c in mock_log_event.call_args_list)
 
 @patch('backend.chat.router.db')
 @patch('backend.chat.router.ChatHandler')
@@ -335,6 +338,7 @@ def test_chat_completions_releases_claim_on_route_error(mock_task_manager, mock_
     })
     assert response.status_code == 500
     mock_task_manager.release_turn_claim.assert_called_once_with("chat1")
+    assert response.json == {"error": "Could not start the answer. Try sending again."}  # not "db down"
 
 @patch('backend.chat.router.db')
 @patch('backend.chat.router.ChatHandler')
@@ -502,6 +506,7 @@ def test_resume_chat_releases_claim_on_route_error(mock_task_manager, mock_handl
     mock_db.get_messages.side_effect = Exception("db down")
     response = client.post('/api/chats/chat1/resume', json={})
     assert response.status_code == 500
+    assert response.json == {"error": "Could not retry the answer. Try again."}
     mock_task_manager.release_turn_claim.assert_called_once_with("chat1")
 
 @patch('backend.chat.router.db')
@@ -604,6 +609,7 @@ def test_stop_chat(mock_log_event, mock_callback_registry, mock_response_cache, 
     mock_task_manager.stop_task_and_wait.side_effect = Exception("error")
     response = client.post('/api/chats/chat1/stop')
     assert response.status_code == 500
+    assert response.json == {"error": "Could not stop the answer. Try again."}
 
 @patch('backend.chat.router.db')
 def test_edit_message_endpoint(mock_db, client):
@@ -1628,3 +1634,30 @@ def test_clear_all_stops_a_turn_that_started_after_the_first_pass(mock_db, mock_
     assert client.delete('/api/chats/').status_code == 200
     assert [c.args[0] for c in mock_task_manager.stop_task_and_wait.call_args_list] == ["c1", "c2"]
     mock_db.delete_all_chats.assert_called_once()
+
+
+@pytest.mark.parametrize("name,trigger", [
+    ("chat_completions_error", "completions"),
+    ("chat_resume_error", "resume"),
+    ("chat_stop_error", "stop"),
+    ("chat_history_error", "history"),
+])
+def test_a_failing_chat_route_logs_the_detail_under_its_own_event(client, name, trigger):
+    secret = "/secret/path db locked"
+    with patch('backend.chat.router.db') as mock_db, patch('backend.chat.router.task_manager') as tm, \
+         patch('backend.chat.router.ChatHandler') as handler, patch('backend.chat.router.log_event') as events:
+        tm.claim_turn.return_value = True
+        mock_db.get_messages.side_effect = Exception(secret)
+        mock_db.add_message.side_effect = Exception(secret)
+        tm.stop_task_and_wait.side_effect = Exception(secret)
+        handler.return_value.get_history.side_effect = Exception(secret)
+        if trigger == "completions":
+            response = client.post('/v1/chat/completions', json={"chatId": "chat1", "model": "m", "messages": [{"role": "user", "content": "hi"}]})
+        elif trigger == "resume":
+            response = client.post('/api/chats/chat1/resume', json={})
+        elif trigger == "stop":
+            response = client.post('/api/chats/chat1/stop')
+        else:
+            response = client.get('/api/chats/chat1')
+    assert response.status_code == 500 and "secret" not in response.get_data(as_text=True)
+    assert any(c.args[0] == name and secret in c.args[1]["error"] for c in events.call_args_list)

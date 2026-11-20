@@ -5,7 +5,8 @@ import asyncio
 from typing import Any, Callable
 
 from backend.database import db, response_cache
-from backend.logging import log_event
+from backend.error_handling import USER_STREAM_ERROR
+from backend.logging import log_event, error_detail
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +53,8 @@ class TaskExecutor:
             log_event("task_cancelled", {"chat_id": self.chat_id})
         except Exception as e:
             logger.error(f"Error in TaskExecutor for {self.chat_id}: {e}", exc_info=True)
-            response_cache.append_chunk(self.chat_id, f"data: {json.dumps({'error': str(e)})}\n\n")
+            log_event("task_executor_error", {"chat_id": self.chat_id, "error": error_detail(e)})
+            response_cache.append_chunk(self.chat_id, f"data: {json.dumps({'error': USER_STREAM_ERROR})}\n\n")
             response_cache.append_chunk(self.chat_id, "[[ERROR]]")
         finally:
             self._clear_task_state()
