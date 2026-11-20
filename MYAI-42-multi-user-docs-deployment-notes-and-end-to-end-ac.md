@@ -3,7 +3,7 @@ id: MYAI-42
 title: "Multi-user: docs, deployment notes and end-to-end Access check"
 status: in-progress
 created: 2026-11-09
-updated: 2026-11-10
+updated: 2026-11-20
 links:
   blocked_by: [MYAI-33, MYAI-34, MYAI-35, MYAI-36, MYAI-37, MYAI-38, MYAI-39, MYAI-40, MYAI-41]
   split_from: [MYAI-32]
@@ -202,6 +202,13 @@ Real setup: `https://myai.architanand.dev` → Cloudflare Access app (owner-only
 ### Live re-check after deploy (2026-11-10, user-confirmed)
 Deployed develop (PRs #98, #99, #100) to the production stack. PASS: code execution works (`/execute` through the relay returns uid 61001, no cleanup error; runtime `CapEff 0xe0`); the browser portal loads through `https://myai.architanand.dev` (the black frame persisted only because Chrome had cached the earlier permanent 308 redirect; a fresh/private tab or cleared site data fixed it). Because the portal's noVNC WebSocket (`/api/tools/portal/ws`) connects through Access, the Access identity reaches WebSocket upgrades (cookie or header; which of the two was not distinguished). Still NOT covered (needs a second Access identity): user B 404 on user A's data, user 403 on admin routes, rate limit at the edge, simultaneous browser sessions.
 
+### Second identity through real Access (2026-11-20)
+- Setup: Access policy `MYAI-42 test user` (Allow, one email) added to the My-AI application; the second email added in the app as a normal user (`backend.auth.cli add`, role `user`). Before the app user existed, Access let the login through and the app answered 403 (unknown identity refused).
+- PASS (user-confirmed): the second identity signs in through Access and starts a chat. DB check: that chat is owned by the second user (admin 144 chats, second user 1).
+- Still NOT run (needs a browser session as the second user, which the user could not provide yet): cross-user 404 on the admin's chats, files and artifacts; 403 on admin routes; rate limit at the edge; simultaneous sessions. The built-in browser pane is the planned place for that session.
+- Seen on every app start (pre-existing, not part of this ticket): init_db logs `files` and `files_old` both holding rows, 145 foreign key violations after migration 11, and a "True File System" migration error on the live data.
+- Undo after the checks: `backend.auth.cli deactivate <email>` and remove the `MYAI-42 test user` policy.
+
 ## Review history
 ### Round 1 - 2026-11-09
 Verdict: Request changes (one Haiku reviewer; compose and docs diff). Resolution: fixed 6, rejected 2. Checks: `pytest tests` 66 passed, `docker compose config` ok, README 99 lines.
@@ -231,3 +238,4 @@ Verdict: Request changes (one Haiku reviewer; compose and docs diff). Resolution
 - 2026-11-10: live Access check: login/chat pass; portal black (308 to http from the vnc defaults route, no ProxyFix); WebSocket check blocked; finding noted in Verification
 - 2026-11-10: live-check findings triaged: portal fix PR #100; code execution diagnosed (runtime cleanup failure, fixed by #98 once deployed; React has no live-run socket); ticket stays open for the WebSocket header check
 - 2026-11-10: deployed; code execution and browser portal confirmed working through Access; WebSocket upgrade works; multi-identity checks still open
+- 2026-11-20: second identity added (Access policy + app user); sign-in and chat confirmed; cross-user checks still open
