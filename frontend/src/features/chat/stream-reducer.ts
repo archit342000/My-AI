@@ -33,6 +33,8 @@ interface ToolCallDelta {
 interface ToolResultDelta {
   tool_call_id?: string;
   content?: string;
+  /** Milliseconds the call took (0 when it was refused). */
+  duration_ms?: number;
 }
 
 interface Delta {
@@ -51,6 +53,8 @@ export interface StreamChunk {
   __redact__?: boolean;
   message?: string;
   parent_type?: string;
+  /** Sent once, after a turn that finished normally. */
+  turn?: { duration_ms?: number };
   choices?: Array<{ delta?: Delta }>;
 }
 

@@ -1214,3 +1214,45 @@ def test_assign_owners_updates_only_null_rows():
     conn.commit()
     assert dict(conn.execute("SELECT id, user_id FROM workspaces")) == {"mine": "someone-else", "orphan": admin}
     conn.close()
+
+
+def test_duration_ms_column_on_a_fresh_db():
+    init_db()
+    init_db()  # idempotent
+    conn = make_connection()
+    for table in ("messages", "sub_agent_messages"):
+        cols = {r[1]: r for r in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+        assert "duration_ms" in cols and cols["duration_ms"][3] == 0  # nullable
+    conn.close()
+
+
+def test_duration_ms_is_added_to_an_older_messages_schema_keeping_rows():
+    conn = make_connection()
+    conn.execute("CREATE TABLE chats (id TEXT PRIMARY KEY, title TEXT, timestamp REAL)")
+    conn.execute("""
+        CREATE TABLE messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id TEXT, role TEXT, content TEXT, timestamp REAL,
+            model TEXT, tool_calls TEXT, tool_call_id TEXT, name TEXT, parent_id INTEGER,
+            parent_type TEXT DEFAULT 'main', reasoning_content TEXT,
+            FOREIGN KEY(chat_id) REFERENCES chats(id) ON DELETE CASCADE
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE sub_agent_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id TEXT NOT NULL, parent_message_id TEXT NOT NULL,
+            agent_name TEXT NOT NULL, sequence_order INTEGER NOT NULL, role TEXT NOT NULL, content TEXT, timestamp REAL
+        )
+    """)
+    conn.execute("INSERT INTO chats (id, title, timestamp) VALUES ('c1', 't', 1.0)")
+    conn.execute("INSERT INTO messages (chat_id, role, content, timestamp) VALUES ('c1', 'user', 'old', 1.0)")
+    conn.execute("INSERT INTO sub_agent_messages (chat_id, parent_message_id, agent_name, sequence_order, role, content, timestamp) "
+                 "VALUES ('c1', '1', 'a', 0, 'tool', 'old', 1.0)")
+    conn.commit()
+    conn.close()
+
+    init_db()
+    init_db()
+    conn = make_connection()
+    assert conn.execute("SELECT content, duration_ms FROM messages").fetchall() == [("old", None)]
+    assert conn.execute("SELECT content, duration_ms FROM sub_agent_messages").fetchall() == [("old", None)]
+    conn.close()

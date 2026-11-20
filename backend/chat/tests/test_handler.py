@@ -327,6 +327,13 @@ async def test_handle_tool_execution_disabled(mock_db, mock_task_manager):
         
     assert any("Error: Tool execution denied" in c for c in chunks)
     mock_db.add_message.assert_called()
+    assert mock_db.add_message.call_args.kwargs["duration_ms"] == 0  # refused: nothing ran
+    # every keyword must exist on the real method (a mock accepts anything)
+    import inspect
+    from backend.database.wrapper.message_ops import MessageOpsMixin
+    inspect.signature(MessageOpsMixin.add_message).bind(None, **mock_db.add_message.call_args.kwargs)
+    denied = next(c for c in chunks if "Error: Tool execution denied" in c)
+    assert json.loads(denied[len("data: "):])["choices"][0]["delta"]["tool_result"]["duration_ms"] == 0
 
 def test_parse_sse_delta():
     from backend.chat.models import SSEEventType
