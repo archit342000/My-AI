@@ -1,7 +1,7 @@
 ---
 id: MYAI-42
 title: "Multi-user: docs, deployment notes and end-to-end Access check"
-status: in-progress
+status: done
 created: 2026-11-09
 updated: 2026-11-20
 links:
@@ -239,3 +239,4 @@ Verdict: Request changes (one Haiku reviewer; compose and docs diff). Resolution
 - 2026-11-10: live-check findings triaged: portal fix PR #100; code execution diagnosed (runtime cleanup failure, fixed by #98 once deployed; React has no live-run socket); ticket stays open for the WebSocket header check
 - 2026-11-10: deployed; code execution and browser portal confirmed working through Access; WebSocket upgrade works; multi-identity checks still open
 - 2026-11-20: second identity added (Access policy + app user); sign-in and chat confirmed; cross-user checks still open
+- 2026-11-20: closed at the user's request; not run: cross-user 404, admin-route 403, edge rate limit and simultaneous sessions with the second identity; acceptance criteria left unticked
