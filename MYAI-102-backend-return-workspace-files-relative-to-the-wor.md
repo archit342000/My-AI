@@ -1,9 +1,9 @@
 ---
 id: MYAI-102
 title: "Backend: return workspace files relative to the workspace root"
-status: in-progress
+status: done
 created: 2026-11-11
-updated: 2026-11-11
+updated: 2026-11-20
 links:
   conflicts_with: [MYAI-94, MYAI-95]
   split_from: [MYAI-96]
@@ -130,6 +130,10 @@ The decisions above are intended; report a problem with one only if it breaks a 
 - Stage 5: resolve-review done inline by the author (not via the skill). Follow-up suggested (pre-existing, out of scope): PATCH rename/move of a workspace file with only workspace_id answers 500 (`resolve_owner_and_physical_path` raises for the stored `workspace/` path), so the Rename or move dialog cannot work on a workspace page until that is fixed.
 PR: https://github.com/archit342000/My-AI/pull/130, branch feature/workspace-files-root, base develop
 
+### Merge (2026-11-20)
+PR #130 merged into develop: develop merged into the branch first (list `root` kept next to #124 content search client and #125 version routes). Checked on the merge result: ruff clean, backend+tests pass (only the two easyocr tests fail, easyocr not installed in the check venv), frontend typecheck, lint and tests pass. Full suite re-run on develop after all nine merges (e100fec): same result, build ok.
+
+
 ## Verification
 ### Verification plan (2026-11-11)
 **Diff base:** develop tip. Full form (API response shape and a visible UI change).
@@ -200,3 +204,5 @@ Resolved inline by the author. Re-verified by unit tests (frontend 1112, backend
 - 2026-11-11: verify: 9 PASS, 0 FAIL (rename of a workspace file 500s: pre-existing, noted), fix 0/10
 - 2026-11-11: review round 1 resolved (4 fixed); unit re-verified, live UI not re-run
 - 2026-11-11: batch-autopilot: shipped, base develop (https://github.com/archit342000/My-AI/pull/130)
+- 2026-11-20: merged into develop (PR #130)
+- 2026-11-20: closed

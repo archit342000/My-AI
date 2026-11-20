@@ -1,9 +1,9 @@
 ---
 id: MYAI-103
 title: "Backend: plain user-facing server messages or stable error codes"
-status: in-progress
+status: done
 created: 2026-11-11
-updated: 2026-11-11
+updated: 2026-11-20
 links:
   split_from: [MYAI-96]
 ---
@@ -151,6 +151,10 @@ The decisions above are intended; report a problem with one only if it breaks a 
 - Stage 5: resolve-review done inline by the author (not via the skill). Follow-up suggested: bring the remaining model-facing tool results that carry exception text (list in the review round) in line with the rule. Also the PATCH rename 500 for workspace files (see the MYAI-102 notes) is unrelated.
 PR: https://github.com/archit342000/My-AI/pull/131, branch bugfix/plain-server-messages, base develop
 
+### Merge (2026-11-20)
+PR #131 merged into develop: develop merged into the branch first (both sides' new tests kept; the content search route from #124 now logs with `error_detail`). Checked on the merge result: ruff clean, backend+tests pass (only the two easyocr tests fail, easyocr not installed in the check venv), frontend typecheck, lint and tests pass. Full suite re-run on develop after all nine merges (e100fec): same result, build ok.
+
+
 ## Verification
 ### Verification plan (2026-11-11)
 **Diff base:** develop tip. Full form (many user-visible texts).
@@ -205,3 +209,5 @@ Resolved inline by the author. Re-verified: live harness 9/9, backend+tests 1699
 - 2026-11-11: verify: 9 PASS, 0 FAIL, fix 0/10
 - 2026-11-11: review round 1 resolved (see Review history); re-verified
 - 2026-11-11: batch-autopilot: shipped, base develop (https://github.com/archit342000/My-AI/pull/131)
+- 2026-11-20: merged into develop (PR #131)
+- 2026-11-20: closed

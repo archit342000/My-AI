@@ -1,9 +1,9 @@
 ---
 id: MYAI-94
 title: "Backend: search across file contents for the Files panel"
-status: in-progress
+status: done
 created: 2026-11-11
-updated: 2026-11-11
+updated: 2026-11-20
 links:
   conflicts_with: [MYAI-102]
   relates_to: [MYAI-93, MYAI-96]
@@ -147,6 +147,10 @@ The decisions above are intended; report a problem with one only if it breaks a 
 - Verify: scenario V1 superseded by V1b (wrong file-order expectation in the harness).
 PR: https://github.com/archit342000/My-AI/pull/124, branch bugfix/file-content-search, base develop
 
+### Merge (2026-11-20)
+PR #124 merged into develop: merged without conflicts. Checked on the merge result: ruff clean, backend+tests pass (only the two easyocr tests fail, easyocr not installed in the check venv), frontend typecheck, lint and tests pass. Full suite re-run on develop after all nine merges (e100fec): same result, build ok.
+
+
 ## Verification
 ### Verification plan (2026-11-11)
 **Diff base:** 32d33f7. Light form (small change).
@@ -220,3 +224,5 @@ Resolution done inline by the author (small fixes), no separate resolve-review r
 - 2026-11-11: verify: 12 PASS, 0 FAIL (V1 superseded by V1b), fix 0/10
 - 2026-11-11: review round 1 Approve with comments; all kept findings fixed; re-verified (12 PASS)
 - 2026-11-11: batch-autopilot: shipped, base develop (PR 124)
+- 2026-11-20: merged into develop (PR #124)
+- 2026-11-20: closed

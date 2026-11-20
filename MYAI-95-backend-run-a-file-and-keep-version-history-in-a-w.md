@@ -1,9 +1,9 @@
 ---
 id: MYAI-95
 title: "Backend: run a file and keep version history in a workspace"
-status: in-progress
+status: done
 created: 2026-11-11
-updated: 2026-11-11
+updated: 2026-11-20
 links:
   conflicts_with: [MYAI-102]
   relates_to: [MYAI-93, MYAI-96]
@@ -156,6 +156,10 @@ The decisions above are intended; report a problem with one only if it breaks a 
 - Stage 5: resolve-review done inline by the author (not via the skill). R1-3 (restore swallows disk-write failure) is pre-existing: follow-up.
 PR: https://github.com/archit342000/My-AI/pull/125, branch bugfix/workspace-run-and-versions, base develop
 
+### Merge (2026-11-20)
+PR #125 merged into develop: develop merged into the branch first (test and doc conflicts with #124/#131 kept both sides; `run-file` failures now use the plain message and `error_detail` from #131). Checked on the merge result: ruff clean, backend+tests pass (only the two easyocr tests fail, easyocr not installed in the check venv), frontend typecheck, lint and tests pass. Full suite re-run on develop after all nine merges (e100fec): same result, build ok.
+
+
 ## Verification
 ### Verification plan (2026-11-11)
 **Diff base:** develop tip. Full form (touches auth/ownership and the runner path).
@@ -239,3 +243,5 @@ Resolved inline by the author. Re-verified after fixes: harness re-run, backend+
 - 2026-11-11: verify: 16 PASS, 0 FAIL, fix 0/10
 - 2026-11-11: review round 1 resolved (6 fixed, 4 rejected/pre-existing); re-verified
 - 2026-11-11: batch-autopilot: shipped, base develop (https://github.com/archit342000/My-AI/pull/125)
+- 2026-11-20: merged into develop (PR #125)
+- 2026-11-20: closed

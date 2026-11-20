@@ -1,9 +1,9 @@
 ---
 id: MYAI-52
 title: "Full frontend audit: every component, live and in code"
-status: in-progress
+status: done
 created: 2026-11-10
-updated: 2026-11-10
+updated: 2026-11-20
 links:
   relates_to: [MYAI-53]
 ---
@@ -270,3 +270,4 @@ Server note (outside the frontend epic): `DELETE /api/chats/<id>` leaves a runni
 - 2026-11-10: corrections found while planning: A-47 legacy attach button is 36x40 (not 40x40); A-64 root cause is `styles/legacy.css` `input[type="range"]` rules outranking `.ui-slider__input`; A-33 legacy opaque surfaces are iOS-only (`is-ios`)
 - 2026-11-10: found while planning MYAI-67 (extends A-78): the persona form's Git mode toggle is never saved; the persona API reads neither `git_mode` nor `code_execution_mode`. Backend gap, not in the epic's scope
 - 2026-11-10: race pass with injected latency: reported new-chat symptom confirmed as A-11, A-14 raised to S2, 5 new findings (A-87 … A-91)
+- 2026-11-20: closed: audit done; its findings were fixed by epic MYAI-53 (done)

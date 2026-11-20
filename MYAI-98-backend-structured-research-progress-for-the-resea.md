@@ -1,9 +1,9 @@
 ---
 id: MYAI-98
 title: "Backend: structured research progress for the research plan card"
-status: in-progress
+status: done
 created: 2026-11-11
-updated: 2026-11-11
+updated: 2026-11-20
 links:
   split_from: [MYAI-96]
 ---
@@ -143,6 +143,10 @@ The decisions above are intended; report a problem with one only if it breaks a 
 - Stage 5: resolve-review done inline by the author (not via the skill).
 PR: https://github.com/archit342000/My-AI/pull/127, branch feature/research-progress-events, base develop
 
+### Merge (2026-11-20)
+PR #127 merged into develop: develop merged into the branch first (kept progress publishing with #131's plain failure texts and ellipsis; `research_progress_error` logs with `error_detail`). Checked on the merge result: ruff clean, backend+tests pass (only the two easyocr tests fail, easyocr not installed in the check venv), frontend typecheck, lint and tests pass. Full suite re-run on develop after all nine merges (e100fec): same result, build ok.
+
+
 ## Verification
 ### Verification plan (2026-11-11)
 **Diff base:** develop tip. Full form.
@@ -219,3 +223,5 @@ Resolved inline by the author. Re-verified: live harness re-run, backend+tests, 
 - 2026-11-11: verify: 9 PASS, 0 FAIL, fix 0/10
 - 2026-11-11: review round 1 resolved (10 fixed, 3 rejected/documented); re-verified
 - 2026-11-11: batch-autopilot: shipped, base develop (https://github.com/archit342000/My-AI/pull/127)
+- 2026-11-20: merged into develop (PR #127)
+- 2026-11-20: closed

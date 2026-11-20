@@ -1,9 +1,9 @@
 ---
 id: MYAI-100
 title: "Backend: sources an answer used"
-status: in-progress
+status: done
 created: 2026-11-11
-updated: 2026-11-11
+updated: 2026-11-20
 links:
   conflicts_with: [MYAI-97, MYAI-99]
   split_from: [MYAI-96]
@@ -158,6 +158,10 @@ The decisions above are intended; report a problem with one only if it breaks a 
 - Stage 5: resolve-review done inline by the author (not via the skill).
 PR: https://github.com/archit342000/My-AI/pull/128, branch feature/answer-sources, base develop
 
+### Merge (2026-11-20)
+PR #128 merged into develop: develop merged into the branch first (sources kept next to #126 durations and #132 helper runs: the `sources` line is sent before the `turn` event, which stays last; test added for that order; sources tests set no turn duration; `turn_sources_error` logs with `error_detail`). Checked on the merge result: ruff clean, backend+tests pass (only the two easyocr tests fail, easyocr not installed in the check venv), frontend typecheck, lint and tests pass. Full suite re-run on develop after all nine merges (e100fec): same result, build ok.
+
+
 ## Verification
 ### Verification plan (2026-11-11)
 **Diff base:** develop tip. Full form (stream contract, stored data, tool results shown to the model).
@@ -247,3 +251,5 @@ Resolved inline by the author. Re-verified: live harness re-run, backend+tests, 
 - 2026-11-11: verify: 10 PASS, 0 FAIL (web sources not live), fix 0/10
 - 2026-11-11: review round 1 resolved (8 fixed, 2 rejected/documented); re-verified
 - 2026-11-11: batch-autopilot: shipped, base develop (https://github.com/archit342000/My-AI/pull/128)
+- 2026-11-20: merged into develop (PR #128)
+- 2026-11-20: closed

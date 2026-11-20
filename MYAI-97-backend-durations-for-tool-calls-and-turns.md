@@ -1,9 +1,9 @@
 ---
 id: MYAI-97
 title: "Backend: durations for tool calls and turns"
-status: in-progress
+status: done
 created: 2026-11-11
-updated: 2026-11-11
+updated: 2026-11-20
 links:
   conflicts_with: [MYAI-100]
   blocks: [MYAI-99]
@@ -155,6 +155,10 @@ The decisions above are intended; report a problem with one only if it breaks a 
 - Stage 5: resolve-review done inline by the author (not via the skill).
 PR: https://github.com/archit342000/My-AI/pull/126, branch feature/turn-durations, base develop
 
+### Merge (2026-11-20)
+PR #126 merged into develop: merged without conflicts. Checked on the merge result: ruff clean, backend+tests pass (only the two easyocr tests fail, easyocr not installed in the check venv), frontend typecheck, lint and tests pass. Full suite re-run on develop after all nine merges (e100fec): same result, build ok.
+
+
 ## Verification
 ### Verification plan (2026-11-11)
 **Diff base:** develop tip. Full form (schema change + stream contract).
@@ -231,3 +235,5 @@ Resolved inline by the author. Re-verified: harness re-run 8/8, backend+tests 16
 - 2026-11-11: verify: 9 PASS, 0 FAIL, fix 0/10
 - 2026-11-11: review round 1 resolved (7 fixed, 3 rejected); re-verified
 - 2026-11-11: batch-autopilot: shipped, base develop (https://github.com/archit342000/My-AI/pull/126)
+- 2026-11-20: merged into develop (PR #126)
+- 2026-11-20: closed

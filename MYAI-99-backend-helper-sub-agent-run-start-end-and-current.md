@@ -1,9 +1,9 @@
 ---
 id: MYAI-99
 title: "Backend: helper (sub-agent) run start, end and current activity"
-status: in-progress
+status: done
 created: 2026-11-11
-updated: 2026-11-11
+updated: 2026-11-20
 links:
   conflicts_with: [MYAI-100]
   blocked_by: [MYAI-97]
@@ -152,6 +152,10 @@ The decisions above are intended; report a problem with one only if it breaks a 
 - Stage 5: resolve-review done inline by the author (not via the skill).
 PR: https://github.com/archit342000/My-AI/pull/132, branch feature/helper-run-events, base feature/turn-durations
 
+### Merge (2026-11-20)
+PR #132 merged into develop: base retargeted to develop after #126 merged; merged without conflicts. Checked on the merge result: ruff clean, backend+tests pass (only the two easyocr tests fail, easyocr not installed in the check venv), frontend typecheck, lint and tests pass. Full suite re-run on develop after all nine merges (e100fec): same result, build ok.
+
+
 ## Verification
 ### Verification plan (2026-11-11)
 **Diff base:** the MYAI-97 branch (this change is stacked on it). Full form (stream contract, stored data).
@@ -215,3 +219,5 @@ Resolved inline by the author. Re-verified: live harness re-run, backend+tests 1
 - 2026-11-11: verify: 7 PASS, 0 FAIL, 1 BLOCKED (activity text live), fix 0/10 (one defect found by verify and fixed in the same pass)
 - 2026-11-11: review round 1 resolved; re-verified
 - 2026-11-11: batch-autopilot: shipped, base feature/turn-durations (https://github.com/archit342000/My-AI/pull/132)
+- 2026-11-20: merged into develop (PR #132)
+- 2026-11-20: closed; unticked: live check of the helper activity text (unit-tested only)

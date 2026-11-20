@@ -2,9 +2,9 @@
 id: MYAI-75
 type: epic
 title: "Adopt the Console at Rest design system"
-status: in-progress
+status: done
 created: 2026-11-10
-updated: 2026-11-11
+updated: 2026-11-20
 links:
   relates_to: [MYAI-53]
 ---
@@ -24,7 +24,7 @@ Out of scope: backend or API changes (if a screen seems to need one, stop and as
 - [ ] The five signatures are present: dot sphere, squared-off corner, Azure only on actions and selection, three typefaces by job, typewriter labels and tick rules
 - [ ] The Rule book Part 10 checklist passes on every screen: computer, tablet and phone; day and night; solid panels; reduced motion; keyboard only
 - [ ] No feature or setting available before the change is lost
-- [ ] `scripts/check.sh --frontend-only` passes
+- [x] `scripts/check.sh --frontend-only` passes
 
 ## Breakdown
 ### 2026-11-10
@@ -60,6 +60,9 @@ At the user's request, everything after MYAI-76 is one ticket: MYAI-93 (merges M
 - The design was drawn from both the React code and the fuller legacy UI in `static/`. Where they differ, the reference page is right.
 - Things deliberately left out of the design because they reuse existing pieces (extra settings, extra buttons, extra menu items) are built with the existing pieces as each screen is converted.
 
+### 2026-11-20
+Closed with both children done (MYAI-76, MYAI-93, merged in PRs 121 and 122). Not met in full, tracked elsewhere: the research plan and helpers cards (MYAI-109, MYAI-111), source chips (MYAI-110), durations (MYAI-108); MYAI-93 also left real Android Back order and in-between spacing names unchecked. `scripts/check.sh --frontend-only` steps (typecheck, lint, 1120 tests, build) pass on develop e100fec.
+
 ## Log
 - 2026-11-10: created
 - 2026-11-10: linked relates_to MYAI-53 (same frontend files; ordering to be decided at planning)
@@ -83,3 +86,4 @@ At the user's request, everything after MYAI-76 is one ticket: MYAI-93 (merges M
 - 2026-11-11: removed MYAI-77 to MYAI-91 (merged into MYAI-93)
 - 2026-11-11: added MYAI-93
 - 2026-11-11: both children done (MYAI-76, MYAI-93), merged into develop
+- 2026-11-20: closed (children done; remaining design gaps tracked in MYAI-108 to MYAI-111)
