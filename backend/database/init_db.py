@@ -445,6 +445,7 @@ def init_db():
                 parent_type TEXT DEFAULT 'main',
                 reasoning_content TEXT,
                 attachments TEXT,
+                duration_ms INTEGER DEFAULT NULL,
                 FOREIGN KEY(chat_id) REFERENCES chats(id) ON DELETE CASCADE
             )
         ''')
@@ -546,6 +547,7 @@ def init_db():
                 model TEXT,
                 reasoning_content TEXT,
                 timestamp REAL,
+                duration_ms INTEGER DEFAULT NULL,
                 FOREIGN KEY(chat_id) REFERENCES chats(id) ON DELETE CASCADE
             )
         ''')
@@ -735,7 +737,8 @@ def init_db():
             ('name', 'TEXT'),
             ('parent_id', 'INTEGER'),
             ('parent_type', "TEXT DEFAULT 'main'"),
-            ('reasoning_content', 'TEXT')
+            ('reasoning_content', 'TEXT'),
+            ('duration_ms', 'INTEGER DEFAULT NULL')
         ]
         for col_name, col_def in message_cols:
             try:
@@ -749,7 +752,8 @@ def init_db():
             ('tool_call_id', 'TEXT'),
             ('name', 'TEXT'),
             ('parent_type', "TEXT DEFAULT 'main'"),
-            ('reasoning_content', 'TEXT')
+            ('reasoning_content', 'TEXT'),
+            ('duration_ms', 'INTEGER DEFAULT NULL')
         ]
         for col_name, col_def in sub_agent_cols:
             try:
@@ -1197,6 +1201,7 @@ def init_db():
                         parent_type TEXT DEFAULT 'main',
                         reasoning_content TEXT,
                         attachments TEXT,
+                        duration_ms INTEGER DEFAULT NULL,
                         FOREIGN KEY(chat_id) REFERENCES chats(id) ON DELETE CASCADE
                     )
                 ''',
@@ -1230,6 +1235,7 @@ def init_db():
                         model TEXT,
                         reasoning_content TEXT,
                         timestamp REAL,
+                        duration_ms INTEGER DEFAULT NULL,
                         FOREIGN KEY(chat_id) REFERENCES chats(id) ON DELETE CASCADE
                     )
                 ''',

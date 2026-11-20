@@ -8,7 +8,7 @@ import re
 from typing import List, Dict, Any, Optional, AsyncGenerator, Union
 from functools import lru_cache
 from backend import config
-from backend.logging import log_llm_call, log_event, log_embedding_call
+from backend.logging import log_llm_call, log_event, log_embedding_call, error_detail
 from backend.utils import merge_tool_call_deltas
 
 logger = logging.getLogger(__name__)
@@ -156,7 +156,7 @@ class InferenceEngine:
                 return data
             except Exception as e:
                 if attempts < max_attempts:
-                    log_event("inference_chat_retry_error", {"error": str(e), "attempt": attempts, "chat_id": chat_id})
+                    log_event("inference_chat_retry_error", {"error": error_detail(e), "attempt": attempts, "chat_id": chat_id})
                     await asyncio.sleep(config.LLM_RETRY_DELAY)
                     continue
                 log_event("inference_chat_error", {"error": str(e), "chat_id": chat_id})
@@ -269,7 +269,7 @@ class InferenceEngine:
                             "attempt": attempts, 
                             "chat_id": chat_id
                         })
-                        yield f"data: {json.dumps({'__redact__': True, 'message': 'Inference failed validation. Retrying...'})}\n\n"
+                        yield f"data: {json.dumps({'__redact__': True, 'message': 'Checking the answer again…'})}\n\n"
                         await asyncio.sleep(config.LLM_RETRY_DELAY)
                         continue
                 else:
@@ -279,11 +279,11 @@ class InferenceEngine:
 
             except Exception as e:
                 if attempts < max_attempts:
-                    log_event("inference_stream_retry_error", {"error": str(e), "attempt": attempts, "chat_id": chat_id})
-                    yield f"data: {json.dumps({'__redact__': True, 'message': f'Error: {str(e)}. Retrying...'})}\n\n"
+                    log_event("inference_stream_retry_error", {"error": error_detail(e), "attempt": attempts, "chat_id": chat_id})
+                    yield f"data: {json.dumps({'__redact__': True, 'message': 'The model did not respond. Trying again…'})}\n\n"
                     await asyncio.sleep(config.LLM_RETRY_DELAY)
                     continue
-                log_event("inference_stream_error", {"error": str(e), "chat_id": chat_id})
+                log_event("inference_stream_error", {"error": error_detail(e), "chat_id": chat_id})
                 raise
             finally:
                 is_valid, repaired_tcs = self._is_generation_valid(full_content, sorted_tool_calls)

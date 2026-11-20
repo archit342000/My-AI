@@ -63,6 +63,17 @@ async def test_browser_screenshot(mock_playwright, mock_db):
         assert "screenshot_ref" in data
 
 @pytest.mark.anyio
+async def test_a_failing_screenshot_save_gives_a_fixed_message_and_logs_the_detail(mock_playwright, mock_db):
+    mock_db.get_chat.return_value = {"browsing_session_id": "s1"}
+    dummy_img = "data:image/jpeg;base64,/9j/4AAQSkZJRg=="
+    mock_playwright.execute_tool.return_value = MagicMock(content=[MagicMock(text=json.dumps({"image": dummy_img}))])
+    with patch('os.makedirs', side_effect=OSError("/secret/dir is read-only")), patch('backend.tools.browser.log_event') as events:
+        res = await browser_screenshot(chat_id="chat1")
+    assert json.loads(res) == {"error": "Could not process the screenshot. Try again."}
+    assert "secret" not in res
+    assert events.call_args.args[0] == "browser_screenshot_error" and "read-only" in events.call_args.args[1]["error"]
+
+@pytest.mark.anyio
 async def test_browser_click(mock_playwright, mock_db):
     mock_db.get_chat.return_value = {"browsing_session_id": "s1"}
     mock_playwright.execute_tool.return_value = MagicMock(content=[MagicMock(text='{"status": "clicked"}')])
@@ -126,3 +137,4 @@ async def test_get_session_id_db_error(mock_db):
     from backend.tools.browser import browser_back
     with pytest.raises(ValueError, match="No active browsing session found"):
         await browser_back(chat_id="chat1")
+

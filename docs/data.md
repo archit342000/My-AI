@@ -28,6 +28,7 @@ Mount it as a volume; losing it loses chats, files and vectors.
   `init_db()` drops the legacy `file_system_counters` table (migration 14). It held only per-owner sequence numbers, no user
   data; see Migrations rule 4 below.
 - `chats.is_temporary` (integer, default 0) is 1 for a temporary chat nobody has saved: it is left out of the chat lists and removed after `TEMPORARY_CHAT_TTL_SECONDS` of inactivity, on its owner's next chat-list request; saving clears it.
+- `messages.duration_ms` and `sub_agent_messages.duration_ms` are nullable integers (milliseconds): on a `tool` row the call's run time, on a turn's last assistant row the whole turn's time (`set_turn_duration`); `NULL` on rows written before the column existed (no backfill).
 - `messages.attachments` is a nullable JSON list of file references (`file_id`, `name`, `size`, `mime_type`) kept on user messages
   so attachments survive a reload and Retry. It is an additive column; `init_db()` backfills it once from existing `files` collections.
 - One writer at a time. Keep transactions short and never hold one across `await` or network calls (`docs/pitfalls.md`).

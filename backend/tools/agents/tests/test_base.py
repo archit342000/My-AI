@@ -116,3 +116,30 @@ async def test_base_agent_task_list_gating(mock_db, agent_handler, agent_config)
     assert len(call_args["tools"]) == 1
     assert call_args["tools"][0]["function"]["name"] == "manage_task_list"
 
+
+
+@pytest.mark.anyio
+@patch('backend.tools.agents.base.log_event')
+@patch('backend.tools.agents.base.db')
+async def test_base_agent_failure_sends_a_fixed_message_and_logs_the_detail(mock_db, mock_log_event, agent_handler, agent_config):
+    mock_db.get_messages.return_value = []
+    mock_db.get_task_list.return_value = None
+
+    async def boom(**kwargs):
+        raise RuntimeError("/secret/path db locked")
+        yield
+
+    agent_handler.run_inference_step = boom
+    agent = MockAgent(agent_handler, agent_config)
+    chunks = [c async for c in agent.run(instruction="do work")]
+    assert "Error: Mock Agent failed. Try again." in chunks
+    assert agent_handler.result == "Mock Agent failed. Try again."
+    mock_db.add_message.assert_any_call(chat_id="chat_1", role="event", content="Mock Agent failed. Try again.", parent_id=100, parent_type="mock_agent")
+    assert mock_log_event.call_args.args[0] == "agent_failed_error" and "db locked" in mock_log_event.call_args.args[1]["error"]
+    assert "secret" not in "".join(str(c) for c in chunks)
+
+
+@pytest.mark.anyio
+async def test_base_agent_on_error_has_no_exception_text(agent_handler, agent_config):
+    agent = MockAgent(agent_handler, agent_config)
+    assert await agent.on_error(RuntimeError("/secret/path")) == "Mock Agent failed. Try again."
