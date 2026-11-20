@@ -9,13 +9,14 @@
 | File | Purpose | Key Symbols/Exports |
 | :--- | :--- | :--- |
 | `__init__.py` | Package entry point and export aggregator. | `ChatHandler`, `TurnHandler`, `AgentHandler`, `ToolHandler`, `chat_bp`, `personas_bp` |
-| `agent_handler.py` | Orchestrates sub-agents with isolated contexts. | `AgentHandler` |
+| `agent_handler.py` | Orchestrates sub-agents with isolated contexts; `sources` collects the web pages an agent run used. | `AgentHandler` |
 | `handler.py` | Core chat flow logic and background task management. | `ChatHandler`, `THINKING_PROFILES` |
 | `cleanup.py` | Removal of unsaved temporary chats older than `TEMPORARY_CHAT_TTL_SECONDS`, run on the owner's chat-list request. | `purge_expired_temporary_chats` |
 | `message_edit.py` | Merges an edited user message back into its stored content, keeping images and the attachment note. | `merge_edited_user_content` |
 | `router.py` | Flask API endpoints for chat management, completions, and persona CRUD. | `chat_bp`, `openai_bp`, `personas_bp` |
-| `tool_handler.py` | Dispatches and executes tool calls (pure or agent-based); times each call and stores and sends its `duration_ms`; sends an `agent_run` chunk when a helper starts (also one that cannot be resolved), changes activity and ends, and stores finished runs as the `agent_runs` collection. | `ToolHandler` |
-| `turn_handler.py` | Serializes turns and ensures state persistence; times a normally finished turn, stores it on the last assistant row and sends a `{"turn": {"duration_ms"}}` event. | `TurnHandler` |
+| `sources.py` | Per-chat numbered sources (`SourceRegistry`, `[[n]]` markers, the `Sources:` block shown to the model). | `SourceRegistry`, `format_sources_block` |
+| `tool_handler.py` | Dispatches and executes tool calls (pure or agent-based); times each call and stores and sends its `duration_ms`; numbers web pages and file reads as sources and shows the numbers with the result; sends an `agent_run` chunk when a helper starts (also one that cannot be resolved), changes activity and ends, and stores finished runs as the `agent_runs` collection. | `ToolHandler` |
+| `turn_handler.py` | Serializes turns and ensures state persistence; times a normally finished turn, stores it on the last assistant row, stores and sends the sources an answer cited (`sources=` registry), and sends a `{"turn": {"duration_ms"}}` event last. | `TurnHandler` |
 | `validators.py` | Enforces clipboard-first checks and parses LLM confirmations. | `validate_fs_agent_instruction`, `parse_confirmation_response` |
 
 ## 🧩 Architectural Context

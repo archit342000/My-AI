@@ -37,12 +37,23 @@ export interface StoredMessage {
   reasoning_content: Nullable<string>;
   /** File references sent with a user message (decoded list); absent or null on older rows. */
   attachments?: Nullable<unknown>;
-  /** Collections anchored on this message or its tool calls; the `research_progress` one holds a `ResearchProgress`. */
+  /** Collections anchored on this message or its tool calls; the `sources` one lists the sources the answer cited, the `research_progress` one holds a `ResearchProgress`. */
   collections?: Nullable<StoredCollection[]>;
   /** Milliseconds a tool call took (on a `tool` row) or the whole turn took (on a turn's last assistant row); null on older rows. */
   duration_ms?: Nullable<number>;
   /** Sub-agent rows woven into this assistant row by the server (events, text, tool calls). */
   sub_agent_history?: Nullable<StoredSubAgentRow[]>;
+}
+
+/** A source an answer cited: a web page or a file read, numbered per chat; the answer text marks it as `[[n]]`. */
+export interface AnswerSource {
+  n: number;
+  kind: 'web' | 'file';
+  title: string;
+  /** The page address, or the file path. */
+  locator: string;
+  /** For a file, the lines that were read ("lines 10-20"); null otherwise. */
+  detail: Nullable<string>;
 }
 
 /** One step of a research plan, as the server reports its progress. */
@@ -71,7 +82,7 @@ export interface ResearchProgress {
   pages_read: number;
 }
 
-/** A stored collection attached to an assistant message; `items` is the decoded value or its JSON string. */
+/** A stored collection attached to an assistant message; `items` is the decoded value or its JSON string. The `sources` one holds the answer's `AnswerSource[]`. */
 export interface StoredCollection {
   collection_type: string;
   parent_type?: Nullable<string>;

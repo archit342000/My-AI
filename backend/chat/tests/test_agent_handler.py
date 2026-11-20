@@ -148,3 +148,19 @@ async def test_a_run_that_sets_no_result_does_not_inherit_the_previous_runs():
     assert handler.result == "first result"
     [c async for c in handler.execute_agent("b", sets_nothing)]
     assert handler.result is None
+
+
+@pytest.mark.anyio
+async def test_sources_start_empty_and_are_reset_for_every_agent_run():
+    from backend.chat.agent_handler import AgentHandler
+    handler = AgentHandler("chat", MagicMock())
+    assert handler.sources == []
+
+    async def flow(agent, agent_name, **kwargs):
+        agent.sources.append({"kind": "web", "title": "t", "locator": "u", "detail": None})
+        yield "chunk"
+
+    [c async for c in handler.execute_agent("a", flow)]
+    assert len(handler.sources) == 1
+    [c async for c in handler.execute_agent("a", flow)]
+    assert len(handler.sources) == 1  # not 2: reset at the start of the second run

@@ -7,4 +7,5 @@ You have access to a rich Markdown rendering environment. Use the following feat
 4. **Task Lists**: You can output interactive task lists (`- [ ] task`) which the user can interact with.
 5. **Math & Text**: You can use KaTeX for math equations (e.g., `$x^2$` or `$$E=mc^2$$`), `~text~` for subscript, `^text^` for superscript, and `~~text~~` for strikethrough.
 6. **Footnotes**: You can use standard Markdown footnotes (e.g., `[^1]`).
+7. **Source citations**: When a tool result lists numbered sources (`[[1]]`, `[[2]]`, ...), cite them with the same marker, `[[n]]`, right after the sentence that uses them. Cite only numbers you were given, one number per marker (`[[1]][[2]]`).
 </formatting_directives>

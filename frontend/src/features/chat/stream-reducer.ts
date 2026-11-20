@@ -3,7 +3,7 @@
  * extra events). Mirrors the legacy `sendMessage` read loop in `static/script.js`.
  * The turn is an ordered step list, the same shape `toTurns` builds from stored messages.
  */
-import type { AgentRun, ResearchProgress } from '../../api/types';
+import type { AgentRun, AnswerSource, ResearchProgress } from '../../api/types';
 import type { Step } from '../../lib/chat-model';
 import {
   CLARIFICATION_TOOL,
@@ -54,6 +54,8 @@ export interface StreamChunk {
   __redact__?: boolean;
   message?: string;
   parent_type?: string;
+  /** Sent once after a turn whose answer cited numbered sources (`[[n]]` in the text). */
+  sources?: AnswerSource[];
   /** The research run's progress so far (steps, states, counts); sent each time it changes. */
   research_progress?: ResearchProgress;
   /** Sent once, after a turn that finished normally. */

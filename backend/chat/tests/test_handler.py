@@ -637,3 +637,39 @@ async def test_a_crashing_background_turn_sends_the_fixed_stream_error(mock_db, 
         chunks = [c async for c in handler._run_background_turn(user_message={"id": 1}, model_name="m")]
     assert chunks == ['data: {"error": "Something went wrong while answering. Try sending again."}\n\n']
     assert any(c.args[0] == "chat_background_turn_error" and "exploded" in c.args[1]["error"] for c in events.call_args_list)
+
+
+@pytest.mark.anyio
+async def test_a_main_turn_loads_the_chats_source_registry_and_passes_it_to_the_turn_handler(mock_db, mock_task_manager):
+    import json as _json
+    handler = ChatHandler("test")
+    assert handler.source_registry is None  # sub-agents' isolated handlers keep this
+    stored = [{"n": 1, "kind": "web", "title": "A", "locator": "https://a", "detail": None},
+              {"n": 4, "kind": "file", "title": "a.py", "locator": "a.py", "detail": "lines 1-5"}]
+    mock_db.get_collections.return_value = [{"collection_type": "source_registry", "items": _json.dumps(stored)}]
+    with patch("backend.chat.handler.TurnHandler.handle_turn") as mock_handle:
+        async def mock_gen(*args, **kwargs):
+            yield "chunk"
+        mock_handle.return_value = mock_gen()
+        chunks = [c async for c in handler._run_background_turn(user_message={"id": 1}, model_name="m")]
+    assert chunks == ["chunk"]
+    mock_db.get_collections.assert_called_with("test", parent_message_id="chat:test", parent_type="main")
+    registry = mock_handle.call_args.kwargs["sources"]
+    assert registry is handler.source_registry and registry.add("web", "C", "https://c") == 5  # numbering continues
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("colls", [[], [{"collection_type": "other", "items": "[]"}]])
+async def test_an_absent_registry_starts_empty(mock_db, mock_task_manager, colls):
+    handler = ChatHandler("test")
+    mock_db.get_collections.return_value = colls
+    registry = handler._load_source_registry()
+    assert len(registry) == 0 and registry.add("web", "A", "https://a") == 1
+
+
+@pytest.mark.parametrize("items", ["not json", '{"a": 1}', "7"])
+def test_an_unreadable_registry_raises_instead_of_restarting_the_numbers(mock_db, items):
+    handler = ChatHandler("test")
+    mock_db.get_collections.return_value = [{"collection_type": "source_registry", "items": items}]
+    with pytest.raises(ValueError):
+        handler._load_source_registry()

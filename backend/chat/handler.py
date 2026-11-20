@@ -40,6 +40,8 @@ class ChatHandler:
         # ── Soft Rejection State ──
         self._pending_confirmation = None      # Dict with stored TC details, or None
         self._validation_bypass_next = False   # Skip validation on next FS agent call
+        # The chat's numbered sources: loaded by `_run_background_turn` for a main turn; sub-agents' handlers keep None
+        self.source_registry = None
 
     def get_history(self) -> Dict[str, Any]:
         """
@@ -230,6 +232,9 @@ class ChatHandler:
         from .tool_handler import ToolHandler
         self.tool_handler = ToolHandler(self.chat_id, self, parent_message_id=parent_message_id)
 
+        # Numbered sources of this chat (so an old [[1]] keeps its meaning across turns)
+        self.source_registry = self._load_source_registry()
+
         try:
             # Run via the TurnHandler to ensure serial execution even in background
             async for chunk in TurnHandler.handle_turn(
@@ -237,6 +242,7 @@ class ChatHandler:
                 parent_message_id=parent_message_id,
                 run_fn=self._run_orchestrated_stream,
                 model=model_name,
+                sources=self.source_registry,
                 user_message=user_message,
                 model_name=model_name,
                 parent_type=parent_type
@@ -249,6 +255,24 @@ class ChatHandler:
             log_event("chat_background_turn_error", {"chat_id": self.chat_id, "error": error_detail(e)})
             # Yield error to client if they are listening
             yield f"data: {json.dumps({'error': USER_STREAM_ERROR})}\n\n"
+
+    def _load_source_registry(self):
+        """
+        The chat's stored `source_registry` collection as a registry. Only an absent collection starts empty: an unreadable
+        one raises (the turn fails before any tool runs) rather than restarting the numbers at 1 and reusing ones already
+        shown to the model and in older answers.
+        """
+        from backend.chat.sources import SOURCE_REGISTRY_ANCHOR, SourceRegistry
+        colls = db.get_collections(self.chat_id, parent_message_id=SOURCE_REGISTRY_ANCHOR.format(self.chat_id), parent_type="main")
+        coll = next((c for c in colls if c.get("collection_type") == "source_registry"), None)
+        if coll is None:
+            return SourceRegistry()
+        items = coll.get("items")
+        if isinstance(items, str):
+            items = json.loads(items)
+        if not isinstance(items, list):
+            raise ValueError("The stored source registry is not a list")
+        return SourceRegistry.from_list(items)
 
     async def _run_orchestrated_stream(
         self, 
