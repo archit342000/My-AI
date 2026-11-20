@@ -24,6 +24,16 @@ describe('artifactsApi file and directory calls', () => {
     expect(call()[0]).toBe('/api/file_systems/a%2Fb?workspace_id=w1');
   });
 
+  it('list returns the files with the root the server names, and "" when it sends none', async () => {
+    let call = stub({ file_systems: [{ id: 'a' }], root: 'workspace/' });
+    const withRoot = await artifactsApi.list({ workspaceId: 'w1' });
+    expect(call()[0]).toBe('/api/file_systems?workspace_id=w1');
+    expect(Array.from(withRoot)).toEqual([{ id: 'a' }]);
+    expect(withRoot.root).toBe('workspace/');
+    call = stub({ file_systems: [] });
+    expect((await artifactsApi.list({ chatId: 'c1' })).root).toBe('');
+  });
+
   it('search puts the scope, query and limit in the URL and maps the hits', async () => {
     const call = stub({
       results: [{ file_system_id: 'f1', path: 'a.md', line_number: 3, line: 'hello' }],

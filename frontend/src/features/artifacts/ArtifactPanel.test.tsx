@@ -103,6 +103,58 @@ describe('ArtifactPanel', () => {
       expect(screen.queryByRole('button', { name: /^util.py/ })).toBeNull();
     });
 
+    it('on a workspace page the server-named root level is hidden and a file is still opened by its full path', async () => {
+      const wsList = Object.assign(
+        [
+          { id: '', type: 'directory', filename: 'workspace', title: 'workspace' },
+          { id: 'w1', type: 'file', filename: 'workspace/notes/plan.md', title: 'workspace/notes/plan.md', language: 'markdown' },
+        ],
+        { root: 'workspace/' },
+      );
+      vi.spyOn(artifactsApi, 'list').mockResolvedValue(wsList as never);
+      const get = vi.spyOn(artifactsApi, 'get').mockResolvedValue({ id: 'w1', title: 'plan.md', language: 'markdown', content: '# Plan' } as never);
+      renderWithProviders(<ArtifactPanel scope={{ workspaceId: 'ws1' }} />);
+      const folder = await screen.findByRole('button', { name: /^notes/ });
+      expect(screen.queryByRole('button', { name: /^workspace/ })).toBeNull(); // no extra level
+      expect(folder.getAttribute('aria-expanded')).toBe('true');
+      fireEvent.click(await screen.findByRole('button', { name: /^plan.md/ }));
+      await waitFor(() => expect(get).toHaveBeenCalledWith('w1', { workspaceId: 'ws1' }));
+    });
+
+    it('renaming a file at the top of a workspace offers "Top level" (the hidden root is not a folder to pick)', async () => {
+      const wsList = Object.assign(
+        [
+          { id: '', type: 'directory', filename: 'workspace', title: 'workspace' },
+          { id: 'w1', type: 'file', filename: 'workspace/readme.md', title: 'workspace/readme.md', language: 'markdown' },
+        ],
+        { root: 'workspace/' },
+      );
+      vi.spyOn(artifactsApi, 'list').mockResolvedValue(wsList as never);
+      vi.spyOn(artifactsApi, 'get').mockResolvedValue({ id: 'w1', title: 'readme.md', language: 'markdown', content: '# R' } as never);
+      renderWithProviders(<ArtifactPanel scope={{ workspaceId: 'ws1' }} />);
+      fireEvent.click(await screen.findByRole('button', { name: /^readme.md/ }));
+      await screen.findByRole('button', { name: 'More' });
+      await moreFor('Rename or move…');
+      const popup = await screen.findByRole('dialog', { name: 'Rename or move' });
+      const where = within(popup).getByLabelText('Where');
+      expect(where.textContent).toContain('Top level'); // not the hidden root folder, which is not an option
+    });
+
+    it('in a chat the workspace folder is still a level that tells its files apart', async () => {
+      const chatList = Object.assign(
+        [
+          { id: '', type: 'directory', filename: 'workspace', title: 'workspace' },
+          { id: 'w1', type: 'file', filename: 'workspace/shared.md', title: 'workspace/shared.md', language: 'markdown' },
+          { id: 'c1', type: 'file', filename: 'own.md', title: 'own.md', language: 'markdown' },
+        ],
+        { root: '' },
+      );
+      vi.spyOn(artifactsApi, 'list').mockResolvedValue(chatList as never);
+      renderWithProviders(<ArtifactPanel scope={{ chatId: 'c' }} />);
+      expect(await screen.findByRole('button', { name: /^workspace/ })).toBeTruthy();
+      expect(screen.getByRole('button', { name: /^own.md/ })).toBeTruthy();
+    });
+
     it('search narrows the list by name', async () => {
       renderWithProviders(<ArtifactPanel scope={{ chatId: 'c' }} />);
       await file(/^notes.md/);
@@ -178,7 +230,7 @@ describe('ArtifactPanel', () => {
         content: '# New file',
       } as never);
       const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-      client.setQueryData(artifactsKey({ chatId: 'c' }), list); // cached before the agent wrote new.md
+      client.setQueryData(artifactsKey({ chatId: 'c' }), { files: list, root: '' }); // cached before the agent wrote new.md
       useUiStore.setState({ requestedArtifactPath: 'new.md' });
       render(
         <QueryClientProvider client={client}>

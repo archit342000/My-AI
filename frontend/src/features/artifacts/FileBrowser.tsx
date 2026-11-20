@@ -16,6 +16,7 @@ import {
   artifactsApi,
   artifactsKey,
   codeExecApi,
+  fetchArtifactList,
   type Artifact,
   type ScopeRef,
 } from '../../api/filesystem';
@@ -37,6 +38,7 @@ import {
   folderPaths,
   isRunnable,
   languageForName,
+  folderInRoot,
   parentFolder,
   type TreeNode,
 } from './artifact-tree';
@@ -123,7 +125,7 @@ export function FileBrowser({ ref, scope, full, onToggleFull }: FileBrowserProps
 
   const list = useQuery({
     queryKey: artifactsKey(scope),
-    queryFn: () => artifactsApi.list(scope),
+    queryFn: () => fetchArtifactList(scope),
     enabled: Boolean(scope.chatId || scope.workspaceId),
   });
   const detail = useQuery({
@@ -187,7 +189,7 @@ export function FileBrowser({ ref, scope, full, onToggleFull }: FileBrowserProps
 
   // A selected file inside a collapsed folder (just moved there, say) opens the folders above it.
   useEffect(() => {
-    const entry = (list.data ?? []).find((a) => a.id === selected);
+    const entry = list.data?.files.find((a) => a.id === selected);
     if (!entry) return;
     const parts = artifactPath(entry).split('/').slice(0, -1);
     const ancestors = parts.map((_, i) => parts.slice(0, i + 1).join('/'));
@@ -217,7 +219,7 @@ export function FileBrowser({ ref, scope, full, onToggleFull }: FileBrowserProps
     // Wait while the list is refetching: a panel opened on a cached list may not have the new file yet.
     if (!list.data || list.isFetching) return;
     const wanted = requestedPath.replace(/^\.?\//, '');
-    const hit = list.data.find(
+    const hit = list.data.files.find(
       (a) =>
         a.title === wanted ||
         a.filename === wanted ||
@@ -231,11 +233,9 @@ export function FileBrowser({ ref, scope, full, onToggleFull }: FileBrowserProps
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [requestedPath, list.data, list.isFetching, list.isError]);
 
-  const items = useMemo(() => list.data ?? [], [list.data]);
-  const tree = useMemo(
-    () => buildTree(items, { hidePlaceholder: Boolean(scope.workspaceId) }),
-    [items, scope.workspaceId],
-  );
+  const items = useMemo(() => list.data?.files ?? [], [list.data]);
+  const listRoot = list.data?.root ?? '';
+  const tree = useMemo(() => buildTree(items, { root: listRoot }), [items, listRoot]);
   const folders = useMemo(() => folderPaths(tree), [tree]);
   const needle = filter.trim();
   const hits = useMemo(() => {
@@ -389,7 +389,8 @@ export function FileBrowser({ ref, scope, full, onToggleFull }: FileBrowserProps
         kind: 'rename',
         id: a.id,
         name: a.title.split('/').pop() ?? a.title,
-        folder: parentFolder(artifactPath(a)),
+        // A file at the top of a workspace is in the hidden root folder: say "Top level", not a folder the tree does not show.
+        folder: folderInRoot(parentFolder(artifactPath(a)), listRoot),
       },
       anchor,
     );

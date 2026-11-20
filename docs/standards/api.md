@@ -51,6 +51,10 @@ yet gives an empty result (or its workspace's hits). The typed client is `artifa
   `POST /v1/chat/completions`, `GET /api/chats/<id>/stream` (re-attach), `POST /api/chats/<id>/resume`.
 - Payloads follow the OpenAI chunk format with the project's extensions: content and reasoning deltas, tool-call fragments,
   tool results, `event` activity labels, sub-agent deltas and `__redact__`. The reader and fixtures are described in `docs/frontend.md`.
+- File list root: `GET /api/file_systems?chat_id=|workspace_id=` also returns `"root"`, the leading folder that is the scope's own root so a client can hide it: `"workspace/"` for
+  a workspace-only scope (every file path there starts with it, and stays so: ids and paths are unchanged everywhere), `""` for a chat scope (where `workspace/` separates the
+  workspace's files from the chat's own) and for a chat that does not exist yet and names no workspace (one that does is listed as that workspace, with `"workspace/"`). The React client hides the root level in the Files panel; the legacy UI reads only `file_systems`
+  and keeps showing it (it is removed in a later release).
 - Temporary chats: `POST /v1/chat/completions` takes an optional boolean `temporary` (anything else is `400 {"error": "temporary must be true or false"}`, checked before the chat is claimed). On a chat's
   first send (no messages yet) it marks the chat temporary (`chats.is_temporary`); later sends never change the mark. A temporary chat is never in `GET /api/chats` or a workspace's list, but
   `GET /api/chats/<id>` still serves it to its owner. `PATCH /api/chats/<id>` with `{"is_temporary": false}` saves it (the only accepted value; any other is `400`, checked before the chat is claimed).
