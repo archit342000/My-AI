@@ -240,3 +240,4 @@ Verdict: Request changes (one Haiku reviewer; compose and docs diff). Resolution
 - 2026-11-10: deployed; code execution and browser portal confirmed working through Access; WebSocket upgrade works; multi-identity checks still open
 - 2026-11-20: second identity added (Access policy + app user); sign-in and chat confirmed; cross-user checks still open
 - 2026-11-20: closed at the user's request; not run: cross-user 404, admin-route 403, edge rate limit and simultaneous sessions with the second identity; acceptance criteria left unticked
+- 2026-11-20: user-observed: admin-only pages (Logs) are not shown to the second (user-role) account; route-level 403 not checked
