@@ -15,6 +15,14 @@ export interface Artifact {
   timestamp?: number;
 }
 
+/** One line of a file that matched a content search. */
+export interface FileSearchHit {
+  fileId: string;
+  path: string;
+  lineNumber: number;
+  line: string;
+}
+
 export interface ArtifactVersion {
   version_number: number;
   author: string;
@@ -64,6 +72,31 @@ export const artifactsApi = {
     apiJson<{ file_systems: Artifact[] }>(`/api/file_systems?${scopeQuery(scope)}`).then(
       (r) => r.file_systems,
     ),
+  /** Search the contents of every file in the scope (case-insensitive text); `truncated` means more hits exist. */
+  search: (scope: ScopeRef, q: string, limit?: number) => {
+    const params = new URLSearchParams(scopeQuery(scope));
+    params.set('q', q);
+    if (limit !== undefined) params.set('limit', String(limit));
+    return apiJson<{
+      results: {
+        file_system_id: string;
+        path: string;
+        line_number: number;
+        line: string;
+      }[];
+      truncated: boolean;
+    }>(`/api/file_systems/search?${params.toString()}`).then((r) => ({
+      hits: r.results.map(
+        (h): FileSearchHit => ({
+          fileId: h.file_system_id,
+          path: h.path,
+          lineNumber: h.line_number,
+          line: h.line,
+        }),
+      ),
+      truncated: r.truncated,
+    }));
+  },
   get: (id: string, scope: ScopeRef) =>
     apiJson<Artifact & { content: string }>(
       `/api/file_systems/${encodeURIComponent(id)}?${scopeQuery(scope)}`,

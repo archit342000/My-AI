@@ -657,6 +657,7 @@ FS_ROUTES = [
     ("post", "/api/file_system/directory", {"chat_id": "{c}", "path": "d"}),
     ("delete", "/api/file_system/directory?chat_id={c}&path=d", None),
     ("get", "/api/file_system?chat_id={c}", None),
+    ("get", "/api/file_system/search?chat_id={c}&q=x", None),
     ("get", "/api/file_system/chat/{c}/folders", None),
     ("get", "/api/file_system/raw?chat_id={c}&path=a.txt", None),
     ("get", "/api/file_system/fs1/raw?chat_id={c}", None),
@@ -714,6 +715,7 @@ def test_user_b_gets_404_on_every_fs_route_for_user_as_chat_and_nothing_runs(met
 @pytest.mark.parametrize("method,url,body", [
     ("get", "/api/file_system?workspace_id=ws-of-a", None),
     ("get", "/api/file_system/fs1?workspace_id=ws-of-a", None),
+    ("get", "/api/file_system/search?workspace_id=ws-of-a&q=x", None),
     ("post", "/api/file_system/directory", {"workspace_id": "ws-of-a", "path": "d"}),
     ("delete", "/api/file_system/directory?workspace_id=ws-of-a&path=d", None),
     ("patch", "/api/file_system/fs1", {"workspace_id": "ws-of-a", "content": "x"}),
@@ -909,3 +911,72 @@ def test_disk_only_artifacts_keep_their_old_answers_on_the_version_routes(method
         assert response.status_code == 200 and response.get_json()["versions"] == []
     else:
         assert response.status_code == 400  # the diff's usual "version not found" answer
+
+
+def _search(client, query_string, rows=None, content="alpha\nBeta line\nbeta again", workspace_for_chat=None):
+    with patch('backend.file_system.router.db') as mock_db, \
+         patch('backend.file_system.manager.get_fs_file_content', new_callable=AsyncMock, return_value=content) as get_content, \
+         patch('backend.file_system.utils.get_workspace_for_chat', return_value=workspace_for_chat):
+        mock_db.get_chat_file_systems.return_value = rows if rows is not None else [{"id": "f1", "chat_id": "c1", "filename": "a.md"}]
+        mock_db.get_owner_file_systems.return_value = [{"id": "f2", "workspace_id": "w1", "filename": "n.md"}]
+        response = client.get('/api/file_system/search' + query_string)
+    return response, mock_db, get_content
+
+
+def test_search_returns_hits_with_file_id_path_line_number_and_line(client):
+    response, _, _ = _search(client, '?chat_id=c1&q=beta')
+    assert response.status_code == 200
+    assert response.get_json() == {"results": [
+        {"file_system_id": "f1", "path": "a.md", "line_number": 2, "line": "Beta line"},
+        {"file_system_id": "f1", "path": "a.md", "line_number": 3, "line": "beta again"},
+    ], "truncated": False}
+
+
+def test_search_with_no_hits_is_an_empty_list_and_skips_the_meta_lookup(client):
+    response, mock_db, _ = _search(client, '?chat_id=c1&q=nothing-here')
+    assert response.status_code == 200 and response.get_json() == {"results": [], "truncated": False}
+    mock_db.get_file_system_meta.assert_not_called()
+
+
+def test_search_limit_is_applied_clamped_and_validated(client):
+    response, _, _ = _search(client, '?chat_id=c1&q=beta&limit=1')
+    assert len(response.get_json()["results"]) == 1 and response.get_json()["truncated"] is True
+    with patch('backend.file_system.router.config.FILE_SEARCH_MAX_RESULTS', 1):
+        response, _, _ = _search(client, '?chat_id=c1&q=beta&limit=999')
+    assert len(response.get_json()["results"]) == 1  # clamped to the maximum
+    for bad in ("abc", "0", "-3", "1.5"):
+        assert _search(client, f'?chat_id=c1&q=beta&limit={bad}')[0].status_code == 400
+
+
+def test_search_rejects_an_empty_or_too_long_query_and_a_missing_scope(client):
+    assert _search(client, '?chat_id=c1')[0].status_code == 400
+    assert _search(client, '?chat_id=c1&q=%20%20')[0].status_code == 400
+    assert _search(client, '?chat_id=c1&q=' + 'x' * 201)[0].status_code == 400
+    assert _search(client, '?q=beta')[0].status_code == 400
+
+
+def test_search_a_workspace_scope_prefixes_paths(client):
+    response, _, _ = _search(client, '?workspace_id=w1&q=alpha')
+    assert response.get_json()["results"][0]["path"] == "workspace/n.md"
+
+
+def test_search_a_chat_also_searches_its_workspace_files(client):
+    response, _, _ = _search(client, '?chat_id=c1&q=alpha', workspace_for_chat="w1")
+    assert [r["path"] for r in response.get_json()["results"]] == ["a.md", "workspace/n.md"]
+
+
+def test_search_a_chat_that_does_not_exist_yet_is_empty_or_searches_its_owned_workspace(client, owned_by_user_a):
+    owned_by_user_a.get_chat_owner.return_value = None
+    response, mock_db, _ = _search(client, '?chat_id=new&q=alpha')
+    assert response.status_code == 200 and response.get_json() == {"results": [], "truncated": False}
+    mock_db.get_chat_file_systems.assert_not_called()
+    response, mock_db, _ = _search(client, '?chat_id=new&workspace_id=w1&q=alpha')
+    assert [r["file_system_id"] for r in response.get_json()["results"]] == ["f2"]
+    mock_db.get_chat_file_systems.assert_not_called()
+
+
+def test_search_failure_is_a_fixed_500_message(client):
+    with patch('backend.file_system.manager.search_fs_contents', new_callable=AsyncMock, side_effect=RuntimeError("secret detail")), \
+         patch('backend.file_system.router.db'):
+        response = client.get('/api/file_system/search?chat_id=c1&q=x')
+    assert response.status_code == 500 and response.get_json() == {"error": "Search failed"}
