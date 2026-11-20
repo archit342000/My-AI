@@ -2,6 +2,10 @@ import logging
 import json
 import asyncio
 import contextvars
+import re
+import sqlite3
+import time
+from time import time as _epoch_seconds
 from typing import List, Dict, Any, Optional, AsyncGenerator
 
 from backend.database import db
@@ -13,6 +17,58 @@ from backend.chat.sources import SOURCE_REGISTRY_ANCHOR, format_sources_block
 logger = logging.getLogger(__name__)
 
 _UNSET = object()
+
+ACTIVITY_MAX_CHARS = 120
+_FAILED_RESULT_RE = re.compile(r"^(error:|[a-z][\w ]{0,40} failed(\.|:|\s+(during execution|to return a response|after \d+ attempts)))", re.IGNORECASE)
+
+
+def _activity_from_chunk(line: str, agent_name: str) -> Optional[str]:
+    """Activity of a helper from one of its stream lines (never raises: it only observes)."""
+    try:
+        return _read_activity(line, agent_name)
+    except (AttributeError, TypeError, IndexError, KeyError):
+        return None
+
+
+def _read_activity(line: str, agent_name: str) -> Optional[str]:
+    """
+    What a helper is doing now, read from one stream line the helper produced: its latest event text, or the tool it just
+    called (`Using <tool>`). Lines of other agents (a nested helper has its own `parent_type`), main-turn lines, results
+    and `agent_run` lines give None. Cut to `ACTIVITY_MAX_CHARS`.
+    """
+    if not isinstance(line, str) or not line.startswith("data: "):
+        return None
+    try:
+        data = json.loads(line[6:])
+    except ValueError:
+        return None
+    if not isinstance(data, dict) or "agent_run" in data or data.get("parent_type") != agent_name:
+        return None
+    choices = data.get("choices")
+    delta = choices[0].get("delta") if isinstance(choices, list) and choices and isinstance(choices[0], dict) else None
+    if not isinstance(delta, dict) or "tool_result" in delta:
+        return None
+    text = None
+    if delta.get("role") == "event" and isinstance(delta.get("content"), str):
+        text = delta["content"]
+    elif isinstance(delta.get("tool_calls"), list) and delta["tool_calls"]:
+        function = (delta["tool_calls"][0] or {}).get("function") or {}
+        if isinstance(function.get("name"), str) and function["name"]:
+            text = f"Using {function['name']}"
+    text = (text or "").strip()
+    return text[:ACTIVITY_MAX_CHARS] if text else None
+
+
+def _run_failed(result: Any) -> bool:
+    """True when a helper's result reads as a failure: its first line starts with `Error:` or is an agent's own failure text (`<name> failed.`, `<name> failed:`, `... failed during execution`, `... failed after N attempts`). A normal first line that merely contains "failed" does not count."""
+    first_line = str(result or "").strip().split("\n", 1)[0]
+    return bool(_FAILED_RESULT_RE.match(first_line))
+
+
+def _agent_run_chunk(parent_type: str, run: Dict[str, Any]) -> str:
+    """The `agent_run` stream line for a helper run (state running, done or failed)."""
+    return "data: " + json.dumps({"parent_type": parent_type, "agent_run": run}) + "\n\n"
+
 
 class ToolHandler:
     """
@@ -102,6 +158,25 @@ class ToolHandler:
             detail = None
         return [{"kind": "file", "title": path, "locator": path, "detail": detail}]
 
+    def _record_agent_run(self, run: Dict[str, Any]) -> None:
+        """
+        Keep a finished helper run in the `agent_runs` collection of this handler's anchor (merged by run id, so a resumed
+        turn adds to the stored list), so a reload shows the same runs. A storage failure is logged, never raised.
+        """
+        from backend.database import db as _db
+        try:
+            colls = _db.get_collections(self.chat_id, parent_message_id=self.parent_message_id, parent_type=self.parent_type)
+            coll = next((c for c in colls if c.get("collection_type") == "agent_runs"), None)
+            runs = coll.get("items") if coll else []
+            if isinstance(runs, str):
+                runs = json.loads(runs)
+            runs = [r for r in runs if isinstance(r, dict) and r.get("id") != run["id"]] if isinstance(runs, list) else []
+            runs.append(run)
+            _db.add_collection(chat_id=self.chat_id, parent_message_id=self.parent_message_id, parent_type=self.parent_type,
+                               collection_type="agent_runs", items=runs, overwrite=True)
+        except Exception as e:  # run records are display data: a storage failure is logged and must never abort the turn
+            log_event("agent_run_store_error", {"chat_id": self.chat_id, "run": str(run.get("id"))[:100], "error": f"{type(e).__name__}: {e}"[:300]})
+
     async def handle_tool_calls(
         self, 
         tool_calls: List[Dict[str, Any]]
@@ -141,6 +216,7 @@ class ToolHandler:
                 continue
 
             log_event("tool_call_execution", {"name": name, "id": tc_id})
+            started = time.monotonic()  # a call's duration_ms runs from here to its stored result
 
             # Check Registry for Type
             tool_meta = ToolRegistry.get_tool(name)
@@ -149,13 +225,15 @@ class ToolHandler:
                 logger.warning(f"[TOOL] {error_msg}")
 
                 from backend.database import db
+                duration_ms = int((time.monotonic() - started) * 1000)
                 db.add_tool_result(
                     chat_id=self.chat_id,
                     tool_call_id=tc_id,
                     name=name,
                     content=error_msg,
                     parent_id=self.parent_message_id,
-                    parent_type=self.parent_type
+                    parent_type=self.parent_type,
+                    duration_ms=duration_ms
                 )
                 yield "data: " + json.dumps({
                     "parent_type": self.parent_type,
@@ -164,7 +242,8 @@ class ToolHandler:
                             "tool_result": {
                                 "name": name,
                                 "content": error_msg,
-                                "tool_call_id": tc_id
+                                "tool_call_id": tc_id,
+                                "duration_ms": duration_ms
                             }
                         }
                     }]
@@ -178,17 +257,19 @@ class ToolHandler:
                 log_event("tool_admin_only_denied", {"chat_id": self.chat_id, "name": name, "id": tc_id})
                 denied_msg = "Error: This tool is not available."
                 from backend.database import db
+                duration_ms = int((time.monotonic() - started) * 1000)
                 db.add_tool_result(
                     chat_id=self.chat_id,
                     tool_call_id=tc_id,
                     name=name,
                     content=denied_msg,
                     parent_id=self.parent_message_id,
-                    parent_type=self.parent_type
+                    parent_type=self.parent_type,
+                    duration_ms=duration_ms
                 )
                 yield "data: " + json.dumps({
                     "parent_type": self.parent_type,
-                    "choices": [{"delta": {"tool_result": {"name": name, "content": denied_msg, "tool_call_id": tc_id}}}]
+                    "choices": [{"delta": {"tool_result": {"name": name, "content": denied_msg, "tool_call_id": tc_id, "duration_ms": duration_ms}}}]
                 }) + "\n\n"
                 continue
 
@@ -226,6 +307,7 @@ class ToolHandler:
                                 }
 
                             from backend.database import db as _vdb
+                            duration_ms = int((time.monotonic() - started) * 1000)
                             _vdb.add_tool_result(
                                 chat_id=self.chat_id,
                                 tool_call_id=tc_id,
@@ -233,6 +315,7 @@ class ToolHandler:
                                 content=validation.message,
                                 parent_id=self.parent_message_id,
                                 parent_type=self.parent_type,
+                                duration_ms=duration_ms
                             )
                             yield "data: " + json.dumps({
                                 "parent_type": self.parent_type,
@@ -240,10 +323,20 @@ class ToolHandler:
                                     "name": name,
                                     "content": validation.message,
                                     "tool_call_id": tc_id,
+                                    "duration_ms": duration_ms,
                                 }}}]
                             }) + "\n\n"
                             continue
                 # ── END CLIPBOARD ENFORCEMENT ────────────────────────────
+
+                # The helper run starts here (even if its implementation turns out not to be resolvable): a start chunk, an update
+                # whenever its activity changes, an end chunk (done or failed).
+                run = {
+                    "id": tc_id, "name": name,
+                    "parent_id": self.parent_message_id if self.parent_type != "main" else None,
+                    "state": "running", "activity": None, "started_at": _epoch_seconds(), "duration_ms": None,
+                }
+                yield _agent_run_chunk(self.parent_type, run)
 
                 # 1. Handoff to AgentHandler
                 flow_fn = ToolRegistry.resolve_implementation(name)
@@ -265,11 +358,26 @@ class ToolHandler:
                         while True:
                             chunk = await it.__anext__()
                             yield chunk
+                            if isinstance(chunk, str) and not chunk.endswith("\n"):
+                                yield "\n\n"  # an agent's plain-text chunk has no terminator: end its line so the next `data:` line stays whole
+                            activity = _activity_from_chunk(chunk, name)
+                            if activity and activity != run["activity"]:
+                                run["activity"] = activity
+                                yield _agent_run_chunk(self.parent_type, run)
                     except StopAsyncIteration:
                         agent_result = self.agent_handler.result
+                    except Exception:
+                        run.update(state="failed", duration_ms=int((time.monotonic() - started) * 1000))
+                        self._record_agent_run(run)
+                        yield _agent_run_chunk(self.parent_type, run)
+                        raise
                     
                     if agent_result is None:
                         agent_result = f"Agent '{name}' completed execution successfully."
+                    duration_ms = int((time.monotonic() - started) * 1000)
+                    run.update(state="failed" if _run_failed(agent_result) else "done", duration_ms=duration_ms)
+                    self._record_agent_run(run)
+                    yield _agent_run_chunk(self.parent_type, run)
                     
                     # Ensure structured data is serialized to JSON string for the frontend
                     agent_content_str = json.dumps(agent_result) if isinstance(agent_result, (dict, list)) else str(agent_result)
@@ -288,7 +396,8 @@ class ToolHandler:
                         name=name,
                         content=agent_content_str,
                         parent_id=self.parent_message_id,
-                        parent_type=self.parent_type
+                        parent_type=self.parent_type,
+                        duration_ms=duration_ms
                     )
 
                     # Yield synthetic result chunk for frontend rendering and phase boundary.
@@ -301,7 +410,8 @@ class ToolHandler:
                                 "tool_result": {
                                     "name": name,
                                     "content": agent_content_str,
-                                    "tool_call_id": tc_id
+                                    "tool_call_id": tc_id,
+                                    "duration_ms": duration_ms
                                 }
                             }
                         }]
@@ -310,13 +420,18 @@ class ToolHandler:
                     error_msg = f"Error: Agent implementation for '{name}' could not be resolved."
                     logger.error(f"[TOOL] {error_msg}")
                     from backend.database import db
+                    duration_ms = int((time.monotonic() - started) * 1000)
+                    run.update(state="failed", duration_ms=duration_ms)
+                    self._record_agent_run(run)
+                    yield _agent_run_chunk(self.parent_type, run)
                     db.add_tool_result(
                         chat_id=self.chat_id,
                         tool_call_id=tc_id,
                         name=name,
                         content=error_msg,
                         parent_id=self.parent_message_id,
-                        parent_type=self.parent_type
+                        parent_type=self.parent_type,
+                        duration_ms=duration_ms
                     )
                     yield "data: " + json.dumps({
                         "parent_type": self.parent_type,
@@ -325,7 +440,8 @@ class ToolHandler:
                                 "tool_result": {
                                     "name": name,
                                     "content": error_msg,
-                                    "tool_call_id": tc_id
+                                    "tool_call_id": tc_id,
+                                    "duration_ms": duration_ms
                                 }
                             }
                         }]
@@ -348,13 +464,15 @@ class ToolHandler:
                 
                 from backend.database import db
                 log_event("tool_result_storing", {"chat_id": self.chat_id, "name": name, "tc_id": tc_id, "result_preview": content_str[:200]})
+                duration_ms = int((time.monotonic() - started) * 1000)
                 db.add_tool_result(
                     chat_id=self.chat_id,
                     tool_call_id=tc_id,
                     name=name,
                     content=content_str,
                     parent_id=self.parent_message_id,
-                    parent_type=self.parent_type
+                    parent_type=self.parent_type,
+                    duration_ms=duration_ms
                 )
 
                 # Yield synthetic result chunk for frontend rendering and phase boundary
@@ -365,7 +483,8 @@ class ToolHandler:
                             "tool_result": {
                                 "name": name,
                                 "content": content_str,
-                                "tool_call_id": tc_id
+                                "tool_call_id": tc_id,
+                                "duration_ms": duration_ms
                             }
                         }
                     }]

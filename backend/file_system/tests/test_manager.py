@@ -5,6 +5,7 @@ import json
 import uuid
 
 from backend.file_system import manager
+from backend.file_system.utils import PathRuleError
 from backend.file_system.utils import generate_fs_file_id as real_generate_fs_file_id
 from backend.file_system.fuzzy_matcher import MatchNotFoundError, MultipleMatchesError
 
@@ -617,3 +618,92 @@ async def test_replace_fs_lines_with_clipboard_key():
 
 
 
+
+
+@pytest.mark.anyio
+async def test_restore_of_a_workspace_file_without_a_chat_writes_it_in_the_workspace_directory(mock_db, mock_aiofiles, tmp_path):
+    mock_db.get_file_system_meta.return_value = {"chat_id": None, "workspace_id": "w1", "filename": "docs/a.md", "navigation_history": "[]", "navigation_index": -1}
+    mock_db.get_file_system_version_content.return_value = "old content"
+    with patch('backend.file_system.utils.WORKSPACES_DIR', str(tmp_path)), \
+         patch('backend.file_system.manager.ensure_physical_dir_exists') as ensure:
+        res = await manager.restore_fs_file_version("fs_1", None, 1, workspace_id="w1")
+    assert res["success"] is True and res["content"] == "old content"
+    assert ensure.call_args.args[0] == str(tmp_path / "w1" / "docs" / "a.md")
+    mock_aiofiles.open.assert_called_once_with(str(tmp_path / "w1" / "docs" / "a.md"), mode='w', encoding='utf-8')
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("tool,message", [("create_directory_tool", "Could not create the folder. Try again."), ("delete_directory_tool", "Could not delete the folder. Try again.")])
+async def test_directory_tools_hide_unexpected_exception_text_but_keep_path_rule_messages(tool, message):
+    fn = getattr(manager, tool)
+    with patch('backend.file_system.manager.resolve_owner_and_physical_path', side_effect=OSError("/secret/place denied")), \
+         patch('backend.file_system.manager.log_event') as events:
+        res = await fn("c1", "d")
+    assert res == {"success": False, "error": message}
+    assert events.call_args.args[0].endswith("_directory_error") and "denied" in events.call_args.args[1]["error"]
+    with patch('backend.file_system.manager.resolve_owner_and_physical_path', side_effect=PathRuleError("The 'workspace/' directory is reserved")):
+        assert (await fn("c1", "workspace/d")) == {"success": False, "error": "The 'workspace/' directory is reserved"}
+
+
+
+@pytest.mark.asyncio
+async def test_search_fs_contents_finds_hits_in_file_then_line_order_case_insensitively():
+    rows = [{"id": "a", "filename": "a.md"}, {"id": "b", "filename": "workspace/b.py", "workspace_id": "w1"}]
+    contents = {"a": "Hello world\nnothing\nsay HELLO again", "b": "hello"}
+    with patch('backend.file_system.manager.get_fs_file_content', new_callable=AsyncMock) as get_content:
+        get_content.side_effect = lambda fid, chat_id=None, workspace_id=None: contents[fid]
+        result = await manager.search_fs_contents(rows, "hello", 10)
+        assert get_content.await_args_list[1].kwargs == {"chat_id": None, "workspace_id": "w1"}
+    assert result == {"results": [
+        {"file_system_id": "a", "path": "a.md", "line_number": 1, "line": "Hello world"},
+        {"file_system_id": "a", "path": "a.md", "line_number": 3, "line": "say HELLO again"},
+        {"file_system_id": "b", "path": "workspace/b.py", "line_number": 1, "line": "hello"},
+    ], "truncated": False}
+
+
+@pytest.mark.asyncio
+async def test_search_fs_contents_no_hits_and_empty_scope():
+    with patch('backend.file_system.manager.get_fs_file_content', new_callable=AsyncMock, return_value="abc"):
+        assert await manager.search_fs_contents([{"id": "a", "filename": "a"}], "zzz", 5) == {"results": [], "truncated": False}
+    assert await manager.search_fs_contents([], "x", 5) == {"results": [], "truncated": False}
+
+
+@pytest.mark.asyncio
+async def test_search_fs_contents_limit_sets_truncated_only_when_more_hits_exist():
+    rows = [{"id": "a", "filename": "a"}]
+    with patch('backend.file_system.manager.get_fs_file_content', new_callable=AsyncMock, return_value="x\nx\nx"):
+        cut = await manager.search_fs_contents(rows, "x", 2)
+        exact = await manager.search_fs_contents(rows, "x", 3)
+    assert [r["line_number"] for r in cut["results"]] == [1, 2] and cut["truncated"] is True
+    assert len(exact["results"]) == 3 and exact["truncated"] is False
+
+
+@pytest.mark.asyncio
+async def test_search_fs_contents_cuts_long_lines_and_skips_unreadable_and_binary_files():
+    rows = [{"id": "none", "filename": "n"},
+            {"id": "bin", "filename": "b"}, {"id": "long", "filename": "l"}]
+    contents = {"none": None, "bin": manager._BINARY_PLACEHOLDER, "long": "x" * 1000}
+    with patch('backend.file_system.manager.get_fs_file_content', new_callable=AsyncMock) as get_content, \
+         patch('backend.file_system.manager.config.FILE_SEARCH_MAX_LINE_CHARS', 300):
+        get_content.side_effect = lambda fid, chat_id=None, workspace_id=None: contents[fid]
+        result = await manager.search_fs_contents(rows, "x", 10)
+    assert [r["file_system_id"] for r in result["results"]] == ["long"]
+    assert len(result["results"][0]["line"]) == 300
+
+
+@pytest.mark.asyncio
+async def test_search_fs_contents_numbers_lines_by_newline_only_and_shows_a_match_beyond_the_cut():
+    content = "a\x0cneedle on the same line\r\n" + "x" * 400 + "needle tail"
+    with patch('backend.file_system.manager.get_fs_file_content', new_callable=AsyncMock, return_value=content), \
+         patch('backend.file_system.manager.config.FILE_SEARCH_MAX_LINE_CHARS', 300):
+        result = await manager.search_fs_contents([{"id": "a", "filename": "a"}], "needle", 10)
+    first, second = result["results"]
+    assert first["line_number"] == 1 and first["line"] == "a\x0cneedle on the same line"  # form feed is not a line break, CR trimmed
+    assert second["line_number"] == 2 and second["line"].startswith("needle tail")
+
+
+@pytest.mark.asyncio
+async def test_search_fs_contents_does_not_skip_a_text_file_that_starts_with_the_binary_marker():
+    with patch('backend.file_system.manager.get_fs_file_content', new_callable=AsyncMock, return_value="[Binary File] notes: needle"):
+        result = await manager.search_fs_contents([{"id": "a", "filename": "a"}], "needle", 10)
+    assert len(result["results"]) == 1

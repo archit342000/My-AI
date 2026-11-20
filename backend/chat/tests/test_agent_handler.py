@@ -132,6 +132,25 @@ def test_model(agent_handler):
 
 
 @pytest.mark.anyio
+async def test_a_run_that_sets_no_result_does_not_inherit_the_previous_runs():
+    from backend.chat.agent_handler import AgentHandler
+    handler = AgentHandler("chat", MagicMock())
+
+    async def sets_result(agent, agent_name, **kwargs):
+        agent.result = "first result"
+        yield "chunk"
+
+    async def sets_nothing(agent, agent_name, **kwargs):
+        return
+        yield
+
+    [c async for c in handler.execute_agent("a", sets_result)]
+    assert handler.result == "first result"
+    [c async for c in handler.execute_agent("b", sets_nothing)]
+    assert handler.result is None
+
+
+@pytest.mark.anyio
 async def test_sources_start_empty_and_are_reset_for_every_agent_run():
     from backend.chat.agent_handler import AgentHandler
     handler = AgentHandler("chat", MagicMock())

@@ -6,6 +6,7 @@ import time
 from typing import AsyncGenerator, Any, List, Dict
 from backend.auth.ownership import file_for_chat
 from backend.database import db
+from backend.logging import log_event, error_detail
 from backend import config
 from backend.rag import RAGProvider, FileRAG
 from backend.models import get_embedding_model, load_model_config
@@ -115,7 +116,7 @@ async def flow_fn(
                 yield error_msg
                 return
 
-            yield f"Event: Using vision analysis for image '{original_filename}'...\n"
+            yield f"Event: Using vision analysis for image '{original_filename}'…\n"
             
             embedding_model = get_embedding_model()
             rag_manager = RAGProvider.get_manager(
@@ -170,7 +171,7 @@ async def flow_fn(
                     )
         else:
             # Autonomous Document Investigation Loop
-            yield f"Event: Initiating investigation of '{original_filename}'...\n"
+            yield f"Event: Initiating investigation of '{original_filename}'…\n"
 
             if mime_type in PAGE_BASED_MIME_TYPES:
                 read_hint = "This is a page-based document. Use `read_uploaded_file(page=N)` to read specific pages."
@@ -213,8 +214,9 @@ You have tools to perform semantic searches (RAG), literal searches (grep), and 
             agent.result = "Error: Document agent completed but returned no content."
 
     except Exception as e:
-        error_msg = f"Document agent failed: {str(e)}"
-        logger.error(error_msg, exc_info=True)
+        logger.error(f"Document agent failed: {e}", exc_info=True)
+        log_event("document_agent_error", {"chat_id": chat_id, "error": error_detail(e)})
+        error_msg = "Document agent failed. Try again."
         agent.result = error_msg
         
         # Log failure event to database
@@ -222,7 +224,7 @@ You have tools to perform semantic searches (RAG), literal searches (grep), and 
             db.add_message(
                 chat_id=chat_id,
                 role='event',
-                content=f'Document Agent failed: {str(e)}',
+                content='Document Agent failed. Try again.',
                 parent_id=parent_message_id,
                 parent_type='document_agent'
             )

@@ -355,6 +355,8 @@ async def test_stream_retry_reasoning_only(engine):
             assert any("Thinking..." in c for c in chunks)
             assert any("__redact__" in c for c in chunks)
             assert any("Hello" in c for c in chunks)
+            notice = next(json.loads(c[6:])["message"] for c in chunks if "__redact__" in c)
+            assert notice == "Checking the answer again…" and "..." not in notice
 
 @pytest.mark.anyio
 async def test_stream_retry_on_exception(engine):
@@ -383,6 +385,9 @@ async def test_stream_retry_on_exception(engine):
                 
             assert any("__redact__" in c for c in chunks)
             assert any("Recovered" in c for c in chunks)
+            notice = next(json.loads(c[6:])["message"] for c in chunks if "__redact__" in c)
+            assert notice == "The model did not respond. Trying again…"  # fixed text: no exception text, no "..."
+            assert "Network Error" not in notice
 
 
 @pytest.mark.anyio

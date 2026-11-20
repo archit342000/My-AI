@@ -1,6 +1,8 @@
 import json
 import pytest
 import time
+import json
+import asyncio
 from unittest.mock import MagicMock, patch, AsyncMock
 from backend.chat.turn_handler import TurnHandler
 
@@ -29,11 +31,10 @@ async def test_turn_handler_handle_turn(mock_db, mock_log_event):
         yield "chunk1"
         yield "chunk2"
         
-    chunks = []
-    async for chunk in TurnHandler.handle_turn(chat_id, parent_id, mock_run_fn):
-        chunks.append(chunk)
-        
-    assert chunks == ["chunk1", "chunk2"]
+    mock_db.set_turn_duration.return_value = True
+    chunks = [c async for c in TurnHandler.handle_turn(chat_id, parent_id, mock_run_fn)]
+    assert chunks[:2] == ["chunk1", "chunk2"] and len(chunks) == 3
+    assert chunks[2].startswith("data: ") and json.loads(chunks[2][6:])["turn"]["duration_ms"] >= 0
     mock_db.update_chat.assert_called_once()
     mock_log_event.assert_any_call("turn_handler_start", {"chat_id": chat_id, "parent_id": parent_id, "model": None})
     mock_log_event.assert_any_call("turn_persistence_finalized", {"chat_id": chat_id, "parent_id": parent_id})
@@ -97,7 +98,96 @@ async def test_turn_handler_cancellation_resilience(mock_db, mock_log_event):
 
 
 
-# ---- cited sources ---------------------------------------------------------------------------------------------
+@pytest.mark.anyio
+async def test_a_finished_turn_sends_and_stores_its_duration_last(mock_db, mock_log_event):
+    clock = MagicMock()
+    clock.monotonic.side_effect = [100.0, 146.0]
+    clock.time.return_value = 5.0
+    mock_db.set_turn_duration.return_value = True
+
+    async def run():
+        yield "chunk"
+
+    with patch('backend.chat.turn_handler.time', clock):
+        chunks = [c async for c in TurnHandler.handle_turn("c1", 7, run)]
+    assert chunks[0] == "chunk"
+    assert json.loads(chunks[-1][6:]) == {"turn": {"duration_ms": 46000}}
+    assert chunks[-1].endswith("\n\n")
+    mock_db.set_turn_duration.assert_called_once_with("c1", 7, 46000)
+
+
+@pytest.mark.anyio
+async def test_a_turn_that_raises_stores_and_sends_no_duration(mock_db, mock_log_event):
+    async def run():
+        yield "chunk"
+        raise ValueError("boom")
+
+    chunks = []
+    with pytest.raises(ValueError):
+        async for c in TurnHandler.handle_turn("c1", 7, run):
+            chunks.append(c)
+    assert chunks == ["chunk"]
+    mock_db.set_turn_duration.assert_not_called()
+
+
+@pytest.mark.anyio
+async def test_a_cancelled_turn_stores_and_sends_no_duration(mock_db, mock_log_event):
+    async def run():
+        yield "chunk"
+        raise asyncio.CancelledError()
+
+    chunks = []
+    with pytest.raises(asyncio.CancelledError):
+        async for c in TurnHandler.handle_turn("c1", 7, run):
+            chunks.append(c)
+    assert chunks == ["chunk"]
+    mock_db.set_turn_duration.assert_not_called()
+
+
+@pytest.mark.anyio
+async def test_a_failing_duration_write_does_not_break_the_turn(mock_db, mock_log_event):
+    mock_db.set_turn_duration.side_effect = RuntimeError("db down")
+
+    async def run():
+        yield "chunk"
+
+    chunks = [c async for c in TurnHandler.handle_turn("c1", 7, run)]
+    assert chunks == ["chunk"]  # nothing stored, so no event either
+    assert any(c.args[0] == "turn_duration_error" for c in mock_log_event.call_args_list)
+
+
+@pytest.mark.anyio
+async def test_no_user_message_means_nothing_to_store_against(mock_db, mock_log_event):
+    async def run():
+        yield "chunk"
+
+    chunks = [c async for c in TurnHandler.handle_turn("c1", None, run)]
+    mock_db.set_turn_duration.assert_not_called()
+    assert chunks == ["chunk"]
+
+
+@pytest.mark.anyio
+async def test_a_stopped_turn_that_returns_normally_stores_and_sends_nothing(mock_db, mock_log_event, not_interrupted):
+    not_interrupted.is_interrupted.return_value = True
+
+    async def run():
+        yield "chunk"  # the handler returns normally after seeing the stop flag
+
+    chunks = [c async for c in TurnHandler.handle_turn("c1", 7, run)]
+    assert chunks == ["chunk"]
+    mock_db.set_turn_duration.assert_not_called()
+
+
+@pytest.mark.anyio
+async def test_no_event_when_no_row_was_updated(mock_db, mock_log_event):
+    mock_db.set_turn_duration.return_value = False
+
+    async def run():
+        yield "chunk"
+
+    assert [c async for c in TurnHandler.handle_turn("c1", 7, run)] == ["chunk"]
+    assert any(c.args[0] == "turn_duration_not_stored" for c in mock_log_event.call_args_list)
+
 
 def _registry():
     from backend.chat.sources import SourceRegistry
@@ -110,6 +200,7 @@ def _registry():
 
 async def _run(mock_db, rows, registry, run=None):
     mock_db.get_messages.return_value = rows
+    mock_db.set_turn_duration.return_value = False  # no turn event: these tests look at the sources line only
 
     async def default():
         yield "chunk"
@@ -195,6 +286,7 @@ async def test_a_database_error_while_storing_cited_sources_is_logged_and_the_an
     import sqlite3
     mock_db.get_messages.return_value = [{"id": 8, "role": "assistant", "content": "[[1]]", "parent_type": "main"}]
     mock_db.add_collection.side_effect = sqlite3.OperationalError("locked")
+    mock_db.set_turn_duration.return_value = False
     chunks = [c async for c in TurnHandler.handle_turn("c1", 7, _one_chunk, sources=_registry())]
     assert chunks == ["chunk"]
     assert any(c.args[0] == "turn_sources_error" for c in mock_log_event.call_args_list)
@@ -207,3 +299,12 @@ async def _one_chunk():
 def test_message_ids_are_compared_as_integers_and_odd_ids_never_count_as_later():
     from backend.chat.turn_handler import _id_after
     assert _id_after(10, 7) and _id_after("10", 7) and not _id_after(7, 7) and not _id_after("abc", 7) and not _id_after(None, 7)
+
+
+@pytest.mark.anyio
+async def test_the_sources_line_comes_before_the_turn_duration_which_stays_last(mock_db, mock_log_event):
+    mock_db.get_messages.return_value = [{"id": 8, "role": "assistant", "content": "Answer [[1]]", "parent_type": "main"}]
+    mock_db.set_turn_duration.return_value = True
+    chunks = [c async for c in TurnHandler.handle_turn("c1", 7, _one_chunk, sources=_registry())]
+    assert chunks[0] == "chunk"
+    assert "sources" in json.loads(chunks[1][6:]) and "turn" in json.loads(chunks[2][6:]) and len(chunks) == 3
